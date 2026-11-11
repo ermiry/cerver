@@ -63,3 +63,26 @@ void *session_default_generate_id (const void *session_data) {
 	return retval;
 
 }
+#pragma region serialization
+
+SERIALIZER_DEFINE (SessionToken, session_token, SESSION_TOKEN_VERSION, SESSION_TOKEN_FIELDS)
+
+// encodes the session token of the session id in the buffer
+// written takes the size of the encoded token
+// returns 0 on success, 1 on error
+u8 session_token_encode (
+	const char *session_id,
+	u8 buffer[SESSION_TOKEN_MAX_ENCODED_SIZE], size_t *written
+) {
+
+	SessionToken token = { { 0 } };
+	(void) strncpy (token.token, session_id, TOKEN_SIZE - 1);
+
+	return (serializer_encode (
+		&session_token_schema, &token,
+		buffer, SESSION_TOKEN_MAX_ENCODED_SIZE, written
+	) == SERIALIZER_RESULT_NONE) ? 0 : 1;
+
+}
+
+#pragma endregion

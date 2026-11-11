@@ -96,11 +96,18 @@ struct _ReceiveHandle {
 
 	// used to handle split headers between buffers
 	// this can happen when the header is at the buffer's end
-	PacketHeader header;
+	u8 header[PACKET_HEADER_SIZE];
 	char *header_end;
 	unsigned int remaining_header;
 
 	struct _Packet *spare_packet;
+
+	// the bytes of the buffer that come after the packet that is being dispatched,
+	// like the contents of a file that are sent after its packet,
+	// the handler takes them with receive_handle_take_trailing ()
+	const char *trailing;
+	size_t trailing_size;
+	size_t trailing_taken;
 
 };
 
@@ -110,8 +117,26 @@ CERVER_PRIVATE ReceiveHandle *receive_handle_new (void);
 
 CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
 
-CERVER_PRIVATE void receive_handle_reset (
-	ReceiveHandle *receive_handle
+// assembles the packets of the received buffer, no matter where the buffers are split
+// every complete packet is passed to dispatch, that returns 0 to keep handling the buffer,
+// or 1 to stop (when the connection was deleted, its receive handle is not used anymore)
+// a packet with an invalid size (smaller than its header or bigger than max_packet_size)
+// closes the connection
+CERVER_PRIVATE void receive_handle_buffer (
+	ReceiveHandle *receive_handle, const size_t max_packet_size,
+	u8 (*dispatch) (ReceiveHandle *receive_handle, struct _Packet *packet)
+);
+
+// releases the packet that was being assembled
+CERVER_PRIVATE void receive_handle_end (ReceiveHandle *receive_handle);
+
+// takes up to max_size of the bytes that come after the packet that is being dispatched,
+// they are not handled as packets after the dispatch
+// it can only be called from the dispatch of the packet
+// returns the number of bytes in data
+CERVER_PRIVATE size_t receive_handle_take_trailing (
+	ReceiveHandle *receive_handle,
+	const char **data, const size_t max_size
 );
 
 #ifdef __cplusplus

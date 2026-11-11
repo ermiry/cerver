@@ -7,6 +7,10 @@
 
 #include "cerver/config.h"
 #include "cerver/network.h"
+#include "cerver/serializer.h"
+
+#include "cerver/collections/arena.h"
+#include "cerver/collections/freelist.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -144,20 +148,82 @@ CERVER_PUBLIC void packets_per_type_array_print (
 
 #pragma region header
 
+// the header travels in PACKET_HEADER_SIZE bytes in network byte order, field by field,
+// so it never depends on the layout of PacketHeader in memory
+#define PACKET_HEADER_SIZE							32
+
+// the format of the header in the wire, a peer that sends another one is closed
+#define PACKET_HEADER_FORMAT						1
+
+#define PACKET_HEADER_PROTOCOL_ID_OFFSET			0
+#define PACKET_HEADER_MAJOR_OFFSET					4
+#define PACKET_HEADER_MINOR_OFFSET					6
+#define PACKET_HEADER_PACKET_TYPE_OFFSET			8
+#define PACKET_HEADER_HANDLER_ID_OFFSET				9
+#define PACKET_HEADER_FORMAT_OFFSET					10
+#define PACKET_HEADER_FLAGS_OFFSET					11
+#define PACKET_HEADER_REQUEST_TYPE_OFFSET			12
+#define PACKET_HEADER_ROUTE_ID_OFFSET				16
+#define PACKET_HEADER_PACKET_SIZE_OFFSET			20
+#define PACKET_HEADER_RESERVED_OFFSET				28
+
+// the data of the packet is an object of the serializer
+#define PACKET_FLAG_SERIALIZED						0x01
+
+// a header with any other flag is a bad packet
+#define PACKET_FLAGS_KNOWN							(PACKET_FLAG_SERIALIZED)
+
 struct _PacketHeader {
 
-	PacketType packet_type;		// the main packet type
-	size_t packet_size;			// total size of the packet (header + data)
+	PacketType packet_type;		// the main packet type, a single byte in the wire
+	u64 packet_size;			// total size of the packet (header + data)
 
 	u8 handler_id;				// used in cervers with multiple app handlers
+	u8 flags;					// PACKET_FLAG_*
 
 	u32 request_type;			// the packet's subtype
 
-	u16 sock_fd;				// used in when working with load balancers
+	// the route of a client of a load balancer, to send the responses of a service back to it
+	u32 route_id;
+
+	// the protocol of the sender, packet_check () validates it with the local one
+	PacketVersion version;
 
 };
 
 typedef struct _PacketHeader PacketHeader;
+
+#define PACKET_HEADER_RESULT_MAP(XX)																\
+	XX(0,	NONE,		"The header is valid")														\
+	XX(1,	FORMAT,		"The header has a different format")										\
+	XX(2,	FLAGS,		"The header has unknown flags")												\
+	XX(3,	RESERVED,	"The reserved bytes of the header are not zero")
+
+typedef enum PacketHeaderResult {
+
+	#define XX(num, name, string) PACKET_HEADER_RESULT_##name = num,
+	PACKET_HEADER_RESULT_MAP (XX)
+	#undef XX
+
+} PacketHeaderResult;
+
+CERVER_PUBLIC const char *packet_header_result_string (
+	const PacketHeaderResult result
+);
+
+// writes the header in the wire format, PACKET_HEADER_SIZE bytes in network byte order
+CERVER_EXPORT void packet_header_encode (
+	const PacketHeader *header, u8 buffer[PACKET_HEADER_SIZE]
+);
+
+// reads a header in the wire format, the buffer does not need to be aligned
+// the header is only written when the result is PACKET_HEADER_RESULT_NONE
+CERVER_EXPORT PacketHeaderResult packet_header_decode (
+	const u8 buffer[PACKET_HEADER_SIZE], PacketHeader *header
+);
+
+// the protocol id and version of this process, to send them in every header
+CERVER_PUBLIC PacketVersion packet_version_local (void);
 
 CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
@@ -236,7 +302,9 @@ typedef enum RequestPacketType {
 	XX(1, 	REQUEST_AUTH)					\
 	XX(2, 	CLIENT_AUTH)					\
 	XX(3, 	ADMIN_AUTH)						\
-	XX(4, 	SUCCESS)
+	XX(4, 	SUCCESS)						\
+	XX(5, 	CLIENT_TOKEN)					\
+	XX(6, 	ADMIN_TOKEN)
 
 typedef enum AuthPacketType {
 
@@ -288,6 +356,10 @@ struct _Packet {
 
 	PacketHeader header;
 
+	// a request packet sends its own header from here,
+	// encoded again from header when it is sent
+	u8 encoded_header[PACKET_HEADER_SIZE];
+
 	PacketVersion version;
 
 	// the actual packet to be sent
@@ -295,9 +367,31 @@ struct _Packet {
 	void *packet;
 	bool packet_ref;
 
+	// called by packet_delete () before the packet is released,
+	// like a received packet that holds a reference to its UDP peer
+	void (*release) (void *release_args);
+	void *release_args;
+
+	// the class of the recycled buffer of data, 0 if it was not taken from them
+	unsigned int data_class;
+
+	// the next packet while it is kept to be reused
+	struct _Packet *recycle_next;
+
 };
 
 typedef struct _Packet Packet;
+
+// the released packets and buffers of data that are kept to be reused, in each class
+#define PACKET_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
+// each thread keeps some of them, so they are taken and released without a lock
+#define PACKET_THREAD_CACHE_SIZE			16
+
+// the buffers of data are recycled in classes of 2^6 to 2^12 bytes
+#define PACKET_DATA_MIN_EXPONENT			6
+#define PACKET_DATA_MAX_EXPONENT			12
+#define PACKET_DATA_CLASSES					(PACKET_DATA_MAX_EXPONENT - PACKET_DATA_MIN_EXPONENT + 1)
 
 // allocates a new empty packet
 CERVER_PUBLIC Packet *packet_new (void);
@@ -315,6 +409,22 @@ CERVER_EXPORT Packet *packet_create (
 // creates a packet with a data buffer of the specified size
 CERVER_PRIVATE Packet *packet_create_with_data (
 	const size_t data_size
+);
+
+// creates a packet ready to be sent with the object encoded by its schema as its data,
+// its header has PACKET_FLAG_SERIALIZED
+// returns NULL if the object can not be encoded
+CERVER_EXPORT Packet *packet_create_serialized (
+	const PacketType type, const u32 request_type,
+	const SerializerSchema *schema, const void *object
+);
+
+// decodes the object of a packet that has PACKET_FLAG_SERIALIZED with its schema,
+// the arena gives the memory of the arena fields, it can be NULL for a schema without them
+// the object is only written when the result is SERIALIZER_RESULT_NONE
+CERVER_EXPORT SerializerResult packet_get_object (
+	const Packet *packet, const SerializerSchema *schema,
+	Arena *arena, void *object
 );
 
 // sets the packet destinatary to whom this packet is going to be sent
@@ -337,7 +447,13 @@ CERVER_EXPORT void packet_set_header_values (
 	Packet *packet,
 	PacketType packet_type, size_t packet_size,
 	u8 handler_id, u32 request_type,
-	u16 sock_fd
+	u32 route_id
+);
+
+// sets the route id of the packet, like the one of a request that came through a load balancer,
+// so the response goes back to its client; the header of a generated packet is encoded again
+CERVER_EXPORT void packet_set_route_id (
+	Packet *packet, const u32 route_id
 );
 
 // allocates the packet's data with size data_size
@@ -403,16 +519,6 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
-// initializes a packet with request related values
-CERVER_EXPORT void packet_init_request (
-	Packet *packet,
-	const PacketType packet_type,
-	const u32 request_type
-);
-
-// initializes an already allocated packet as ping request
-CERVER_EXPORT void packet_init_ping (Packet *packet);
-
 // creates a request packet that is ready to be sent
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_request (
@@ -424,6 +530,16 @@ CERVER_EXPORT Packet *packet_create_request (
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_ping (void);
 
+// initializes an already allocated packet with request related values
+CERVER_EXPORT void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
+// initializes an already allocated packet as a ping request
+CERVER_EXPORT void packet_init_ping (Packet *packet);
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
@@ -432,17 +548,24 @@ CERVER_EXPORT Packet *packet_generate_request (
 	const void *data, const size_t data_size
 );
 
-CERVER_PRIVATE u8 packet_send_actual (
-	const Packet *packet,
-	int flags, size_t *total_sent,
-	struct _Client *client, struct _Connection *connection
-);
-
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
+);
+
+// sends the packet in a datagram without the token of its UDP connection,
+// like the answers to an authentication, that the peer reads before it has the token
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_without_datagram_token (const Packet *packet);
+
+// sends a packet of a connection's send queue
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	struct _Client *client, struct _Connection *connection
 );
 
 // works just as packet_send () but the socket's write mutex won't be locked
@@ -533,7 +656,9 @@ CERVER_PUBLIC u8 packet_route_between_connections (
 	PacketHeader *header, size_t *sent
 );
 
-// check if packet has a compatible protocol id and a version
+// check if packet has a compatible protocol id and a version:
+// the same protocol id and major, and a minor that is not newer than the local one
+// the version is not part of the packet header, so a received packet has the initial one
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (const Packet *packet);
 

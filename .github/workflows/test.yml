@@ -5,16 +5,19 @@ on:
     branches:
       - '*'
 
+env:
+  WERROR: 1
+
 jobs:
   test:
     name: Cerver tests
     runs-on: ubuntu-latest
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Build Docker Image
-        run: sudo docker build -t ermiry/cerver:test -f Dockerfile.test .
 
       - name: Compile Sources
         run: make TYPE=test COVERAGE=1
@@ -24,87 +27,6 @@ jobs:
 
       - name: Unit Tests
         run: bash test/run.sh
-
-      - name: Ping Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/ping
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Packets Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/packets
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/packets
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Requests Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/requests
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/requests
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Auth Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/auth
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Sessions Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/sessions
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/sessions
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Threads Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/threads
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/threads
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Queue Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/queue
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/queue
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Load Round Robin Integration Test
-        run: |
-          sudo docker network create cerver || { exit 1; }
-          sudo docker run -d --name service-1 --rm -p 7001:7001 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7001
-          sudo docker run -d --name service-2 --rm -p 7002:7002 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7002
-          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:test ./bin/cerver/load --type round_robin
-          sleep 2
-          sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
-          sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
-          sudo docker inspect service-2 --format='{{.State.ExitCode}}' || { exit 1; }
-          ./test/bin/client/load/simple || { exit 1; }
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Load Handler ID Integration Test
-        run: |
-          sudo docker run -d --name service-1 --rm -p 7001:7001 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7001
-          sudo docker run -d --name service-2 --rm -p 7002:7002 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7002
-          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:test ./bin/cerver/load --type handler_id
-          sleep 2
-          sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
-          sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
-          sudo docker inspect service-2 --format='{{.State.ExitCode}}' || { exit 1; }
-          ./test/bin/client/load/id || { exit 1; }
-          sudo docker kill $(sudo docker ps -q)
 
       - name: Coverage
         run: make coverage
@@ -118,3 +40,56 @@ jobs:
           name: build
           fail_ci_if_error: true
           # verbose: true
+
+  integration:
+    name: Cerver integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Integration Tests
+        env:
+          COVERAGE: 1
+        run: bash test/integration.sh
+
+      - name: Upload integration coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage-integration/
+          flags: integration
+          name: integration
+          fail_ci_if_error: true
+
+  integration-sanitizers:
+    name: Cerver integration tests with address and undefined sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Integration Tests
+        env:
+          SANITIZER: address,undefined
+        run: bash test/integration.sh
+
+  fuzz:
+    name: Cerver fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Fuzzing
+        env:
+          SECONDS_PER_TARGET: 30
+        run: bash test/fuzz.sh
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: ./fuzz-artifacts/
+          retention-days: 7

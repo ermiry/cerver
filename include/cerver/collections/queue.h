@@ -43,9 +43,6 @@ extern void queue_clear (Queue *queue);
 // returns 0 on success, 1 on error
 extern unsigned int queue_push (Queue *queue, void *data);
 
-// returns the data that is first in the queue
-extern void *queue_pop (Queue *queue);
-
 // gets the oldest data (the one at the start)
 extern void *queue_pop (Queue *queue);
 

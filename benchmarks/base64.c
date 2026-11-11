@@ -136,7 +136,9 @@ static void test_encode (
 	if (verbose) (void) printf ("encoded size = %zu \n", expected);
 	// BEST_TIME (memcpy (buffer, data, datalength), repeat, datalength, verbose);
 	BEST_TIME (chromium_base64_encode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#if defined (__AVX2__)
 	BEST_TIME (fast_avx2_base64_encode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#endif
 
 	free (buffer);
 
@@ -155,13 +157,15 @@ static void test_decode (
 		return;
 	}
 
-	char *buffer = malloc (datalength * 2);
+	char *buffer = (char *) malloc (datalength * 2);
 	size_t expected = chromium_base64_decode (buffer, data, datalength);
 	if (verbose) (void) printf ("original size = %zu \n", expected);
 
 	// BEST_TIME (memcpy (buffer, data, datalength), repeat, datalength, verbose);
 	BEST_TIME (chromium_base64_decode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#if defined (__AVX2__)
 	BEST_TIME (fast_avx2_base64_decode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#endif
 
 	free (buffer);
 	if (verbose) (void) printf("\n");
@@ -169,7 +173,7 @@ static void test_decode (
 }
 
 // note sources should be compiled with optmization flags to get the best results
-int main (int argc, const char **argv) {
+int main (void) {
 
 	RDTSC_SET_OVERHEAD (rdtsc_overhead_func (1), repeat);
 

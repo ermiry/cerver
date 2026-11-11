@@ -3,6 +3,8 @@
 
 #include <termios.h>
 
+#include "cerver/input.h"
+
 void input_clean_stdin (void) {
 
 	int c = 0;
@@ -31,7 +33,7 @@ char *input_get_line (void) {
 
 				// the offset is taken before realloc () frees the old buffer
 				const size_t offset = (size_t) (line - linep);
-				char *linen = (char *) realloc (linep, lenmax *= 2);
+				char * linen = (char *) realloc (linep, lenmax *= 2);
 
 				if (linen == NULL) {
 					free (linep);
@@ -52,31 +54,27 @@ char *input_get_line (void) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-result"
-
 unsigned int input_password (char *password) {
 
 	unsigned int retval = 1;
 
-	struct termios old_term = { 0 }, new_term = { 0 };
+	struct termios old_term = CERVER_ZERO_INITIALIZER, new_term = CERVER_ZERO_INITIALIZER;
 
 	/* Turn echoing off and fail if we can't. */
 	if (!tcgetattr (fileno (stdin), &old_term)) {
 		new_term = old_term;
 		new_term.c_lflag &= ~ECHO;
-		if (!tcsetattr (fileno (stdin), TCSAFLUSH, &new_term) != 0) {
-			(void) scanf ("%128s", password);
+		if (!tcsetattr (fileno (stdin), TCSAFLUSH, &new_term)) {
+			// the password buffer holds INPUT_PASSWORD_SIZE bytes, with its NUL
+			const int read = scanf (INPUT_PASSWORD_SCAN_FORMAT, password);
 
 			/* Restore terminal. */
 			(void) tcsetattr (fileno (stdin), TCSAFLUSH, &old_term);
 
-			retval = 0;
+			if (read == 1) retval = 0;
 		}
 	}
 
 	return retval;
 
 }
-
-#pragma GCC diagnostic pop

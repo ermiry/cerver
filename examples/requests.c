@@ -12,6 +12,8 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -29,11 +31,13 @@ typedef struct AppData {
 
 } AppData;
 
+#define APP_MESSAGE_SIZE			128
+
 // message to be sent to the client
 typedef struct AppMessage {
 
 	unsigned int len;
-	char message[128];
+	char message[APP_MESSAGE_SIZE];
 
 } AppMessage;
 
@@ -101,19 +105,22 @@ static Cerver *my_cerver = NULL;
 
 AppData *app_data = NULL;
 
-// correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
-	
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
 
-		app_data_delete (app_data);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
 
-	exit (0);
+}
+
+// the app handler releases its data with app_data_delete () when it ends
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
+
+	app_data = NULL;
 
 }
 
@@ -148,7 +155,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 
 		AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 		memset (app_message, 0, sizeof (AppMessage));
-		strncpy (app_message->message, msg->str, 128);
+		(void) snprintf (app_message->message, APP_MESSAGE_SIZE, "%s", msg->str);
 		app_message->len = msg->len;
 		
 		Packet *msg_packet = packet_generate_request (PACKET_TYPE_APP, GET_MSG, app_message, sizeof (AppMessage));
@@ -159,7 +166,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 				cerver_log_error ("Failed to send handler's message to client");
 
 			else {
-				printf ("Response packet sent: %ld\n", sent);
+				printf ("Response packet sent: %zu\n", sent);
 			}
 			
 			packet_delete (msg_packet);
@@ -181,7 +188,7 @@ static void app_packet_handler (void *data) {
 			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet); break;
 
-				case GET_MSG: handle_msg_request(packet, app_data->message); break;
+				case GET_MSG: handle_msg_request (packet, app_data->message); break;
 
 				default: 
 					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
@@ -242,7 +249,13 @@ int main (void) {
 
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 		
-		if (cerver_start (my_cerver)) {
+		app_cerver_events_register (my_cerver);
+
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				my_cerver->info->name

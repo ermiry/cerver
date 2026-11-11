@@ -59,13 +59,68 @@ static void test_cerver_base_configuration (void) {
 
 }
 
-int main (int argc, char **argv) {
+#define CERVER_INFO_FILL				'a'
+#define CERVER_INFO_PORT				7400
+
+// the info of a cerver comes from the network as a summary that its schema validates,
+// the longest texts fit in the biggest encoded summary
+static void test_cerver_deserialize (void) {
+
+	CerverSummary summary;
+	serializer_object_init (&cerver_summary_schema, &summary);
+
+	summary.type = CERVER_TYPE_CUSTOM;
+	(void) memset (summary.name, CERVER_INFO_FILL, CERVER_SUMMARY_NAME_SIZE - 1);
+	(void) memset (summary.welcome, CERVER_INFO_FILL, CERVER_SUMMARY_WELCOME_SIZE - 1);
+	summary.protocol = PROTOCOL_TCP;
+	summary.port = CERVER_INFO_PORT;
+	summary.use_ipv6 = true;
+	summary.auth_required = true;
+
+	u8 buffer[CERVER_SUMMARY_MAX_ENCODED_SIZE];
+	size_t written = 0;
+	test_check_unsigned_eq (
+		serializer_encode (&cerver_summary_schema, &summary, buffer, CERVER_SUMMARY_MAX_ENCODED_SIZE, &written),
+		SERIALIZER_RESULT_NONE, NULL
+	);
+
+	CerverSummary decoded;
+	test_check_unsigned_eq (
+		serializer_decode (&cerver_summary_schema, buffer, written, NULL, &decoded),
+		SERIALIZER_RESULT_NONE, NULL
+	);
+
+	CerverReport *report = cerver_deserialize (&decoded);
+	test_check_ptr (report);
+
+	test_check_unsigned_eq (report->name->len, CERVER_SUMMARY_NAME_SIZE - 1, NULL);
+	test_check_unsigned_eq (report->welcome->len, CERVER_SUMMARY_WELCOME_SIZE - 1, NULL);
+	test_check_true (report->use_ipv6);
+	test_check_true (report->auth_required);
+	test_check_false (report->uses_sessions);
+	test_check_unsigned_eq (report->port, CERVER_INFO_PORT, NULL);
+
+	cerver_report_delete (report);
+
+	// an empty welcome is not created
+	decoded.welcome[0] = '\0';
+	report = cerver_deserialize (&decoded);
+	test_check_ptr (report);
+	test_check_null_ptr (report->welcome);
+	cerver_report_delete (report);
+
+}
+
+int main (void) {
+
+	test_output_init ();
 
 	srand ((unsigned) time (NULL));
 
 	(void) printf ("Testing CERVER...\n");
 
 	test_cerver_base_configuration ();
+	test_cerver_deserialize ();
 
 	(void) printf ("\nDone with CERVER tests!\n\n");
 

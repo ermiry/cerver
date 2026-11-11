@@ -1,6 +1,6 @@
-ARG CERVER_VERSION=1.7
+ARG CERVER_VERSION=1.8
 
-FROM gcc as builder
+FROM gcc:16.2 as builder
 
 RUN apt-get update && apt-get install -y cmake libssl-dev
 
@@ -13,7 +13,7 @@ RUN mkdir /opt/cerver && cd /opt/cerver \
     && make TYPE=production -j4
 
 ############
-FROM ubuntu:bionic
+FROM debian:trixie-slim
 
 ARG RUNTIME_DEPS='libssl-dev'
 

@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 #include <unistd.h>
 
@@ -16,10 +15,12 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
+#include "cerver/serializer.h"
 
 #define DIRNAME_DEFAULT_SIZE			1024
 #define FILENAME_DEFAULT_SIZE			1024
 
+// the paths that the move, copy and remove methods build, with the NUL
 #define FILES_MOVE_SIZE					2048
 
 #ifdef __cplusplus
@@ -29,8 +30,9 @@ extern "C" {
 struct _Cerver;
 struct _Client;
 struct _Connection;
+struct _Packet;
 
-struct _FileHeader;
+struct FileHeader;
 
 #pragma region cerver
 
@@ -66,7 +68,7 @@ struct _FileCerver {
 
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	);
@@ -75,7 +77,7 @@ struct _FileCerver {
 		struct _Cerver *, struct _Client *, struct _Connection *,
 		const char *saved_filename
 	);
-
+	
 	FileCerverStats *stats;
 
 };
@@ -106,7 +108,7 @@ CERVER_EXPORT void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	)
@@ -158,17 +160,38 @@ CERVER_EXPORT unsigned int files_create_dir (
 	const char *dir_path, mode_t mode
 );
 
-// recursively creates all directories in dir path
+// recursively creates all directories in dir path,
+// a path that already is a directory is a success,
+// an empty path or one that does not fit in DIRNAME_DEFAULT_SIZE is an error
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
 );
 
-// moves one file from one location to another
-// returns 0 on success
+// moves a file or a directory to saved_path, or inside it if it is a directory that exists,
+// with rename (), and between file systems with a copy that is removed after it
+// returns 0 on success, 1 on error
 CERVER_EXPORT int file_move_to (
 	const char *actual_path, const char *saved_path
 );
+
+// copies a regular file with its permissions, replacing the destination if it exists,
+// a copy that fails is removed
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_copy (
+	const char *source, const char *destination
+);
+
+// copies a file, a symbolic link (without following it) or a directory with everything in it,
+// the directories of the destination can exist
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_copy_recursive (
+	const char *source, const char *destination
+);
+
+// removes a file, a symbolic link (without following it) or a directory with everything in it
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_remove_recursive (const char *path);
 
 // returns an allocated string with the file extension
 // NULL if no file extension
@@ -276,14 +299,32 @@ CERVER_EXPORT bool files_image_extension_is_png (
 
 #pragma region send
 
-struct _FileHeader {
+#define FILE_HEADER_VERSION				1
 
-	char filename[FILENAME_DEFAULT_SIZE];
-	size_t len;
+// the name and the length of a file that is sent or requested,
+// the contents of the file are sent after its packet
+#define FILE_HEADER_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)		\
+	STRING(T, 1, TEXT, filename, FILENAME_DEFAULT_SIZE, SERIALIZER_REQUIRED)		\
+	SCALAR(T, 2, U64, len, SERIALIZER_OPTIONAL, 0)
 
-};
+SERIALIZER_DECLARE (FileHeader, file_header, FILE_HEADER_FIELDS)
 
-typedef struct _FileHeader FileHeader;
+// a FileHeader that comes from a packet is used only if its filename is NUL terminated,
+// not empty, a single name (without '/') and different from "." and "..",
+// so it can not read past the header or reach a file outside of the configured paths
+CERVER_PUBLIC bool file_header_is_valid (const FileHeader *file_header);
+
+// decodes the FileHeader of a packet and validates it
+// returns true if the packet has a valid header
+CERVER_PUBLIC bool file_header_get (
+	const struct _Packet *packet, FileHeader *file_header
+);
+
+// creates a request packet ready to be sent with the FileHeader of the file
+// returns NULL on error
+CERVER_PRIVATE struct _Packet *file_header_packet_create (
+	const u32 request_type, const char *filename, const u64 len
+);
 
 // opens a file and sends its contents
 // first the FileHeader in a regular packet, then the file contents between sockets

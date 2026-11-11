@@ -15,6 +15,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -29,14 +31,19 @@ static String *filename = NULL;
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (client_cerver) {
-		cerver_stats_print (client_cerver, true, true);
-		cerver_teardown (client_cerver);
-	}
+	(void) dummy;
 
-	exit (0);
+	if (client_cerver) (void) cerver_shutdown (client_cerver);
+
+}
+
+static void finish (void) {
+
+	cerver_stats_print (client_cerver, true, true);
+	(void) cerver_teardown (client_cerver);
 
 }
 
@@ -120,7 +127,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 			}
 
 			else {
-				printf ("PACKET_TYPE_APP sent to cerver: %ld\n", sent);
+				printf ("PACKET_TYPE_APP sent to cerver: %zu\n", sent);
 				retval = 0;
 			}
 
@@ -158,9 +165,12 @@ static void send_file (Client *client, Connection *connection, const char *filen
 
 static void *cerver_client_connect_and_start (void *args) {
 
+	(void) args;
+
 	Client *client = client_create ();
 	if (client) {
 		client_set_name (client, "start-client");
+		app_client_events_register (client);
 
 		Handler *app_handler = handler_create (client_app_handler);
 		// handler_set_direct_handle (app_handler, true);
@@ -271,7 +281,13 @@ static void start (void) {
 		pthread_t client_thread = 0;
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
-		if (cerver_start (client_cerver)) {
+		app_cerver_events_register (client_cerver);
+
+		if (!cerver_start (client_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				client_cerver->info->name

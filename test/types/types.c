@@ -3,7 +3,11 @@
 
 #include "types.h"
 
-int main (int argc, char **argv) {
+#include "../test.h"
+
+int main (void) {
+
+	test_output_init ();
 
 	(void) printf ("Testing TYPES...\n");
 

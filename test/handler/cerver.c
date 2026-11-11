@@ -13,24 +13,23 @@
 
 #include <app/handler.h>
 
+#include "../test.h"
+
 static const char *cerver_name = "test-cerver";
 static const char *welcome_message = "Hello there!";
 
 static Cerver *cerver = NULL;
 
+// the cerver is released in main () when cerver_start () returns
 static void end (int dummy) {
-	
-	cerver_stats_print (cerver, true, true);
 
-	cerver_teardown (cerver);
+	(void) dummy;
 
-	cerver_end ();
-
-	exit (0);
+	(void) cerver_shutdown (cerver);
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand ((unsigned int) time (NULL));
 
@@ -50,6 +49,9 @@ int main (int argc, char **argv) {
 		CERVER_DEFAULT_CONNECTION_QUEUE
 	);
 
+	test_check_ptr (cerver);
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
+
 	/*** configuration ***/
 	cerver_set_welcome_msg (cerver, welcome_message);
 	cerver_set_receive_buffer_size (cerver, 4096);
@@ -67,12 +69,18 @@ int main (int argc, char **argv) {
 	cerver_set_app_handlers (cerver, app_packet_handler, NULL);
 
 	/*** start ***/
+	int code = 0;
 	if (cerver_start (cerver)) {
 		cerver_log_error ("Failed to start cerver!");
+		code = 1;
 	}
+
+	cerver_stats_print (cerver, true, true);
+
+	if (cerver_teardown (cerver)) code = 1;
 
 	cerver_end ();
 
-	return 0;
+	return code;
 
 }

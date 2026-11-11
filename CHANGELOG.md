@@ -1,66 +1,51 @@
 ## General
-- Added balancer cerver type & its reference in every cerver
-- Added CLIENT_STATS & CONNECTION_STATS definitions
-- Added sock fd in the packet header to route the responses
-- Added packet_route_between_connections() using a pipe
-- Added bad packets type & a method to print packet types
-- Added packet_send_unsafe() & updating the sender stats
-- Added dedicated script to remove the libcerver installation
-- Fixed stats print format warnings in game & lobby sources
-- Fixed cast function type warnings in cerver update threads
-- Added base64 & handler benchmarks with its make target
-- Added cerver documentation submodule in docs directory
-- Updated workflows with the latest actions & release action
-- Fixed bsem_reset() creating again its mutex and condition
-- Using dlist_insert_at_end() when pushing data into a pool
-- Fixed string append methods overflow & their missing NUL
-- Fixed dlist prev links, insert positions, merge sort & halves
-- Fixed AVL double rotations & removing nodes with children
-- Fixed connection delete method removing socket too early
-- Fixed sock_set_blocking() inverted flags for the poll cerver
-- Fixed auth session token copy reading past session id end
-- Sending the packet header padding zeroed in each packet
-- Sending zeroed error & file packets without heap garbage
-- Checking a NULL filename before reading the image type
-- Fixed game cerver unregister lobby removing the list start
-- Fixed game types search & removal with the player id leak
-- Using a clock name instead of a number in timer timespec
-- Fixed cerver inactive check recursing into the NULL nodes
-- Fixed lobby threads casts and the ignored custom handler
-- Fixed game scores update clamp & strings lengths in keys
-- Fixed input line offset reading the pointer freed by realloc()
-- Fixed gcc 15 unused params & sha256 parameter warning
-- Updated workflows with the actions versions for Node 24
+- Using gcc 16.2 in all of the Dockerfiles, the CI & schedules
+- Running sanitizers, valgrind, fuzz & clang in the workflows
+- Failing the CI on any warning after leaving zero in all builds
+- Added arenas, free lists & a growing htab in the collections
+- Refactored the thpool with a bounded queue, drain & stats
+- Added job queue priorities & managers that scale workers
+- Added thread groups & joined handlers without the sleeps
+- Added overload & drain policies & stopping in a fixed order
+- Added socket references, a close mutex & send deadlines
+- Supporting IPv6 in every address with zones, lists & binds
+- Added UDP cervers with peers, tokens & with the sessions
+- Sending the portable headers in network order & route ids
+- Replaced the serializer with CBOR objects read by schema
+- Recycling the sockets, connections, clients & their packets
+- Added the stats of requests, handlers & of the host values
+- Copying, removing & moving files without calling system ()
+- Not ending the receives that a signal interrupts with EINTR
+- Creating the thpool only in the cervers of the threads type
+- Creating the recursive directories that exist or are too long
+- Ending the sends with the deadline in blocking sockets too
+- Added the incompatibilities file with an entry for each beta
+
+## Connection
+- Added the connection states, send queues & reconnection
+- Trying each address that resolves with its connect timeout
+- Reading the packets of clients in the receive of the cervers
+- Authenticating with session tokens & credentials schemas
+- Closing the sockets of any connections that fail or are idle
 
 ## Balancer
-- Added a load balancer structure & its services registration
-- Added balancer_receive() to route packets to the services
-- Added services status, reconnect wait & a status callback
-- Added balancer and service stats with unhandled packets
-- Consuming data from connections if no service is available
-- Consuming the data from services on any bad packet type
-- Added routing to the services by round robin or handler id
-- Added BALANCER_DEBUG & SERVICE_DEBUG definitions
-- Sending a packet error when there is no service to route to
+- Refactored the balancer to receive & route the full packets
+- Routing the balancer responses with route ids of own slots
+- Selecting the services of a custom balancer with a method
+
+## Game
+- Rewrote the lobbies & the game requests with the objects
+- Added the lobby references, locks & the lobby poll receive
+- Added the init, the player timeout & the fps of game types
 
 ## Examples
-- Added dedicated balancer & service examples with an app
+- Stopping examples in their signals & releasing their events
+- Rewrote the game example & added a client for its lobbies
 
 ## Tests
-- Added balancer & services methods unit tests & their stats
-- Added load balancer integration tests by type & handler id
-- Fixed htab unit tests double free when inserting final value
-- Fixed dlist unit tests race condition when reading dlist end
-- Removed an overflowing case from c string copy unit tests
-- Fixed packets unit tests checking binary data with strlen ()
-- Added collections unit tests helper to check the dlist links
-- Added dlist unit tests checking invariants after any change
-- Added AVL unit tests with random values & balance check
-- Registering the new collections unit tests in tests main file
-- Added packet header padding unit test with zeroed bytes
-- Checking the NUL at the end in all string append unit tests
-- Added network unit tests checking socket blocking modes
-- Registering the network unit tests in makefile & tests script
-- Added game unit tests with game types, players & lobbies
-- Registering the game unit tests in makefile & the run script
-- Removed unused bmp & gif extensions from files unit tests
+- Added integration pairs of every example in IPv4 & in IPv6
+- Added scripts to repeat tests, fuzz & count the allocations
+- Added unit tests of collections, threads, sockets & buffers
+- Added UDP, serializer, balancer & game tests & their pairs
+- Added fuzzers of the receive, headers, objects & of games
+- Added a protocol stress of a cerver & of concurrent clients

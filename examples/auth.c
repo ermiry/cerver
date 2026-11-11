@@ -13,6 +13,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0
@@ -31,16 +33,19 @@ static Cerver *my_cerver = NULL;
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
-	
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
-	}
 
-	cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
+
+}
+
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
 
 }
 
@@ -197,6 +202,8 @@ static void *on_hold_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -214,6 +221,8 @@ static void *on_hold_disconnected (void *event_data_ptr) {
 			"An on hold connection disconnected in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -231,6 +240,8 @@ static void *on_hold_drop (void *event_data_ptr) {
 			"An on hold connection was dropped in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -245,11 +256,13 @@ static void *on_client_success_auth (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
-			"Client %ld authenticated connection with sock fd %d to cerver %s!\n",
+			"Client %lu authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -268,6 +281,8 @@ static void *on_client_failed_auth (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -282,11 +297,13 @@ static void *on_client_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
-			"Client %ld connected with sock fd %d to cerver %s!\n",
+			"Client %lu connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -304,6 +321,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -415,7 +434,13 @@ int main (void) {
 			false, false
 		);
 
-		if (cerver_start (my_cerver)) {
+		app_cerver_events_register (my_cerver);
+
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				my_cerver->info->name

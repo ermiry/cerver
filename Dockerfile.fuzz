@@ -1,0 +1,12 @@
+FROM debian:trixie
+
+RUN apt-get update && apt-get install -y clang libclang-rt-dev make && apt-get clean
+
+ARG WERROR=1
+
+WORKDIR /opt/cerver
+
+COPY . .
+RUN make TYPE=test CC=clang WERROR=${WERROR} -j4 fuzz
+
+CMD ["bash", "test/fuzz.sh"]

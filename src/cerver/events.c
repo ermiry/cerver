@@ -11,6 +11,8 @@
 #include "cerver/connection.h"
 #include "cerver/events.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/threads/thread.h"
 
 u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type);
@@ -43,6 +45,8 @@ static CerverEventData *cerver_event_data_new (void) {
 		event_data->client = NULL;
 		event_data->connection = NULL;
 
+		event_data->lobby = NULL;
+
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
 	}
@@ -53,14 +57,18 @@ static CerverEventData *cerver_event_data_new (void) {
 
 void cerver_event_data_delete (CerverEventData *event_data) {
 
-	if (event_data) free (event_data);
+	if (event_data) {
+		lobby_release (event_data->lobby);
+
+		free (event_data);
+	}
 
 }
 
 static CerverEventData *cerver_event_data_create (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
-	CerverEvent *event
+	Lobby *lobby, CerverEvent *event
 ) {
 
 	CerverEventData *event_data = cerver_event_data_new ();
@@ -69,6 +77,8 @@ static CerverEventData *cerver_event_data_create (
 
 		event_data->client = client;
 		event_data->connection = connection;
+
+		event_data->lobby = lobby_reference (lobby);
 
 		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
@@ -183,20 +193,32 @@ void cerver_event_trigger (
 	const Client *client, const Connection *connection
 ) {
 
+	cerver_event_trigger_lobby (event_type, cerver, client, connection, NULL);
+
+}
+
+// triggers the actions of a lobby event, the event data keeps a reference to the lobby
+void cerver_event_trigger_lobby (
+	const CerverEventType event_type,
+	const Cerver *cerver,
+	const Client *client, const Connection *connection,
+	Lobby *lobby
+) {
+
 	if (cerver) {
 		CerverEvent *event = cerver->events[event_type];
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				// the thread is counted, so the cerver teardown waits for it
 				if (event->create_thread) {
-					pthread_t thread_id = 0;
-					(void) thread_create_detachable (
-						&thread_id,
+					(void) thread_group_create (
+						(ThreadGroup *) &cerver->event_threads,
 						event->work,
 						cerver_event_data_create (
 							cerver,
 							client, connection,
-							event
+							lobby, event
 						)
 					);
 				}
@@ -205,7 +227,7 @@ void cerver_event_trigger (
 					(void) event->work (cerver_event_data_create (
 						cerver,
 						client, connection,
-						event
+						lobby, event
 					));
 				}
 

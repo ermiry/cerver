@@ -9,4 +9,12 @@ extern void utils_tests_math (void);
 
 extern void utils_tests_sha256 (void);
 
+extern void utils_tests_timer (void);
+
+extern void utils_tests_serializer (void);
+
+extern void utils_tests_log (void);
+
+extern void utils_tests_histogram (void);
+
 #endif

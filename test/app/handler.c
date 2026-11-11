@@ -37,14 +37,19 @@ static void app_handler_test (const Packet *packet) {
 
 		.header = (PacketHeader) {
 			.packet_type = PACKET_TYPE_APP,
-			.packet_size = sizeof (PacketHeader),
+			.packet_size = PACKET_HEADER_SIZE,
 
 			.handler_id = 0,
+			.flags = 0,
 
 			.request_type = APP_REQUEST_TEST,
 
-			.sock_fd = packet->header.sock_fd,
+			.route_id = packet->header.route_id,
+
+			.version = packet_version_local ()
 		},
+
+		.encoded_header = { 0 },
 
 		.version = (PacketVersion) {
 			.protocol_id = 0,
@@ -54,9 +59,16 @@ static void app_handler_test (const Packet *packet) {
 			}
 		},
 
-		.packet_size = sizeof (PacketHeader),
-		.packet = &response.header,
-		.packet_ref = false
+		// the header is encoded from the packet when it is sent
+		.packet_size = PACKET_HEADER_SIZE,
+		.packet = response.encoded_header,
+		.packet_ref = false,
+
+		.release = NULL,
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	size_t sent = 0;
@@ -66,41 +78,31 @@ static void app_handler_test (const Packet *packet) {
 
 // echo the same message back
 static void app_handler_message (const Packet *packet) {
-	
-	AppMessage *app_message = (AppMessage *) (char *) packet->data;
 
-	Packet *response = packet_new ();
-
-	// generate the packet
-	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	response->packet = malloc (packet_len);
-	response->packet_size = packet_len;
-
-	char *end = (char *) response->packet;
-	PacketHeader *header = (PacketHeader *) end;
-	header->packet_type = PACKET_TYPE_APP;
-	header->packet_size = packet_len;
-
-	header->request_type = APP_REQUEST_MESSAGE;
-
-	header->sock_fd = packet->header.sock_fd;
-
-	end += sizeof (PacketHeader);
-
-	// print the client's message
-	// #ifdef EXAMPLE_APP_DEBUG
-	// (void) printf ("|%s|\n", end);
-	// #endif
-
-	AppMessage *original_app_message = (AppMessage *) end;
-	if (strcmp (MESSAGE, original_app_message->message)) {
+	if (!packet->data || (packet->data_size < sizeof (AppMessage))) {
 		cerver_log_error (
-			"Message [%lu] mismatch!",
-			original_app_message->id
+			"Message packet of %lu bytes is too small!", packet->data_size
 		);
+
+		return;
 	}
 
-	(void) memcpy (end, app_message, sizeof (AppMessage));
+	AppMessage *app_message = (AppMessage *) (char *) packet->data;
+
+	if (strncmp (MESSAGE, app_message->message, APP_MESSAGE_LEN)) {
+		cerver_log_error ("Message [%lu] mismatch!", app_message->id);
+	}
+
+	Packet *response = packet_create (
+		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
+		app_message, sizeof (AppMessage)
+	);
+
+	if (!response) return;
+
+	// the response goes back through the route of the balancer
+	response->header.route_id = packet->header.route_id;
+	(void) packet_generate (response);
 
 	// send the packet
 	packet_set_network_values (

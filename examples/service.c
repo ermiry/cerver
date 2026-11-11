@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include <time.h>
@@ -7,29 +8,39 @@
 
 #include <cerver/cerver.h>
 #include <cerver/events.h>
-#include <cerver/timer.h>
+#include <cerver/handler.h>
 #include <cerver/version.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
 #include <app/app.h>
+#include <app/events.h>
 #include <app/handler.h>
+
+#define SERVICE_DEFAULT_PORT			7000
+#define SERVICE_CONNECTION_QUEUE		2
+#define SERVICE_RECEIVE_BUFFER_SIZE		4096
+#define SERVICE_THREADS					4
 
 static Cerver *my_cerver = NULL;
 
 #pragma region end
 
+// correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
 
 }
 
@@ -48,6 +59,8 @@ static void *on_cever_started (void *event_data_ptr) {
 			"Cerver %s has started!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -65,6 +78,8 @@ static void *on_cever_teardown (void *event_data_ptr) {
 			"Cerver %s is going to be destroyed!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -79,11 +94,13 @@ static void *on_client_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
-			"Client %ld connected with sock fd %d to cerver %s!\n",
+			"Client %lu connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -101,9 +118,43 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
+
+}
+
+static void register_events (void) {
+
+	(void) cerver_event_register (
+		my_cerver,
+		CERVER_EVENT_STARTED,
+		on_cever_started, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		my_cerver,
+		CERVER_EVENT_TEARDOWN,
+		on_cever_teardown, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		my_cerver,
+		CERVER_EVENT_CLIENT_CONNECTED,
+		on_client_connected, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		my_cerver,
+		CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+		on_client_close_connection, NULL, NULL,
+		false, false
+	);
 
 }
 
@@ -113,7 +164,7 @@ static void *on_client_close_connection (void *event_data_ptr) {
 
 static u16 get_port (int argc, char **argv) {
 
-	u16 port = 7000;
+	u16 port = SERVICE_DEFAULT_PORT;
 	if (argc > 1) {
 		int j = 0;
 		const char *curr_arg = NULL;
@@ -123,16 +174,14 @@ static u16 get_port (int argc, char **argv) {
 			// port
 			if (!strcmp (curr_arg, "-p")) {
 				j = i + 1;
-				if (j <= argc) {
+				if (j < argc) {
 					port = (u16) atoi (argv[j]);
 					i++;
 				}
 			}
 
 			else {
-				cerver_log_warning (
-					"Unknown argument: %s", curr_arg
-				);
+				cerver_log_warning ("Unknown argument: %s", curr_arg);
 			}
 		}
 	}
@@ -147,7 +196,6 @@ int main (int argc, char **argv) {
 
 	(void) signal (SIGINT, end);
 	(void) signal (SIGTERM, end);
-	(void) signal (SIGKILL, end);
 
 	(void) signal (SIGPIPE, SIG_IGN);
 
@@ -157,7 +205,7 @@ int main (int argc, char **argv) {
 	cerver_version_print_full ();
 	cerver_log_line_break ();
 
-	cerver_log_debug ("Simple Test Message Example");
+	cerver_log_debug ("Load Balancer Service Example");
 	cerver_log_line_break ();
 	cerver_log_debug ("Single app handler with direct handle option enabled");
 	cerver_log_line_break ();
@@ -168,20 +216,15 @@ int main (int argc, char **argv) {
 		get_port (argc, argv),
 		PROTOCOL_TCP,
 		false,
-		2
+		SERVICE_CONNECTION_QUEUE
 	);
-	
+
 	if (my_cerver) {
-		cerver_set_welcome_msg (
-			my_cerver, "Welcome - Simple Test Message Example"
-		);
+		cerver_set_welcome_msg (my_cerver, "Welcome - Load Balancer Service Example");
 
 		/*** cerver configuration ***/
-		cerver_set_receive_buffer_size (my_cerver, 4096);
-		cerver_set_thpool_n_threads (my_cerver, 4);
-
-		// cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
-		// cerver_set_poll_time_out (my_cerver, 2000);
+		cerver_set_receive_buffer_size (my_cerver, SERVICE_RECEIVE_BUFFER_SIZE);
+		cerver_set_thpool_n_threads (my_cerver, SERVICE_THREADS);
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
 
@@ -191,48 +234,23 @@ int main (int argc, char **argv) {
 		handler_set_direct_handle (app_packet_handler, true);
 		cerver_set_app_handlers (my_cerver, app_packet_handler, NULL);
 
-		(void) cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_STARTED,
-			on_cever_started, NULL, NULL,
-			false, false
-		);
+		register_events ();
 
-		(void) cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_TEARDOWN,
-			on_cever_teardown, NULL, NULL,
-			false, false
-		);
+		app_cerver_events_register (my_cerver);
 
-		(void) cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_CLIENT_CONNECTED,
-			on_client_connected, NULL, NULL,
-			false, false
-		);
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
 
-		(void) cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
-			on_client_close_connection, NULL, NULL,
-			false, false
-		);
+		else {
+			cerver_log_error ("Failed to start %s!", my_cerver->info->name);
 
-		if (cerver_start (my_cerver)) {
-			cerver_log_error (
-				"Failed to start %s!",
-				my_cerver->info->name
-			);
-
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (my_cerver);
 	}
 
 	cerver_end ();

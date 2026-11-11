@@ -10,7 +10,9 @@
 
 static const char *client_name = { "test-client" };
 
-int main (int argc, const char **argv) {
+int main (void) {
+
+	test_output_init ();
 
 	(void) printf ("Testing CLIENT queue...\n");
 
@@ -23,7 +25,7 @@ int main (int argc, const char **argv) {
 	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	Connection *connection = client_connection_create (
-		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
+		client, test_address (), 7000, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (connection);
@@ -56,14 +58,17 @@ int main (int argc, const char **argv) {
 	}
 
 	/*** check ***/
-	(void) sleep (3);
-
-	// check that we received matching responses
+	// the responses are counted by the update thread
 	test_check_unsigned_eq (
-		client->stats->received_packets->n_test_packets,
+		test_wait_counter_64 (
+			&client->stats->received_packets->n_test_packets,
+			n_sent_packets, TEST_WAIT_SECONDS
+		),
 		n_sent_packets,
 		NULL
 	);
+
+	test_check_int_eq (connection_get_state (connection), CONNECTION_STATE_WORKING, NULL);
 
 	/*** end **/
 	client_connection_end (client, connection);

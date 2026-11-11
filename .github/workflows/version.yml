@@ -10,16 +10,17 @@ on:
       - '*beta'
       - 'master'
 
+env:
+  WERROR: 1
+
 jobs:
   build:
     name: Cerver build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
       - name: gcc make
         run: make

@@ -40,7 +40,7 @@ static void app_handler (void *packet_ptr) {
 			case APP_REQUEST_TEST: break;
 
 			case APP_REQUEST_MESSAGE: {
-				responses += 1;
+				test_counter_add (&responses);
 
 				AppMessage *app_message = (AppMessage *) (char *) packet->data;
 
@@ -75,18 +75,23 @@ static void send_app_message (
 	test_check_ptr (message);
 
 	// generate the packet
-	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	message->packet = malloc (packet_len);
+	size_t packet_len = PACKET_HEADER_SIZE + sizeof (AppMessage);
+	message->packet = calloc (1, packet_len);
 	message->packet_size = packet_len;
 
+	PacketHeader header;
+	(void) memset (&header, 0, sizeof (PacketHeader));
+	header.packet_type = PACKET_TYPE_APP;
+	header.packet_size = packet_len;
+
+	header.request_type = APP_REQUEST_MESSAGE;
+
+	header.version = packet_version_local ();
+
 	char *end = (char *) message->packet;
-	PacketHeader *header = (PacketHeader *) end;
-	header->packet_type = PACKET_TYPE_APP;
-	header->packet_size = packet_len;
+	packet_header_encode (&header, (u8 *) end);
 
-	header->request_type = APP_REQUEST_MESSAGE;
-
-	end += sizeof (PacketHeader);
+	end += PACKET_HEADER_SIZE;
 
 	app_message_create_internal (
 		(AppMessage *) end, id, msg
@@ -111,11 +116,13 @@ static void send_app_message (
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) signal (SIGPIPE, SIG_IGN);
 
 	MESSAGE_LEN = strlen (MESSAGE);
+
+	test_output_init ();
 
 	(void) printf ("Testing CLIENT load...\n");
 
@@ -132,7 +139,7 @@ int main (int argc, const char **argv) {
 	client_set_app_handlers (client, app_packet_handler, NULL);
 
 	connection = client_connection_create (
-		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
+		client, test_address (), 7000, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (connection);
@@ -147,7 +154,7 @@ int main (int argc, const char **argv) {
 	/*** send **/
 	unsigned int n_sent_packets = 0;
 
-	register size_t i = 0;
+	size_t i = 0;
 	for (; i < REQUESTS; i++) {
 		// (void) printf ("Sending: %lu...\n", i);
 
@@ -162,26 +169,19 @@ int main (int argc, const char **argv) {
 		usleep (1000);
 	}
 
-	// wait for any response to arrive
+	// wait for every response to arrive
 	(void) printf ("Waiting...\n");
-	(void) sleep (4);
+	const unsigned int received = test_wait_counter (&responses, n_sent_packets, TEST_WAIT_SECONDS);
 
 	/*** check ***/
-	// check that we received matching responses
-	// test_check_unsigned_eq (
-	// 	client->stats->received_packets->n_test_packets,
-	// 	n_sent_packets,
-	// 	NULL
-	// );
-
 	(void) printf (
-		"\n\n%lu responses / %lu requests received!\n\n",
-		responses, n_sent_packets
+		"\n\n%u responses / %u requests received!\n\n",
+		received, n_sent_packets
 	);
 
 	test_check_unsigned_eq (
 		n_sent_packets,
-		responses,
+		received,
 		NULL
 	);
 

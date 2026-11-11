@@ -28,7 +28,7 @@
 #define ADMIN_CERVER_DEFAULT_CHECK_PACKETS				false
 
 #define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
-#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
+#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS	1
 
 #ifdef __cplusplus
 extern "C" {
@@ -254,10 +254,9 @@ CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 	AdminCerver *admin_cerver, u8 max_admin_connections
 );
 
-// sets the mac number of packets to tolerate before dropping an admin connection
-// n_bad_packets_limit for NON auth admins
-// n_bad_packets_limit_auth for authenticated clients
-// -1 to use defaults (5 and 20)
+// sets the max number of bad packets to tolerate before dropping an admin connection,
+// a bad packet fails packet_check () or has an unknown type, and its sender gets a CERVER_ERROR_PACKET_ERROR
+// 0 or less to use the default ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS
 CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
 	AdminCerver *admin_cerver, i32 n_bad_packets_limit
 );

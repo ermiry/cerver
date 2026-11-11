@@ -48,9 +48,11 @@ float lerp (
 
 }
 
+#define UTILS_FLOAT_COMPARE_TOLERANCE		0.00001f
+
 bool float_compare (const float f1, const float f2) {
 
-	return fabs (f1 - f2) < 0.00001;
+	return fabsf (f1 - f2) < UTILS_FLOAT_COMPARE_TOLERANCE;
 
 }
 
@@ -237,7 +239,8 @@ char *c_string_create (const char *format, ...) {
 		va_list args;
 		va_start (args, format);
 
-		vasprintf (&result, format, args);
+		// the result is undefined when vasprintf () fails
+		if (vasprintf (&result, format, args) < 0) result = NULL;
 
 		va_end (args);
 	}
@@ -467,7 +470,7 @@ char *c_string_strip_quotes (char *str) {
 
 	if (*str == 0) return str;
 
-	char *end = str + strlen(str) - 1;
+	char *end = str + strlen (str) - 1;
 	while (end > str && is_quote (*end)) end--;
 
 	*(end + 1) = 0;
@@ -498,7 +501,7 @@ char *c_string_find_sub_in_len (
 	for (i = 0; i <= (int) (len - needle_len); i++) {
 		if (
 			(haystack[0] == needle[0]) &&
-			(0 == strncmp(haystack, needle, needle_len))
+			(0 == strncmp (haystack, needle, needle_len))
 		)
 			return (char *) haystack;
 

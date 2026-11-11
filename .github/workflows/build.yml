@@ -10,10 +10,14 @@ on:
       - 'master'
       - '*beta'
 
+env:
+  WERROR: 1
+
 jobs:
   build:
     name: Cerver build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -43,24 +47,104 @@ jobs:
     name: Cerver tests
     needs: build
     runs-on: ubuntu-latest
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
       - uses: actions/checkout@v6
 
-      - name: Get Shared Library
-        uses: actions/download-artifact@v8
-        with:
-          name: cerver-lib
-          path: ./bin
-
+      - name: gcc library
+        run: make TYPE=test
       - name: gcc tests
-        run: make test
+        run: make TYPE=test test
       - name: gcc run tests
         run: bash test/run.sh
 
-      - name: clear
-        run: make clear
+      - name: clean
+        run: make clean
 
+      - name: g++ library
+        run: make TYPE=test CC=g++
       - name: g++ tests
-        run: make CC=g++ test
+        run: make TYPE=test CC=g++ test
       - name: g++ run tests
         run: bash test/run.sh
+
+  clang:
+    name: Cerver build & tests with clang
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y clang make
+
+      - name: System Information
+        run: clang --version
+
+      - name: clang library
+        run: make CC=clang
+      - name: clang examples
+        run: make CC=clang examples
+
+      - name: clean
+        run: make clean
+
+      - name: clang test library
+        run: make TYPE=test CC=clang
+      - name: clang tests
+        run: make TYPE=test CC=clang test
+      - name: clang run tests
+        run: bash test/run.sh
+
+  valgrind:
+    name: Cerver tests with valgrind
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y valgrind
+
+      - name: Library
+        run: make TYPE=test
+      - name: Tests
+        run: make TYPE=test test
+
+      - name: Run tests
+        env:
+          RUNNER: valgrind --error-exitcode=1 --leak-check=full --errors-for-leak-kinds=definite,indirect --quiet
+        run: bash test/run.sh
+
+  sanitizers:
+    name: Cerver tests with ${{ matrix.sanitizer }} sanitizer
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, thread]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Disable address randomization
+        if: matrix.sanitizer == 'thread'
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Run tests
+        run: |
+          docker run --rm -v "$PWD":/opt/cerver -w /opt/cerver \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+            -e ASAN_OPTIONS=detect_leaks=1 \
+            -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+            -e TSAN_OPTIONS=halt_on_error=1 \
+            -e WERROR \
+            gcc:16.2 bash -c 'make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'

@@ -51,7 +51,7 @@ double timer_elapsed_time (TimeSpec *start, TimeSpec *end) {
 
 void timer_sleep_for_seconds (double seconds) {
 
-	TimeSpec timespc = { 0 };
+	TimeSpec timespc = CERVER_ZERO_INITIALIZER;
 	timespc.tv_sec = (time_t) seconds;
 	timespc.tv_nsec = (long) ((seconds - timespc.tv_sec) * 1e+9);
 
@@ -64,7 +64,7 @@ void timer_sleep_for_seconds (double seconds) {
 
 double timer_get_current_time (void) {
 
-	struct timeval time = { 0 };
+	struct timeval time = CERVER_ZERO_INITIALIZER;
 	return !gettimeofday (&time, NULL) ?
 		(double) time.tv_sec + (double) time.tv_usec * .000001 : 0;
 

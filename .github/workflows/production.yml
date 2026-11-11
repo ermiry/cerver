@@ -8,11 +8,15 @@ on:
     branches:
       - 'master'
 
+env:
+  WERROR: 1
+
 jobs:
   build:
     # build sources with production flags
     name: Cerver production build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v6
 
@@ -39,6 +43,7 @@ jobs:
     name: Cerver production tests
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v6
 

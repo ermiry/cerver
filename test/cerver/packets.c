@@ -20,17 +20,16 @@ static const char *welcome_message = "Hello there!";
 
 static Cerver *cerver = NULL;
 
+// the cerver is released in main () when cerver_start () returns
 static void end (int dummy) {
-	
-	cerver_teardown (cerver);
 
-	// cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	(void) cerver_shutdown (cerver);
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand ((unsigned int) time (NULL));
 
@@ -56,6 +55,8 @@ int main (int argc, char **argv) {
 	test_check_int_eq (cerver->protocol, PROTOCOL_TCP, NULL);
 	test_check_bool_eq (cerver->use_ipv6, false, NULL);
 	test_check_int_eq (cerver->connection_queue, CERVER_DEFAULT_CONNECTION_QUEUE, NULL);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 
 	cerver_set_welcome_msg (cerver, welcome_message);
 	test_check_str_eq (cerver->info->welcome, welcome_message, NULL);
@@ -105,6 +106,8 @@ int main (int argc, char **argv) {
 	test_check_unsigned_eq (
 		cerver_start (cerver), 0, "Failed to start cerver!"
 	);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
 	return 0;
 

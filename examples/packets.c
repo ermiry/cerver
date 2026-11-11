@@ -15,6 +15,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 static Cerver *my_cerver = NULL;
 
 #pragma region app
@@ -22,7 +24,7 @@ static Cerver *my_cerver = NULL;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-#define APP_MESSAGE_SIZE			512
+#define APP_MESSAGE_LEN			512
 
 typedef enum AppRequest {
 
@@ -36,7 +38,7 @@ typedef struct AppData {
 
 	time_t timestamp;
 	size_t message_len;
-	char message[APP_MESSAGE_SIZE];
+	char message[APP_MESSAGE_LEN];
 
 } AppData;
 
@@ -65,7 +67,7 @@ static AppData *app_data_create (const char *message) {
 
 		if (message) {
 			app_data->message_len = strlen (message);
-			strncpy (app_data->message, message, APP_MESSAGE_SIZE);
+			strncpy (app_data->message, message, APP_MESSAGE_LEN);
 		}
 	}
 
@@ -82,7 +84,7 @@ static void app_data_print (AppData *app_data) {
 			str_delete (date);
 		}
 
-		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+		printf ("Message (%zu): %s\n", app_data->message_len, app_data->message);
 	}
 
 }
@@ -94,16 +96,19 @@ static void app_data_print (AppData *app_data) {
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
 
 }
 
@@ -156,7 +161,7 @@ static void handle_multi_message (Packet *packet) {
 		AppData *app_data = NULL;
 		for (u32 i = 0; i < 5; i++) {
 			app_data = (AppData *) end;
-			printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+			printf ("Message (%zu): %s\n", app_data->message_len, app_data->message);
 			printf ("\n");
 
 			end += sizeof (AppData);
@@ -195,11 +200,13 @@ static void *on_client_connected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		printf (
-			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+			"\nClient %lu connected with sock fd %d to cerver %s!\n\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -215,6 +222,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"\nA client closed a connection to cerver %s!\n\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -285,7 +294,13 @@ int main (void) {
 			false, false
 		);
 
-		if (cerver_start (my_cerver)) {
+		app_cerver_events_register (my_cerver);
+
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				my_cerver->info->name

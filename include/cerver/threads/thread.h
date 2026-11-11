@@ -1,6 +1,7 @@
 #ifndef _CERVER_THREADS_H_
 #define _CERVER_THREADS_H_
 
+#include <time.h>
 #include <pthread.h>
 
 #include "cerver/types/types.h"
@@ -17,16 +18,66 @@ extern "C" {
 
 #pragma region threads
 
-// creates a custom detachable thread (will go away on its own upon completion)
+// every thread created by cerver blocks SIGINT and SIGTERM,
+// so the process signals are always delivered to the main thread
+
+// creates a joinable thread that must be joined with pthread_join ()
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 thread_create_detachable (
-	pthread_t *thread,
+CERVER_PUBLIC unsigned int thread_create_joinable (
+	pthread_t *thread, void *(*work) (void *), void *args
+);
+
+// creates a custom detached thread
+// the thread will go away on its own upon completion
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int thread_create_detachable (
+	pthread_t *thread, void *(*work) (void *), void *args
+);
+
+CERVER_PUBLIC pthread_t thread_create_detached (
 	void *(*work) (void *), void *args
 );
 
 // sets thread name from inisde it
 CERVER_PUBLIC unsigned int thread_set_name (
 	const char *name, ...
+) CERVER_PRINTF_FORMAT (1, 2);
+
+#pragma endregion
+
+#pragma region group
+
+#define THREAD_GROUP_WAIT_FOREVER		0
+
+// counts the detached threads that use the data of an owner (a cerver or a client),
+// so its teardown waits for them before the data is released
+typedef struct ThreadGroup {
+
+	unsigned int alive;
+
+	pthread_mutex_t mutex;
+	pthread_cond_t ended;
+
+} ThreadGroup;
+
+CERVER_PRIVATE void thread_group_init (ThreadGroup *group);
+
+CERVER_PRIVATE void thread_group_end (ThreadGroup *group);
+
+// creates a detached thread that is counted in the group until its work returns
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int thread_group_create (
+	ThreadGroup *group, void *(*work) (void *), void *args
+);
+
+// returns the number of threads of the group that are alive
+CERVER_PRIVATE unsigned int thread_group_alive (ThreadGroup *group);
+
+// waits until every thread of the group has ended,
+// or until the timeout in seconds passes (THREAD_GROUP_WAIT_FOREVER waits for them)
+// returns the number of threads that are still alive
+CERVER_PRIVATE unsigned int thread_group_wait (
+	ThreadGroup *group, const time_t timeout
 );
 
 #pragma endregion

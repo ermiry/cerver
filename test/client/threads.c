@@ -23,7 +23,7 @@ static void app_handler (void *packet_ptr) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:
-				responses += 1;
+				test_counter_add (&responses);
 				break;
 
 			case APP_REQUEST_MESSAGE: break;
@@ -36,7 +36,7 @@ static void app_handler (void *packet_ptr) {
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT threads...\n");
 
@@ -55,7 +55,7 @@ int main (int argc, const char **argv) {
 
 	/*** connection ***/
 	Connection *connection = client_connection_create (
-		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
+		client, test_address (), 7000, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (connection);
@@ -91,12 +91,12 @@ int main (int argc, const char **argv) {
 		}
 	}
 
-	// wait for any response to arrive
-	(void) sleep (2);
-
 	/*** check ***/
-	// check that we have received all the responses
-	test_check_unsigned_eq (responses, REQUESTS, NULL);
+	// wait until every response has arrived
+	test_check_unsigned_eq (
+		test_wait_counter (&responses, REQUESTS, TEST_WAIT_SECONDS),
+		REQUESTS, NULL
+	);
 
 	/*** end ***/
 	client_connection_end (client, connection);

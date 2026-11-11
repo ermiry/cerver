@@ -493,7 +493,7 @@ static void avl_treat_right_reduction (
 						*flag = 1;
 					} break;
 					case 0: {
-						avl_right_rotation(parent);
+						avl_right_rotation (parent);
 						(*parent)->balance = 1;
 						(*parent)->right->balance = -1;
 						*flag = 0;

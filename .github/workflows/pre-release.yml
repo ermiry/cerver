@@ -17,6 +17,16 @@ jobs:
         id: get_version
         run: echo "version=$(cat version.txt)" >> "$GITHUB_OUTPUT"
 
+      - name: Release names
+        id: names
+        run: |
+          case "${{ github.ref_name }}" in
+            http-beta)    echo "title=HTTP Beta"    >> "$GITHUB_OUTPUT"; echo "moving=beta"         >> "$GITHUB_OUTPUT" ;;
+            nightly-beta) echo "title=Nightly Beta" >> "$GITHUB_OUTPUT"; echo "moving=nightly-beta" >> "$GITHUB_OUTPUT" ;;
+            beta)         echo "title=Beta"         >> "$GITHUB_OUTPUT"; echo "moving=core-beta"    >> "$GITHUB_OUTPUT" ;;
+            *)            echo "title=Beta"         >> "$GITHUB_OUTPUT"; echo "moving="             >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Read changelog
         id: get_changes
         run: |
@@ -34,7 +44,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ steps.get_version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Beta ${{ steps.get_version.outputs.version }}
+          name: ${{ steps.names.outputs.title }} ${{ steps.get_version.outputs.version }}
           body: ${{ steps.get_changes.outputs.changes }}
           draft: false
           prerelease: true

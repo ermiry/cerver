@@ -3,8 +3,31 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <time.h>
+
+// setvbuf () allocates the buffer with its default size
+#define TEST_OUTPUT_DEFAULT_BUFFER_SIZE		0
+
+// stdout is buffered by lines even in a pipe, so a test that is killed
+// (alarm, deadline or crash) still shows how far it went
+static inline void test_output_init (void) {
+
+	(void) setvbuf (stdout, NULL, _IOLBF, TEST_OUTPUT_DEFAULT_BUFFER_SIZE);
+
+}
 
 #define where (void) fprintf (stderr, "%s:%d -> ", __FILE__, __LINE__)
+
+// runs a test after it prints its name, so a failure shows which test it was
+#define						\
+	test_run(test)			\
+	({						\
+		(void) printf (		\
+			"\t%s\n", #test	\
+		);					\
+		test ();			\
+	})
 
 #define											\
 	fail(msg) 									\
@@ -36,7 +59,7 @@
 #define																\
 	test_check_ptr(ptr)												\
 	({																\
-		if (!ptr) {													\
+		if (!(ptr)) {												\
 			where;													\
 			(void) fprintf (stderr, "Pointer is NULL!");			\
 			exit (1);												\
@@ -46,7 +69,7 @@
 #define																\
 	test_check_null_ptr(ptr)										\
 	({																\
-		if (ptr) {													\
+		if ((ptr)) {												\
 			where;													\
 			(void) fprintf (stderr, "Pointer is NOT NULL!");		\
 			exit (1);												\
@@ -56,7 +79,7 @@
 #define																\
 	test_check_true(value)											\
 	({																\
-		if (!value) {												\
+		if (!(value)) {												\
 			where;													\
 			(void) fprintf (stderr, "Value is NOT true!");			\
 			exit (1);												\
@@ -66,7 +89,7 @@
 #define																\
 	test_check_false(value)											\
 	({																\
-		if (value) {												\
+		if ((value)) {												\
 			where;													\
 			(void) fprintf (stderr, "Value is NOT false!");			\
 			exit (1);												\
@@ -76,12 +99,13 @@
 #define																\
 	test_check_bool_eq(value, expected, msg)						\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
 				"BOOL %d does not match %d\n",						\
-				value, expected										\
+				(int) (test_value), (int) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -89,15 +113,18 @@
 		}															\
 	})
 
+// the value is evaluated once, so a check of a call with side effects runs it once
 #define																\
 	test_check_unsigned_eq(value, expected, msg)					\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"UNSIGNED %d does not match %d\n",					\
-				value, expected										\
+				"UNSIGNED %llu does not match %llu\n",				\
+				(unsigned long long) (test_value),					\
+				(unsigned long long) (expected)						\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -112,12 +139,13 @@
 #define																\
 	test_check_int_eq(value, expected, msg)							\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"INTEGER %d does not match %d\n",					\
-				value, expected										\
+				"INTEGER %lld does not match %lld\n",				\
+				(long long) (test_value), (long long) (expected)	\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -132,12 +160,13 @@
 #define																\
 	test_check_long_int_eq(value, expected, msg)					\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"INTEGER %ld does not match %ld\n",					\
-				value, expected										\
+				"INTEGER %lld does not match %lld\n",				\
+				(long long) (test_value), (long long) (expected)	\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -148,12 +177,13 @@
 #define																\
 	test_check_str_eq(value, expected, msg)							\
 	({																\
-		if (strcmp ((char *) value, (char *) expected)) {			\
+		const char *test_value = (const char *) (value);			\
+		if (strcmp (test_value, (const char *) (expected))) {		\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
 				"STRING %s does not match %s\n",					\
-				(char *) value, (char *) expected					\
+				test_value, (const char *) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -168,8 +198,8 @@
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"STRING %s LEN does not match %d\n",				\
-				(char *) string, expected							\
+				"STRING %s LEN does not match %zu\n",				\
+				(char *) string, (size_t) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -191,5 +221,81 @@
 			exit (1);												\
 		}															\
 	})
+
+#define TEST_DOUBLE_TOLERANCE				0.000001
+
+// compares two doubles within TEST_DOUBLE_TOLERANCE, without an exact comparison
+static inline int test_double_equal (const double value, const double expected) {
+
+	const double difference = value - expected;
+
+	return (difference < TEST_DOUBLE_TOLERANCE) && (difference > -TEST_DOUBLE_TOLERANCE);
+
+}
+
+#pragma region wait
+
+#define TEST_WAIT_SECONDS					16
+#define TEST_WAIT_POLL_NANOSECONDS			1000000L
+#define TEST_WAIT_NANOSECONDS				1000000000L
+
+static inline double test_wait_now (void) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return (double) now.tv_sec + ((double) now.tv_nsec / (double) TEST_WAIT_NANOSECONDS);
+
+}
+
+// waits until the counter, updated by other threads, reaches the expected value
+// returns the last value that was read
+static inline unsigned int test_wait_counter (
+	const unsigned int *counter, const unsigned int expected,
+	const unsigned int seconds
+) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) seconds;
+
+	unsigned int value = __atomic_load_n (counter, __ATOMIC_SEQ_CST);
+	while ((value < expected) && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+		value = __atomic_load_n (counter, __ATOMIC_SEQ_CST);
+	}
+
+	return value;
+
+}
+
+// works like test_wait_counter () for 64 bits counters, like the stats
+static inline uint64_t test_wait_counter_64 (
+	const uint64_t *counter, const uint64_t expected,
+	const unsigned int seconds
+) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) seconds;
+
+	uint64_t value = __atomic_load_n (counter, __ATOMIC_SEQ_CST);
+	while ((value < expected) && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+		value = __atomic_load_n (counter, __ATOMIC_SEQ_CST);
+	}
+
+	return value;
+
+}
+
+// adds one to a counter that is read by other threads
+static inline void test_counter_add (unsigned int *counter) {
+
+	(void) __atomic_add_fetch (counter, 1, __ATOMIC_SEQ_CST);
+
+}
+
+#pragma endregion
+
+#include "address.h"
 
 #endif

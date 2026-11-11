@@ -11,9 +11,13 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 
+#include "cerver/collections/freelist.h"
+
 #include "cerver/threads/jobs.h"
 
 #include "cerver/game/lobby.h"
+
+#include "cerver/utils/histogram.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +55,14 @@ typedef struct HandlerData {
 
 } HandlerData;
 
+// the packets that a handler handled, added from the threads that run it
+typedef struct HandlerStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} HandlerStats;
+
 struct _Handler {
 
 	HandlerType type;
@@ -60,6 +72,9 @@ struct _Handler {
 
 	int id;
 	pthread_t thread_id;
+
+	// set when its thread was started and has not been joined yet
+	bool joinable;
 
 	// unique handler data
 	// will be passed to jobs alongside any job specific data as the args
@@ -92,6 +107,8 @@ struct _Handler {
 
 	struct _Cerver *cerver;     // the cerver this handler belongs to
 	struct _Client *client;     // the client this handler belongs to
+
+	HandlerStats stats;
 
 };
 
@@ -143,9 +160,30 @@ CERVER_EXPORT void handler_set_direct_handle (
 	Handler *handler, bool direct_handle
 );
 
+// copies the stats of the packets that the handler handled
+CERVER_EXPORT void handler_get_stats (
+	const Handler *handler, HandlerStats *stats
+);
+
+// prints the stats of the handler with the cerver log
+CERVER_EXPORT void handler_stats_print (const Handler *handler);
+
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods
 CERVER_PRIVATE int handler_start (Handler *handler);
+
+// wakes the handler's thread until it sees that its owner stopped and joins it,
+// it is called after the cerver / client stopped running
+CERVER_PRIVATE void handler_stop (Handler *handler);
+
+// passes the packet to the handler of its type, directly or by its job queue,
+// a direct handler releases it after it returns only if delete_packet is set,
+// and the packet is always released when there is no handler or it can not be queued
+// owner_name and handler_name are only used in the logs
+CERVER_PRIVATE void handler_packet_dispatch (
+	Handler *handler, struct _Packet *packet, const bool delete_packet,
+	const char *owner_name, const char *handler_name
+);
 
 #pragma endregion
 
@@ -187,12 +225,23 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 	struct _Packet *packet
 );
 
+// handles a packet of type PACKET_TYPE_CLIENT that was received outside the packet handler,
+// like the ones that the load balancer receives
+CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
+	struct _Packet *packet
+);
+
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection,
+// the client, request and cerver packets of a peer are handled by its peers (udp.c)
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
+
 #pragma endregion
 
 #pragma region receive
 
-// the default timeout when handling a connection in dedicated thread
-#define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
+// the deleted receives that are kept to be reused
+#define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (
@@ -211,6 +260,9 @@ typedef struct CerverReceive {
 	struct _Admin *admin;
 
 	struct _Lobby *lobby;
+
+	// the next deleted receive that waits to be reused
+	struct CerverReceive *recycle_next;
 
 } CerverReceive;
 
@@ -239,19 +291,20 @@ CERVER_PRIVATE void cerver_receive_internal (
 	char *packet_buffer, const size_t packet_buffer_size
 );
 
-CERVER_PRIVATE void balancer_receive_handle_from_connection (
-	CerverReceive *cr, Packet *packet
-);
-
-CERVER_PRIVATE void balancer_receive_consume_from_connection (
-	CerverReceive *cr, size_t data_size
-);
-
 #pragma endregion
 
 #pragma region register
 
+// a new connection that no handler could take is taken out of the cerver with its new client,
+// the client is unregistered while it still has the connection, so its sock fd leaves the maps,
+// and the connection is left for its caller to drop
+CERVER_PRIVATE void cerver_new_connection_release (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
 // select how client connection will be handled based on cerver's handler type
+// returns 0 on success, 1 on error
 CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
 	struct _Cerver *cerver,
 	struct _Client *client, struct _Connection *connection
