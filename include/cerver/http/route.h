@@ -301,8 +301,8 @@ CERVER_EXPORT void http_route_print (
 	const HttpRoute *route
 );
 
-// fits every method of REQUEST_METHOD_MAP with its separator
-#define HTTP_ROUTE_METHODS_STRING_SIZE		128
+// fits every method of REQUEST_METHOD_MAP with its separator (35 methods, 319 bytes)
+#define HTTP_ROUTE_METHODS_STRING_SIZE		512
 
 // writes in buffer the methods with a handler, separated with ", "
 // returns the length of the string
