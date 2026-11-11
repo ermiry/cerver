@@ -110,7 +110,8 @@ endif
 # sanitizers are applied to the library, the examples and the tests
 ifneq ($(SANITIZER),)
 	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
-	CFLAGS += -D CERVER_RECYCLE_DISABLED
+	RECYCLEFLAGS := -D CERVER_RECYCLE_DISABLED
+	CFLAGS += $(RECYCLEFLAGS)
 endif
 
 # common flags
@@ -265,7 +266,7 @@ TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
 TESTCOVDIR	:= $(COVDIR)/test
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS)
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS) $(RECYCLEFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
