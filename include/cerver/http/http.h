@@ -12,18 +12,21 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/headers.h"
-#include "cerver/http/http_parser.h"
 #include "cerver/http/middleware.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/origin.h"
 #include "cerver/http/proxy.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
+#include "cerver/http/status.h"
 #include "cerver/http/stream.h"
 #include "cerver/http/tree.h"
 #include "cerver/http/validator.h"
 
 #include "cerver/http/jwt/alg.h"
+
+#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/helpers.h"
 
 #define HTTP_CERVER_MULTI_PARTS_POOL_INIT			32
 
@@ -32,7 +35,8 @@
 #define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0755
 #define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0644
 
-// requests limits, a value of 0 disables the limit
+// requests limits, a value of 0 disables the limit,
+// except the url and the headers limits, that are always active
 #define HTTP_CERVER_DEFAULT_MAX_BODY_SIZE			(1 << 29)
 #define HTTP_CERVER_DEFAULT_MAX_URL_SIZE			(1 << 13)
 #define HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE			(1 << 16)
@@ -111,6 +115,40 @@ struct _HttpReceive;
 struct _HttpResponse;
 
 struct jwt;
+
+#pragma region parser
+
+// the lenient flags of the parser (llhttp), the values of LLHTTP_LENIENT_MAP,
+// all of them are disabled by default (the strict mode),
+// each one can open the cerver to request smuggling or cache poisoning attacks
+typedef enum HttpParserLenient {
+
+	HTTP_PARSER_LENIENT_NONE = 0,
+
+	#define XX(num, name, string, description) HTTP_PARSER_LENIENT_##name = num,
+	LLHTTP_LENIENT_MAP(XX)
+	#undef XX
+
+} HttpParserLenient;
+
+// every lenient flag of LLHTTP_LENIENT_MAP
+#define HTTP_PARSER_LENIENT_ALL				LLHTTP_LENIENT_ALL
+
+// the value that a parser callback returns when it stops the parser,
+// because it rejected the request or because its client is gone
+#define HTTP_RECEIVE_PARSER_STOP			HPE_USER
+
+// the name of a lenient flag ("headers", "chunked_length", ...)
+CERVER_PUBLIC const char *http_parser_lenient_string (
+	const HttpParserLenient lenient
+);
+
+// what a lenient flag accepts
+CERVER_PUBLIC const char *http_parser_lenient_description (
+	const HttpParserLenient lenient
+);
+
+#pragma endregion
 
 #pragma region stages
 
@@ -294,7 +332,7 @@ struct _HttpCerver {
 	bool global_reference;
 
 	// stats
-	size_t n_incompleted_requests;	// http_parser could not parse the request
+	size_t n_incompleted_requests;	// the parser could not parse the request
 	size_t n_unhandled_requests;	// failed to get matching route
 
 	size_t n_catch_all_requests;	// redirected to catch all route
@@ -329,7 +367,10 @@ struct _HttpCerver {
 	// used to correctly update stats
 	pthread_mutex_t *mutex;
 
-	// requests limits, a value of 0 disables the limit
+	// the lenient flags (HttpParserLenient) of the parser of each request, 0 is the strict mode
+	unsigned int parser_lenient;
+
+	// requests limits, a value of 0 disables the limit (the url and the headers limits are always active)
 	size_t max_body_size;
 	size_t max_url_size;
 	size_t max_header_size;
@@ -654,14 +695,16 @@ CERVER_EXPORT void http_cerver_set_max_body_size (
 
 // sets the max size in bytes of a request's url (path and query)
 // a bigger url is answered with 414
-// the default value is HTTP_CERVER_DEFAULT_MAX_URL_SIZE, 0 disables the limit
+// the default value is HTTP_CERVER_DEFAULT_MAX_URL_SIZE,
+// the limit is always active, 0 sets the default value
 CERVER_EXPORT void http_cerver_set_max_url_size (
 	HttpCerver *http_cerver, const size_t max_url_size
 );
 
 // sets the max size in bytes of all of a request's headers
 // bigger headers are answered with 431
-// the default value is HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE, 0 disables the limit
+// the default value is HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE,
+// the limit is always active (the parser does not have one of its own), 0 sets the default value
 CERVER_EXPORT void http_cerver_set_max_header_size (
 	HttpCerver *http_cerver, const size_t max_header_size
 );
@@ -726,6 +769,15 @@ CERVER_EXPORT void http_cerver_set_idle_timeout_milliseconds (
 // the default value is HTTP_CERVER_DEFAULT_HALF_CLOSE_IS_GONE
 CERVER_EXPORT void http_cerver_set_half_close_is_gone (
 	HttpCerver *http_cerver, const bool half_close_is_gone
+);
+
+// sets the lenient flags (HttpParserLenient, combined with |) of the parser of every request,
+// each flag accepts requests that the strict mode answers with 400,
+// and it can open the cerver to request smuggling or cache poisoning attacks,
+// so a warning is logged for each flag that is enabled
+// the default value is HTTP_PARSER_LENIENT_NONE (the strict mode)
+CERVER_EXPORT void http_cerver_set_parser_lenient (
+	HttpCerver *http_cerver, const unsigned int lenient
 );
 
 #pragma endregion
@@ -1029,19 +1081,6 @@ typedef enum HttpReceiveDispatch {
 
 } HttpReceiveDispatch;
 
-// the token that the parser is building between callbacks,
-// a token can arrive in many pieces when it is split between two recv ()
-typedef enum HttpReceiveToken {
-
-	HTTP_RECEIVE_TOKEN_NONE			= 0,
-	HTTP_RECEIVE_TOKEN_URL			= 1,
-	HTTP_RECEIVE_TOKEN_FIELD		= 2,
-	HTTP_RECEIVE_TOKEN_VALUE		= 3,
-
-	HTTP_RECEIVE_TOKEN_MAX			= 4
-
-} HttpReceiveToken;
-
 struct _HttpReceive {
 
 	HttpReceiveStatus receive_status;
@@ -1058,8 +1097,18 @@ struct _HttpReceive {
 
 	HttpCerver *http_cerver;
 
-	http_parser *parser;
-	http_parser_settings settings;
+	// the parser of the request, embedded in the receive, with its own settings,
+	// so the body callback can change for each request
+	llhttp_t parser;
+	llhttp_settings_t settings;
+
+	// what the client asked when its request was completed (llhttp_should_keep_alive ()),
+	// the connection is still closed after the response
+	bool keep_alive_requested;
+
+	// the bytes of the last buffer that were not parsed after the request was completed
+	// (a pipelined request)
+	size_t unparsed;
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
@@ -1095,8 +1144,8 @@ struct _HttpReceive {
 	// the request created the directory of its uploads, it is removed if it ends empty
 	bool upload_directory_created;
 
-	// the pieces of the token that is being built
-	HttpReceiveToken token;
+	// the pieces of the url, the header field and the header value that are being received,
+	// each one is closed by its complete callback of the parser
 	String *url_buffer;
 	String *field_buffer;
 	String *value_buffer;
