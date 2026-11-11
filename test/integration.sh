@@ -25,6 +25,7 @@ PAIRS=(
 	handler
 	balancer/round_robin
 	balancer/handler_id
+	balancer/custom
 	balancer/reconnect
 	balancer/large
 	balancer/unavailable

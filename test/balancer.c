@@ -132,13 +132,48 @@ static Balancer *test_balancer_create (const BalancerType type) {
 	test_check_ptr (balancer->cerver);
 	test_check_ptr (balancer->client);
 	test_check_int_eq (balancer->next_service, 0, NULL);
-	test_check_int_eq (balancer->n_services, n_services, NULL);
+	test_check_int_eq (balancer->n_services, (int) n_services, NULL);
 	test_check_ptr (balancer->services);
 	test_check_null_ptr (balancer->on_unavailable_services);
+	test_check_null_ptr (balancer->select_service);
+	test_check_null_ptr (balancer->select_service_args);
 	test_check_ptr (balancer->stats);
 	test_check_ptr (balancer->mutex);
 
 	return balancer;
+
+}
+
+static int test_balancer_select_service (
+	const PacketHeader *header, const char *body, const size_t body_size, void *args
+) {
+
+	(void) body;
+	(void) body_size;
+	(void) args;
+
+	return (int) header->request_type;
+
+}
+
+// #299: a custom balancer takes the method that selects the service of each packet
+static void test_balancer_create_custom (void) {
+
+	const BalancerType balancer_type = BALANCER_TYPE_CUSTOM;
+
+	Balancer *balancer = test_balancer_create (balancer_type);
+
+	test_check_int_eq (balancer_get_type (balancer), balancer_type, NULL);
+	test_check_str_eq (balancer_type_to_string (balancer_type), "Custom", NULL);
+
+	int args = 0;
+	balancer_set_select_service (balancer, test_balancer_select_service, &args);
+	test_check_ptr_eq (balancer->select_service, test_balancer_select_service);
+	test_check_ptr_eq (balancer->select_service_args, &args);
+
+	balancer_set_select_service (NULL, test_balancer_select_service, &args);
+
+	balancer_delete (balancer);
 
 }
 
@@ -212,7 +247,122 @@ static void test_balancer_create_handler_id (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+#pragma region routes
+
+#define ROUTES_SOCK_FD					5
+#define ROUTES_OTHER_SOCK_FD			6
+#define ROUTES_SLOT						0x12345u
+#define ROUTES_GENERATION				0x0abc
+
+// the id has the generation in its high bits and the slot in its low bits
+static void test_balancer_route_id (void) {
+
+	const u32 route_id = balancer_route_id (ROUTES_SLOT, ROUTES_GENERATION);
+
+	test_check_unsigned_eq (balancer_route_id_slot (route_id), ROUTES_SLOT, NULL);
+	test_check_unsigned_eq (balancer_route_id_generation (route_id), ROUTES_GENERATION, NULL);
+
+	// the generation goes around without 0, so a route id is never 0
+	test_check_unsigned_eq (
+		balancer_route_next_generation (BALANCER_ROUTE_GENERATION_MASK), BALANCER_ROUTE_FIRST_GENERATION, NULL
+	);
+
+	test_check_unsigned_eq (balancer_route_next_generation (ROUTES_GENERATION), ROUTES_GENERATION + 1, NULL);
+	test_check (balancer_route_id (0, BALANCER_ROUTE_FIRST_GENERATION) != 0, NULL);
+
+}
+
+// a response for a connection that ended is not routed to the connection that has its slot now
+static void test_balancer_route_generation (void) {
+
+	Balancer *balancer = test_balancer_create (BALANCER_TYPE_ROUND_ROBIN);
+
+	Socket *first = socket_create (ROUTES_SOCK_FD);
+	Socket *second = socket_create (ROUTES_OTHER_SOCK_FD);
+	test_check_ptr (first);
+	test_check_ptr (second);
+
+	const u32 first_route = balancer_connection_start (balancer, first);
+	test_check (first_route != 0, NULL);
+
+	Socket *routed = balancer_route_get (balancer, first_route);
+	test_check_ptr_eq (routed, first);
+	socket_delete (routed);
+
+	// the slot is released and given to the next connection, with another generation
+	balancer_connection_end (balancer, first_route);
+	test_check_null_ptr (balancer_route_get (balancer, first_route));
+
+	const u32 second_route = balancer_connection_start (balancer, second);
+	test_check_unsigned_eq (balancer_route_id_slot (second_route), balancer_route_id_slot (first_route), NULL);
+	test_check (second_route != first_route, "the new connection has the route of the old one");
+
+	test_check_null_ptr (balancer_route_get (balancer, first_route));
+
+	routed = balancer_route_get (balancer, second_route);
+	test_check_ptr_eq (routed, second);
+	socket_delete (routed);
+
+	// a route of an old generation does not end the connection that has its slot now
+	balancer_connection_end (balancer, first_route);
+	routed = balancer_route_get (balancer, second_route);
+	test_check_ptr_eq (routed, second);
+	socket_delete (routed);
+
+	// a slot that was never used and a route id of 0 have no route
+	test_check_null_ptr (balancer_route_get (balancer, balancer_route_id (ROUTES_SLOT, BALANCER_ROUTE_FIRST_GENERATION)));
+	test_check_null_ptr (balancer_route_get (balancer, 0));
+
+	balancer_connection_end (balancer, second_route);
+
+	// the sockets were never opened, their sock fd is not closed by the test
+	first->sock_fd = -1;
+	second->sock_fd = -1;
+	socket_delete (first);
+	socket_delete (second);
+
+	balancer_delete (balancer);
+
+}
+
+// the slots grow up to BALANCER_ROUTES_MAX, one more connection is not routed
+static void test_balancer_route_limit (void) {
+
+	Balancer *balancer = test_balancer_create (BALANCER_TYPE_ROUND_ROBIN);
+
+	Socket *socket = socket_create (ROUTES_SOCK_FD);
+	test_check_ptr (socket);
+
+	u32 *routes = (u32 *) calloc (BALANCER_ROUTES_MAX, sizeof (u32));
+	test_check_ptr (routes);
+
+	for (u32 i = 0; i < BALANCER_ROUTES_MAX; i++) {
+		routes[i] = balancer_connection_start (balancer, socket);
+		test_check (routes[i] != 0, "a connection under the limit was not routed");
+	}
+
+	test_check_unsigned_eq (balancer_connection_start (balancer, socket), 0, NULL);
+
+	// a released slot is given to the next connection
+	balancer_connection_end (balancer, routes[0]);
+	const u32 reused = balancer_connection_start (balancer, socket);
+	test_check_unsigned_eq (balancer_route_id_slot (reused), balancer_route_id_slot (routes[0]), NULL);
+	routes[0] = reused;
+
+	for (u32 i = 0; i < BALANCER_ROUTES_MAX; i++) balancer_connection_end (balancer, routes[i]);
+
+	free (routes);
+
+	socket->sock_fd = -1;
+	socket_delete (socket);
+
+	balancer_delete (balancer);
+
+}
+
+#pragma endregion
+
+int main (void) {
 
 	srand ((unsigned) time (NULL));
 
@@ -226,6 +376,12 @@ int main (int argc, char **argv) {
 	// balancer
 	test_balancer_create_round_robin ();
 	test_balancer_create_handler_id ();
+	test_balancer_create_custom ();
+
+	// routes
+	test_balancer_route_id ();
+	test_balancer_route_generation ();
+	test_balancer_route_limit ();
 
 	(void) printf ("\nDone with BALANCER tests!\n\n");
 
