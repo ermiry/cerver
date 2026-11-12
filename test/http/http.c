@@ -716,6 +716,9 @@ int main (void) {
 	http_tests_jwt_encode ();
 	http_tests_jwt_decode ();
 
+	// the keys, the verification and the claims of the tokens
+	http_tests_tokens ();
+
 	http_tests_admin ();
 
 	// the parser fed with every request split at every byte
