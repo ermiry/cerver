@@ -26,7 +26,12 @@ CERVER_PRIVATE SessionData *session_data_new (
 
 CERVER_PRIVATE void session_data_delete (void *ptr);
 
-// create a unique session id for each client based on the current time
+// the random bytes of a default session id, and its length in hex characters
+#define SESSION_ID_RANDOM_BYTES			32
+#define SESSION_ID_LENGTH				(SESSION_ID_RANDOM_BYTES * 2)
+
+// creates a session id of random bytes of the kernel, in hex characters,
+// that can not be guessed from the time it was created
 CERVER_PRIVATE void *session_default_generate_id (
     const void *session_data
 );
