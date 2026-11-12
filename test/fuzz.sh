@@ -7,7 +7,7 @@ SECONDS_PER_TARGET=${SECONDS_PER_TARGET:-30}
 MAX_LENGTH=${MAX_LENGTH:-16384}
 ARTIFACTS=${ARTIFACTS:-fuzz-artifacts}
 
-TARGETS=(request lenient multipart url json jwt tree receive packet client file datagram address)
+TARGETS=(request lenient multipart url json jwt tree receive packet client file datagram address frame handshake)
 
 if [ $# -gt 0 ]; then
 	TARGETS=("$@")

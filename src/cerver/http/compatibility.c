@@ -93,6 +93,15 @@ static size_t http_compatibility_translate_route (
 		str_delete (route->route);
 		route->route = path;
 
+		// the WebSocket connections are only for the endpoints of the routes tree
+		if (route->modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
+			http_tree_warning (
+				"route \"%s\" - the WebSocket modifier of a route is not supported, "
+				"its requests are answered with 501, use http_group_web_socket_add ()",
+				path->str
+			);
+		}
+
 		for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 			if (route->handlers[method]) {
 				added += http_compatibility_translate_method (tree, route, path, (RequestMethod) method);

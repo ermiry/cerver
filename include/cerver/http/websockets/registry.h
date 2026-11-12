@@ -1,0 +1,180 @@
+#ifndef _CERVER_HTTP_WEBSOCKETS_REGISTRY_H_
+#define _CERVER_HTTP_WEBSOCKETS_REGISTRY_H_
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include <pthread.h>
+
+#include "cerver/types/types.h"
+
+#include "cerver/config.h"
+
+#include "cerver/http/websockets/frame.h"
+#include "cerver/http/websockets/websocket.h"
+
+// the most WebSocket connections of an HTTP cerver, an upgrade above it is answered with 503
+#define HTTP_WEB_SOCKET_DEFAULT_MAX_CONNECTIONS			(1 << 10)
+
+// milliseconds that a broadcast waits for each connection, a slower one fails
+#define HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT		(1 << 8)
+
+// the close codes from 1000 to 1015 are counted one by one, the others together
+#define HTTP_WEB_SOCKET_CLOSE_CODES_FIRST				1000
+#define HTTP_WEB_SOCKET_CLOSE_CODES_SIZE				16
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct _HttpCerver;
+struct _HttpEndpoint;
+
+#define HTTP_WEB_SOCKET_REJECTION_MAP(XX)																		\
+	XX(0,	VERSION,		Version,		The Sec-WebSocket-Version was not 13 (426))						\
+	XX(1,	BAD_REQUEST,	Bad Request,	The request of the upgrade was not valid (400))					\
+	XX(2,	UPGRADE,		Upgrade,		The request had no upgrade to WebSocket (426))					\
+	XX(3,	ORIGIN,			Origin,			The origin was not in the whitelist (403))						\
+	XX(4,	LIMIT,			Limit,			The cerver had its most connections (503))						\
+	XX(5,	APPLICATION,	Application,	on_upgrade () rejected it)
+
+typedef enum HttpWebSocketRejection {
+
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_REJECTION_##name = num,
+	HTTP_WEB_SOCKET_REJECTION_MAP (XX)
+	#undef XX
+
+} HttpWebSocketRejection;
+
+#define HTTP_WEB_SOCKET_REJECTIONS		6
+
+CERVER_PUBLIC const char *http_web_socket_rejection_to_string (const HttpWebSocketRejection rejection);
+
+// the WebSocket connections of an HTTP cerver, and their stats
+typedef struct _HttpWebSocketRegistry {
+
+	pthread_mutex_t mutex;
+
+	HttpWebSocket *first;
+
+	// the connections that are registered
+	unsigned int count;
+
+	// the connections plus the upgrades that have a place
+	unsigned int reserved;
+
+	unsigned int max_connections;
+
+	unsigned int broadcast_timeout;
+
+	// the cerver is going away, no more connections are accepted
+	bool stopping;
+
+	u64 next_id;
+
+	// stats, read and written atomically
+	u64 n_opened;
+	u64 n_closed;
+	u64 n_rejected[HTTP_WEB_SOCKET_REJECTIONS];
+	u64 n_messages_received;
+	u64 n_messages_sent;
+	u64 n_bytes_received;
+	u64 n_bytes_sent;
+	u64 n_slow;
+	u64 n_errors;
+	u64 n_closes[HTTP_WEB_SOCKET_CLOSE_CODES_SIZE];
+	u64 n_closes_other;
+
+} HttpWebSocketRegistry;
+
+CERVER_PRIVATE HttpWebSocketRegistry *http_web_socket_registry_create (void);
+
+CERVER_PRIVATE void http_web_socket_registry_delete (HttpWebSocketRegistry *registry);
+
+// takes a place for an upgrade, false when the cerver has its most connections or it is stopping
+CERVER_PRIVATE bool http_web_socket_registry_reserve (HttpWebSocketRegistry *registry);
+
+// gives back the place of an upgrade that did not start
+CERVER_PRIVATE void http_web_socket_registry_unreserve (HttpWebSocketRegistry *registry);
+
+// adds a connection with its place already taken, and sets its id
+// returns 0 on success, 1 if the cerver is stopping
+CERVER_PRIVATE u8 http_web_socket_registry_add (
+	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
+);
+
+// removes the connection, and gives back its place
+CERVER_PRIVATE void http_web_socket_registry_remove (
+	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
+);
+
+// closes every connection with 1001, and accepts no more
+CERVER_PRIVATE void http_web_socket_registry_go_away (HttpWebSocketRegistry *registry);
+
+// ends every connection now
+CERVER_PRIVATE void http_web_socket_registry_abort (HttpWebSocketRegistry *registry);
+
+CERVER_PRIVATE void http_web_socket_registry_count_rejection (
+	HttpWebSocketRegistry *registry, const HttpWebSocketRejection rejection
+);
+
+CERVER_PRIVATE void http_web_socket_registry_count_close (
+	HttpWebSocketRegistry *registry, const u16 code
+);
+
+#pragma region public
+
+// sets the most WebSocket connections, HTTP_WEB_SOCKET_DEFAULT_MAX_CONNECTIONS by default
+CERVER_EXPORT void http_cerver_set_web_socket_max_connections (
+	struct _HttpCerver *http_cerver, const unsigned int max_connections
+);
+
+// sets the milliseconds that a broadcast waits for each connection,
+// HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT by default
+CERVER_EXPORT void http_cerver_set_web_socket_broadcast_timeout (
+	struct _HttpCerver *http_cerver, const unsigned int broadcast_timeout
+);
+
+// the WebSocket connections that are open, of a room or of every one with room NULL
+CERVER_EXPORT unsigned int http_cerver_web_socket_count (
+	struct _HttpCerver *http_cerver, const char *room
+);
+
+// adds the connection to a room, a connection is in HTTP_WEB_SOCKET_MAX_ROOMS rooms or less
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_web_socket_join (HttpWebSocket *web_socket, const char *room);
+
+// returns 0 on success, 1 if it was not in the room
+CERVER_EXPORT u8 http_web_socket_leave (HttpWebSocket *web_socket, const char *room);
+
+// returns true when the connection is in the room
+CERVER_EXPORT bool http_web_socket_in_room (HttpWebSocket *web_socket, const char *room);
+
+// sends a message to every connection of the room, or to every one with room NULL,
+// but except (that can be NULL), a connection that is too slow fails without stopping the others
+// returns the connections that received it
+CERVER_EXPORT unsigned int http_cerver_web_socket_broadcast (
+	struct _HttpCerver *http_cerver, const char *room, const HttpWebSocket *except,
+	const HttpWebSocketOpcode type, const void *data, const size_t size
+);
+
+// sends a message to every connection of the endpoint
+CERVER_EXPORT unsigned int http_endpoint_web_socket_broadcast (
+	struct _HttpCerver *http_cerver, const struct _HttpEndpoint *endpoint,
+	const HttpWebSocketOpcode type, const void *data, const size_t size
+);
+
+// calls the method with every connection of the room (or every one with room NULL),
+// outside of the mutex of the registry, with a reference to each one
+CERVER_EXPORT void http_cerver_web_socket_for_each (
+	struct _HttpCerver *http_cerver, const char *room,
+	void (*method)(HttpWebSocket *web_socket, void *args), void *args
+);
+
+#pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

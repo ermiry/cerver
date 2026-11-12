@@ -19,6 +19,37 @@ jobs:
           SANITIZER: thread
         run: bash test/integration.sh
 
+  autobahn-sanitizers:
+    name: Cerver WebSocket conformance with the sanitizers
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: address
+            sanitizer: address,undefined
+          - name: thread
+            sanitizer: thread
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Autobahn
+        env:
+          SANITIZER: ${{ matrix.sanitizer }}
+        run: bash test/autobahn/run.sh
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autobahn-reports-${{ matrix.name }}
+          path: ./autobahn-reports/
+          retention-days: 7
+
   repeat:
     name: Cerver flaky hunter
     runs-on: ubuntu-latest
@@ -43,6 +74,19 @@ jobs:
         env:
           BUILD: 0
         run: bash test/repeat.sh test/bin/http 50
+
+      - name: WebSocket
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/websockets 200
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: WebSocket with the thread sanitizer
+        env:
+          SANITIZER: thread
+        run: bash test/repeat.sh test/bin/websockets 200
 
   fuzz:
     name: Cerver long fuzzing

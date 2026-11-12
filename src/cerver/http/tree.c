@@ -122,6 +122,8 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 
 	http_middlewares_init (&settings->middlewares);
 
+	http_web_socket_settings_init (&settings->web_socket);
+
 }
 
 // deletes the custom data that the settings own
@@ -137,6 +139,8 @@ static void http_route_settings_end (HttpRouteSettings *settings) {
 	settings->custom_data = NULL;
 
 	http_middlewares_end (&settings->middlewares);
+
+	http_web_socket_settings_end (&settings->web_socket);
 
 }
 
@@ -175,6 +179,8 @@ static void http_route_settings_inherit (
 	if (missing & HTTP_ROUTE_SETTING_COMPRESSION) resolved->compression = source->compression;
 
 	resolved->set |= missing;
+
+	http_web_socket_settings_inherit (&resolved->web_socket, &source->web_socket);
 
 }
 
@@ -431,6 +437,90 @@ u8 http_endpoint_add_after (
 ) {
 
 	return endpoint ? http_middlewares_add_after (&endpoint->settings.middlewares, middleware) : 1;
+
+}
+
+#pragma endregion
+
+#pragma region websocket
+
+void http_endpoint_set_web_socket (
+	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
+) {
+
+	if (endpoint && handlers) {
+		http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		http_web_socket_settings_set_handlers (&endpoint->settings.web_socket, handlers);
+	}
+
+}
+
+void http_endpoint_set_web_socket_max_message (
+	HttpEndpoint *endpoint, const size_t max_message
+) {
+
+	if (endpoint) http_web_socket_settings_set_max_message (&endpoint->settings.web_socket, max_message);
+
+}
+
+u8 http_endpoint_set_web_socket_protocols (
+	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
+) {
+
+	return endpoint ?
+		http_web_socket_settings_set_protocols (&endpoint->settings.web_socket, protocols, n_protocols) : 1;
+
+}
+
+void http_endpoint_set_web_socket_compression (
+	HttpEndpoint *endpoint, const bool compression
+) {
+
+	HttpWebSocketDeflateOptions options;
+	http_web_socket_deflate_options_init (&options);
+	options.enabled = compression;
+
+	http_endpoint_set_web_socket_compression_options (endpoint, &options);
+
+}
+
+void http_endpoint_set_web_socket_compression_options (
+	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
+) {
+
+	if (endpoint) http_web_socket_settings_set_compression (&endpoint->settings.web_socket, options);
+
+}
+
+void http_endpoint_set_web_socket_origin_check (
+	HttpEndpoint *endpoint, const bool origin_check
+) {
+
+	if (endpoint) http_web_socket_settings_set_origin_check (&endpoint->settings.web_socket, origin_check);
+
+}
+
+void http_endpoint_set_web_socket_ping (
+	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
+) {
+
+	if (endpoint) http_web_socket_settings_set_ping (&endpoint->settings.web_socket, ping_interval, pong_timeout);
+
+}
+
+void http_endpoint_set_web_socket_close_timeout (
+	HttpEndpoint *endpoint, const unsigned int close_timeout
+) {
+
+	if (endpoint) http_web_socket_settings_set_close_timeout (&endpoint->settings.web_socket, close_timeout);
+
+}
+
+void http_endpoint_set_web_socket_send_timeout (
+	HttpEndpoint *endpoint, const unsigned int send_timeout
+) {
+
+	if (endpoint) http_web_socket_settings_set_send_timeout (&endpoint->settings.web_socket, send_timeout);
 
 }
 
@@ -732,10 +822,12 @@ const String *http_group_get_prefix (
 
 }
 
-// adds an endpoint to the group, the path is relative to the group's prefix
-HttpEndpoint *http_group_route_add (
+// adds an endpoint to the group, the path is relative to the group's prefix,
+// only a WebSocket endpoint can be without a handler
+static HttpEndpoint *http_group_endpoint_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const RequestMethod method, const char *path, const HttpHandler handler,
+	const bool handler_required
 ) {
 
 	HttpEndpoint *endpoint = NULL;
@@ -747,7 +839,7 @@ HttpEndpoint *http_group_route_add (
 			http_tree_error (group->tree, "route \"%s\" - the method %d is not valid", path ? path : "", (int) method);
 		}
 
-		else if (!handler) {
+		else if (handler_required && !handler) {
 			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_str (method), path ? path : "");
 		}
 
@@ -774,6 +866,16 @@ HttpEndpoint *http_group_route_add (
 	}
 
 	return endpoint;
+
+}
+
+// adds an endpoint to the group, the path is relative to the group's prefix
+HttpEndpoint *http_group_route_add (
+	HttpGroup *group,
+	const RequestMethod method, const char *path, const HttpHandler handler
+) {
+
+	return http_group_endpoint_add (group, method, path, handler, true);
 
 }
 
@@ -961,6 +1063,97 @@ u8 http_group_add_after (
 ) {
 
 	return group ? http_middlewares_add_after (&group->settings.middlewares, middleware) : 1;
+
+}
+
+HttpEndpoint *http_group_web_socket_add (
+	HttpGroup *group, const char *path, const HttpWebSocketHandlers *handlers
+) {
+
+	HttpEndpoint *endpoint = http_group_endpoint_add (group, REQUEST_METHOD_GET, path, NULL, false);
+
+	// without handlers it inherits the ones of its groups
+	http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+	if (endpoint && handlers) http_web_socket_settings_set_handlers (&endpoint->settings.web_socket, handlers);
+
+	return endpoint;
+
+}
+
+void http_group_set_web_socket (
+	HttpGroup *group, const HttpWebSocketHandlers *handlers
+) {
+
+	if (group && handlers) http_web_socket_settings_set_handlers (&group->settings.web_socket, handlers);
+
+}
+
+void http_group_set_web_socket_max_message (
+	HttpGroup *group, const size_t max_message
+) {
+
+	if (group) http_web_socket_settings_set_max_message (&group->settings.web_socket, max_message);
+
+}
+
+u8 http_group_set_web_socket_protocols (
+	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
+) {
+
+	return group ?
+		http_web_socket_settings_set_protocols (&group->settings.web_socket, protocols, n_protocols) : 1;
+
+}
+
+void http_group_set_web_socket_compression (
+	HttpGroup *group, const bool compression
+) {
+
+	HttpWebSocketDeflateOptions options;
+	http_web_socket_deflate_options_init (&options);
+	options.enabled = compression;
+
+	http_group_set_web_socket_compression_options (group, &options);
+
+}
+
+void http_group_set_web_socket_compression_options (
+	HttpGroup *group, const HttpWebSocketDeflateOptions *options
+) {
+
+	if (group) http_web_socket_settings_set_compression (&group->settings.web_socket, options);
+
+}
+
+void http_group_set_web_socket_origin_check (
+	HttpGroup *group, const bool origin_check
+) {
+
+	if (group) http_web_socket_settings_set_origin_check (&group->settings.web_socket, origin_check);
+
+}
+
+void http_group_set_web_socket_ping (
+	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
+) {
+
+	if (group) http_web_socket_settings_set_ping (&group->settings.web_socket, ping_interval, pong_timeout);
+
+}
+
+void http_group_set_web_socket_close_timeout (
+	HttpGroup *group, const unsigned int close_timeout
+) {
+
+	if (group) http_web_socket_settings_set_close_timeout (&group->settings.web_socket, close_timeout);
+
+}
+
+void http_group_set_web_socket_send_timeout (
+	HttpGroup *group, const unsigned int send_timeout
+) {
+
+	if (group) http_web_socket_settings_set_send_timeout (&group->settings.web_socket, send_timeout);
 
 }
 
@@ -1455,6 +1648,37 @@ static u8 http_tree_resolve_groups_middlewares (
 
 }
 
+// a WebSocket endpoint needs its handlers, set in it or in one of its groups, and it is a GET
+static u8 http_tree_resolve_web_socket (
+	HttpTree *tree, const HttpEndpoint *endpoint
+) {
+
+	u8 errors = 0;
+
+	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
+		if (!(endpoint->resolved.web_socket.set & HTTP_WEB_SOCKET_SETTING_HANDLERS)) {
+			http_tree_error (
+				tree, "websocket \"%s\" - it needs its handlers (http_endpoint_set_web_socket ())",
+				endpoint->path->str
+			);
+
+			errors = 1;
+		}
+
+		else if (endpoint->method != REQUEST_METHOD_GET) {
+			http_tree_error (
+				tree, "websocket %s \"%s\" - a WebSocket endpoint is a GET",
+				http_request_method_str (endpoint->method), endpoint->path->str
+			);
+
+			errors = 1;
+		}
+	}
+
+	return errors;
+
+}
+
 // resolves the settings that the endpoint inherits from its groups
 static u8 http_tree_resolve_endpoint (
 	HttpTree *tree, HttpEndpoint *endpoint
@@ -1473,7 +1697,9 @@ static u8 http_tree_resolve_endpoint (
 		http_route_settings_inherit (&endpoint->resolved, &group->settings);
 	}
 
-	u8 errors = http_middlewares_append (&endpoint->resolved.middlewares, &tree->middlewares);
+	u8 errors = http_tree_resolve_web_socket (tree, endpoint);
+
+	errors |= http_middlewares_append (&endpoint->resolved.middlewares, &tree->middlewares);
 	errors |= http_tree_resolve_groups_middlewares (&endpoint->resolved.middlewares, endpoint->group);
 	errors |= http_middlewares_append (&endpoint->resolved.middlewares, &endpoint->settings.middlewares);
 
@@ -1946,6 +2172,29 @@ size_t http_tree_get_n_endpoints (const HttpTree *tree) {
 
 #pragma region json
 
+// the WebSocket settings of an endpoint: its protocols, compression and limits
+static json_t *http_tree_web_socket_json (const HttpEndpoint *endpoint) {
+
+	const HttpWebSocketSettings *settings = &endpoint->resolved.web_socket;
+
+	json_t *web_socket = json_object ();
+	if (web_socket) {
+		json_t *protocols = json_array ();
+		for (unsigned int i = 0; protocols && (i < settings->n_protocols); i++) {
+			(void) json_array_append_new (protocols, json_string (settings->protocols[i]));
+		}
+
+		(void) json_object_set_new (web_socket, "protocols", protocols);
+		(void) json_object_set_new (web_socket, "compression", json_boolean (settings->compression.enabled));
+		(void) json_object_set_new (web_socket, "origin_check", json_boolean (settings->origin_check));
+		(void) json_object_set_new (web_socket, "max_message", json_integer ((json_int_t) settings->max_message));
+		(void) json_object_set_new (web_socket, "ping_interval", json_integer ((json_int_t) settings->ping_interval));
+	}
+
+	return web_socket;
+
+}
+
 static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
 
 	json_t *endpoint_object = json_object ();
@@ -1977,6 +2226,10 @@ static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
 		(void) json_object_set_new (
 			endpoint_object, "compression", json_boolean (endpoint->resolved.compression)
 		);
+
+		if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
+			(void) json_object_set_new (endpoint_object, "websocket", http_tree_web_socket_json (endpoint));
+		}
 	}
 
 	return endpoint_object;

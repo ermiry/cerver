@@ -14,6 +14,7 @@ NGINX_PORT=80
 READY_SECONDS=32
 PATHS_UNDER_TEST=(/features/small /plain/small)
 UNBUFFERED_PREFIX=/unbuffered
+WEBSOCKET_PREFIX=/websocket
 
 THREADS=8
 REQUESTS_PER_THREAD=160
@@ -107,10 +108,24 @@ nginx_disconnect () {
 	nginx_disconnect_at 127.0.0.1 && nginx_disconnect_at ::1
 }
 
+nginx_websocket_at () {
+	COMMAND="./test/bin/client/web/websocket"
+	run_in_nginx \
+		-e WEBSOCKET_HOST="$1" \
+		-e WEBSOCKET_PORT="$NGINX_PORT" \
+		-e WEBSOCKET_PREFIX="$WEBSOCKET_PREFIX"
+}
+
+nginx_websocket () {
+	nginx_websocket_at 127.0.0.1 && nginx_websocket_at ::1
+}
+
 nginx_direct () {
 	local failed=0
 
 	nginx_features || { echo "$NGINX_IMAGE: the features client failed"; failed=1; }
+
+	nginx_websocket || { echo "$NGINX_IMAGE: the websocket client failed"; failed=1; }
 
 	nginx_load || failed=1
 

@@ -274,6 +274,7 @@ web: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/videos.o -o ./$(EXATARGET)/web/videos $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/websocket.o -o ./$(EXATARGET)/web/websocket $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/worker.o ./$(EXABUILD)/data.o -o ./$(EXATARGET)/web/worker $(EXALIBS)
 
 examples: $(EXOBJS)
@@ -311,6 +312,13 @@ endif
 
 ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
+endif
+
+TESTZLIB	:=
+
+ifeq ($(ZLIB), 1)
+	TESTFLAGS += -D CERVER_ZLIB
+	TESTZLIB += $(ZLIBLIB)
 endif
 
 TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(SANITIZERFLAGS)
@@ -388,6 +396,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/udp.o -o ./$(TESTTARGET)/udp $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/websockets/*.o -o ./$(TESTTARGET)/websockets $(TESTLIBS) $(TESTZLIB)
 
 INTCERVERIN		:= ./$(TESTBUILD)/cerver
 INTCERVEROUT	:= ./$(TESTTARGET)/cerver
@@ -437,6 +446,7 @@ integration-web:
 	@mkdir -p ./$(TESTTARGET)/web
 	$(CC) $(TESTINC) $(INTWEBIN)/admin.o -o $(INTWEBOUT)/admin $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/autobahn.o -o $(INTWEBOUT)/autobahn $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/auth.o -o $(INTWEBOUT)/auth $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/disconnect.o -o $(INTWEBOUT)/disconnect $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/features.o -o $(INTWEBOUT)/features $(INTWEBLIBS)
@@ -447,6 +457,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/router.o -o $(INTWEBOUT)/router $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/websocket.o -o $(INTWEBOUT)/websocket $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/worker.o -o $(INTWEBOUT)/worker $(INTWEBLIBS)
 
 INTWEBCLIENTIN		:= ./$(TESTBUILD)/client/web
@@ -458,6 +469,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/admin.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/admin $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/api.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/api $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/auth.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/auth $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/autobahn.o -o $(INTWEBCLIENTOUT)/autobahn $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/disconnect.o -o $(INTWEBCLIENTOUT)/disconnect $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/features.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/features $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/jobs.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/jobs $(INTWEBCLIENTLIBS)
@@ -467,6 +479,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/router.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/router $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/upload.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/upload $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/web.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/web $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/websocket.o -o $(INTWEBCLIENTOUT)/websocket $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/worker.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/worker $(INTWEBCLIENTLIBS)
 
 integration: testout $(TESTOBJS)
@@ -553,6 +566,7 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/frames.o -o ./$(BENCHTARGET)/frames $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
@@ -562,11 +576,12 @@ tree: $(BENCHBUILD)/tree.$(OBJEXT)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/tree.o -o ./$(BENCHTARGET)/tree $(BENCHLIBS)
 
-# a web server and a load generator that work in any architecture
-load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT)
+# a web server and the load generators of its requests and its WebSocket messages, in any architecture
+load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT) $(BENCHBUILD)/messages.$(OBJEXT)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/server.o -o ./$(BENCHTARGET)/server $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/load.o -o ./$(BENCHTARGET)/load $(PTHREAD)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/messages.o -o ./$(BENCHTARGET)/messages $(PTHREAD)
 
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)

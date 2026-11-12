@@ -37,6 +37,19 @@
 #define CERVER_INLINE inline
 #endif
 
+// sets every member of a struct to zero, valid both in C11 and in C++,
+// that only takes the empty braces without a missing initializer warning
+#ifdef __cplusplus
+#define CERVER_ZERO_INITIALIZER		{ }
+#else
+#define CERVER_ZERO_INITIALIZER		{ 0 }
+#endif
+
+// the compiler checks the arguments of the calls against the format,
+// 0 as the first argument index for the functions that take a va_list
+#define CERVER_PRINTF_FORMAT(format_index, first_argument_index)	\
+	__attribute__ ((format (printf, format_index, first_argument_index)))
+
 #define DEPRECATED(func) func __attribute__ ((deprecated))
 
 #if defined (__GNUC__) || defined (__clang__)

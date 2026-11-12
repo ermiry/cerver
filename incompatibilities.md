@@ -3,6 +3,34 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-9 (from 2.1b-8)
+
+WebSocket (RFC 6455 and permessage-deflate, RFC 7692) on the threads model: each connection runs in its own thread
+after its upgrade, and a client connects to a server. The send deadlines of the 2.0b-66 arrived before its merge.
+
+- An endpoint with `HTTP_ROUTE_MODIFIER_WEB_SOCKET` needs its handlers (`http_endpoint_set_web_socket ()`, in it or in
+  one of its groups) and the GET method, without them the routes tree does not compile (it answered 501); a request
+  to it with an upgrade is answered with 101, one without an upgrade goes to its `HttpHandler` or it is answered with
+  426 (it was 501). A route of the first API (`HttpRoute`) with the modifier is still answered with 501, with a
+  warning when the tree compiles
+- An upgrade that is not valid is answered before its body: 400 (a key that is not 16 bytes, HTTP/1.0, a body),
+  426 with `Sec-WebSocket-Version: 13` (another version), 403 (an Origin out of the whitelist with
+  `http_endpoint_set_web_socket_origin_check ()`), 503 (the most connections of the cerver)
+- `Sec-WebSocket-Key` and `Sec-WebSocket-Version` must appear once in every request, a repeated one is answered with 400
+- New fields (ABI): `HttpRouteSettings.web_socket` (`HttpWebSocketSettings`), `HttpCerver.send_timeout` and
+  `HttpCerver.web_sockets`, `HttpReceive.send_deadline`, `send_deadline_set`, `web_socket` and `upgraded`
+- New headers in `include/cerver/http/websockets/`: `websocket.h` (`HttpWebSocket`), `client.h`
+  (`HttpWebSocketClient`), `settings.h`, `registry.h`, `frame.h`, `message.h`, `deflate.h`, `handshake.h`, `text.h`
+- New in `socket.h` (from the 2.0b-66): `socket_deadline_create_milliseconds ()`, `socket_send_vector_until ()`,
+  `socket_send_buffer_until ()`, `socket_send_file_until ()` (with the offset of the file); every send of a socket uses
+  `MSG_DONTWAIT` and polls until its deadline, also in a blocking socket. New in `http.h`:
+  `http_cerver_set_send_timeout_milliseconds ()`, all the sends of a response share one deadline. New in `config.h`:
+  `CERVER_ZERO_INITIALIZER` and `CERVER_PRINTF_FORMAT`
+- The drain of a web cerver closes its WebSocket connections with 1001, and cuts the ones that did not answer before
+  its grace; a WebSocket connection is a thread of `connection_threads` until it ends
+- `/cerver/metrics` has the `cerver_websocket_*` metrics, and the admin stats have a `websockets` section; the routes
+  json has a `websocket` object in the WebSocket endpoints
+
 ## 2.1b-8 (from 2.1b-7)
 
 The parser is llhttp 9.4.3 instead of http_parser 2.x, in strict mode. The entries of the 2.0b-62 to 2.0b-65 below

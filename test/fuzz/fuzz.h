@@ -53,6 +53,10 @@ static void fuzz_ok_handler (
 
 }
 
+static const HttpWebSocketHandlers fuzz_web_socket_handlers = {
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+};
+
 static void fuzz_routes (HttpCerver *http_cerver) {
 
 	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
@@ -72,6 +76,13 @@ static void fuzz_routes (HttpCerver *http_cerver) {
 
 	HttpEndpoint *private_endpoint = http_group_get (api, "private", fuzz_ok_handler);
 	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
+
+	// the upgrades to WebSocket, a socket pair never starts their connections
+	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
+	const char *protocols[] = { "chat", "superchat" };
+	(void) http_endpoint_set_web_socket_protocols (socket, protocols, 2);
+	http_endpoint_set_web_socket_compression (socket, true);
+	http_endpoint_set_web_socket_origin_check (socket, true);
 
 }
 
@@ -169,10 +180,11 @@ static void fuzz_feed (
 	HttpReceive *http_receive = http_receive_create (&cerver_receive);
 	if (!http_receive) abort ();
 
+	// an upgraded connection is read by its WebSocket, never by the parser again
 	const size_t step = piece_len ? piece_len : request_len;
 	for (
 		size_t start = 0;
-		(start < request_len) && (connection->socket->sock_fd != -1);
+		(start < request_len) && (connection->socket->sock_fd != -1) && !http_receive->upgraded;
 		start += step
 	) {
 		const size_t left = request_len - start;

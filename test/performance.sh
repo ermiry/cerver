@@ -27,6 +27,13 @@ GET_PATH=/bench
 POST_PATH=/bench/json
 JSON_BODY='{"name": "cerver", "values": [1, 2, 3]}'
 
+WEB_SOCKET_PATH=/ws/echo
+WEB_SOCKET_SIZE=64
+WEB_SOCKET_ALLOCATION_CONNECTIONS=8
+WEB_SOCKET_ALLOCATION_MESSAGES=1024
+WEB_SOCKET_MAX_ALLOCATIONS=0.01
+WEB_SOCKET_LOAD_MESSAGES=4096
+
 source test/process.sh
 
 export LD_LIBRARY_PATH=./bin
@@ -125,6 +132,56 @@ check_load () {
 	[ "$per_second" -ge "$minimum" ] || fail "$method $path concurrency $concurrency: $per_second req/s < $minimum"
 }
 
+count_web_socket_allocations () {
+	local messages="$1"
+	local log="$LOGS/allocations.log"
+
+	server_start "$log" $VALGRIND_READY_SECONDS valgrind --tool=memcheck --leak-check=no
+
+	./benchmarks/bin/messages $PORT $WEB_SOCKET_ALLOCATION_CONNECTIONS "$messages" $WEB_SOCKET_SIZE $WEB_SOCKET_PATH > /dev/null
+
+	server_stop
+
+	grep "total heap usage" "$log" | sed -E 's/.*usage: ([0-9,]+) allocs.*/\1/' | tr -d ','
+}
+
+# the same connections with one message and with many, so only the messages are counted
+check_web_socket_allocations () {
+	local base=$(count_web_socket_allocations 1)
+	local total=$(count_web_socket_allocations $(( WEB_SOCKET_ALLOCATION_MESSAGES + 1 )))
+	local messages=$(( WEB_SOCKET_ALLOCATION_CONNECTIONS * WEB_SOCKET_ALLOCATION_MESSAGES ))
+
+	local per_message=$(awk -v total="$total" -v base="$base" -v messages="$messages" 'BEGIN { printf "%.3f", (total - base) / messages }')
+
+	echo "WebSocket $WEB_SOCKET_PATH - $per_message allocations per message ($(( total - base )) for $messages, maximum $WEB_SOCKET_MAX_ALLOCATIONS)"
+	awk -v value="$per_message" -v maximum=$WEB_SOCKET_MAX_ALLOCATIONS 'BEGIN { exit !(value <= maximum) }' \
+		|| fail "WebSocket allocations"
+}
+
+check_web_socket_load () {
+	local connections="$1"
+
+	server_start "$LOGS/load.log" $READY_SECONDS
+	local result=$(./benchmarks/bin/messages $PORT "$connections" $WEB_SOCKET_LOAD_MESSAGES $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
+	server_stop
+
+	echo "WebSocket $WEB_SOCKET_PATH - $result"
+
+	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) msg\/s.*/\1/')
+	local failed=$(field "$result" failed)
+
+	[ "$failed" -eq 0 ] || fail "WebSocket connections $connections errors"
+
+	local baseline=$(baseline_value WS "$connections")
+	if [ -z "$baseline" ]; then
+		echo "no baseline for $ARCHITECTURE WS $connections, measured: $ARCHITECTURE WS $connections $per_second"
+		return
+	fi
+
+	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
+	[ "$per_second" -ge "$minimum" ] || fail "WebSocket connections $connections: $per_second msg/s < $minimum"
+}
+
 check_tree () {
 	local routes="$1"
 
@@ -139,11 +196,13 @@ check_tree () {
 echo "Allocations..."
 check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
 check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+check_web_socket_allocations
 
 echo "Load on $ARCHITECTURE..."
 for concurrency in "${CONCURRENCIES[@]}"; do
 	check_load GET $GET_PATH "" "$concurrency"
 	check_load POST $POST_PATH "$JSON_BODY" "$concurrency"
+	check_web_socket_load "$concurrency"
 done
 
 echo "Routes tree..."

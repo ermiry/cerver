@@ -288,6 +288,13 @@ CERVER_PRIVATE u8 http_response_send_pieces (
 	const struct _HttpReceive *http_receive, struct iovec *parts, const int n_parts
 );
 
+// works as http_response_send_pieces () for a complete response that is not compiled,
+// it is counted with its status, like a 101 of an upgrade
+CERVER_PRIVATE u8 http_response_send_pieces_status (
+	const struct _HttpReceive *http_receive, const http_status status,
+	struct iovec *parts, const int n_parts
+);
+
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send (

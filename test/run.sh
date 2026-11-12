@@ -54,6 +54,8 @@ run ./test/bin/utils
 
 run ./test/bin/http
 
+run ./test/bin/websockets
+
 run ./test/bin/json
 
 run ./test/bin/jwt

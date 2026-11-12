@@ -40,6 +40,8 @@
 
 #include "cerver/http/http.h"
 
+#include "cerver/http/websockets/websocket.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
@@ -2182,7 +2184,8 @@ static inline u8 cerver_receive_http_actual (
 
 			http_receive->handler (http_receive, rc, buffer);
 
-			retval = 0;
+			// an upgraded connection is read by its WebSocket from now on
+			retval = http_receive->upgraded ? 1 : 0;
 		} break;
 	}
 
@@ -2510,8 +2513,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		} break;
 	}
 
-	// the connection has ended
-	connection_drop (cr->cerver, cr->connection);
+	// the connection has ended, or it belongs to its WebSocket now
+	if (!http_web_socket_start (cr, http_receive)) {
+		connection_drop (cr->cerver, cr->connection);
+	}
 
 	http_receive_delete (http_receive);
 

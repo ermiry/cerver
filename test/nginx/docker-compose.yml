@@ -30,11 +30,21 @@ services:
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
 
+  cerver-websocket:
+    image: ${IMAGE:-ermiry/cerver:test}
+    working_dir: /opt/cerver/test/web
+    command: ["../bin/web/websocket"]
+    environment:
+      CERVER_TEST_ADDRESS: "::"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 0
+
   nginx:
     image: ${NGINX_IMAGE:-nginx:1.31.6-alpine}
     depends_on:
       - cerver
       - cerver-disconnect
+      - cerver-websocket
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
     volumes:

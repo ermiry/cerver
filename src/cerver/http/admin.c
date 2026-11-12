@@ -16,6 +16,8 @@
 #include "cerver/http/route.h"
 #include "cerver/http/tree.h"
 
+#include "cerver/http/websockets/registry.h"
+
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
 
@@ -533,6 +535,51 @@ static void http_cerver_admin_handler_gone_stats (
 
 }
 
+static void http_cerver_admin_web_socket_value (
+	json_t *web_sockets, const char *name, const u64 value
+) {
+
+	(void) json_object_set_new (web_sockets, name, json_integer ((json_int_t) value));
+
+}
+
+// the WebSocket connections that are open, what they did and how they ended
+static void http_cerver_admin_handler_web_socket_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	HttpWebSocketRegistry *registry = http_cerver->web_sockets;
+	if (registry) {
+		json_t *web_sockets = json_object ();
+
+		(void) pthread_mutex_lock (&registry->mutex);
+		const u64 connections = registry->count;
+		(void) pthread_mutex_unlock (&registry->mutex);
+
+		http_cerver_admin_web_socket_value (web_sockets, "connections", connections);
+		http_cerver_admin_web_socket_value (web_sockets, "n_opened", CERVER_STATS_GET (registry->n_opened));
+		http_cerver_admin_web_socket_value (web_sockets, "n_closed", CERVER_STATS_GET (registry->n_closed));
+		http_cerver_admin_web_socket_value (web_sockets, "n_messages_received", CERVER_STATS_GET (registry->n_messages_received));
+		http_cerver_admin_web_socket_value (web_sockets, "n_messages_sent", CERVER_STATS_GET (registry->n_messages_sent));
+		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_received", CERVER_STATS_GET (registry->n_bytes_received));
+		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_sent", CERVER_STATS_GET (registry->n_bytes_sent));
+		http_cerver_admin_web_socket_value (web_sockets, "n_failed_sends", CERVER_STATS_GET (registry->n_slow));
+		http_cerver_admin_web_socket_value (web_sockets, "n_errors", CERVER_STATS_GET (registry->n_errors));
+
+		json_t *rejected = json_object ();
+		for (unsigned int rejection = 0; rejection < HTTP_WEB_SOCKET_REJECTIONS; rejection++) {
+			http_cerver_admin_web_socket_value (
+				rejected, http_web_socket_rejection_to_string ((HttpWebSocketRejection) rejection),
+				CERVER_STATS_GET (registry->n_rejected[rejection])
+			);
+		}
+
+		(void) json_object_set_new (web_sockets, "n_rejected", rejected);
+		(void) json_object_set_new (json, "websockets", web_sockets);
+	}
+
+}
+
 char *http_cerver_admin_generate_routes_stats_json (
 	const HttpCerver *http_cerver
 ) {
@@ -552,6 +599,8 @@ char *http_cerver_admin_generate_routes_stats_json (
 		http_cerver_admin_handler_responses_stats (http_cerver, json);
 
 		http_cerver_admin_handler_gone_stats (http_cerver, json);
+
+		http_cerver_admin_handler_web_socket_stats (http_cerver, json);
 
 		json_string = json_dumps (json, 0);
 

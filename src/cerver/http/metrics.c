@@ -17,6 +17,8 @@
 #include "cerver/http/route.h"
 #include "cerver/http/tree.h"
 
+#include "cerver/http/websockets/registry.h"
+
 #define HTTP_METRICS_HEADER_FORMAT				"# HELP %s %s\n# TYPE %s %s\n"
 
 #define HTTP_METRICS_INFO_FORMAT				"cerver_info{version=\"%s\"} 1\n"
@@ -559,6 +561,117 @@ static void http_metrics_endpoints_all (String *metrics, const HttpCerver *http_
 
 }
 
+// a counter of the WebSocket connections
+typedef struct HttpMetricsWebSocket {
+
+	const char *name;
+	const char *help;
+	size_t offset;
+
+} HttpMetricsWebSocket;
+
+static const HttpMetricsWebSocket http_metrics_web_socket_counters[] = {
+	{ "cerver_websocket_opened_total", "The WebSocket connections that were opened.", offsetof (HttpWebSocketRegistry, n_opened) },
+	{ "cerver_websocket_closed_total", "The WebSocket connections that ended.", offsetof (HttpWebSocketRegistry, n_closed) },
+	{ "cerver_websocket_messages_received_total", "The messages that the WebSocket connections received.", offsetof (HttpWebSocketRegistry, n_messages_received) },
+	{ "cerver_websocket_messages_sent_total", "The messages that the WebSocket connections sent.", offsetof (HttpWebSocketRegistry, n_messages_sent) },
+	{ "cerver_websocket_received_bytes_total", "The bytes of the messages that were received, after they were decompressed.", offsetof (HttpWebSocketRegistry, n_bytes_received) },
+	{ "cerver_websocket_sent_bytes_total", "The bytes of the messages that were sent, before they were compressed.", offsetof (HttpWebSocketRegistry, n_bytes_sent) },
+	{ "cerver_websocket_failed_sends_total", "The WebSocket connections that failed because a send did not end in time.", offsetof (HttpWebSocketRegistry, n_slow) },
+	{ "cerver_websocket_errors_total", "The WebSocket connections that ended with an error.", offsetof (HttpWebSocketRegistry, n_errors) }
+};
+
+#define HTTP_METRICS_WEB_SOCKET_COUNTERS		(sizeof (http_metrics_web_socket_counters) / sizeof (HttpMetricsWebSocket))
+
+#define HTTP_METRICS_WEB_SOCKET_CONNECTIONS_NAME		"cerver_websocket_connections"
+
+#define HTTP_METRICS_WEB_SOCKET_REJECTED_NAME			"cerver_websocket_rejected_total"
+#define HTTP_METRICS_WEB_SOCKET_REJECTED_FORMAT			HTTP_METRICS_WEB_SOCKET_REJECTED_NAME "{reason=\"%s\"} %zu\n"
+
+#define HTTP_METRICS_WEB_SOCKET_CLOSES_NAME				"cerver_websocket_closes_total"
+#define HTTP_METRICS_WEB_SOCKET_CLOSES_FORMAT			HTTP_METRICS_WEB_SOCKET_CLOSES_NAME "{code=\"%u\"} %zu\n"
+#define HTTP_METRICS_WEB_SOCKET_CLOSES_OTHER_FORMAT		HTTP_METRICS_WEB_SOCKET_CLOSES_NAME "{code=\"other\"} %zu\n"
+
+static void http_metrics_web_socket_rejected (String *metrics, const HttpWebSocketRegistry *registry) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_WEB_SOCKET_REJECTED_NAME,
+		"The upgrades to WebSocket that were rejected, by their reason.", http_metrics_type_counter
+	);
+
+	for (unsigned int rejection = 0; rejection < HTTP_WEB_SOCKET_REJECTIONS; rejection++) {
+		http_metrics_append (
+			metrics, line,
+			snprintf (
+				line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_WEB_SOCKET_REJECTED_FORMAT,
+				http_web_socket_rejection_to_string ((HttpWebSocketRejection) rejection),
+				(size_t) CERVER_STATS_GET (registry->n_rejected[rejection])
+			)
+		);
+	}
+
+}
+
+static void http_metrics_web_socket_closes (String *metrics, const HttpWebSocketRegistry *registry) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_WEB_SOCKET_CLOSES_NAME,
+		"The WebSocket connections that ended, by the code of their close (1006 without it).", http_metrics_type_counter
+	);
+
+	for (unsigned int i = 0; i < HTTP_WEB_SOCKET_CLOSE_CODES_SIZE; i++) {
+		http_metrics_append (
+			metrics, line,
+			snprintf (
+				line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_WEB_SOCKET_CLOSES_FORMAT,
+				HTTP_WEB_SOCKET_CLOSE_CODES_FIRST + i, (size_t) CERVER_STATS_GET (registry->n_closes[i])
+			)
+		);
+	}
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (
+			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_WEB_SOCKET_CLOSES_OTHER_FORMAT,
+			(size_t) CERVER_STATS_GET (registry->n_closes_other)
+		)
+	);
+
+}
+
+// the WebSocket connections that are open and what they did
+static void http_metrics_web_sockets (String *metrics, const HttpCerver *http_cerver) {
+
+	HttpWebSocketRegistry *registry = http_cerver->web_sockets;
+
+	(void) pthread_mutex_lock (&registry->mutex);
+	const size_t connections = registry->count;
+	(void) pthread_mutex_unlock (&registry->mutex);
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_WEB_SOCKET_CONNECTIONS_NAME, "The WebSocket connections that are open.", http_metrics_type_gauge
+	);
+
+	http_metrics_value (metrics, HTTP_METRICS_WEB_SOCKET_CONNECTIONS_NAME, connections);
+
+	for (size_t i = 0; i < HTTP_METRICS_WEB_SOCKET_COUNTERS; i++) {
+		const HttpMetricsWebSocket *counter = &http_metrics_web_socket_counters[i];
+		const u64 *field = (const u64 *) ((const char *) registry + counter->offset);
+
+		http_metrics_header (metrics, counter->name, counter->help, http_metrics_type_counter);
+		http_metrics_value (metrics, counter->name, (size_t) CERVER_STATS_GET (*field));
+	}
+
+	http_metrics_web_socket_rejected (metrics, registry);
+
+	http_metrics_web_socket_closes (metrics, registry);
+
+}
+
 String *http_cerver_metrics_generate (const HttpCerver *http_cerver) {
 
 	String *metrics = NULL;
@@ -577,6 +690,8 @@ String *http_cerver_metrics_generate (const HttpCerver *http_cerver) {
 			http_metrics_vanished (metrics, http_cerver);
 
 			http_metrics_thpool (metrics, http_cerver);
+
+			if (http_cerver->web_sockets) http_metrics_web_sockets (metrics, http_cerver);
 
 			if (http_cerver->tree) http_metrics_endpoints_all (metrics, http_cerver);
 		}

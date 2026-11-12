@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada, WebSocket sobre hilos) |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-65 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, implementada y validada como la 2.1b-8 (§4.2), sin publicar |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, implementada y validada como la 2.1b-9 (§4.6) |
 
 **Las citas `archivo:línea`:**
 
@@ -84,8 +84,10 @@ Los principios de cerver se conservan: ligero, enfocado al rendimiento y persona
   hilo de la conexión.
 - **Multipart:** se escribe a disco dentro del parser (`O_EXCL`, `http/http.c:2882-2943`). Desde la 2.0b-61, los
   generadores default de nombres llevan una secuencia por petición, que sigue siendo única con keep-alive.
-- **Asignaciones por conexión:** `Connection`, `Socket`, `ConnectionStats` + 2 `PacketsPerType`, `CerverReceive` y
-  `file_stats`. Son 8 asignaciones por GET (`test/performance.sh`).
+- **Asignaciones por conexión:** en la 2.0b-60, `Connection`, `Socket`, `ConnectionStats` + 2 `PacketsPerType`,
+  `CerverReceive` y `file_stats` eran 8 asignaciones por GET. Desde el port de la 1.8 (2.0b-63 y 2.0b-64) las
+  conexiones, los sockets y los receives se reciclan con sus stats adentro: GET 1 y POST JSON 19
+  (`test/performance.sh`).
 - **Lo que ya sirve para el loop:**
   - el parser ya es incremental y push-based (`test/http/receive.c` lo alimenta partido en cada byte);
   - `sendmsg` ya maneja escrituras parciales (`http_response_parts_advance`);
@@ -118,15 +120,16 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 |---|---|---|---|
 | **F0** | 2.1b-7 | Ramas, merges de `ws` y `http-optimizations`, `.gitattributes`, CI por rama en `gcc:16.2`, este roadmap | 2.0b-61 publicada en `http` |
 | **F2** | 2.1b-8 | llhttp 9.4.3: modo estricto, todos los métodos HTTP, lenient por cerver | F0 |
-| **F6a** | 2.1b-9 | WebSocket sobre hilos: una conexión en un hilo propio, con tope | F2 |
-| **F1** | 2.1b-10 | Preparación sin cambio de comportamiento | F2 |
-| **F3** | 2.1b-11 | Event loop, cerrando por petición | F1, F2 + la beta de `http` con el port de la 1.8, ya mergeada en `nightly` |
-| **F4** | 2.1b-12 | Keep-alive real | F3 |
-| **F5** | 2.1b-13 | Pools nombrados, health / ready, métricas | F4 |
-| **F6b** | 2.1b-14 | WebSocket sobre el loop | F4, F6a |
-| **F7** | 2.1b-15 | Auth asíncrona | F5 |
-| **F8** | 2.1b-16 | TLS en proceso | F4 |
-| **F9** | 2.1b-17+ | HTTP/2 | F8 |
+| **F6a** | 2.1b-9 | WebSocket completo sobre hilos (RFC 6455 y permessage-deflate), el cliente, y el port de la 2.0b-66 que necesita | F2 |
+| **Merge** | 2.1b-10 | El merge de la 2.0b-66 de `http` (el port de la 1.8 completa) | 2.0b-66 publicada |
+| **F1** | 2.1b-11 | Preparación sin cambio de comportamiento | F2 |
+| **F3** | 2.1b-12 | Event loop, cerrando por petición | F1, F2 + la 2.0b-66 mergeada en `nightly` |
+| **F4** | 2.1b-13 | Keep-alive real | F3 |
+| **F5** | 2.1b-14 | Pools nombrados, health / ready, métricas | F4 |
+| **F6b** | 2.1b-15 | WebSocket sobre el loop | F4, F6a |
+| **F7** | 2.1b-16 | Auth asíncrona | F5 |
+| **F8** | 2.1b-17 | TLS en proceso | F4 |
+| **F9** | 2.1b-18+ | HTTP/2 | F8 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
 ### 4.0 F0 — La línea (2.1b-7)
@@ -161,7 +164,7 @@ petición en los nombres default de uploads.
 10. **Sin tags `archive/*`:** `2.1b-6` marca la punta de `ws`, y `ws`, `ws-beta` y `http-optimizations` quedan como
     ancestros de `nightly`. Esas ramas ya no reciben trabajo.
 
-### 4.1 F1 — Preparación (2.1b-10)
+### 4.1 F1 — Preparación (2.1b-11)
 
 No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» de lo que es «por petición».
 
@@ -174,7 +177,8 @@ No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» d
 - **`HttpReceive` independiente de `HandlerThreadContext`:** la arena y los buffers de tokens se inyectan.
   `http_receive_create_arena` los recibe en lugar de tomarlos del hilo.
 - **El log y los stats por petición,** fuera de `cerver_receive_http`: `start_time` y las deadlines van por petición.
-- **La conexión web sin `ConnectionStats` / `PacketsPerType`:** menos asignaciones por conexión.
+- **La conexión web sin `ConnectionStats` / `PacketsPerType`:** ya embebidos y reciclados desde el port de la 1.8;
+  queda revisar lo que la conexión web todavía crea por petición.
 
 ### 4.2 F2 — llhttp (2.1b-8)
 
@@ -189,7 +193,7 @@ que usan F3 (auth y dispatch desde el loop) y F4 (pipelining). Se adelantó a F1
 |---|---|
 | Versión | llhttp **v9.4.3** (`release/v9.4.3`, 2026-07-30), la última estable al implementar. Reemplaza los sembrados de 6.0.6 de F0 |
 | Integración | Un split de cerver en `include/cerver/http/parser/{llhttp,helpers,api}.h` y `src/cerver/http/parser/{llhttp,api,http}.c`, con el estilo de cerver. `llhttp_t` va **embebido** en `HttpReceive` (sin `malloc` / `arena_alloc` del parser) |
-| Licencia | llhttp es MIT: cada archivo conserva el aviso de copyright y de permiso, y `THIRD-PARTY.md` lista el código de terceros |
+| Licencia | llhttp es MIT: cada archivo conserva el aviso de copyright y de permiso, y `thirdparty.md` lista el código de terceros |
 | Restyle | `llhttp.c` es generado por llparse (~10 mil líneas): lo reformatea un script verificado fuera del repo (idempotente y el mismo `objdump -d` del `.o` sin `-g` antes y después). Los headers, los renombres y el diseño se hacen a mano; las tablas `XX(...)` no se tocan |
 | Choques de nombres | El `llhttp.h` de upstream define `HTTP_METHOD_MAP`, `HTTP_STATUS_MAP` y `HTTP_STATUS_*`, que chocan con cerver. En el split, `method.h` es la única fuente de los métodos; `HTTP_STATUS_MAP` / `llhttp_status` salen (cerver solo parsea peticiones); los mapas que el generado necesita llevan el prefijo `LLHTTP_` |
 | Métodos | **Una sola tabla:** `method.h` guarda `REQUEST_METHOD_MAP` con los números de llhttp, los 34 métodos HTTP (0–33) y `QUERY` (46), todos registrables. Se quitan `enum http_method`, `HTTP_METHOD_*`, `HTTP_METHOD_NONE` y `http_method_str ()`: queda `http_request_method_str ()`. `REQUEST_METHOD_SIZE` = 47, `REQUEST_METHOD_UNDEFINED` = 255 (34 es `PRI` en llhttp) |
@@ -256,7 +260,7 @@ varía los flags.
   2233–2497 MB/s (arm64, gcc 16.2, `TYPE=production`);
 - `nm -D bin/libcerver.so` sin `http_parser_*` ni `http_method_str`.
 
-### 4.3 F3 — El event loop (2.1b-11)
+### 4.3 F3 — El event loop (2.1b-12)
 
 **El prerrequisito.** `http` tiene que recibir el port de la 1.8 completa (hasta la 1.8b-9: protocolo portable,
 serializador por esquema, game, el deadline total de envío), que cambia `cerver.c`, `handler.c`, `client.c` y
@@ -403,7 +407,7 @@ CERVER_EXPORT void cerver_set_io_threads (Cerver *cerver, unsigned int n_threads
 CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max);              // 2^14
 ```
 
-### 4.4 F4 — Keep-alive real (2.1b-12)
+### 4.4 F4 — Keep-alive real (2.1b-13)
 
 **`http_receive_reset`, entre peticiones de una conexión:**
 
@@ -454,7 +458,7 @@ CERVER_EXPORT void http_cerver_set_keep_alive_timeout (HttpCerver *http_cerver, 
 CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver, unsigned int max);      // 2^10
 ```
 
-### 4.5 F5 — Pools nombrados, health y métricas (2.1b-13)
+### 4.5 F5 — Pools nombrados, health y métricas (2.1b-14)
 
 **Los pools nombrados (decisión).**
 
@@ -496,9 +500,9 @@ CERVER_EXPORT void http_cerver_set_ready_route (HttpCerver *http_cerver, const c
 
 ### 4.6 F6 — WebSocket
 
-En `nightly` no hay código de WebSocket: el merge de `ws` en F0 fue `-s ours`, así que `websockets.c` solo vive en la
-historia (`git show ws:src/cerver/http/websockets.c`). Hasta F6a, una ruta con el modifier
-`HTTP_ROUTE_MODIFIER_WEB_SOCKET` y una petición con `Upgrade` responden 501. WebSocket entra en dos partes.
+El merge de `ws` en F0 fue `-s ours`, así que su `websockets.c` solo vive en la historia
+(`git show ws:src/cerver/http/websockets.c`); F6a escribió WebSocket de nuevo, y hasta ella una ruta con el modifier
+`HTTP_ROUTE_MODIFIER_WEB_SOCKET` y una petición con `Upgrade` respondían 501. WebSocket entra en dos partes.
 
 **De `ws` se reusan como referencia:**
 
@@ -514,24 +518,50 @@ historia (`git show ws:src/cerver/http/websockets.c`). Hasta F6a, una ruta con e
 
 #### F6a — WebSocket sobre hilos (2.1b-9)
 
-Corre con el handler de hoy (thpool), sin el loop.
+Corre con el handler de hoy (thpool), sin el loop. **Implementada y validada.** El código está en
+`src/cerver/http/websockets/` (headers espejo en `include/cerver/http/websockets/`):
 
-- **El hilo:** el hilo del thpool hace el handshake (después de que llhttp pausa con el `Upgrade`) y entrega la
-  conexión a un hilo propio, registrado en el `ThreadGroup` del cerver y unido en el teardown. El thpool queda libre
-  para HTTP.
-- **El tope:** un máximo de conexiones WebSocket por cerver; arriba del tope el handshake responde 503.
-- **La API:** sobre los endpoints y los grupos (`http_endpoint_set_web_socket ()`, su equivalente en los grupos), con
-  los callbacks `on_open`, `on_message`, `on_close` y `on_error` y su custom data. Un `HttpWebSocket` con
-  `http_web_socket_send_text ()`, `_send_binary ()` y `_close ()`, que se pueden llamar desde otros hilos. Las
-  `HttpRoute` con el modifier se traducen en `compatibility.c`.
-- **El alcance** (RFC 6455 completo, permessage-deflate, autobahn-testsuite) se decide al planear la fase.
+| Módulo | Contenido |
+|---|---|
+| `text.c` | UTF-8 incremental (estado entre fragmentos, sin overlong, surrogates ni > U+10FFFF, falla en el primer byte malo) |
+| `frame.c` | El encoder (la longitud mínima, la máscara) y el parser incremental (los bytes de un frame en muchas lecturas, muchos frames por lectura, desenmascarado por tramos) |
+| `message.c` | Las reglas de los mensajes sin sockets: fragmentos y controles intercalados, el close (1002 / 1007), `max_message` (1009, también descomprimido), streaming |
+| `handshake.c` | El accept (SHA-1 de EVP), la llave de 16 bytes, los tokens en listas, los subprotocolos |
+| `deflate.c` | permessage-deflate (RFC 7692): la negociación en las dos puntas, context takeover y ventanas, el inflate acotado; sin zlib no se negocia. zlib no comprime raw con ventana 2^8: una oferta que la exige se declina |
+| `settings.c` | Los handlers y las opciones, heredables por los grupos uno por uno |
+| `websocket.c` | `HttpWebSocket`: referencias, su hilo (`poll` del socket y un `eventfd`), los envíos, el cierre, ping / pong, la entrega desde el pool |
+| `registry.c` | Las conexiones de cada cerver, el tope (con reservas antes del 101), salas, broadcast, `for_each`, stats |
+| `client.c` | `HttpWebSocketClient`: URL, un connect por dirección resuelta, el handshake verificado (RFC 6455 §4.1), headers, subprotocolos, deflate, connect síncrono y asíncrono, reconexión con backoff y jitter |
 
-#### F6b — WebSocket sobre el loop (2.1b-14)
+- **El upgrade:** se valida antes del body en `on_headers_complete` (después de la auth del endpoint): 400, 426 con
+  `Sec-WebSocket-Version: 13`, 403 (Origin) y 503 (el tope). En `on_message_complete` corren los middlewares before,
+  `on_upgrade ()` (rechaza con su status, elige el subprotocolo, pone los datos y adopta el `decoded_data`) y el 101
+  crudo (sin `Content-Length` ni `Connection: close`). Los bytes que llegaron pegados a la petición pasan a la
+  conexión. Una petición sin upgrade va al handler del endpoint, o 426 sin él.
+- **El hilo:** después del 101, `cerver_receive_http` entrega la conexión a un hilo propio de `connection_threads`
+  (el drenado lo espera); el hilo del pool queda libre.
+- **El envío (decisión):** escritura directa con un `send_mutex` por frame y un `message_mutex` por mensaje (los de
+  streaming lo sostienen de `send_begin` a `send_end`), con deadline (`send_timeout`); un envío que vence falla la
+  conexión. Los controles pasan entre los frames de un mensaje. El broadcast usa un timeout corto por conexión. La
+  cola de salida escrita por el loop queda para F6b.
+- **El apagado:** el drenado manda 1001 a cada conexión y corta las que no terminan antes de la gracia.
+- **La API vieja:** una `HttpRoute` con el modifier sigue en 501, con un warning (decisión: WebSocket solo con
+  endpoints y grupos).
+- **Las métricas:** `cerver_websocket_*` en `cerver/metrics` y `websockets` en el admin.
+
+**La validación:** `test/bin/websockets` (37 unidades, 17 de servidor y 7 de cliente) con gcc, ASan + UBSan, TSan,
+valgrind y `::1`; la región del upgrade de `test/http/receive.c` partida en cada byte; los fuzzers `frame` y
+`handshake` (y `request` con un endpoint WebSocket); autobahn-testsuite (`test/autobahn/run.sh`) en el servidor y en el
+cliente: 517 casos cada uno, 514 OK y 3 INFORMATIONAL, sin NON-STRICT, FAILED ni UNIMPLEMENTED; el par `web/websocket`
+en las dos familias; nginx con `Upgrade`; `performance.sh` con 0 asignaciones por mensaje y ~1.9 M mensajes/s
+(`benchmarks/messages.c`); `benchmarks/frames.c`.
+
+#### F6b — WebSocket sobre el loop (2.1b-15)
 
 **La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
 pool de la ruta.
 
-**Aquí sí escribe el loop.** `http_websocket_send` se llama desde cualquier hilo: encola en una cola de salida acotada
+**Aquí sí escribe el loop.** `http_web_socket_send` se llama desde cualquier hilo: encola en una cola de salida acotada
 de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 
 - Con la cola llena: descartar, o cerrar con 1008, según la configuración.
@@ -540,20 +570,20 @@ de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
 `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
 
-### 4.7 F7 — Auth asíncrona (2.1b-15)
+### 4.7 F7 — Auth asíncrona (2.1b-16)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
 - **La conexión espera en `AUTH` sin hilo,** con un pool de conexiones persistentes por loop.
 - **El fallback:** la etapa en el pool, para una auth custom que no usa ese cliente.
 
-### 4.8 F8 — TLS en proceso (2.1b-16)
+### 4.8 F8 — TLS en proceso (2.1b-17)
 
 - OpenSSL no bloqueante en la máquina de estados (`SSL_read` / `SSL_write`, `WANT_READ` / `WANT_WRITE` mapeados a
   epoll), SNI y recarga de certificados. OpenSSL ya se enlaza, hoy solo para JWT.
 - Lleva su propia fase de diseño antes de implementar.
 
-### 4.9 F9 — HTTP/2 (2.1b-17+)
+### 4.9 F9 — HTTP/2 (2.1b-18+)
 
 - Primero h2c (prior knowledge) detrás de un proxy, después ALPN con TLS.
 - Un stream = una petición al pool. El control de flujo vive en el loop.
@@ -618,8 +648,8 @@ Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
 - **`test/http/receive.c`** alimentado por el loop, partido en cada byte.
 - **`test/nginx/`** con keep-alive real y reinicios del servidor bajo carga: 0 resets, 0 502 y el reuso medido con
   `ss`.
-- **`benchmarks/load.c`** con modo keep-alive y umbrales nuevos en `performance.sh`. La meta es GET ≤ 4 asignaciones
-  (hoy 8), y keep-alive contra close por petición.
+- **`benchmarks/load.c`** con modo keep-alive y umbrales nuevos en `performance.sh`. La meta es no pasar de las
+  asignaciones de hoy (GET 1, POST JSON 19) con keep-alive, y medir keep-alive contra close por petición.
 - **F2:** las diferencias de llhttp documentadas caso por caso (§4.2), y la matriz completa de `test/http/disconnect.c`
   con los mismos contadores por etapa.
 - **F6a y F6b:** autobahn-testsuite (fuzzingclient), frames partidos en cada byte, envío desde otros hilos con TSan, detrás
@@ -683,7 +713,7 @@ producción.
 | Rutas lentas vs rápidas | comparten slots | pools nombrados aislados |
 | Healthcheck | mide si hay un hilo libre: `unhealthy` bajo carga | liveness desde el loop + readiness por saturación |
 | Conexiones TCP | una nueva por salto y por petición | reutilizadas: sin handshake, sin `TIME_WAIT` acumulado, menos accepts |
-| Asignaciones por GET | 8 | meta ≤ 4 |
+| Asignaciones por GET | 1 (8 en la 2.0b-60) | 1, también con keep-alive |
 | Slowloris / clientes lentos | un hilo hasta 16 s | un timer |
 | Handler sin respuesta | 500 + close (desde la 2.0b-61) | igual |
 | WebSocket | 501 hasta F6a; desde F6a, un hilo propio por conexión, con tope | una conexión más del loop (F6b) |
@@ -708,4 +738,4 @@ keep-alive debería multiplicar los req/s de respuestas pequeñas; se mide en `b
 - Los defaults nuevos son potencias de 2: 2^14 conexiones, 2^7 s de idle, 2^10 peticiones, 2^8 ms de tick, 2^5 s de
   espera.
 - **Los arreglos que sirven a la 2.0 se hacen en `http`** y llegan a `nightly` por un merge después de cada
-  2.0b / 2.0rc / 2.0.N, nunca por rebase. Nunca al revés, salvo la integración de §4.11.
+  2.0b / 2.0.N, nunca por rebase. Nunca al revés, salvo la integración de §4.11.

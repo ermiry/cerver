@@ -556,7 +556,7 @@ HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -585,7 +585,7 @@ static void http_response_compile_single_header (
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
 		"\r\n",
-		response->status, http_status_string (response->status),
+		(unsigned int) response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
 
@@ -608,7 +608,7 @@ static void http_response_compile_multiple_headers (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER,
-		response->status, http_status_string (response->status),
+		(unsigned int) response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
 
@@ -736,15 +736,38 @@ static void http_response_mark_responded (const HttpReceive *http_receive) {
 
 }
 
-// the send timeout of the cerver of the connection,
-// a cerver without one uses CERVER_DEFAULT_SEND_TIMEOUT, so a client that never reads
-// can not keep a thread forever
-static time_t http_response_send_timeout (const HttpReceive *http_receive) {
+// the milliseconds that all the sends of a response take together:
+// the send timeout of the HTTP cerver, or the one of its cerver (secs),
+// or CERVER_DEFAULT_SEND_TIMEOUT, so a client that never reads can not keep a thread forever
+static u32 http_response_send_timeout (const HttpReceive *http_receive) {
 
 	const Cerver *cerver = http_receive->cr->cerver;
 
-	return (cerver && cerver->send_timeout) ?
-		(time_t) cerver->send_timeout : (time_t) CERVER_DEFAULT_SEND_TIMEOUT;
+	u32 timeout = (u32) CERVER_DEFAULT_SEND_TIMEOUT * SOCKET_MILLISECONDS_PER_SECOND;
+	if (http_receive->http_cerver && http_receive->http_cerver->send_timeout) {
+		timeout = http_receive->http_cerver->send_timeout;
+	}
+
+	else if (cerver && cerver->send_timeout) {
+		timeout = cerver->send_timeout * SOCKET_MILLISECONDS_PER_SECOND;
+	}
+
+	return timeout;
+
+}
+
+// the deadline of the response is set by its first send and shared by the others,
+// a stream can last longer than a response, so each one of its pieces sets its own
+static const struct timespec *http_response_send_deadline (const HttpReceive *http_receive) {
+
+	HttpReceive *receive = (HttpReceive *) http_receive;
+
+	if (!receive->send_deadline_set || (receive->stream.state == HTTP_STREAM_STATE_STARTED)) {
+		socket_deadline_create_milliseconds (&receive->send_deadline, http_response_send_timeout (http_receive));
+		receive->send_deadline_set = true;
+	}
+
+	return &receive->send_deadline;
 
 }
 
@@ -773,8 +796,8 @@ static void http_response_send_failed (
 }
 
 // sends all the parts with as few system calls as the socket takes,
-// with the send of the core (MSG_NOSIGNAL, EINTR, and poll () on a full non blocking socket
-// until the send timeout of the cerver)
+// with the send of the core (MSG_NOSIGNAL, EINTR, and poll () on a full socket
+// until the deadline of the response)
 // returns 0 on success, 1 on error
 static u8 http_response_send_vector (
 	const HttpReceive *http_receive, struct iovec *parts, int n_parts
@@ -789,8 +812,8 @@ static u8 http_response_send_vector (
 
 	size_t sent = 0;
 	int error = 0;
-	const u8 retval = socket_send_vector (
-		socket, parts, n_parts, 0, http_response_send_timeout (http_receive),
+	const u8 retval = socket_send_vector_until (
+		socket, parts, n_parts, 0, http_response_send_deadline (http_receive),
 		&sent, &error
 	);
 
@@ -857,6 +880,22 @@ u8 http_response_send_pieces (
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent_bytes (http_receive, total);
+
+	return retval;
+
+}
+
+u8 http_response_send_pieces_status (
+	const HttpReceive *http_receive, const http_status status,
+	struct iovec *parts, const int n_parts
+) {
+
+	size_t total = 0;
+	for (int i = 0; i < n_parts; i++) total += parts[i].iov_len;
+
+	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
+
+	if (!retval) http_response_sent (http_receive, status, total);
 
 	return retval;
 
@@ -1722,21 +1761,24 @@ u8 http_response_create_and_send (
 // the bytes that a pipe copies until the end of the file
 static const size_t http_response_pipe_whole_file = SIZE_MAX;
 
-static size_t http_response_pipe_count (const size_t remaining) {
+// the bytes from the current offset of the file until its end
+static size_t http_response_pipe_file_remaining (const int file_fd) {
 
-	return (remaining < HTTP_RESPONSE_FILE_CHUNK_SIZE) ? remaining : HTTP_RESPONSE_FILE_CHUNK_SIZE;
+	size_t remaining = 0;
 
-}
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
+	const off_t current = lseek (file_fd, 0, SEEK_CUR);
+	if (!fstat (file_fd, &filestatus) && (current > -1) && (filestatus.st_size > current)) {
+		remaining = (size_t) (filestatus.st_size - current);
+	}
 
-// the bytes that are logged as pending, a whole file does not know them
-static size_t http_response_pipe_pending (const size_t remaining) {
-
-	return (remaining == http_response_pipe_whole_file) ? 0 : remaining;
+	return remaining;
 
 }
 
 // copies the bytes of the file to the socket, from its offset (NULL for the file's current offset),
-// until remaining is sent or the file ends, and adds the bytes that were sent to total_sent
+// until remaining is sent or the file ends, and adds the bytes that were sent to total_sent,
+// with the deadline of the response
 // sendfile () does not accept MSG_NOSIGNAL, so SIGPIPE is ignored by cerver_start ()
 // returns 0 on success, 1 if the file was not sent completely
 static u8 http_response_send_file_pipe (
@@ -1744,29 +1786,25 @@ static u8 http_response_send_file_pipe (
 	off_t *offset, size_t remaining, size_t *total_sent
 ) {
 
-	u8 retval = 0;
+	if (remaining == http_response_pipe_whole_file) {
+		remaining = http_response_pipe_file_remaining (file_fd);
+	}
 
-	const Socket *socket = http_receive->cr->connection->socket;
+	size_t sent = 0;
+	int error = 0;
+	u8 retval = socket_send_file_until (
+		http_receive->cr->connection->socket, file_fd, offset, remaining,
+		http_response_send_deadline (http_receive), &sent, &error
+	);
 
-	struct timespec deadline = { 0, 0 };
-	socket_deadline_create (&deadline, http_response_send_timeout (http_receive));
+	*total_sent += sent;
 
-	ssize_t copied = 0;
-	do {
-		copied = sendfile (socket->sock_fd, file_fd, offset, http_response_pipe_count (remaining));
-		if (copied > 0) {
-			*total_sent += (size_t) copied;
-			if (remaining != http_response_pipe_whole_file) remaining -= (size_t) copied;
-		}
+	// a file that ended before its range is sent as it is
+	if (retval && !error) retval = 0;
 
-		else if (copied < 0) {
-			const int error = errno;
-			if (socket_send_can_retry (socket->sock_fd, error, &deadline)) continue;
-
-			http_response_send_failed (http_receive, "sendfile", error, http_response_pipe_pending (remaining));
-			retval = 1;
-		}
-	} while ((copied != 0) && remaining && !retval);
+	if (retval) {
+		http_response_send_failed (http_receive, "sendfile", error, remaining - sent);
+	}
 
 	return retval;
 
@@ -1849,7 +1887,7 @@ u8 http_response_send_file_internal (
 	http_response_compile_multiple_headers (response);
 
 	#ifdef HTTP_RESPONSE_DEBUG
-	cerver_log_msg ("\n%s\n", response->header);
+	cerver_log_msg ("\n%s\n", (const char *) response->header);
 	#endif
 
 	if (
@@ -1896,7 +1934,7 @@ u8 http_response_send_file (
 	u8 retval = 1;
 
 	// check if file exists
-	struct stat filestatus = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestatus)) {
 		retval = http_response_send_file_internal (
 			http_receive, status,
@@ -1978,8 +2016,8 @@ u8 http_response_render_text (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
-			status,
+			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) status,
 			http_status_string (status),
 			CERVER_VERSION,
 			text_len
@@ -2018,8 +2056,8 @@ u8 http_response_render_json (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
-			status,
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) status,
 			http_status_string (status),
 			CERVER_VERSION,
 			json_len
@@ -2129,7 +2167,7 @@ u8 http_response_handle_video (
 	u8 retval = 1;
 
 	// check that video exists
-	struct stat filestats = { 0 };
+	struct stat filestats = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestats)) {
 		// get range
 		BytesRange bytes_range = {
@@ -2221,7 +2259,7 @@ static HttpResponse *http_response_create_json_common (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2508,7 +2546,7 @@ static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2527,10 +2565,10 @@ static HttpResponse *http_response_json_internal (
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);
@@ -2654,7 +2692,7 @@ static HttpResponse *http_response_json_custom_internal (
 	const http_status status, const char *json
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2664,10 +2702,10 @@ static HttpResponse *http_response_json_custom_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);
@@ -2725,7 +2763,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2736,10 +2774,10 @@ static HttpResponse *http_response_json_custom_reference_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);

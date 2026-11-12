@@ -31,6 +31,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/version.h"
 
 #include "cerver/threads/worker.h"
 
@@ -51,6 +52,11 @@
 
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
+
+#include "cerver/http/websockets/deflate.h"
+#include "cerver/http/websockets/handshake.h"
+#include "cerver/http/websockets/registry.h"
+#include "cerver/http/websockets/websocket.h"
 
 #include "cerver/http/json/json.h"
 
@@ -76,6 +82,14 @@ static HttpResponse *header_fields_too_large_error = NULL;
 static HttpResponse *request_timeout_error = NULL;
 static HttpResponse *method_not_allowed_error = NULL;
 static HttpResponse *not_implemented_error = NULL;
+
+// the rejections of an upgrade to a WebSocket endpoint
+static HttpResponse *upgrade_required_error = NULL;
+static HttpResponse *forbidden_error = NULL;
+static HttpResponse *web_socket_unavailable_error = NULL;
+
+static const char *upgrade_required_json = { "{\"error\": \"Upgrade to WebSocket required!\"}" };
+static const char *web_socket_unavailable_json = { "{\"error\": \"Too many WebSocket connections!\"}" };
 
 static const char *form_urlencoded_value = { "application/x-www-form-urlencoded" };
 static const size_t form_urlencoded_value_len = 33;
@@ -127,6 +141,12 @@ static int http_receive_init_mpart_parser (
 static void http_receive_handle (
 	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
+);
+
+static void http_receive_web_socket_release (HttpReceive *http_receive);
+
+static void http_receive_close (
+	HttpReceive *http_receive, const bool rejected
 );
 
 #pragma region kvp
@@ -334,6 +354,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS;
 		http_cerver->idle_timeout = HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 
+		http_cerver->send_timeout = 0;
+
+		http_cerver->web_sockets = NULL;
+
 		http_cerver->n_timeout_requests = 0;
 
 		http_cerver->n_unanswered_requests = 0;
@@ -409,6 +433,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		thread_mutex_delete (http_cerver->mutex);
 
+		http_web_socket_registry_delete (http_cerver->web_sockets);
+
 		free (http_cerver_ptr);
 	}
 
@@ -449,9 +475,40 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->admin_mutex = thread_mutex_new ();
 
 		http_cerver->mutex = thread_mutex_new ();
+
+		http_cerver->web_sockets = http_web_socket_registry_create ();
 	}
 
 	return http_cerver;
+
+}
+
+// a JSON response of a rejected upgrade, with the Upgrade header,
+// and with one more header when its type is not HTTP_HEADER_UNDEFINED
+static HttpResponse *http_cerver_web_socket_response (
+	const http_status status, const char *json,
+	const http_header type, const char *value
+) {
+
+	HttpResponse *response = (HttpResponse *) http_response_new ();
+	if (response) {
+		response->status = status;
+
+		const size_t json_len = strlen (json);
+		(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
+		(void) http_response_add_content_length_header (response, json_len);
+		(void) http_response_add_header (response, HTTP_HEADER_UPGRADE, HTTP_WEB_SOCKET_UPGRADE_TOKEN);
+		if (type != HTTP_HEADER_UNDEFINED) (void) http_response_add_header (response, type, value);
+
+		// the json is a static string
+		response->data = (char *) json;
+		response->data_len = json_len;
+		response->data_ref = true;
+
+		(void) http_response_compile (response);
+	}
+
+	return response;
 
 }
 
@@ -511,6 +568,18 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_NOT_IMPLEMENTED, "error", "Not implemented!"
 	);
 
+	upgrade_required_error = http_cerver_web_socket_response (
+		HTTP_STATUS_UPGRADE_REQUIRED, upgrade_required_json, HTTP_HEADER_SEC_WEBSOCKET_VERSION, HTTP_WEB_SOCKET_VERSION
+	);
+
+	forbidden_error = http_response_create_json_key_value (
+		HTTP_STATUS_FORBIDDEN, "error", "Forbidden!"
+	);
+
+	web_socket_unavailable_error = http_cerver_web_socket_response (
+		HTTP_STATUS_SERVICE_UNAVAILABLE, web_socket_unavailable_json, HTTP_HEADER_UNDEFINED, NULL
+	);
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
@@ -521,6 +590,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& header_fields_too_large_error
 		&& request_timeout_error
 		&& method_not_allowed_error && not_implemented_error
+		&& upgrade_required_error && forbidden_error && web_socket_unavailable_error
 	) retval = 0;
 
 	return retval;
@@ -654,6 +724,13 @@ static void http_cerver_end_responses (void) {
 	method_not_allowed_error = NULL;
 	http_response_delete (not_implemented_error);
 	not_implemented_error = NULL;
+
+	http_response_delete (upgrade_required_error);
+	upgrade_required_error = NULL;
+	http_response_delete (forbidden_error);
+	forbidden_error = NULL;
+	http_response_delete (web_socket_unavailable_error);
+	web_socket_unavailable_error = NULL;
 
 }
 
@@ -1508,6 +1585,14 @@ void http_cerver_set_idle_timeout_milliseconds (
 		http_cerver->idle_timeout = idle_timeout ?
 			idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 	}
+
+}
+
+void http_cerver_set_send_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int send_timeout
+) {
+
+	if (http_cerver) http_cerver->send_timeout = send_timeout;
 
 }
 
@@ -2386,13 +2471,15 @@ static void http_receive_close_url (HttpReceive *http_receive) {
 
 }
 
-// these headers must appear only once (RFC 9110 section 5.3)
+// these headers must appear only once (RFC 9110 section 5.3, RFC 6455 section 11.3)
 static inline bool http_header_is_unique (const http_header type) {
 
 	return (type == HTTP_HEADER_HOST)
 		|| (type == HTTP_HEADER_CONTENT_TYPE)
 		|| (type == HTTP_HEADER_CONTENT_LENGTH)
-		|| (type == HTTP_HEADER_AUTHORIZATION);
+		|| (type == HTTP_HEADER_AUTHORIZATION)
+		|| (type == HTTP_HEADER_SEC_WEBSOCKET_KEY)
+		|| (type == HTTP_HEADER_SEC_WEBSOCKET_VERSION);
 
 }
 
@@ -3687,6 +3774,13 @@ static void http_receive_init (HttpReceive *http_receive) {
 		http_receive->response_failed = false;
 		http_receive->response_error = 0;
 
+		http_receive->send_deadline.tv_sec = 0;
+		http_receive->send_deadline.tv_nsec = 0;
+		http_receive->send_deadline_set = false;
+
+		http_receive->web_socket = NULL;
+		http_receive->upgraded = false;
+
 		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
 	}
 
@@ -3852,6 +3946,8 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
 		http_receive_uploads_release (http_receive);
+
+		http_receive_web_socket_release (http_receive);
 
 		http_receive->cr = NULL;
 
@@ -4201,6 +4297,392 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 }
 
 // runs the before middlewares, the handler and the after middlewares
+#pragma region websocket
+
+// the bytes of a 101 with its accept, its protocol and its extensions
+#define HTTP_WEB_SOCKET_RESPONSE_SIZE			(1 << 10)
+
+static const char *http_web_socket_response_start = {
+	"HTTP/1.1 101 Switching Protocols\r\n"
+	"Server: Cerver/" CERVER_VERSION "\r\n"
+	"Upgrade: websocket\r\n"
+	"Connection: Upgrade\r\n"
+	"Sec-WebSocket-Accept: "
+};
+
+static const char *http_web_socket_response_protocol = { "\r\nSec-WebSocket-Protocol: " };
+static const char *http_web_socket_response_extensions = { "\r\nSec-WebSocket-Extensions: " };
+static const char *http_web_socket_response_end = { "\r\n\r\n" };
+
+static const char *http_web_socket_rejected_key = { "error" };
+static const char *http_web_socket_rejected_value = { "WebSocket rejected!" };
+
+// the endpoint takes WebSocket connections, a route of the first API with the modifier does not
+static bool http_endpoint_is_web_socket (const HttpEndpoint *endpoint) {
+
+	return (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET)
+		&& (endpoint->resolved.web_socket.set & HTTP_WEB_SOCKET_SETTING_HANDLERS);
+
+}
+
+// gives back the place of an upgrade that never started its connection
+static void http_receive_web_socket_release (HttpReceive *http_receive) {
+
+	HttpWebSocketHandshake *handshake = http_receive->web_socket;
+	if (handshake) {
+		if (handshake->reserved && http_receive->http_cerver) {
+			http_web_socket_registry_unreserve (http_receive->http_cerver->web_sockets);
+		}
+
+		http_web_socket_handshake_delete (handshake);
+		http_receive->web_socket = NULL;
+	}
+
+}
+
+// the request asks for WebSocket: its Upgrade has websocket and its Connection has upgrade
+static bool http_request_web_socket_requested (const HttpRequest *request) {
+
+	const String *upgrade = request->headers[HTTP_HEADER_UPGRADE];
+	const String *connection = request->headers[HTTP_HEADER_CONNECTION];
+
+	return upgrade && connection
+		&& http_web_socket_header_has_token (upgrade->str, upgrade->len, HTTP_WEB_SOCKET_UPGRADE_TOKEN)
+		&& http_web_socket_header_has_token (connection->str, connection->len, HTTP_WEB_SOCKET_CONNECTION_TOKEN);
+
+}
+
+// the request of an upgrade (RFC 6455 section 4.2.1): HTTP/1.1 or newer,
+// a key of 16 bytes, the version 13 and no body
+// returns true when it is valid, and sets the rejection when it is not
+static bool http_receive_web_socket_validate (
+	const llhttp_t *parser, const HttpRequest *request,
+	HttpWebSocketRejection *rejection
+) {
+
+	const String *key = request->headers[HTTP_HEADER_SEC_WEBSOCKET_KEY];
+	const String *version = request->headers[HTTP_HEADER_SEC_WEBSOCKET_VERSION];
+
+	const u8 major = llhttp_get_http_major (parser);
+	const u8 minor = llhttp_get_http_minor (parser);
+
+	bool valid = false;
+
+	if (!major || ((major == 1) && !minor)) {
+		*rejection = HTTP_WEB_SOCKET_REJECTION_BAD_REQUEST;
+	}
+
+	else if (!key || !http_web_socket_key_is_valid (key->str, key->len)) {
+		*rejection = HTTP_WEB_SOCKET_REJECTION_BAD_REQUEST;
+	}
+
+	else if (!version || strcmp (version->str, HTTP_WEB_SOCKET_VERSION)) {
+		*rejection = HTTP_WEB_SOCKET_REJECTION_VERSION;
+	}
+
+	else if (((parser->flags & F_CONTENT_LENGTH) && parser->content_length) || (parser->flags & F_CHUNKED)) {
+		*rejection = HTTP_WEB_SOCKET_REJECTION_BAD_REQUEST;
+	}
+
+	else {
+		valid = true;
+	}
+
+	return valid;
+
+}
+
+// the Origin of the request is in the origins whitelist of the cerver
+static bool http_receive_web_socket_origin_allowed (
+	const HttpCerver *http_cerver, const HttpRequest *request
+) {
+
+	const String *origin = request->headers[HTTP_HEADER_ORIGIN];
+
+	bool allowed = false;
+	for (u8 idx = 0; origin && !allowed && (idx < http_cerver->n_origins); idx++) {
+		allowed = !strcmp (http_cerver->origins_whitelist[idx].value, origin->str);
+	}
+
+	return allowed;
+
+}
+
+static int http_receive_web_socket_reject (
+	HttpReceive *http_receive, HttpResponse *response,
+	const HttpWebSocketRejection rejection
+) {
+
+	http_web_socket_registry_count_rejection (http_receive->http_cerver->web_sockets, rejection);
+
+	return http_receive_reject (http_receive, response, HTTP_RECEIVE_STATUS_REJECTED);
+
+}
+
+// what the 101 says: its accept, the protocol of the server that the client offered and the compression
+static HttpWebSocketHandshake *http_receive_web_socket_handshake (
+	const HttpRequest *request, const HttpWebSocketSettings *settings
+) {
+
+	HttpWebSocketHandshake *handshake = (HttpWebSocketHandshake *) calloc (1, sizeof (HttpWebSocketHandshake));
+	if (handshake) {
+		handshake->reserved = true;
+
+		const String *key = request->headers[HTTP_HEADER_SEC_WEBSOCKET_KEY];
+		(void) http_web_socket_accept_compute (key->str, key->len, handshake->accept);
+
+		const String *offered = request->headers[HTTP_HEADER_SEC_WEBSOCKET_PROTOCOL];
+		const char *protocol = offered ? http_web_socket_protocol_select (
+			offered->str, offered->len,
+			(const char * const *) settings->protocols, settings->n_protocols
+		) : NULL;
+
+		if (protocol) handshake->protocol = strdup (protocol);
+
+		const String *extensions = request->headers[HTTP_HEADER_SEC_WEBSOCKET_EXTENSIONS];
+		handshake->compression = extensions && http_web_socket_deflate_negotiate (
+			extensions->str, extensions->len, &settings->compression, &handshake->deflate
+		);
+	}
+
+	return handshake;
+
+}
+
+// the checks of an upgrade before its body, a place for its connection is taken
+static int http_receive_web_socket_prepare (
+	HttpReceive *http_receive, const llhttp_t *parser,
+	const HttpEndpoint *endpoint
+) {
+
+	int retval = 0;
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	const HttpRequest *request = http_receive->request;
+	HttpWebSocketRejection rejection = HTTP_WEB_SOCKET_REJECTION_BAD_REQUEST;
+
+	if (!http_receive_web_socket_validate (parser, request, &rejection)) {
+		retval = http_receive_web_socket_reject (
+			http_receive,
+			(rejection == HTTP_WEB_SOCKET_REJECTION_VERSION) ? upgrade_required_error : bad_request_error,
+			rejection
+		);
+	}
+
+	else if (endpoint->resolved.web_socket.origin_check && !http_receive_web_socket_origin_allowed (http_cerver, request)) {
+		retval = http_receive_web_socket_reject (http_receive, forbidden_error, HTTP_WEB_SOCKET_REJECTION_ORIGIN);
+	}
+
+	else if (!http_web_socket_registry_reserve (http_cerver->web_sockets)) {
+		retval = http_receive_web_socket_reject (http_receive, web_socket_unavailable_error, HTTP_WEB_SOCKET_REJECTION_LIMIT);
+	}
+
+	else {
+		http_receive->web_socket = http_receive_web_socket_handshake (request, &endpoint->resolved.web_socket);
+		if (!http_receive->web_socket) {
+			http_web_socket_registry_unreserve (http_cerver->web_sockets);
+			retval = http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_REJECTED);
+		}
+	}
+
+	return retval;
+
+}
+
+// a request to a WebSocket endpoint, after its authentication and before its body:
+// an upgrade is checked, a request without one goes to the handler of the endpoint (426 without it)
+// returns 0 to continue, 1 when the request was rejected
+static int http_receive_handle_headers_web_socket (
+	HttpReceive *http_receive, const llhttp_t *parser
+) {
+
+	int retval = 0;
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+	if (endpoint && http_endpoint_is_web_socket (endpoint)) {
+		if (llhttp_get_upgrade (parser) && http_request_web_socket_requested (http_receive->request)) {
+			retval = http_receive_web_socket_prepare (http_receive, parser, endpoint);
+		}
+
+		else if (!endpoint->handler) {
+			retval = http_receive_web_socket_reject (
+				http_receive, upgrade_required_error, HTTP_WEB_SOCKET_REJECTION_UPGRADE
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+// appends text to the response, returns false when it does not fit
+static bool http_web_socket_response_append (
+	char *response, size_t *length, const char *text, const size_t text_length
+) {
+
+	bool appended = false;
+
+	if ((*length + text_length) < HTTP_WEB_SOCKET_RESPONSE_SIZE) {
+		(void) memcpy (response + *length, text, text_length);
+		*length += text_length;
+		appended = true;
+	}
+
+	return appended;
+
+}
+
+// sends the 101, it never has a Content-Length nor a Connection: close
+// returns 0 on success, 1 on error
+static u8 http_receive_web_socket_switch (
+	HttpReceive *http_receive, const HttpWebSocketHandshake *handshake
+) {
+
+	char response[HTTP_WEB_SOCKET_RESPONSE_SIZE];
+	size_t length = 0;
+
+	bool fits = http_web_socket_response_append (
+		response, &length, http_web_socket_response_start, strlen (http_web_socket_response_start)
+	) && http_web_socket_response_append (response, &length, handshake->accept, HTTP_WEB_SOCKET_ACCEPT_LENGTH);
+
+	if (fits && handshake->protocol) {
+		fits = http_web_socket_response_append (
+			response, &length, http_web_socket_response_protocol, strlen (http_web_socket_response_protocol)
+		) && http_web_socket_response_append (response, &length, handshake->protocol, strlen (handshake->protocol));
+	}
+
+	if (fits && handshake->compression) {
+		char extensions[HTTP_WEB_SOCKET_DEFLATE_HEADER_SIZE];
+		const size_t extensions_length = http_web_socket_deflate_response (
+			&handshake->deflate, extensions, HTTP_WEB_SOCKET_DEFLATE_HEADER_SIZE
+		);
+
+		fits = extensions_length && http_web_socket_response_append (
+			response, &length, http_web_socket_response_extensions, strlen (http_web_socket_response_extensions)
+		) && http_web_socket_response_append (response, &length, extensions, extensions_length);
+	}
+
+	fits = fits && http_web_socket_response_append (
+		response, &length, http_web_socket_response_end, strlen (http_web_socket_response_end)
+	);
+
+	struct iovec part = { response, length };
+
+	return fits ?
+		http_response_send_pieces_status (http_receive, HTTP_STATUS_SWITCHING_PROTOCOLS, &part, 1) : 1;
+
+}
+
+// the handshake takes what on_upgrade () decided:
+// a protocol that the client offered, the data of the connection and the decoded data of the request
+static void http_receive_web_socket_decided (
+	HttpWebSocketHandshake *handshake, HttpRequest *request,
+	const HttpWebSocketUpgrade *upgrade
+) {
+
+	const String *offered = request->headers[HTTP_HEADER_SEC_WEBSOCKET_PROTOCOL];
+
+	if (upgrade->protocol != handshake->protocol) {
+		const char *protocol = (upgrade->protocol && offered) ? http_web_socket_protocol_select (
+			offered->str, offered->len, &upgrade->protocol, 1
+		) : NULL;
+
+		free (handshake->protocol);
+		handshake->protocol = protocol ? strdup (protocol) : NULL;
+	}
+
+	handshake->data = upgrade->data;
+	handshake->delete_data = upgrade->delete_data;
+
+	if (upgrade->adopt_decoded_data) {
+		handshake->decoded_data = request->decoded_data;
+		handshake->delete_decoded_data = request->delete_decoded_data;
+		request->decoded_data = NULL;
+		request->delete_decoded_data = NULL;
+	}
+
+}
+
+// runs on_upgrade (), that accepts the connection or rejects it with its status
+static bool http_receive_web_socket_accept (
+	HttpReceive *http_receive, HttpRequest *request,
+	const HttpEndpoint *endpoint, HttpWebSocketHandshake *handshake
+) {
+
+	bool accepted = true;
+
+	const HttpWebSocketHandlers *handlers = &endpoint->resolved.web_socket.handlers;
+	if (handlers->on_upgrade) {
+		HttpWebSocketUpgrade upgrade = { handshake->protocol, NULL, NULL, false, HTTP_STATUS_FORBIDDEN };
+
+		accepted = handlers->on_upgrade (http_receive, request, &upgrade);
+		if (accepted) {
+			http_receive_web_socket_decided (handshake, request, &upgrade);
+		}
+
+		else {
+			if (upgrade.data && upgrade.delete_data) upgrade.delete_data (upgrade.data);
+
+			http_web_socket_registry_count_rejection (
+				http_receive->http_cerver->web_sockets, HTTP_WEB_SOCKET_REJECTION_APPLICATION
+			);
+
+			// on_upgrade () can answer the request itself
+			if (!http_receive->responded) {
+				(void) http_response_json_key_value_send (
+					http_receive, upgrade.status, http_web_socket_rejected_key, http_web_socket_rejected_value
+				);
+			}
+		}
+	}
+
+	return accepted;
+
+}
+
+// the frames that the client sent with its request, before the 101,
+// are copied out of the buffer of the thread for its connection
+static void http_receive_web_socket_pending (
+	HttpReceive *http_receive, const char *unparsed
+) {
+
+	HttpWebSocketHandshake *handshake = http_receive->web_socket;
+	if (handshake && http_receive->unparsed && !handshake->pending) {
+		handshake->pending = (u8 *) malloc (http_receive->unparsed);
+		if (handshake->pending) {
+			(void) memcpy (handshake->pending, unparsed, http_receive->unparsed);
+			handshake->pending_size = http_receive->unparsed;
+		}
+
+		// the connection can not start without its first frames
+		else {
+			http_receive->upgraded = false;
+			http_receive_close (http_receive, false);
+		}
+	}
+
+}
+
+// the upgrade of a request that passed its checks: the before middlewares, on_upgrade () and the 101
+static void http_receive_web_socket_upgrade (
+	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
+) {
+
+	HttpWebSocketHandshake *handshake = http_receive->web_socket;
+
+	// a before middleware that stops answers the request itself
+	if (
+		http_middlewares_run_before (&endpoint->resolved.middlewares, http_receive, request)
+		&& http_receive_web_socket_accept (http_receive, request, endpoint, handshake)
+		&& !http_receive_web_socket_switch (http_receive, handshake)
+	) {
+		http_receive->upgraded = true;
+	}
+
+}
+
+#pragma endregion
+
 static void http_receive_handle_endpoint (
 	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
 ) {
@@ -4220,6 +4702,26 @@ static void http_receive_handle_endpoint (
 
 }
 
+// an upgrade that passed its checks, a request without one goes to the handler of the endpoint,
+// a route of the first API with the modifier is answered with 501
+static void http_receive_handle_match_web_socket (
+	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
+) {
+
+	if (http_receive->web_socket) {
+		http_receive_web_socket_upgrade (http_receive, request, endpoint);
+	}
+
+	else if (endpoint->handler && http_endpoint_is_web_socket (endpoint)) {
+		http_receive_handle_endpoint (http_receive, request, endpoint);
+	}
+
+	else {
+		(void) http_response_send (not_implemented_error, http_receive);
+	}
+
+}
+
 // handles the request with its endpoint
 static void http_receive_handle_match (
 	HttpReceive *http_receive,
@@ -4232,9 +4734,8 @@ static void http_receive_handle_match (
 	if (request->body) http_receive_parse_body_values (request);
 
 	switch (endpoint->resolved.modifier) {
-		// the websocket connections are not supported yet
 		case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-			(void) http_response_send (not_implemented_error, http_receive);
+			http_receive_handle_match_web_socket (http_receive, request, endpoint);
 			break;
 
 		default:
@@ -4792,6 +5293,10 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 			return HTTP_RECEIVE_PARSER_STOP;
 		}
 
+		if (http_receive_handle_headers_web_socket (http_receive, parser)) {
+			return HTTP_RECEIVE_PARSER_STOP;
+		}
+
 		if (http_receive_handle_headers_multi_part (http_receive)) {
 			return HTTP_RECEIVE_PARSER_STOP;
 		}
@@ -5260,7 +5765,10 @@ static void http_receive_handle (
 		case HPE_PAUSED:
 		case HPE_PAUSED_UPGRADE:
 			http_receive->unparsed = (size_t) rc - n_parsed;
-			http_receive_close (http_receive, false);
+
+			// the connection belongs to its WebSocket now, with the bytes that followed the request
+			if (http_receive->upgraded) http_receive_web_socket_pending (http_receive, packet_buffer + n_parsed);
+			else http_receive_close (http_receive, false);
 			break;
 
 		default:
