@@ -16,6 +16,9 @@
 #include "cerver/http/route.h"
 #include "cerver/http/validator.h"
 
+#include "cerver/http/websockets/deflate.h"
+#include "cerver/http/websockets/settings.h"
+
 // the most params of a route, a route with more is a registration error
 #define HTTP_TREE_DEFAULT_MAX_PARAMS			16
 
@@ -117,6 +120,10 @@ struct _HttpRouteSettings {
 	bool compression;
 
 	HttpMiddlewares middlewares;
+
+	// the connections of a WebSocket endpoint (HTTP_ROUTE_MODIFIER_WEB_SOCKET),
+	// each setting is inherited on its own
+	HttpWebSocketSettings web_socket;
 
 };
 
@@ -231,6 +238,57 @@ CERVER_EXPORT u8 http_endpoint_add_before (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_endpoint_add_after (
 	HttpEndpoint *endpoint, const HttpAfterMiddleware middleware
+);
+
+#pragma endregion
+
+#pragma region websocket
+
+// makes a GET endpoint take WebSocket connections (RFC 6455) with the methods of the handlers,
+// a request without an upgrade goes to its handler, or it is answered with 426 when it has none
+CERVER_EXPORT void http_endpoint_set_web_socket (
+	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
+);
+
+// the most bytes of a message (and of each frame), HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE by default,
+// a larger one closes the connection with 1009
+CERVER_EXPORT void http_endpoint_set_web_socket_max_message (
+	HttpEndpoint *endpoint, const size_t max_message
+);
+
+// the subprotocols, in the order of preference of the server
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_endpoint_set_web_socket_protocols (
+	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
+);
+
+// enables permessage-deflate (RFC 7692) with the default options, when cerver was built with zlib
+CERVER_EXPORT void http_endpoint_set_web_socket_compression (
+	HttpEndpoint *endpoint, const bool compression
+);
+
+CERVER_EXPORT void http_endpoint_set_web_socket_compression_options (
+	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
+);
+
+// the Origin of the upgrade must be in the origins whitelist, 403 if it is not
+CERVER_EXPORT void http_endpoint_set_web_socket_origin_check (
+	HttpEndpoint *endpoint, const bool origin_check
+);
+
+// milliseconds without receiving anything before a ping (0 disables them), and to wait for its pong
+CERVER_EXPORT void http_endpoint_set_web_socket_ping (
+	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
+);
+
+// milliseconds that the closing handshake waits for the peer
+CERVER_EXPORT void http_endpoint_set_web_socket_close_timeout (
+	HttpEndpoint *endpoint, const unsigned int close_timeout
+);
+
+// milliseconds of each send, 0 uses the send timeout of the HTTP cerver
+CERVER_EXPORT void http_endpoint_set_web_socket_send_timeout (
+	HttpEndpoint *endpoint, const unsigned int send_timeout
 );
 
 #pragma endregion
@@ -362,6 +420,51 @@ CERVER_EXPORT u8 http_group_add_before (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_group_add_after (
 	HttpGroup *group, const HttpAfterMiddleware middleware
+);
+
+// adds a WebSocket endpoint (GET) to the group, without a handler for the requests without an upgrade,
+// with NULL handlers it inherits the ones of its groups
+CERVER_EXPORT HttpEndpoint *http_group_web_socket_add (
+	HttpGroup *group, const char *path, const HttpWebSocketHandlers *handlers
+);
+
+// the WebSocket settings that the WebSocket endpoints of the group inherit,
+// the other endpoints of the group are not changed
+CERVER_EXPORT void http_group_set_web_socket (
+	HttpGroup *group, const HttpWebSocketHandlers *handlers
+);
+
+CERVER_EXPORT void http_group_set_web_socket_max_message (
+	HttpGroup *group, const size_t max_message
+);
+
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_group_set_web_socket_protocols (
+	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
+);
+
+CERVER_EXPORT void http_group_set_web_socket_compression (
+	HttpGroup *group, const bool compression
+);
+
+CERVER_EXPORT void http_group_set_web_socket_compression_options (
+	HttpGroup *group, const HttpWebSocketDeflateOptions *options
+);
+
+CERVER_EXPORT void http_group_set_web_socket_origin_check (
+	HttpGroup *group, const bool origin_check
+);
+
+CERVER_EXPORT void http_group_set_web_socket_ping (
+	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
+);
+
+CERVER_EXPORT void http_group_set_web_socket_close_timeout (
+	HttpGroup *group, const unsigned int close_timeout
+);
+
+CERVER_EXPORT void http_group_set_web_socket_send_timeout (
+	HttpGroup *group, const unsigned int send_timeout
 );
 
 #pragma endregion
