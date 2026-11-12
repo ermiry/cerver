@@ -3,6 +3,30 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8.1 (from 1.8)
+
+The wire does not change: a 1.8.1 talks with a 1.8.
+
+- The default session ids of `cerver_set_sessions ()` are `SESSION_ID_LENGTH` (64) hex characters of `SESSION_ID_RANDOM_BYTES` random bytes of the kernel (`getrandom ()`); they were the SHA-256 of the time and a random number, that could be guessed
+- `cerver_set_sessions (cerver, NULL)` uses the default session id generator, it returned an error
+- The data that an authenticate method sets in `AuthData.data` becomes the data of the new client (`client_set_data ()`), and without a new client it is released with its `delete_data`: it was never released, a method that released it by itself must stop doing it
+- The data of a handler is released with its `data_delete` also when the handler never had a thread, like a direct handler or a handler of a cerver that never started; the handler releases it once
+- With `cerver_set_multiple_handlers ()`, a direct handler (`handler_set_direct_handle ()`) runs in the thread that received the packet, its packets went to a queue that no thread took; the packets follow `cerver_set_app_handler_delete ()`
+- `cerver_set_multiple_handlers ()` with 0 handlers or a second time is an error; `cerver_handlers_add ()` with an id that is not below the number of handlers or that already has a handler is an error, and the handler still belongs to the caller
+- `cerver_get_n_handlers ()` can be called before the cerver starts (it crashed)
+- `cerver_set_welcome_msg ()` with a `NULL` message is an error (it crashed); `cerver_set_receive_buffer_size ()`, `cerver_set_on_hold_receive_buffer_size ()`, `cerver_set_max_received_packet_size ()`, `connection_set_receive_buffer_size ()` and `admin_cerver_set_max_fds ()` ignore 0, and `admin_cerver_set_max_fds ()` ignores a call after the cerver started
+- The registers, unregisters and triggers of the events and errors of a cerver and of a client fail with a type that is not below `CERVER_MAX_EVENTS`, `CERVER_MAX_ERRORS`, `CLIENT_MAX_EVENTS` or `CLIENT_MAX_ERRORS`: they wrote and read outside of their arrays
+- An event or an error with `drop_after_trigger` gives its arguments to the data of its only trigger, that releases them with its `*_data_delete ()`; they were released when the event was dropped, while an action in its own thread still used them
+- Changed fields (ABI): `CerverEventData` and `ClientEventData` (new `owns_action_args`), `CerverErrorEventData` and `ClientErrorData` (new `delete_action_args` and `owns_action_args`)
+- A cerver that tears down sends `CERVER_PACKET_TYPE_TEARDOWN` to its clients before it shuts their connections down (it was sent after, so it never arrived), and a client that gets it triggers `CLIENT_EVENT_CERVER_TEARDOWN` and closes or reconnects only that connection, it used to stop the whole client
+- A client triggers `CLIENT_EVENT_CERVER_INFO` when it gets the info of its cerver; an on hold connection that its client closes triggers `CERVER_EVENT_ON_HOLD_DISCONNECTED`, it triggered `CERVER_EVENT_ON_HOLD_DROPPED`
+- A cerver that fails to bind, to listen or to set its socket options closes its socket once: the teardown closed the same fd number again, that could belong to another connection by then
+- `connection_send_packet ()` deletes a packet that it can not queue, like with a connection without a send queue
+- `file_read ()` sets the size to the bytes that it read, it set the size of the file, and it takes a `NULL` size
+- `c_string_concat_safe ()` takes a `char *` destination, it was `const char *`
+- A cerver that failed to start is released with `cerver_teardown ()`, the examples called the private `cerver_delete ()`
+- New: `examples/start.c`, the echo cerver and client of the README, and `CLIENT_ARGUMENTS` in `test/pair.sh`; `.github/workflows/docs.yml` was removed, the wiki is published from the documentation repository
+
 ## 1.8 (from 1.8b-9)
 
 The wire does not change: a 1.8 talks with a 1.8b-9.
