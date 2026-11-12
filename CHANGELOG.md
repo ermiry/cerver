@@ -1,51 +1,32 @@
 ## General
-- Using gcc 16.2 in all of the Dockerfiles, the CI & schedules
-- Running sanitizers, valgrind, fuzz & clang in the workflows
-- Failing the CI on any warning after leaving zero in all builds
-- Added arenas, free lists & a growing htab in the collections
-- Refactored the thpool with a bounded queue, drain & stats
-- Added job queue priorities & managers that scale workers
-- Added thread groups & joined handlers without the sleeps
-- Added overload & drain policies & stopping in a fixed order
-- Added socket references, a close mutex & send deadlines
-- Supporting IPv6 in every address with zones, lists & binds
-- Added UDP cervers with peers, tokens & with the sessions
-- Sending the portable headers in network order & route ids
-- Replaced the serializer with CBOR objects read by schema
-- Recycling the sockets, connections, clients & their packets
-- Added the stats of requests, handlers & of the host values
-- Copying, removing & moving files without calling system ()
-- Not ending the receives that a signal interrupts with EINTR
-- Creating the thpool only in the cervers of the threads type
-- Creating the recursive directories that exist or are too long
-- Ending the sends with the deadline in blocking sockets too
-- Added the incompatibilities file with an entry for each beta
-
-## Connection
-- Added the connection states, send queues & reconnection
-- Trying each address that resolves with its connect timeout
-- Reading the packets of clients in the receive of the cervers
-- Authenticating with session tokens & credentials schemas
-- Closing the sockets of any connections that fail or are idle
-
-## Balancer
-- Refactored the balancer to receive & route the full packets
-- Routing the balancer responses with route ids of own slots
-- Selecting the services of a custom balancer with a method
-
-## Game
-- Rewrote the lobbies & the game requests with the objects
-- Added the lobby references, locks & the lobby poll receive
-- Added the init, the player timeout & the fps of game types
+- Removed the docs workflow, cerver-docs updates the wiki
+- Closing the socket only once when the cerver fails to start
+- Releasing the data of the handlers that never had a thread
+- Running the direct multiple handlers in the receiver thread
+- Checking both the ids & the count of the multiple handlers
+- Checking the welcome, the buffer sizes & the id generator
+- Generating the default session ids from the kernel random
+- Checking the event & error types before using their arrays
+- Giving the args of a dropped event to the data of a trigger
+- Sending the teardown of a cerver before closing its clients
+- Triggering the cerver info & the on hold disconnect events
+- Giving the data of a successful authentication to the client
+- Ignoring admin polls of 0 fds & the changes after the start
+- Deleting the packets a connection can not put in its queue
+- Taking the size of a file read from the bytes that were read
+- Writing into a mutable buffer with c_string_concat_safe ()
+- Fixed the packet_check () comment about packet versions
+- Rewrote the README with the goal, capabilities & the start
+- Updated the docs submodule to the whole wiki of the core
+- Added the changes of Release 1.8.1 to the incompatibilities
 
 ## Examples
-- Stopping examples in their signals & releasing their events
-- Rewrote the game example & added a client for its lobbies
+- Releasing the example cervers that fail with their teardown
+- Added the echo cerver & client example of the get started
 
 ## Tests
-- Added integration pairs of every example in IPv4 & in IPv6
-- Added scripts to repeat tests, fuzz & count the allocations
-- Added unit tests of collections, threads, sockets & buffers
-- Added UDP, serializer, balancer & game tests & their pairs
-- Added fuzzers of the receive, headers, objects & of games
-- Added a protocol stress of a cerver & of concurrent clients
+- Running the echo example as a pair, with client arguments
+- Added tests of failed starts, handlers data, events & auths
+- Added tests of cerver setters, session ids & dropped ones
+- Added tests of the connection buffer & unqueued packets
+- Added a test of the file read size with the number of bytes
