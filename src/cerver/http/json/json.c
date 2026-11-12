@@ -129,6 +129,14 @@ char *jsonp_strndup (const char *str, size_t len) {
 
 #pragma region error
 
+// the position of an error is an int in json_error_t,
+// a document of more than INT_MAX bytes keeps the largest one
+static int json_error_position (const size_t position) {
+
+	return (position > (size_t) INT_MAX) ? INT_MAX : (int) position;
+
+}
+
 CERVER_INLINE enum json_error_code json_error_code (
 	const json_error_t *e
 ) {
@@ -158,8 +166,10 @@ void jsonp_error_set_source (
 	json_error_t *error, const char *source
 ) {
 
+	// a long source is cut, the error never had a source without its end
 	if (error && source) {
 		(void) strncpy (error->source, source, JSON_ERROR_SOURCE_LENGTH - 1);
+		error->source[JSON_ERROR_SOURCE_LENGTH - 1] = '\0';
 	}
 
 }
@@ -180,7 +190,7 @@ void jsonp_error_vset (
 
 	error->line = line;
 	error->column = column;
-	error->position = (int)position;
+	error->position = json_error_position (position);
 
 	(void) vsnprintf (error->text, JSON_ERROR_TEXT_LENGTH - 1, msg, ap);
 	error->text[JSON_ERROR_TEXT_LENGTH - 2] = '\0';
@@ -502,11 +512,11 @@ static int dump_to_fd (
 	const char *buffer, size_t size, void *data
 ) {
 
-	#ifdef HAVE_UNISTD_H
+	// HAVE_UNISTD_H of upstream was never defined, so the dumps to a fd always failed
 	int *dest = (int *)data;
 	if (write (*dest, buffer, size) == (ssize_t)size)
 		return 0;
-	#endif
+
 	return -1;
 
 }
@@ -667,7 +677,9 @@ static int do_dump (
 
 	flags &= ~JSON_EMBED;
 
-	if (!json)
+	// a tree built in code can be deeper than what the parser accepts,
+	// its dump would end the stack of the thread
+	if (!json || (depth > JSON_DUMP_MAX_DEPTH))
 		return -1;
 
 	switch (json_typeof (json)) {
@@ -1162,8 +1174,10 @@ static int stream_get (
 
 out:
 	stream->state = STREAM_STATE_ERROR;
-	// error_set(error, stream_to_lex(stream), json_error_invalid_utf8,
-	//           "unable to decode byte 0x%x", c);
+	error_set (
+		error, stream_to_lex (stream), json_error_invalid_utf8,
+		"unable to decode byte 0x%x", (unsigned int) c
+	);
 	return STREAM_STATE_ERROR;
 }
 
@@ -1908,7 +1922,7 @@ static json_t *parse_json_value (
 
 	if (error) {
 		/* Save the position even though there was no error */
-		error->position = (int)lex->stream.position;
+		error->position = json_error_position (lex->stream.position);
 	}
 
 	return result;
@@ -2084,12 +2098,7 @@ json_t *json_loadfd (
 	const char *source;
 	json_t *result;
 
-	#ifdef HAVE_UNISTD_H
-	if (input == STDIN_FILENO)
-		source = "<stdin>";
-	else
-	#endif
-		source = "<stream>";
+	source = (input == STDIN_FILENO) ? "<stdin>" : "<stream>";
 
 	jsonp_error_init (error, source);
 
@@ -2948,6 +2957,13 @@ static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 				return -1;
 			}
 
+			// an integer that does not fit in an int is an error, it was cut before
+			if (root && ((json_integer_value (root) > INT_MAX) || (json_integer_value (root) < INT_MIN))) {
+				set_error (s, "<validation>", json_error_numeric_overflow,
+						  "Integer %" JSON_INTEGER_FORMAT " does not fit in an int", json_integer_value (root));
+				return -1;
+			}
+
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
 				int *target = va_arg (*ap, int *);
 				if (root)
@@ -3197,10 +3213,19 @@ static void print_json_indent (int indent) {
 
 }
 
-static const char *json_plural (int count) {
-	
+// the values of an array and the root have no key
+#define JSON_PRINT_NO_KEY			"(value)"
+
+static const char *json_plural (size_t count) {
+
 	return count == 1 ? "" : "s";
-	
+
+}
+
+static const char *json_print_key (const char *key) {
+
+	return key ? key : JSON_PRINT_NO_KEY;
+
 }
 
 static void print_json_object (
@@ -3212,7 +3237,7 @@ static void print_json_object (
 	const char *key = NULL;
 	json_t *value = NULL;
 	size_t size = json_object_size (element);
-	(void) printf ("JSON Object of %lu pair %s:\n", size, json_plural (size));
+	(void) printf ("JSON Object of %zu pair%s:\n", size, json_plural (size));
 	json_object_foreach (element, key, value) {
 		print_json_indent (indent + 2);
 		print_json_aux (value, indent + 2, key);
@@ -3227,7 +3252,7 @@ static void print_json_array (
 	print_json_indent (indent);
 
 	size_t size = json_array_size (element);
-	(void) printf ("JSON Array of %lu element%s:\n", size, json_plural (size));
+	(void) printf ("JSON Array of %zu element%s:\n", size, json_plural (size));
 	for (size_t i = 0; i < size; i++) {
 		print_json_aux (json_array_get (element, i), indent + 2, key);
 	}
@@ -3239,7 +3264,7 @@ static void print_json_string (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[String] %s: \"%s\"\n", key, json_string_value (element));
+	(void) printf ("[String] %s: \"%s\"\n", json_print_key (key), json_string_value (element));
 
 }
 
@@ -3250,7 +3275,7 @@ static void print_json_integer (
 	print_json_indent (indent);
 	(void) printf (
 		"[Integer] %s: \"%" JSON_INTEGER_FORMAT "\"\n",
-		key, json_integer_value (element)
+		json_print_key (key), json_integer_value (element)
 	);
 
 }
@@ -3260,7 +3285,7 @@ static void print_json_real (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[Real] %s: %f\n", key, json_real_value (element));
+	(void) printf ("[Real] %s: %f\n", json_print_key (key), json_real_value (element));
 
 }
 
@@ -3269,7 +3294,7 @@ static void print_json_true (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: True\n", key);
+	(void) printf ("%s: True\n", json_print_key (key));
 
 }
 
@@ -3278,7 +3303,7 @@ static void print_json_false (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: False\n", key);
+	(void) printf ("%s: False\n", json_print_key (key));
 
 }
 
@@ -3287,7 +3312,7 @@ static void print_json_null (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: NULL\n", key);
+	(void) printf ("%s: NULL\n", json_print_key (key));
 
 }
 
@@ -3315,9 +3340,9 @@ static void print_json_aux (
 }
 
 void json_print (json_t *root) {
-	
-	print_json_aux (root, 0, NULL);
-	
+
+	if (root) print_json_aux (root, 0, NULL);
+
 }
 
 #pragma endregion

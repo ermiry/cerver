@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits.h>
 #include <math.h>
 
 #include <stddef.h>
@@ -521,7 +522,14 @@ static json_t **json_array_grow (json_array_t *array, size_t amount, int copy) {
 
     old_table = array->table;
 
+    // a size whose table does not fit in a size_t is an error, not a smaller table
+    if (amount > (SIZE_MAX / sizeof (json_t *)) - array->size)
+        return NULL;
+
     new_size = MAX (array->size + amount, array->size * 2);
+    if (new_size > (SIZE_MAX / sizeof (json_t *)))
+        new_size = array->size + amount;
+
     new_table = (json_t **) jsonp_malloc (new_size * sizeof (json_t *));
     if (!new_table)
         return NULL;
@@ -886,17 +894,21 @@ json_t *json_vsprintf (const char *fmt, va_list ap) {
         goto out;
     }
 
-    buf = (char *) jsonp_malloc (length + 1);
+    // a format error is negative, and the null of INT_MAX bytes does not fit in an int
+    if ((length < 0) || (length == INT_MAX))
+        goto out;
+
+    buf = (char *) jsonp_malloc ((size_t) length + 1);
     if (!buf)
         goto out;
 
-    vsnprintf (buf, length + 1, fmt, aq);
-    if (!utf8_check_string (buf, length)) {
+    (void) vsnprintf (buf, (size_t) length + 1, fmt, aq);
+    if (!utf8_check_string (buf, (size_t) length)) {
         jsonp_free (buf);
         goto out;
     }
 
-    json = jsonp_stringn_nocheck_own (buf, length);
+    json = jsonp_stringn_nocheck_own (buf, (size_t) length);
 
 out:
     va_end (aq);
