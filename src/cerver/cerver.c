@@ -1773,6 +1773,8 @@ Cerver *cerver_create_web (
 
 #pragma region init
 
+static void cerver_close_socket (Cerver *cerver);
+
 // every address of the cerver's family
 static void cerver_network_init_address_any (Cerver *cerver) {
 
@@ -1838,7 +1840,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 			cerver->info->name, cerver->bind_address
 		);
 
-		close (cerver->sock);
+		cerver_close_socket (cerver);
 
 		return retval;
 	}
@@ -1878,7 +1880,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 			cerver->info->name
 		);
 
-		close (cerver->sock);
+		cerver_close_socket (cerver);
 	}
 
 	return retval;
@@ -1913,7 +1915,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 					cerver->info->name
 				);
 
-				close (cerver->sock);
+				cerver_close_socket (cerver);
 
 				retval = 1;     // error
 			}
@@ -2938,7 +2940,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 						cerver->info->name
 					);
 
-					close (cerver->sock);
+					cerver_close_socket (cerver);
 				}
 			}
 
@@ -2973,7 +2975,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 						cerver->info->name
 					);
 
-					close (cerver->sock);
+					cerver_close_socket (cerver);
 				}
 			}
 
