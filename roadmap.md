@@ -975,7 +975,7 @@ JSON se muda al core (issue #207) en la 1.9.
 **Los tests:** cada arreglo con su test visto fallar contra la 2.0b-66; los fuzzers de JWT con HMAC, ES y el round
 trip, y uno de la API de `auth.c`; el de JSON con los flags y pack / unpack.
 
-#### 4.3.12 Los objetos calientes de HTTP (Beta 2.0b-68) — planeada
+#### 4.3.12 Los objetos calientes de HTTP (Beta 2.0b-68) — implementado
 
 Las 19 asignaciones de POST JSON de `performance.sh`:
 - 1 `HttpRouteFileStats` en cada petición (la única de GET);
@@ -996,6 +996,28 @@ Las 19 asignaciones de POST JSON de `performance.sh`:
   más que la dispersión, medido en x86 y aarch64.
 - Los umbrales nuevos de `performance.sh`.
 - Las issues #182, #328 y #145.
+
+**Lo que se hizo (2026-11-11):**
+
+- `http/recycle.{h,c}` (nuevo, privado): una caché por hilo de `HttpResponse` y de búferes en clases de 2^8 a 2^16,
+  con el patrón de `packets.c` (`__thread`, `pthread_key`, `FreeList` compartidas, límite 0 con
+  `CERVER_RECYCLE_DISABLED`).
+- `HttpResponse` se recicla y lleva un `header_buffer` de 2^8 donde se escribe su cabecera cuando cabe (la sencilla, la
+  de JSON y la de varias cabeceras): sin `calloc` ni `vasprintf`. La tabla de 64 cabeceras solo se limpia cuando se
+  usó (`n_headers`), así que una respuesta reciclada no hace el `memset` de ~16 KB; achicar la tabla cambiaría la API
+  de los tipos de cabecera y no hace falta.
+- El body: su `String` en la arena de la petición y su búfer de una clase reciclada, reservado una vez desde el
+  `Content-Length`.
+- Los stats de archivos de la petición en la arena del hilo.
+- **Resultado:** GET 1 → 0 y POST JSON 19 → 14 asignaciones por petición (las 14 son del `json_loads ()` del
+  handler).
+- **Las issues:** #182 ya lo resolvía la arena del hilo (`http_receive_create_arena`), #328 el pool de `MultiPart`
+  (`multi_parts_pool`, con sus campos en búferes fijos) y #145 la `FreeList` de `CerverReceive` (`handler.c`).
+- **El A/B de `jsonp_malloc` no se hizo:** el búfer de `json_dumps ()` sale de `jsonp_strdup ()` y quien lo recibe lo
+  libera con `free ()` (las respuestas, admin, el árbol, auth, libauth y los handlers), así que una caché por clases
+  necesita un prefijo de tamaño que rompería esos `free ()`. Queda para el allocator propio del JSON (backlog,
+  «Implementaciones propias en lugar de los vendorizados»). Además la Mac estaba cargada por otra sesión: x86 y la
+  dispersión de las req/s quedan pendientes.
 
 #### 4.3.13 El estilo de JWT y JSON (Beta 2.0b-69) — planeada
 
