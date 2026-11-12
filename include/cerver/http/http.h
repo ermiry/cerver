@@ -387,6 +387,10 @@ struct _HttpCerver {
 	// the most milliseconds without receiving anything, it is never disabled
 	unsigned int idle_timeout;
 
+	// the most milliseconds that all the sends of a response take together,
+	// 0 uses the send timeout of the cerver (secs)
+	unsigned int send_timeout;
+
 	size_t n_timeout_requests;		// answered with 408
 
 	size_t n_unanswered_requests;	// answered with 500 because the handler did not respond
@@ -761,6 +765,15 @@ CERVER_EXPORT void http_cerver_set_request_timeout_milliseconds (
 // the default value is HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS, 0 keeps the default
 CERVER_EXPORT void http_cerver_set_idle_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int idle_timeout
+);
+
+// sets the most milliseconds that all the sends of a response take together,
+// headers, body and files, also in a blocking socket with a longer SO_SNDTIMEO,
+// so a client that stops reading costs that time in total and not in each send,
+// each piece of a stream has its own deadline
+// the default value is 0, the send timeout of the cerver (cerver_set_send_timeout (), in secs)
+CERVER_EXPORT void http_cerver_set_send_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int send_timeout
 );
 
 // sets if http_receive_is_client_gone () takes a client that closed its side
@@ -1180,6 +1193,11 @@ struct _HttpReceive {
 	// a send () of the response failed, with its errno
 	bool response_failed;
 	int response_error;
+
+	// the deadline of all the sends of the response, set by its first send,
+	// each piece of a stream sets its own
+	struct timespec send_deadline;
+	bool send_deadline_set;
 
 	// the last state of the client that was found, a gone client never comes back
 	HttpClientState client_state;

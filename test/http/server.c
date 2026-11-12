@@ -118,6 +118,13 @@
 // a poll () rounds its timeout to milliseconds, so the deadline can end a bit earlier
 #define SERVER_TEST_SEND_TIMEOUT_MARGIN		(1 << 7)
 
+// secs of the SO_SNDTIMEO of the connections, longer than the deadline of their responses
+#define SERVER_TEST_LONG_SEND_TIMEOUT		4
+
+// milliseconds of all the sends of a response, and how much later it can end (also under valgrind)
+#define SERVER_TEST_RESPONSE_SEND_TIMEOUT	500
+#define SERVER_TEST_RESPONSE_SEND_TOLERANCE	(1 << 8)
+
 #define SERVER_TEST_FILENAME_SIZE			256
 #define SERVER_TEST_FILE_TEMPLATE			"/tmp/cerver-server-XXXXXX.mp4"
 #define SERVER_TEST_FILE_SUFFIX_LENGTH		4
@@ -164,12 +171,12 @@ static const char *slow_body_headers = {
 
 static const char *slow_body = { "12345678" };
 
-static const char *huge_request_format = {
-	"POST /huge HTTP/1.1\r\n"
-	"Host: localhost\r\n"
-	"Content-Length: %zu\r\n"
+// a literal, so the compiler checks its arguments
+#define SERVER_TEST_HUGE_REQUEST_FORMAT		\
+	"POST /huge HTTP/1.1\r\n"				\
+	"Host: localhost\r\n"					\
+	"Content-Length: %zu\r\n"				\
 	"\r\n"
-};
 
 static const char *unanswered_request = {
 	"GET /unanswered HTTP/1.1\r\n"
@@ -203,6 +210,19 @@ static const char *nonblocking_file_request = {
 
 static const char *nonblocking_video_request = {
 	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=0-\r\n"
+	"\r\n"
+};
+
+static const char *deadline_big_request = {
+	"GET /deadline/big HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *deadline_video_request = {
+	"GET /deadline/video HTTP/1.1\r\n"
 	"Host: localhost\r\n"
 	"Range: bytes=0-\r\n"
 	"\r\n"
@@ -540,6 +560,35 @@ static void server_test_nonblocking_video_handler (
 
 }
 
+// GET /deadline/big, in the blocking socket of the connection, the client never reads it
+static void server_test_deadline_big_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_now ();
+
+	server_test_nonblocking_end (
+		start,
+		http_response_render_text (http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
+	);
+
+}
+
+// GET /deadline/video, its header and its file are sent with the same deadline
+static void server_test_deadline_video_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_now ();
+
+	server_test_nonblocking_end (start, http_response_handle_video (http_receive, server_test_file));
+
+}
+
 #pragma endregion
 
 #pragma region server
@@ -560,6 +609,9 @@ typedef struct ServerTestOptions {
 	unsigned int request_timeout;
 
 	CerverHandlerType handler_type;
+
+	// milliseconds of all the sends of a response, 0 uses send_timeout
+	unsigned int response_send_timeout;
 
 } ServerTestOptions;
 
@@ -582,7 +634,8 @@ static ServerTestOptions server_test_options_default (void) {
 		CERVER_DRAIN_POLICY_RUN, SERVER_TEST_DRAIN_TIMEOUT,
 		CERVER_DEFAULT_SEND_TIMEOUT,
 		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT,
-		CERVER_HANDLER_TYPE_THREADS
+		CERVER_HANDLER_TYPE_THREADS,
+		0
 	};
 
 	return options;
@@ -676,6 +729,10 @@ static void server_test_routes (HttpCerver *http_cerver) {
 	test_check_ptr (http_group_get (nonblocking, "file", server_test_nonblocking_file_handler));
 	test_check_ptr (http_group_get (nonblocking, "video", server_test_nonblocking_video_handler));
 
+	HttpGroup *deadline = http_cerver_group_create (http_cerver, "deadline");
+	test_check_ptr (http_group_get (deadline, "big", server_test_deadline_big_handler));
+	test_check_ptr (http_group_get (deadline, "video", server_test_deadline_video_handler));
+
 	HttpGroup *zero = http_cerver_group_create (http_cerver, "zero");
 	test_check_ptr (http_group_get (zero, "file", server_test_zero_file_handler));
 	test_check_ptr (http_group_get (zero, "video", server_test_zero_video_handler));
@@ -702,6 +759,7 @@ static Cerver *server_test_cerver_create (
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 	http_cerver_set_headers_timeout (http_cerver, options->headers_timeout);
 	http_cerver_set_request_timeout (http_cerver, options->request_timeout);
+	http_cerver_set_send_timeout_milliseconds (http_cerver, options->response_send_timeout);
 
 	server_test_routes (http_cerver);
 
@@ -990,13 +1048,17 @@ static void test_server_large_response (void) {
 
 }
 
-// the POLL handler serves the same requests as the THREADS one
+// the POLL handler serves the same requests as the THREADS one,
+// a web cerver handles its requests in its thpool with both types,
+// only the cervers of the protocol of cerver create it just with CERVER_HANDLER_TYPE_THREADS
 static void test_server_poll (void) {
 
 	ServerTestOptions options = server_test_options_default ();
 	options.handler_type = CERVER_HANDLER_TYPE_POLL;
 
 	ServerTest *server = server_test_start (&options);
+
+	test_check_ptr (server->cerver->thpool);
 
 	for (unsigned int i = 0; i < SERVER_TEST_POLL_REQUESTS; i++) {
 		server_test_request (server->port, ok_request, status_ok);
@@ -1047,7 +1109,7 @@ static void server_test_send_all (const int fd, const char *data, const size_t s
 static void server_test_huge_headers (const int fd) {
 
 	char headers[SERVER_TEST_RESPONSE_SIZE];
-	(void) snprintf (headers, SERVER_TEST_RESPONSE_SIZE, huge_request_format, server_test_huge_size);
+	(void) snprintf (headers, SERVER_TEST_RESPONSE_SIZE, SERVER_TEST_HUGE_REQUEST_FORMAT, server_test_huge_size);
 
 	server_test_send (fd, headers);
 
@@ -1475,6 +1537,63 @@ static void test_server_nonblocking_timeout (void) {
 
 	free (big_response);
 	big_response = NULL;
+
+}
+
+// sends the request with a client that never reads,
+// and checks that its response failed within the deadline of the response
+static void server_test_response_deadline (const u16 port, const char *request) {
+
+	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+
+	int fd = server_test_connect_small (port);
+	server_test_send (fd, request);
+
+	server_test_wait_count (&nonblocking_done, done + 1);
+	(void) close (fd);
+
+	test_check_unsigned_eq (__atomic_load_n (&nonblocking_failed, __ATOMIC_SEQ_CST), 1, NULL);
+
+	const unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
+	test_check (
+		milliseconds >= (SERVER_TEST_RESPONSE_SEND_TIMEOUT - SERVER_TEST_SEND_TIMEOUT_MARGIN),
+		"the response did not wait for its deadline"
+	);
+
+	test_check (
+		milliseconds <= (SERVER_TEST_RESPONSE_SEND_TIMEOUT + SERVER_TEST_RESPONSE_SEND_TOLERANCE),
+		"the response waited longer than its deadline"
+	);
+
+}
+
+// all the sends of a response end with the send timeout of the HTTP cerver (milliseconds),
+// also in the blocking socket of the connection, whose SO_SNDTIMEO (the cerver's send timeout) is longer
+static void test_server_response_send_timeout (void) {
+
+	server_test_file_create ();
+
+	big_response = (char *) malloc (SERVER_TEST_BIG_RESPONSE_SIZE);
+	test_check_ptr (big_response);
+	(void) memset (big_response, 'a', SERVER_TEST_BIG_RESPONSE_SIZE);
+
+	ServerTestOptions options = server_test_options_default ();
+	options.send_timeout = SERVER_TEST_LONG_SEND_TIMEOUT;
+	options.response_send_timeout = SERVER_TEST_RESPONSE_SEND_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
+	server_test_response_deadline (server->port, deadline_big_request);
+	server_test_response_deadline (server->port, deadline_video_request);
+
+	// the only thread is free again
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+	free (big_response);
+	big_response = NULL;
+
+	(void) unlink (server_test_file);
 
 }
 
@@ -2061,6 +2180,7 @@ void http_tests_server (void) {
 	test_run (test_server_unanswered_gone);
 	test_run (test_server_nonblocking);
 	test_run (test_server_nonblocking_timeout);
+	test_run (test_server_response_send_timeout);
 
 	test_run (test_server_overload_reject);
 	test_run (test_server_overload_wait);
