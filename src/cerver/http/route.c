@@ -262,19 +262,25 @@ void http_route_stats_snapshot (
 
 }
 
+void http_route_file_stats_init (HttpRouteFileStats *route_file_stats) {
+
+	(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
+
+	route_file_stats->first = true;
+
+	route_file_stats->min_n_files = SIZE_MAX;
+
+	route_file_stats->min_file_size = SIZE_MAX;
+
+	route_file_stats->mutex = NULL;
+
+}
+
 HttpRouteFileStats *http_route_file_stats_new (void) {
 
 	HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) malloc (sizeof (HttpRouteFileStats));
 	if (route_file_stats) {
-		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
-
-		route_file_stats->first = true;
-
-		route_file_stats->min_n_files = SIZE_MAX;
-
-		route_file_stats->min_file_size = SIZE_MAX;
-
-		route_file_stats->mutex = NULL;
+		http_route_file_stats_init (route_file_stats);
 	}
 
 	return route_file_stats;

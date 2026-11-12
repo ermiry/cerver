@@ -21,6 +21,7 @@
 #include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
+#include "cerver/http/recycle.h"
 #include "cerver/http/request.h"
 #include "cerver/http/url.h"
 #include "cerver/http/utils.h"
@@ -158,6 +159,28 @@ Arena *http_request_get_arena (HttpRequest *http_request) {
 
 }
 
+// the bytes that the buffer of the body has, including its '\0'
+static size_t http_request_body_capacity (const String *body) {
+
+	return (body->max_len > body->len) ? body->max_len : body->len + 1;
+
+}
+
+// the buffer of the body goes back to the ones that the thread reuses,
+// its string lives in the arena of the request when it has one
+static void http_request_body_release (HttpRequest *http_request) {
+
+	String *body = http_request->body;
+	if (body) {
+		if (body->str) http_recycle_buffer_give_back (body->str, http_request_body_capacity (body));
+
+		if (!http_request->arena) free (body);
+
+		http_request->body = NULL;
+	}
+
+}
+
 // the url, the query and the headers of a request in an arena are released with it
 static void http_request_delete_strings (HttpRequest *http_request) {
 
@@ -193,7 +216,7 @@ void http_request_delete (HttpRequest *http_request) {
 				http_request->delete_custom_data (http_request->custom_data);
 		}
 
-		str_delete (http_request->body);
+		http_request_body_release (http_request);
 
 		dlist_delete (http_request->multi_parts);
 

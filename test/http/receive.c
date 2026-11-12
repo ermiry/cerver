@@ -22,6 +22,7 @@
 #include <cerver/http/http.h>
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/multipart.h>
+#include <cerver/http/recycle.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/route.h>
@@ -846,6 +847,17 @@ static const char *echo_json_request = {
 	"{\"name\": \"cerver\", \"values\": [1, 2, 3]}"
 };
 
+// a body is reserved once from its Content-Length (and its '\0'),
+// in the smallest of the buffers that the threads reuse that fits it
+static size_t test_receive_body_capacity (const size_t length) {
+
+	size_t capacity = (size_t) 1 << HTTP_RECYCLE_BUFFER_MIN_EXPONENT;
+	while (capacity < (length + 1)) capacity <<= 1;
+
+	return capacity;
+
+}
+
 static void test_receive_check_echo_json (void) {
 
 	test_receive_expect (test_receive_status_is ("200"));
@@ -854,7 +866,7 @@ static void test_receive_check_echo_json (void) {
 	test_receive_expect (observed.body_len == strlen (echo_json_body));
 	test_receive_expect (!strcmp (observed.body, echo_json_body));
 	// reserved once from its Content-Length, whatever the pieces it arrived in
-	test_receive_expect (observed.body_capacity == (strlen (echo_json_body) + 1));
+	test_receive_expect (observed.body_capacity == test_receive_body_capacity (strlen (echo_json_body)));
 	test_receive_expect (!strcmp (observed.content_type, "application/json"));
 	test_receive_expect (!strcmp (observed.custom, "custom-value"));
 	test_receive_expect (!strcmp (observed.query, "key=value%20x&other=1"));
@@ -881,7 +893,7 @@ static void test_receive_check_binary (void) {
 	test_receive_expect (!strcmp (observed.param, "abc123"));
 	test_receive_expect (observed.body_len == sizeof (binary_body));
 	test_receive_expect (!memcmp (observed.body, binary_body, sizeof (binary_body)));
-	test_receive_expect (observed.body_capacity == (sizeof (binary_body) + 1));
+	test_receive_expect (observed.body_capacity == test_receive_body_capacity (sizeof (binary_body)));
 
 }
 

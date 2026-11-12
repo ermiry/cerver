@@ -498,6 +498,21 @@ ASan y TSan); lo demás usa la API nueva (`jwt/key.h`, los setters, `base64url_*
 | `test/json/test_dump.c` `dumpfd` | `json_dumpfd ()` funciona | nunca se compilaba (`HAVE_UNISTD_H`) y siempre fallaba |
 | `test/fuzz/jwt.c`, `test/fuzz/json.c` | Los modos raw / HS256 con round trip / ES256 / bearer de `auth.c`; los flags de carga, `dumpb` y pack / unpack | — |
 
+### 2.0b-68, los objetos calientes de HTTP
+
+El reciclado no corrige un bug: cada test se validó con un mutante (`scratchpad/mutants/` de la sesión), y los
+umbrales de asignaciones contra la 2.0b-67.
+
+| Test | Qué fija | Cómo se vio fallar |
+|---|---|---|
+| `test/http/recycle.c` `buffer_classes` | Cada tamaño toma la clase potencia de 2 más chica que lo contiene (de 2^8 a 2^16), uno más grande su tamaño exacto | Mutante: `size` en lugar de `size - 1` en la clase (2^9 daba 2^10); el de `<` en lugar de `<=` es equivalente |
+| `buffer_reused`, `buffer_inexact` | Un búfer de una clase se reusa; uno cuya capacidad no es una clase se libera | Mutante: guardar el búfer inexacto en la clase de abajo (valgrind: escritura inválida al llenar la clase con uno de 200 bytes) |
+| `response_reused` | Una respuesta reciclada no tiene las cabeceras, la cabecera ni el cuerpo de la anterior | Mutante: el `reset` sin limpiar la tabla de cabeceras |
+| `response_header_buffer` | La cabecera de JSON va en el `header_buffer`; una que no cabe se aloca y se libera | Mutante: `http_response_header_is_allocated ()` que nunca libera (valgrind, ASan) |
+| `threads` | Cuatro hilos toman y devuelven respuestas y búferes a la vez y terminan con ellos en su caché | TSan, ASan |
+| `test/http/receive.c` (capacidad del body) | El body se reserva una vez desde su `Content-Length`, en la clase que lo contiene | — (ajustado al tamaño de la clase) |
+| `test/performance.sh` | GET 0 y POST JSON 14 asignaciones por petición | La 2.0b-67 da 1 y 19 |
+
 ### Pendiente
 
 - **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `scheduled.yml`.

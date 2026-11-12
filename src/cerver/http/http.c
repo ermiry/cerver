@@ -45,6 +45,7 @@
 #include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/proxy.h"
+#include "cerver/http/recycle.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
@@ -2744,11 +2745,28 @@ static int http_request_body_create (
 
 	HttpRequest *request = http_receive->request;
 
-	request->body = str_new (NULL);
-	if (!request->body) return 1;
+	// the string of the body lives in the arena of the request when it has one,
+	// and its buffer is taken from the ones that the thread reuses
+	String *body = request->arena ?
+		(String *) arena_alloc (request->arena, sizeof (String)) :
+		(String *) malloc (sizeof (String));
+
+	if (!body) return 1;
 
 	const size_t reserve = http_request_body_reserve_size (http_receive, length);
-	if (reserve && str_reserve (request->body, reserve)) return 1;
+
+	size_t capacity = 0;
+	body->str = (char *) http_recycle_buffer_take (reserve, &capacity);
+	if (!body->str) {
+		if (!request->arena) free (body);
+		return 1;
+	}
+
+	body->str[0] = '\0';
+	body->len = 0;
+	body->max_len = capacity;
+
+	request->body = body;
 
 	return str_append_bytes (request->body, at, length);
 
@@ -3772,8 +3790,9 @@ HttpReceive *http_receive_create_arena (
 	HttpReceive *http_receive = (HttpReceive *) arena_alloc (arena, sizeof (HttpReceive));
 	http_parser *parser = (http_parser *) arena_alloc (arena, sizeof (http_parser));
 	HttpRequest *request = http_request_new_arena (arena);
+	HttpRouteFileStats *file_stats = (HttpRouteFileStats *) arena_alloc (arena, sizeof (HttpRouteFileStats));
 
-	if (http_receive && parser && request && url_buffer && field_buffer && value_buffer) {
+	if (http_receive && parser && request && file_stats && url_buffer && field_buffer && value_buffer) {
 		http_receive_init (http_receive);
 		http_receive->arena = arena;
 
@@ -3790,7 +3809,9 @@ HttpReceive *http_receive_create_arena (
 		http_receive->request = request;
 		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
 
-		http_receive->file_stats = http_route_file_stats_new ();
+		// the stats of the uploads of the request live in the arena too
+		http_route_file_stats_init (file_stats);
+		http_receive->file_stats = file_stats;
 
 		http_receive->borrowed_buffers = true;
 		http_receive_borrow_buffer (&http_receive->url_buffer, url_buffer);
@@ -3895,7 +3916,10 @@ void http_receive_delete (HttpReceive *http_receive) {
 		http_receive->node = NULL;
 		http_receive->endpoint = NULL;
 		http_receive->route = NULL;
-		http_route_file_stats_delete (http_receive->file_stats);
+
+		// the stats in an arena are released with it
+		if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
+		http_receive->file_stats = NULL;
 
 		if (http_receive->mpart_parser)
 			multipart_parser_free (http_receive->mpart_parser);

@@ -3,6 +3,22 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-68 (from 2.0b-67)
+
+The hot objects of HTTP are reused between requests. The API and the wire do not change.
+
+- Changed fields (ABI): `HttpResponse` has `header_buffer` (2^8 bytes, where its header is written when it fits) and
+  `recycle_next`; `response->header` can point to `header_buffer`, so it is never released with `free ()` by the
+  caller: `http_response_set_header ()` and `http_response_delete ()` do it
+- `http_response_delete ()` keeps the response in a cache of its thread (and a shared list) to be reused,
+  `http_response_new ()` takes it from there: a response is never used after it was deleted
+- The body of a request (`http_request_get_body ()`) is reserved in a buffer of a power of 2 of at least 2^8 bytes
+  (`max_len` is that size), and its `String` lives in the arena of the request: it is never released by the handler
+- The stats of the uploads of a request live in the arena of its thread
+- A request without uploads or a body does not allocate (GET 1 → 0); a POST with a JSON body only allocates what its
+  handler parses (19 → 14 in `benchmarks/server.c`)
+- New: `http/recycle.h` (private)
+
 ## 2.0b-67 (from 2.0b-66)
 
 The security of JWT and JSON. The wire of HTTP does not change, but tokens that a 2.0b-66 accepted can be rejected.
