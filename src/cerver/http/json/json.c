@@ -773,7 +773,7 @@ static int do_dump (
 			void *iter;
 			const char *separator;
 			int separator_length;
-			char loop_key[LOOP_KEY_LEN];
+			char loop_key[JSON_LOOP_KEY_LENGTH];
 
 			if (flags & JSON_COMPACT) {
 				separator = ":";
