@@ -3025,7 +3025,9 @@ static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
 			client_cerver_packet_handle_info (packet);
 			break;
 
-		// the cerves is going to be teardown, we have to disconnect
+		// the cerver is going to teardown and closes the connection right after it,
+		// the receive loop ends or reconnects the connection like with any close,
+		// and the other connections of the client are not affected
 		case CERVER_PACKET_TYPE_TEARDOWN:
 			#ifdef CLIENT_DEBUG
 			cerver_log (
@@ -3034,10 +3036,7 @@ static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
 			);
 			#endif
 
-			client_got_disconnected (packet->client);
-			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
-
-			error = CLIENT_HANDLER_ERROR_CLOSED;
+			client_event_trigger (CLIENT_EVENT_CERVER_TEARDOWN, packet->client, packet->connection);
 			break;
 
 		default:
