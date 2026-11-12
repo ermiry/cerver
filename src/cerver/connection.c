@@ -566,7 +566,7 @@ void connection_set_receive_flags (Connection *connection, int flags) {
 // by default the value RECEIVE_PACKET_BUFFER_SIZE is used
 void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 
-	if (connection) connection->receive_packet_buffer_size = size;
+	if (connection && size) connection->receive_packet_buffer_size = size;
 
 }
 
@@ -2040,6 +2040,11 @@ void connection_send_packet (
 		else {
 			packet_delete (packet);
 		}
+	}
+
+	// the packet belongs to the connection, a connection without a send queue deletes it
+	else {
+		packet_delete (packet);
 	}
 
 }

@@ -84,6 +84,18 @@ static void handler_data_delete (HandlerData *handler_data) {
 
 }
 
+// the data is released once, by the thread of the handler when it ends,
+// or with the handler when it never had a thread, like a direct handler
+static void handler_data_release (Handler *handler) {
+
+	if (handler->data && handler->data_delete) {
+		handler->data_delete (handler->data);
+	}
+
+	handler->data = NULL;
+
+}
+
 static Handler *handler_new (void) {
 
 	Handler *handler = (Handler *) malloc (sizeof (Handler));
@@ -121,9 +133,14 @@ void handler_delete (void *handler_ptr) {
 	if (handler_ptr) {
 		Handler *handler = (Handler *) handler_ptr;
 
-		// a handler that was never stopped does not keep its thread resources
+		// a handler that was never stopped does not keep its thread resources,
+		// and its thread still uses its data
 		if (handler->joinable) {
 			(void) pthread_detach (handler->thread_id);
+		}
+
+		else {
+			handler_data_release (handler);
 		}
 
 		job_queue_delete (handler->job_queue);
@@ -500,8 +517,7 @@ static void *handler_do (void *handler_ptr) {
 			default: break;
 		}
 
-		if (handler->data_delete)
-			handler->data_delete (handler->data);
+		handler_data_release (handler);
 
 		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {
@@ -1030,9 +1046,9 @@ void cerver_test_packet_handler (Packet *packet) {
 
 }
 
-// pushes the packet to the handler selected by its id
+// passes the packet to the handler selected by its id, directly or by its job queue
 // a packet without a handler, or that could not be pushed, is released here
-static void cerver_multiple_app_packet_handler (Packet *packet) {
+static void cerver_multiple_app_packet_handler (Packet *packet, const bool delete_packet) {
 
 	const u8 handler_id = packet->header.handler_id;
 
@@ -1048,13 +1064,11 @@ static void cerver_multiple_app_packet_handler (Packet *packet) {
 		packet_delete (packet);
 	}
 
-	else if (handler_push_packet (handler, packet)) {
-		cerver_log_error (
-			"Failed to push a new job to cerver's %s <%u> handler!",
-			packet->cerver->info->name, (unsigned int) handler_id
+	else {
+		handler_packet_dispatch (
+			handler, packet, delete_packet,
+			packet->cerver->info->name, "multiple app handler"
 		);
-
-		packet_delete (packet);
 	}
 
 }
@@ -1088,7 +1102,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 	}
 
 	else if (packet->cerver->multiple_handlers) {
-		cerver_multiple_app_packet_handler (packet);
+		cerver_multiple_app_packet_handler (packet, delete_packet);
 	}
 
 	else {
@@ -1718,7 +1732,7 @@ void cerver_receive_handle_failed (CerverReceive *cr) {
 				} break;
 
 				case RECEIVE_TYPE_ON_HOLD: {
-					on_hold_connection_drop (cr->cerver, cr->connection);
+					on_hold_connection_disconnected (cr->cerver, cr->connection);
 				} break;
 
 				case RECEIVE_TYPE_ADMIN: {

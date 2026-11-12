@@ -211,7 +211,7 @@ char *c_string_concat (
 // returns the len of the final string
 size_t c_string_concat_safe (
 	const char *s1, const char *s2,
-	const char *des, size_t des_size
+	char *des, size_t des_size
 ) {
 
 	size_t retval = 0;
@@ -219,7 +219,7 @@ size_t c_string_concat_safe (
 	if (s1 && s2 && des) {
 		if ((strlen (s1) + strlen (s2)) < des_size) {
 			c_string_concat_actual (
-				(char *) s1, (char *) s2, (char *) des
+				(char *) s1, (char *) s2, des
 			);
 
 			retval = strlen (des);

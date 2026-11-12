@@ -228,6 +228,7 @@ exapp:
 	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
 
 base: $(EXOBJS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/start.o -o ./$(EXATARGET)/start $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers $(EXALIBS) $(EXAPPLINK)

@@ -75,12 +75,12 @@ CERVER_PUBLIC char *c_string_concat (
 	const char *s1, const char *s2, size_t *des_size
 );
 
-// concats two strings into the same buffer
-// wont perform operation if result would overflow buffer
-// returns the len of the final string
+// concats two strings into des, a buffer of des_size bytes,
+// it does nothing if the result and its NUL would not fit
+// returns the len of the final string, 0 if it did not fit
 CERVER_PUBLIC size_t c_string_concat_safe (
 	const char *s1, const char *s2,
-	const char *des, size_t des_size
+	char *des, size_t des_size
 );
 
 // creates a new c string with the desired format, as in printf

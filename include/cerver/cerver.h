@@ -788,7 +788,7 @@ CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
 // you can pass your own session generator method that must take a SessionData as the argument
 // and must return a char * representing the session id (token) for the client
 // allocated with malloc (), cerver copies it and releases it with free ()
-// or use the default one
+// or pass NULL to use the default one, 32 random bytes of the kernel in hex characters
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_sessions (
 	Cerver *cerver, void *(*session_id_generator) (const void *)
@@ -840,8 +840,9 @@ CERVER_EXPORT void cerver_set_custom_handler_delete (
 	Cerver *cerver, bool delete_packet
 );
 
-// enables the ability of the cerver to have multiple app handlers
-// returns 0 on success, 1 on error
+// enables the ability of the cerver to have multiple app handlers,
+// the PACKET_TYPE_APP packets go to the one of the handler_id of their header
+// returns 0 on success, 1 on error, like 0 handlers or a second call
 CERVER_EXPORT int cerver_set_multiple_handlers (
 	Cerver *cerver, unsigned int n_handlers
 );
@@ -914,9 +915,10 @@ CERVER_EXPORT u8 cerver_set_admin_enable (Cerver *cerver);
 // prints info about current handlers
 CERVER_EXPORT void cerver_handlers_print_info (Cerver *cerver);
 
-// adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
-// returns 0 on success, 1 on error
+// adds a new handler, created with handler_create_with_id (), to the cerver handlers array,
+// after cerver_set_multiple_handlers (); the cerver owns it from then on
+// returns 0 on success, 1 on error, like an id that is not below n_handlers
+// or that already has a handler, and then the handler still belongs to the caller
 CERVER_EXPORT u8 cerver_handlers_add (
 	Cerver *cerver, struct _Handler *handler
 );
