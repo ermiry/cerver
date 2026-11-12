@@ -70,8 +70,10 @@
 #define DISCONNECT_SEND_TIMEOUT				1
 
 // valgrind runs one thread at a time, so a client that reads a large response
-// can wait longer than the send timeout for its turn
-#define DISCONNECT_VALGRIND_SEND_TIMEOUT	16
+// can wait longer than the send timeout for its turn, and since the 2.0b-66
+// the send timeout is the deadline of the whole response: in a slow runner
+// a half-close client had read 1769472 of the 4194304 bytes when 16 secs ended it
+#define DISCONNECT_VALGRIND_SEND_TIMEOUT	64
 #define DISCONNECT_PRELOAD_VARIABLE			"LD_PRELOAD"
 #define DISCONNECT_VALGRIND_PRELOAD			"vgpreload"
 
