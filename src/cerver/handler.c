@@ -1046,9 +1046,9 @@ void cerver_test_packet_handler (Packet *packet) {
 
 }
 
-// pushes the packet to the handler selected by its id
+// passes the packet to the handler selected by its id, directly or by its job queue
 // a packet without a handler, or that could not be pushed, is released here
-static void cerver_multiple_app_packet_handler (Packet *packet) {
+static void cerver_multiple_app_packet_handler (Packet *packet, const bool delete_packet) {
 
 	const u8 handler_id = packet->header.handler_id;
 
@@ -1064,13 +1064,11 @@ static void cerver_multiple_app_packet_handler (Packet *packet) {
 		packet_delete (packet);
 	}
 
-	else if (handler_push_packet (handler, packet)) {
-		cerver_log_error (
-			"Failed to push a new job to cerver's %s <%u> handler!",
-			packet->cerver->info->name, (unsigned int) handler_id
+	else {
+		handler_packet_dispatch (
+			handler, packet, delete_packet,
+			packet->cerver->info->name, "multiple app handler"
 		);
-
-		packet_delete (packet);
 	}
 
 }
@@ -1104,7 +1102,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 	}
 
 	else if (packet->cerver->multiple_handlers) {
-		cerver_multiple_app_packet_handler (packet);
+		cerver_multiple_app_packet_handler (packet, delete_packet);
 	}
 
 	else {
