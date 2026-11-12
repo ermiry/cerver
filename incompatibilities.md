@@ -3,6 +3,19 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-69 (from 2.0b-68)
+
+The style of cerver in the vendored JWT and JSON. The exported symbols of `libcerver.so` do not change.
+
+- Renamed fields (API and ABI): `jwt_t.key_len` is `key_length`; `jwt_valid_t.hdr` is `headers` and
+  `jwt_valid_t.req_grants` is `required_grants`
+- Removed: the `jwt_malloc_t`, `jwt_realloc_t` and `jwt_free_t` types (nothing could set them, there was no
+  `jwt_set_alloc ()`), `jwt/config.h`, and the configuration macros of Jansson `JSON_HAVE_LOCALECONV`,
+  `JSON_HAVE_ATOMIC_BUILTINS`, `JSON_HAVE_SYNC_BUILTINS` and `JANSSON_THREAD_SAFE_REFCOUNT` (the reference counts are
+  always atomic); `LOOP_KEY_LEN` is `JSON_LOOP_KEY_LENGTH` (private)
+- The strings of `jwt_dump_str ()`, `jwt_encode_str ()` and the other ones of the JWT are allocated with `malloc ()`:
+  `free ()` or `jwt_free_str ()` releases them
+
 ## 2.0b-68 (from 2.0b-67)
 
 The hot objects of HTTP are reused between requests. The API and the wire do not change.
