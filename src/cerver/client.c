@@ -3011,6 +3011,11 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 				"Failed to correctly check cerver info!"
 			);
 		}
+
+		// the info is in the cerver report of the connection
+		else {
+			client_event_trigger (CLIENT_EVENT_CERVER_INFO, packet->client, packet->connection);
+		}
 	}
 
 }
