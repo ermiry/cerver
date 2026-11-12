@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <errno.h>
 
@@ -17,7 +18,6 @@
 #include "cerver/http/json/value.h"
 
 #include "cerver/http/jwt/alg.h"
-#include "cerver/http/jwt/config.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
 
@@ -30,6 +30,27 @@
 #define JWT_DUMP_INDENT					4
 
 #define JWT_PART_SEPARATOR				'.'
+#define JWT_PART_SEPARATOR_STRING		"."
+
+#define JWT_DUMP_NEW_LINE				"\n"
+
+// the value of a missing integer or boolean grant
+#define JWT_GRANT_NOT_FOUND				-1
+
+// the default type of a signed token (RFC 7519 §5.1)
+#define JWT_TYPE_HEADER					"typ"
+#define JWT_TYPE_HEADER_VALUE			"JWT"
+
+#define JWT_ALG_HEADER					"alg"
+
+#define JWT_CLAIM_EXPIRATION			"exp"
+#define JWT_CLAIM_NOT_BEFORE			"nbf"
+#define JWT_CLAIM_ISSUER				"iss"
+#define JWT_CLAIM_SUBJECT				"sub"
+#define JWT_CLAIM_AUDIENCE				"aud"
+
+// the dumps of the grants and the headers, sorted for repeatability
+#define JWT_JSON_DUMP_FLAGS				(JSON_SORT_KEYS | JSON_COMPACT | JSON_ENCODE_ANY)
 
 // the header, the payload and the signature
 typedef struct JwtTokenParts {
@@ -48,10 +69,6 @@ typedef struct JwtTokenParts {
 
 } JwtTokenParts;
 
-static jwt_malloc_t pfn_malloc = NULL;
-static jwt_realloc_t pfn_realloc = NULL;
-static jwt_free_t pfn_free = NULL;
-
 const char *jwt_error_str (const jwt_error_t error) {
 
 	switch (error) {
@@ -64,90 +81,52 @@ const char *jwt_error_str (const jwt_error_t error) {
 
 }
 
-static void *jwt_malloc (size_t size) {
-
-	if (pfn_malloc)
-		return pfn_malloc (size);
-
-	return malloc (size);
-
-}
-
-static void *jwt_realloc (void *ptr, size_t size) {
-
-	if (pfn_realloc)
-		return pfn_realloc (ptr, size);
-
-	return realloc (ptr, size);
-
-}
-
-static void jwt_freemem (void *ptr) {
-
-	if (pfn_free)
-		pfn_free (ptr);
-
-	else free (ptr);
-
-}
-
-static void *jwt_calloc (size_t nmemb, size_t size) {
-
-	size_t total_size = nmemb * size;
-	if (!total_size)
-		return NULL;
-
-	void *ptr = jwt_malloc (total_size);
-	if (ptr)
-		(void) memset (ptr, 0, total_size);
-
-	return ptr;
-
-}
+#pragma region key
 
 static void jwt_scrub_key (jwt_t *jwt) {
 
 	if (jwt->key) {
 		// a memset () before a free () can be removed by the compiler
-		OPENSSL_cleanse (jwt->key, jwt->key_len);
+		OPENSSL_cleanse (jwt->key, jwt->key_length);
 
-		jwt_freemem (jwt->key);
+		free (jwt->key);
 		jwt->key = NULL;
 	}
 
-	jwt->key_len = 0;
+	jwt->key_length = 0;
 	jwt->alg = JWT_ALG_NONE;
 
 }
 
-int jwt_set_alg (
-	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t len
+// an unsigned token has no key, a signed one always has one
+static bool jwt_key_matches_alg (
+	const jwt_alg_t alg, const unsigned char *key, const size_t length
 ) {
-	/* No matter what happens here, we do this. */
+
+	return (alg == JWT_ALG_NONE) ? (!key && !length) : (key && length);
+
+}
+
+int jwt_set_alg (
+	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t length
+) {
+
+	// whatever happens, the previous key is cleared
 	jwt_scrub_key (jwt);
 
-	if (alg < JWT_ALG_NONE || alg >= JWT_ALG_INVAL)
-		return EINVAL;
+	if ((alg < JWT_ALG_NONE) || (alg >= JWT_ALG_INVAL)) return EINVAL;
 
-	switch (alg) {
-	case JWT_ALG_NONE:
-		if (key || len)
-			return EINVAL;
-		break;
+	if (!jwt_key_matches_alg (alg, key, length)) return EINVAL;
 
-	default:
-		if (!key || !len)
-			return EINVAL;
+	if (alg != JWT_ALG_NONE) {
+		jwt->key = (unsigned char *) malloc (length);
+		if (!jwt->key) return ENOMEM;
 
-		jwt->key = (unsigned char *) jwt_malloc (len);
-		if (!jwt->key)
-			return ENOMEM;
-
-		memcpy (jwt->key, key, len);
+		(void) memcpy (jwt->key, key, length);
 	}
 
 	jwt->alg = alg;
-	jwt->key_len = len;
+	jwt->key_length = length;
 
 	return 0;
 
@@ -159,29 +138,27 @@ jwt_alg_t jwt_get_alg (jwt_t *jwt) {
 
 }
 
+#pragma endregion
+
+#pragma region main
+
 int jwt_new (jwt_t **jwt) {
 
-	if (!jwt)
-		return EINVAL;
+	if (!jwt) return EINVAL;
 
-	*jwt = (jwt_t *) jwt_malloc (sizeof (jwt_t));
-	if (!*jwt)
-		return ENOMEM;
-
-	(void) memset (*jwt, 0, sizeof (jwt_t));
+	*jwt = (jwt_t *) calloc (1, sizeof (jwt_t));
+	if (!*jwt) return ENOMEM;
 
 	(*jwt)->grants = json_object ();
-	if (!(*jwt)->grants) {
-		jwt_freemem (*jwt);
-		*jwt = NULL;
-		return ENOMEM;
-	}
-
 	(*jwt)->headers = json_object ();
-	if (!(*jwt)->headers) {
+
+	if (!(*jwt)->grants || !(*jwt)->headers) {
 		json_decref ((*jwt)->grants);
-		jwt_freemem (*jwt);
+		json_decref ((*jwt)->headers);
+
+		free (*jwt);
 		*jwt = NULL;
+
 		return ENOMEM;
 	}
 
@@ -191,115 +168,187 @@ int jwt_new (jwt_t **jwt) {
 
 void jwt_free (jwt_t *jwt) {
 
-	if (!jwt)
-		return;
+	if (jwt) {
+		jwt_scrub_key (jwt);
 
-	jwt_scrub_key (jwt);
+		json_decref (jwt->grants);
+		json_decref (jwt->headers);
 
-	json_decref (jwt->grants);
-	json_decref (jwt->headers);
+		free (jwt);
+	}
 
-	jwt_freemem (jwt);
+}
+
+// copies the key, the grants and the headers of the jwt
+// returns 0 on success, ENOMEM on error
+static int jwt_dup_values (jwt_t *copy, const jwt_t *jwt) {
+
+	if (jwt->key_length) {
+		copy->alg = jwt->alg;
+
+		copy->key = (unsigned char *) malloc (jwt->key_length);
+		if (!copy->key) return ENOMEM;
+
+		(void) memcpy (copy->key, jwt->key, jwt->key_length);
+		copy->key_length = jwt->key_length;
+	}
+
+	copy->grants = json_deep_copy (jwt->grants);
+	copy->headers = json_deep_copy (jwt->headers);
+
+	return (copy->grants && copy->headers) ? 0 : ENOMEM;
 
 }
 
 jwt_t *jwt_dup (jwt_t *jwt) {
 
-	jwt_t *new_thing = NULL;
-
 	if (!jwt) {
 		errno = EINVAL;
-		goto dup_fail;
+		return NULL;
 	}
 
-	errno = 0;
-
-	new_thing = (jwt_t *) jwt_malloc (sizeof (jwt_t));
-	if (!new_thing) {
+	jwt_t *copy = (jwt_t *) calloc (1, sizeof (jwt_t));
+	if (!copy) {
 		errno = ENOMEM;
 		return NULL;
 	}
 
-	(void) memset (new_thing, 0, sizeof (jwt_t));
-
-	if (jwt->key_len) {
-		new_thing->alg = jwt->alg;
-		new_thing->key = (unsigned char *) jwt_malloc (jwt->key_len);
-		if (!new_thing->key) {
-			errno = ENOMEM;
-			goto dup_fail;
-		}
-
-		(void) memcpy (new_thing->key, jwt->key, jwt->key_len);
-		new_thing->key_len = jwt->key_len;
-	}
-
-	new_thing->grants = json_deep_copy (jwt->grants);
-	if (!new_thing->grants)
-		errno = ENOMEM;
-
-	new_thing->headers = json_deep_copy (jwt->headers);
-	if (!new_thing->headers)
-		errno = ENOMEM;
-
-dup_fail:
+	errno = jwt_dup_values (copy, jwt);
 	if (errno) {
-		jwt_free (new_thing);
-		new_thing = NULL;
+		jwt_free (copy);
+		copy = NULL;
 	}
 
-	return new_thing;
+	return copy;
 
 }
 
-static const char *get_js_string (
-	json_t *js, const char *key
+#pragma endregion
+
+#pragma region values
+
+static const char *jwt_json_get_string (
+	json_t *json, const char *key
 ) {
 
-	const char *val = NULL;
-	json_t *js_val;
+	const char *value = NULL;
 
-	js_val = json_object_get (js, key);
-	if (js_val) {
-		val = json_string_value (js_val);
-	} else {
+	json_t *json_value = json_object_get (json, key);
+	if (json_value) {
+		value = json_string_value (json_value);
+	}
+
+	else {
 		errno = ENOENT;
 	}
 
-	return val;
+	return value;
 
 }
 
-static long get_js_int (json_t *js, const char *key) {
+static long jwt_json_get_integer (json_t *json, const char *key) {
 
-	long val = -1;
-	json_t *js_val;
+	long value = JWT_GRANT_NOT_FOUND;
 
-	js_val = json_object_get (js, key);
-	if (js_val) {
-		val = (long)json_integer_value (js_val);
-	} else {
+	json_t *json_value = json_object_get (json, key);
+	if (json_value) {
+		value = (long) json_integer_value (json_value);
+	}
+
+	else {
 		errno = ENOENT;
 	}
 
-	return val;
+	return value;
 
 }
 
-static int get_js_bool (json_t *js, const char *key) {
+static int jwt_json_get_bool (json_t *json, const char *key) {
 
-	int val = -1;
-	json_t *js_val;
+	int value = JWT_GRANT_NOT_FOUND;
 
-	js_val = json_object_get (js, key);
-	if (js_val) {
-		val = (int)json_is_true (js_val);
-	} else {
+	json_t *json_value = json_object_get (json, key);
+	if (json_value) {
+		value = (int) json_is_true (json_value);
+	}
+
+	else {
 		errno = ENOENT;
 	}
-	return val;
+
+	return value;
 
 }
+
+// a name of a grant or of a header that can be used
+static bool jwt_name_is_valid (const char *name) {
+
+	return name && name[0];
+
+}
+
+// the value with the name, or the whole object without a name,
+// dumped with its keys sorted
+static char *jwt_json_dump (json_t *object, const char *name) {
+
+	errno = EINVAL;
+
+	json_t *json_value = jwt_name_is_valid (name) ? json_object_get (object, name) : object;
+	if (!json_value) return NULL;
+
+	errno = 0;
+
+	return json_dumps (json_value, JWT_JSON_DUMP_FLAGS);
+
+}
+
+// a value of any type is never replaced
+// returns 0 on success, EEXIST if the name has a value, or EINVAL on error
+static int jwt_json_add (json_t *object, const char *name, json_t *value) {
+
+	int retval = EEXIST;
+
+	if (json_object_get (object, name)) {
+		json_decref (value);
+	}
+
+	else {
+		retval = json_object_set_new (object, name, value) ? EINVAL : 0;
+	}
+
+	return retval;
+
+}
+
+// adds the values of an object of json text without repeated keys
+static int jwt_json_add_json (json_t *object, const char *json) {
+
+	int retval = -1;
+
+	json_t *values = json_loads (json, JSON_REJECT_DUPLICATES, NULL);
+
+	if (json_is_object (values)) retval = json_object_update (object, values);
+
+	json_decref (values);
+
+	return retval ? EINVAL : 0;
+
+}
+
+// deletes the value with the name, or every one without a name
+static void jwt_json_delete (json_t *object, const char *name) {
+
+	if (jwt_name_is_valid (name)) {
+		(void) json_object_del (object, name);
+	}
+
+	else {
+		(void) json_object_clear (object);
+	}
+
+}
+
+#pragma endregion
 
 #pragma region decode
 
@@ -345,12 +394,12 @@ static int jwt_part_decode (
 	int retval = ENOMEM;
 
 	// one more byte, the result is never empty for malloc ()
-	*decoded = (unsigned char *) jwt_malloc (base64url_decode_length (part_length) + 1);
+	*decoded = (unsigned char *) malloc (base64url_decode_length (part_length) + 1);
 	if (*decoded) {
 		retval = 0;
 
 		if (base64url_decode (*decoded, decoded_length, part, part_length)) {
-			jwt_freemem (*decoded);
+			free (*decoded);
 			*decoded = NULL;
 			retval = EINVAL;
 		}
@@ -376,7 +425,7 @@ static json_t *jwt_part_decode_object (
 			object = NULL;
 		}
 
-		jwt_freemem (decoded);
+		free (decoded);
 	}
 
 	return object;
@@ -406,7 +455,7 @@ static int jwt_parse_grants (jwt_t *jwt, const JwtTokenParts *parts) {
 // the algorithm that the header names, with the exact names of RFC 7518
 static jwt_alg_t jwt_headers_alg (const jwt_t *jwt) {
 
-	return jwt_str_alg (get_js_string (jwt->headers, "alg"));
+	return jwt_str_alg (jwt_json_get_string (jwt->headers, JWT_ALG_HEADER));
 
 }
 
@@ -429,7 +478,7 @@ static int jwt_verify_signature (
 			signature, signature_length
 		);
 
-		jwt_freemem (signature);
+		free (signature);
 	}
 
 	return retval;
@@ -438,10 +487,10 @@ static int jwt_verify_signature (
 
 // an unsigned token can not have a key nor a signature
 static int jwt_decode_unsigned (
-	const JwtTokenParts *parts, const size_t key_len
+	const JwtTokenParts *parts, const size_t key_length
 ) {
 
-	return (key_len || parts->signature_length) ? EINVAL : 0;
+	return (key_length || parts->signature_length) ? EINVAL : 0;
 
 }
 
@@ -449,14 +498,14 @@ static int jwt_decode_unsigned (
 // a key is created for the algorithm that the header names
 static int jwt_decode_raw_key (
 	const jwt_alg_t alg, const JwtTokenParts *parts,
-	const unsigned char *key, const size_t key_len
+	const unsigned char *key, const size_t key_length
 ) {
 
 	int retval = EINVAL;
 
 	// a token that says HS256 with a public PEM as the key would be verified
 	// with the PEM as its secret, and anybody can sign with a public key
-	JwtKey *verification = jwt_key_create (alg, JWT_KEY_TYPE_PUBLIC, key, key_len, NULL);
+	JwtKey *verification = jwt_key_create (alg, JWT_KEY_TYPE_PUBLIC, key, key_length, NULL);
 	if (verification && (jwt_key_check_strength (verification) != JWT_KEY_ERROR_SECRET)) {
 		retval = jwt_verify_signature (verification, parts);
 	}
@@ -469,7 +518,7 @@ static int jwt_decode_raw_key (
 
 static int jwt_decode_parts (
 	jwt_t *decoded, const JwtTokenParts *parts,
-	const unsigned char *key, const size_t key_len
+	const unsigned char *key, const size_t key_length
 ) {
 
 	int retval = jwt_parse_headers (decoded, parts);
@@ -481,16 +530,16 @@ static int jwt_decode_parts (
 	}
 
 	else if (alg == JWT_ALG_NONE) {
-		retval = jwt_decode_unsigned (parts, key_len);
+		retval = jwt_decode_unsigned (parts, key_length);
 	}
 
 	// without a key, the token is decoded but not verified, as an unsigned one
-	else if (!key_len) {
+	else if (!key_length) {
 		alg = JWT_ALG_NONE;
 	}
 
 	else {
-		retval = jwt_decode_raw_key (alg, parts, key, key_len);
+		retval = jwt_decode_raw_key (alg, parts, key, key_length);
 	}
 
 	if (!retval) retval = jwt_parse_grants (decoded, parts);
@@ -503,14 +552,14 @@ static int jwt_decode_parts (
 
 int jwt_decode (
 	jwt_t **jwt, const char *token,
-	const unsigned char *key, size_t key_len
+	const unsigned char *key, size_t key_length
 ) {
 
 	if (!jwt) return EINVAL;
 
 	*jwt = NULL;
 
-	if (!token || (key_len && !key)) return EINVAL;
+	if (!token || (key_length && !key)) return EINVAL;
 
 	JwtTokenParts parts = { NULL, 0, NULL, 0, NULL, 0, 0 };
 	int retval = jwt_token_split (token, strlen (token), &parts);
@@ -519,7 +568,7 @@ int jwt_decode (
 	jwt_t *decoded = NULL;
 	retval = jwt_new (&decoded);
 	if (!retval) {
-		retval = jwt_decode_parts (decoded, &parts, key, key_len);
+		retval = jwt_decode_parts (decoded, &parts, key, key_length);
 
 		if (retval) jwt_free (decoded);
 		else *jwt = decoded;
@@ -581,169 +630,122 @@ int jwt_decode_with_key (
 
 #pragma endregion
 
+#pragma region grants
+
 const char *jwt_get_grant (jwt_t *jwt, const char *grant) {
 
-	if (!jwt || !grant || !strlen (grant)) {
+	if (!jwt || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return NULL;
 	}
 
 	errno = 0;
 
-	return get_js_string (jwt->grants, grant);
+	return jwt_json_get_string (jwt->grants, grant);
 
 }
 
 long jwt_get_grant_int (jwt_t *jwt, const char *grant) {
 
-	if (!jwt || !grant || !strlen (grant)) {
+	if (!jwt || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_int (jwt->grants, grant);
+	return jwt_json_get_integer (jwt->grants, grant);
 
 }
 
 int jwt_get_grant_bool (jwt_t *jwt, const char *grant) {
 
-	if (!jwt || !grant || !strlen (grant)) {
+	if (!jwt || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_bool (jwt->grants, grant);
+	return jwt_json_get_bool (jwt->grants, grant);
 
 }
 
 char *jwt_get_grants_json (jwt_t *jwt, const char *grant) {
 
-	json_t *js_val = NULL;
-
-	errno = EINVAL;
-
-	if (!jwt)
+	if (!jwt) {
+		errno = EINVAL;
 		return NULL;
+	}
 
-	if (grant && strlen (grant))
-		js_val = json_object_get (jwt->grants, grant);
-	else
-		js_val = jwt->grants;
-
-	if (js_val == NULL)
-		return NULL;
-
-	errno = 0;
-
-	return json_dumps (
-		js_val, JSON_SORT_KEYS | JSON_COMPACT | JSON_ENCODE_ANY
-	);
+	return jwt_json_dump (jwt->grants, grant);
 
 }
 
 int jwt_add_grant (
-	jwt_t *jwt, const char *grant, const char *val
+	jwt_t *jwt, const char *grant, const char *value
 ) {
 
-	if (!jwt || !grant || !strlen (grant) || !val)
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (grant) || !value) return EINVAL;
 
-	// a grant of any type is never replaced
-	if (json_object_get (jwt->grants, grant))
-		return EEXIST;
-
-	if (json_object_set_new (jwt->grants, grant, json_string (val)))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->grants, grant, json_string (value));
 
 }
 
 int jwt_add_grant_int (
-	jwt_t *jwt, const char *grant, long val
+	jwt_t *jwt, const char *grant, long value
 ) {
 
-	if (!jwt || !grant || !strlen (grant))
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (grant)) return EINVAL;
 
-	if (json_object_get (jwt->grants, grant))
-		return EEXIST;
-
-	if (json_object_set_new (
-		jwt->grants, grant, json_integer ((json_int_t)val)
-	))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->grants, grant, json_integer ((json_int_t) value));
 
 }
 
 int jwt_add_grant_bool (
-	jwt_t *jwt, const char *grant, int val
+	jwt_t *jwt, const char *grant, int value
 ) {
 
-	if (!jwt || !grant || !strlen (grant))
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (grant)) return EINVAL;
 
-	if (json_object_get (jwt->grants, grant))
-		return EEXIST;
-
-	if (json_object_set_new (jwt->grants, grant, json_boolean (val)))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->grants, grant, json_boolean (value));
 
 }
 
 int jwt_add_grants_json (jwt_t *jwt, const char *json) {
 
-	json_t *js_val;
-	int ret = -1;
+	if (!jwt) return EINVAL;
 
-	if (!jwt)
-		return EINVAL;
-
-	js_val = json_loads (json, JSON_REJECT_DUPLICATES, NULL);
-
-	if (json_is_object (js_val))
-		ret = json_object_update (jwt->grants, js_val);
-
-	json_decref (js_val);
-
-	return ret ? EINVAL : 0;
+	return jwt_json_add_json (jwt->grants, json);
 
 }
 
 int jwt_del_grants (jwt_t *jwt, const char *grant) {
 
-	if (!jwt)
-		return EINVAL;
+	if (!jwt) return EINVAL;
 
-	if (grant == NULL || !strlen (grant))
-		json_object_clear (jwt->grants);
-	else
-		json_object_del (jwt->grants, grant);
+	jwt_json_delete (jwt->grants, grant);
 
 	return 0;
 
 }
 
+#pragma endregion
+
+#pragma region headers
+
 const char *jwt_get_header (
 	jwt_t *jwt, const char *header
 ) {
 
-	if (!jwt || !header || !strlen (header)) {
+	if (!jwt || !jwt_name_is_valid (header)) {
 		errno = EINVAL;
 		return NULL;
 	}
 
 	errno = 0;
 
-	return get_js_string (jwt->headers, header);
+	return jwt_json_get_string (jwt->headers, header);
 
 }
 
@@ -751,14 +753,14 @@ long jwt_get_header_int (
 	jwt_t *jwt, const char *header
 ) {
 
-	if (!jwt || !header || !strlen (header)) {
+	if (!jwt || !jwt_name_is_valid (header)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_int (jwt->headers, header);
+	return jwt_json_get_integer (jwt->headers, header);
 
 }
 
@@ -766,14 +768,14 @@ int jwt_get_header_bool (
 	jwt_t *jwt, const char *header
 ) {
 
-	if (!jwt || !header || !strlen (header)) {
+	if (!jwt || !jwt_name_is_valid (header)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_bool (jwt->headers, header);
+	return jwt_json_get_bool (jwt->headers, header);
 
 }
 
@@ -781,161 +783,103 @@ char *jwt_get_headers_json (
 	jwt_t *jwt, const char *header
 ) {
 
-	json_t *js_val = NULL;
-
-	errno = EINVAL;
-
-	if (!jwt)
+	if (!jwt) {
+		errno = EINVAL;
 		return NULL;
+	}
 
-	if (header && strlen (header))
-		js_val = json_object_get (jwt->headers, header);
-	else
-		js_val = jwt->headers;
-
-	if (js_val == NULL)
-		return NULL;
-
-	errno = 0;
-
-	return json_dumps (
-		js_val, JSON_SORT_KEYS | JSON_COMPACT | JSON_ENCODE_ANY
-	);
+	return jwt_json_dump (jwt->headers, header);
 
 }
 
 int jwt_add_header (
-	jwt_t *jwt, const char *header, const char *val
+	jwt_t *jwt, const char *header, const char *value
 ) {
 
-	if (!jwt || !header || !strlen (header) || !val)
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (header) || !value) return EINVAL;
 
-	// a header of any type is never replaced
-	if (json_object_get (jwt->headers, header))
-		return EEXIST;
-
-	if (json_object_set_new (jwt->headers, header, json_string (val)))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->headers, header, json_string (value));
 
 }
 
 int jwt_add_header_int (
-	jwt_t *jwt, const char *header, long val
+	jwt_t *jwt, const char *header, long value
 ) {
 
-	if (!jwt || !header || !strlen (header))
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (header)) return EINVAL;
 
-	if (json_object_get (jwt->headers, header))
-		return EEXIST;
-
-	if (json_object_set_new (
-		jwt->headers, header, json_integer ((json_int_t) val)
-	))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->headers, header, json_integer ((json_int_t) value));
 
 }
 
 int jwt_add_header_bool (
-	jwt_t *jwt, const char *header, int val
+	jwt_t *jwt, const char *header, int value
 ) {
 
-	if (!jwt || !header || !strlen (header))
-		return EINVAL;
+	if (!jwt || !jwt_name_is_valid (header)) return EINVAL;
 
-	if (json_object_get (jwt->headers, header))
-		return EEXIST;
-
-	if (json_object_set_new (jwt->headers, header, json_boolean (val)))
-		return EINVAL;
-
-	return 0;
+	return jwt_json_add (jwt->headers, header, json_boolean (value));
 
 }
 
 int jwt_add_headers_json (jwt_t *jwt, const char *json) {
 
-	json_t *js_val;
-	int ret = -1;
+	if (!jwt) return EINVAL;
 
-	if (!jwt)
-		return EINVAL;
-
-	js_val = json_loads (json, JSON_REJECT_DUPLICATES, NULL);
-
-	if (json_is_object (js_val))
-		ret = json_object_update (jwt->headers, js_val);
-
-	json_decref (js_val);
-
-	return ret ? EINVAL : 0;
+	return jwt_json_add_json (jwt->headers, json);
 
 }
 
 int jwt_del_headers (jwt_t *jwt, const char *header) {
 
-	if (!jwt)
-		return EINVAL;
+	if (!jwt) return EINVAL;
 
-	if (header == NULL || !strlen (header))
-		json_object_clear (jwt->headers);
-	else
-		json_object_del (jwt->headers, header);
+	jwt_json_delete (jwt->headers, header);
 
 	return 0;
 
 }
 
-static int __append_str (char **buf, const char *str) {
+#pragma endregion
 
-	char *new_thing = NULL;
+#pragma region dump
 
-	if (*buf == NULL) {
-		new_thing = (char *) jwt_calloc (1, strlen (str) + 1);
-	}
-	
-	else {
-		new_thing = (char *) jwt_realloc (*buf, strlen (*buf) + strlen (str) + 1);
-	}
+// appends the string to the buffer, that is created by the first one
+// returns 0 on success, ENOMEM on error
+static int jwt_string_append (char **buffer, const char *string) {
 
-	if (new_thing == NULL)
-		return ENOMEM;
+	const size_t length = *buffer ? strlen (*buffer) : 0;
 
-	strcat (new_thing, str);
+	char *appended = (char *) realloc (*buffer, length + strlen (string) + 1);
+	if (!appended) return ENOMEM;
 
-	*buf = new_thing;
+	(void) strcpy (appended + length, string);
+
+	*buffer = appended;
 
 	return 0;
 
 }
 
-static int write_js (
-	const json_t *js, char **buf, int pretty
+static int jwt_json_write (
+	const json_t *json, char **buffer, int pretty
 ) {
 
-	/* Sort keys for repeatability */
+	// the keys are sorted for repeatability
 	const size_t flags = JSON_SORT_KEYS | (pretty ? JSON_INDENT (JWT_DUMP_INDENT) : JSON_COMPACT);
 
-	char *serial = json_dumps (js, flags);
-	if (!serial)
-		return ENOMEM;
+	char *serialized = json_dumps (json, flags);
+	if (!serialized) return ENOMEM;
 
-	int ret = pretty ? __append_str (buf, "\n") : 0;
+	int retval = pretty ? jwt_string_append (buffer, JWT_DUMP_NEW_LINE) : 0;
 
-	if (!ret)
-		ret = __append_str (buf, serial);
+	if (!retval) retval = jwt_string_append (buffer, serialized);
 
-	if (!ret && pretty)
-		ret = __append_str (buf, "\n");
+	if (!retval && pretty) retval = jwt_string_append (buffer, JWT_DUMP_NEW_LINE);
 
-	jwt_freemem (serial);
+	free (serialized);
 
-	return ret;
+	return retval;
 
 }
 
@@ -947,92 +891,75 @@ static const char *jwt_alg_header_name (const jwt_alg_t alg) {
 }
 
 static int jwt_write_head (
-	jwt_t *jwt, char **buf, int pretty
+	jwt_t *jwt, char **buffer, int pretty
 ) {
 
-	int ret = 0;
+	int retval = 0;
 
+	// the default type is only added if it has not been defined,
+	// so any value of it can signal an extension of JWT, like PASSporT (RFC 8225)
 	if (jwt->alg != JWT_ALG_NONE) {
-
-		/* Only add default 'typ' header if it has not been defined,
-		 * allowing for any value of it. This allows for signaling
-		 * of application specific extentions to JWT, such as PASSporT,
-		 * RFC 8225. */
-		if ((ret = jwt_add_header (jwt, "typ", "JWT"))) {
-			if (ret != EEXIST) {
-				return ret;
-			}
-		}
+		retval = jwt_add_header (jwt, JWT_TYPE_HEADER, JWT_TYPE_HEADER_VALUE);
+		if (retval && (retval != EEXIST)) return retval;
 	}
 
-	if ((ret = jwt_del_headers (jwt, "alg")))
-		return ret;
+	retval = jwt_del_headers (jwt, JWT_ALG_HEADER);
+	if (retval) return retval;
 
-	if ((ret = jwt_add_header (jwt, "alg", jwt_alg_header_name (jwt->alg))))
-		return ret;
+	retval = jwt_add_header (jwt, JWT_ALG_HEADER, jwt_alg_header_name (jwt->alg));
+	if (retval) return retval;
 
-	return write_js (jwt->headers, buf, pretty);
-
-}
-
-static int jwt_write_body (jwt_t *jwt, char **buf, int pretty) {
-
-	return write_js (jwt->grants, buf, pretty);
+	return jwt_json_write (jwt->headers, buffer, pretty);
 
 }
 
-static int jwt_dump (jwt_t *jwt, char **buf, int pretty) {
+static int jwt_write_body (jwt_t *jwt, char **buffer, int pretty) {
 
-	int ret;
+	return jwt_json_write (jwt->grants, buffer, pretty);
 
-	ret = jwt_write_head (jwt, buf, pretty);
+}
 
-	if (ret == 0)
-		ret = __append_str (buf, ".");
+static int jwt_dump (jwt_t *jwt, char **buffer, int pretty) {
 
-	if (ret == 0)
-		ret = jwt_write_body (jwt, buf, pretty);
+	int retval = jwt_write_head (jwt, buffer, pretty);
 
-	return ret;
+	if (!retval) retval = jwt_string_append (buffer, JWT_PART_SEPARATOR_STRING);
+
+	if (!retval) retval = jwt_write_body (jwt, buffer, pretty);
+
+	return retval;
 
 }
 
 int jwt_dump_fp (jwt_t *jwt, FILE *fp, int pretty) {
 
-	char *out = NULL;
-	int ret = 0;
+	char *dumped = NULL;
 
-	ret = jwt_dump (jwt, &out, pretty);
+	const int retval = jwt_dump (jwt, &dumped, pretty);
 
-	if (ret == 0)
-		(void) fputs (out, fp);
+	if (!retval) (void) fputs (dumped, fp);
 
-	if (out)
-		jwt_freemem (out);
+	free (dumped);
 
-	return ret;
+	return retval;
 
 }
 
 char *jwt_dump_str (jwt_t *jwt, int pretty) {
 
-	char *out = NULL;
-	int err;
+	char *dumped = NULL;
 
-	err = jwt_dump (jwt, &out, pretty);
-
-	if (err) {
-		errno = err;
-		if (out)
-			jwt_freemem (out);
-		out = NULL;
-	} else {
-		errno = 0;
+	errno = jwt_dump (jwt, &dumped, pretty);
+	if (errno) {
+		free (dumped);
+		dumped = NULL;
 	}
 
-	return out;
+	return dumped;
 
 }
+
+#pragma endregion
 
 #pragma region encode
 
@@ -1042,9 +969,9 @@ static int jwt_encode_signature (
 	const unsigned char *signature, const size_t signature_length
 ) {
 
-	int ret = ENOMEM;
+	int retval = ENOMEM;
 
-	char *signed_token = (char *) jwt_realloc (
+	char *signed_token = (char *) realloc (
 		*token, signed_length + 1 + base64url_encode_length (signature_length) + 1
 	);
 
@@ -1056,17 +983,17 @@ static int jwt_encode_signature (
 		);
 
 		*token = signed_token;
-		ret = 0;
+		retval = 0;
 	}
 
-	return ret;
+	return retval;
 
 }
 
 // the header and the payload in base64url, signed with the key,
 // or with an empty signature if there is no key
 static int jwt_encode_serialized (
-	const JwtKey *key, const char *header, const char *payload, char **out
+	const JwtKey *key, const char *header, const char *payload, char **encoded
 ) {
 
 	const size_t header_length = strlen (header);
@@ -1076,24 +1003,22 @@ static int jwt_encode_serialized (
 		+ 1 + base64url_encode_length (payload_length);
 
 	// the separator of the signature and the null byte
-	char *token = (char *) jwt_malloc (signed_length + 2);
-	if (!token)
-		return ENOMEM;
+	char *token = (char *) malloc (signed_length + 2);
+	if (!token) return ENOMEM;
 
 	size_t position = base64url_encode (token, (const unsigned char *) header, header_length);
 	token[position++] = JWT_PART_SEPARATOR;
 	(void) base64url_encode (token + position, (const unsigned char *) payload, payload_length);
 
-	int ret = 0;
+	int retval = 0;
 	if (key) {
 		unsigned char *signature = NULL;
 		size_t signature_length = 0;
 
-		ret = jwt_key_sign (key, token, signed_length, &signature, &signature_length);
-		if (!ret)
-			ret = jwt_encode_signature (&token, signed_length, signature, signature_length);
+		retval = jwt_key_sign (key, token, signed_length, &signature, &signature_length);
+		if (!retval) retval = jwt_encode_signature (&token, signed_length, signature, signature_length);
 
-		jwt_freemem (signature);
+		free (signature);
 	}
 
 	else {
@@ -1101,53 +1026,49 @@ static int jwt_encode_serialized (
 		token[signed_length + 1] = '\0';
 	}
 
-	if (ret) jwt_freemem (token);
-	else *out = token;
+	if (retval) free (token);
+	else *encoded = token;
 
-	return ret;
+	return retval;
 
 }
 
 static int jwt_encode_parts (
-	jwt_t *jwt, const JwtKey *key, char **out
+	jwt_t *jwt, const JwtKey *key, char **encoded
 ) {
 
 	char *header = NULL;
 	char *payload = NULL;
 
-	int ret = jwt_write_head (jwt, &header, 0);
+	int retval = jwt_write_head (jwt, &header, 0);
 
-	if (!ret)
-		ret = jwt_write_body (jwt, &payload, 0);
+	if (!retval) retval = jwt_write_body (jwt, &payload, 0);
 
-	if (!ret)
-		ret = jwt_encode_serialized (key, header, payload, out);
+	if (!retval) retval = jwt_encode_serialized (key, header, payload, encoded);
 
-	jwt_freemem (header);
-	jwt_freemem (payload);
+	free (header);
+	free (payload);
 
-	return ret;
+	return retval;
 
 }
 
 // the token of the first API: the key is created from the raw key of the jwt
-static int jwt_encode (jwt_t *jwt, char **out) {
+static int jwt_encode (jwt_t *jwt, char **encoded) {
 
-	if (jwt->alg == JWT_ALG_NONE)
-		return jwt_encode_parts (jwt, NULL, out);
+	if (jwt->alg == JWT_ALG_NONE) return jwt_encode_parts (jwt, NULL, encoded);
 
 	JwtKey *signing = jwt_key_create (
-		jwt->alg, JWT_KEY_TYPE_PRIVATE, jwt->key, jwt->key_len, NULL
+		jwt->alg, JWT_KEY_TYPE_PRIVATE, jwt->key, jwt->key_length, NULL
 	);
 
-	if (!signing)
-		return EINVAL;
+	if (!signing) return EINVAL;
 
-	int ret = jwt_encode_parts (jwt, signing, out);
+	const int retval = jwt_encode_parts (jwt, signing, encoded);
 
 	jwt_key_delete (signing);
 
-	return ret;
+	return retval;
 
 }
 
@@ -1166,7 +1087,7 @@ char *jwt_encode_with_key (jwt_t *jwt, const JwtKey *key) {
 
 	errno = jwt_encode_parts (jwt, key, &token);
 	if (errno) {
-		jwt_freemem (token);
+		free (token);
 		token = NULL;
 	}
 
@@ -1174,67 +1095,60 @@ char *jwt_encode_with_key (jwt_t *jwt, const JwtKey *key) {
 
 }
 
-#pragma endregion
-
 int jwt_encode_fp (jwt_t *jwt, FILE *fp) {
 
-	char *str = NULL;
-	int ret;
+	char *token = NULL;
 
-	ret = jwt_encode (jwt, &str);
-	if (ret) {
-		if (str)
-			jwt_freemem (str);
-		return ret;
-	}
+	const int retval = jwt_encode (jwt, &token);
 
-	(void) fputs (str, fp);
-	jwt_freemem (str);
+	if (!retval) (void) fputs (token, fp);
 
-	return 0;
+	free (token);
+
+	return retval;
 
 }
 
 char *jwt_encode_str (jwt_t *jwt) {
 
-	char *str = NULL;
+	char *token = NULL;
 
-	errno = jwt_encode (jwt, &str);
+	errno = jwt_encode (jwt, &token);
 	if (errno) {
-		if (str)
-			jwt_freemem (str);
-		str = NULL;
+		free (token);
+		token = NULL;
 	}
 
-	return str;
+	return token;
 
 }
 
 void jwt_free_str (char *str) {
 
-	if (str) jwt_freemem (str);
+	free (str);
 
 }
+
+#pragma endregion
+
+#pragma region valid
 
 int jwt_valid_new (
 	jwt_valid_t **jwt_valid, jwt_alg_t alg
 ) {
 
-	if (!jwt_valid)
-		return EINVAL;
+	if (!jwt_valid) return EINVAL;
 
-	*jwt_valid = (jwt_valid_t *) jwt_malloc (sizeof (jwt_valid_t));
-	if (!*jwt_valid)
-		return ENOMEM;
+	*jwt_valid = (jwt_valid_t *) calloc (1, sizeof (jwt_valid_t));
+	if (!*jwt_valid) return ENOMEM;
 
-	(void) memset (*jwt_valid, 0, sizeof (jwt_valid_t));
 	(*jwt_valid)->alg = alg;
 
 	(*jwt_valid)->status = JWT_VALIDATION_ERROR;
 
-	(*jwt_valid)->req_grants = json_object ();
-	if (!(*jwt_valid)->req_grants) {
-		jwt_freemem (*jwt_valid);
+	(*jwt_valid)->required_grants = json_object ();
+	if (!(*jwt_valid)->required_grants) {
+		free (*jwt_valid);
 		*jwt_valid = NULL;
 		return ENOMEM;
 	}
@@ -1245,79 +1159,60 @@ int jwt_valid_new (
 
 void jwt_valid_free (jwt_valid_t *jwt_valid) {
 
-	if (!jwt_valid)
-		return;
+	if (jwt_valid) {
+		json_decref (jwt_valid->required_grants);
 
-	json_decref (jwt_valid->req_grants);
-
-	jwt_freemem (jwt_valid);
+		free (jwt_valid);
+	}
 
 }
 
 unsigned int jwt_valid_get_status (jwt_valid_t *jwt_valid) {
 
-	if (!jwt_valid)
-		return JWT_VALIDATION_ERROR;
-
-	return jwt_valid->status;
+	return jwt_valid ? jwt_valid->status : JWT_VALIDATION_ERROR;
 
 }
 
 int jwt_valid_add_grant (
 	jwt_valid_t *jwt_valid,
-	const char *grant, const char *val
+	const char *grant, const char *value
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant) || !val)
-		return EINVAL;
+	if (!jwt_valid || !jwt_name_is_valid (grant) || !value) return EINVAL;
 
-	if (get_js_string (jwt_valid->req_grants, grant) != NULL)
-		return EEXIST;
+	if (jwt_json_get_string (jwt_valid->required_grants, grant)) return EEXIST;
 
-	if (json_object_set_new (jwt_valid->req_grants, grant, json_string (val)))
-		return EINVAL;
-
-	return 0;
+	return json_object_set_new (jwt_valid->required_grants, grant, json_string (value)) ? EINVAL : 0;
 
 }
 
 int jwt_valid_add_grant_int (
 	jwt_valid_t *jwt_valid,
-	const char *grant, long val
+	const char *grant, long value
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant))
-		return EINVAL;
+	if (!jwt_valid || !jwt_name_is_valid (grant)) return EINVAL;
 
-	if (get_js_int (jwt_valid->req_grants, grant) != -1)
-		return EEXIST;
+	if (jwt_json_get_integer (jwt_valid->required_grants, grant) != JWT_GRANT_NOT_FOUND) return EEXIST;
 
-	if (json_object_set_new (
-		jwt_valid->req_grants, grant, json_integer ((json_int_t) val))
-	)
-		return EINVAL;
-
-	return 0;
+	return json_object_set_new (
+		jwt_valid->required_grants, grant, json_integer ((json_int_t) value)
+	) ? EINVAL : 0;
 
 }
 
 int jwt_valid_add_grant_bool (
 	jwt_valid_t *jwt_valid,
-	const char *grant, int val
+	const char *grant, int value
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant))
-		return EINVAL;
+	if (!jwt_valid || !jwt_name_is_valid (grant)) return EINVAL;
 
-	if (get_js_int (jwt_valid->req_grants, grant) != -1)
-		return EEXIST;
+	if (jwt_json_get_integer (jwt_valid->required_grants, grant) != JWT_GRANT_NOT_FOUND) return EEXIST;
 
-	if (json_object_set_new (
-		jwt_valid->req_grants, grant, json_boolean (val))
-	)
-		return EINVAL;
-
-	return 0;
+	return json_object_set_new (
+		jwt_valid->required_grants, grant, json_boolean (value)
+	) ? EINVAL : 0;
 
 }
 
@@ -1325,20 +1220,9 @@ int jwt_valid_add_grants_json (
 	jwt_valid_t *jwt_valid, const char *json
 ) {
 
-	json_t *js_val;
-	int ret = -1;
+	if (!jwt_valid) return EINVAL;
 
-	if (!jwt_valid)
-		return EINVAL;
-
-	js_val = json_loads (json, JSON_REJECT_DUPLICATES, NULL);
-
-	if (json_is_object (js_val))
-		ret = json_object_update (jwt_valid->req_grants, js_val);
-
-	json_decref (js_val);
-
-	return ret ? EINVAL : 0;
+	return jwt_json_add_json (jwt_valid->required_grants, json);
 
 }
 
@@ -1346,26 +1230,12 @@ char *jwt_valid_get_grants_json (
 	jwt_valid_t *jwt_valid, const char *grant
 ) {
 
-	json_t *js_val = NULL;
-
-	errno = EINVAL;
-
-	if (!jwt_valid)
+	if (!jwt_valid) {
+		errno = EINVAL;
 		return NULL;
+	}
 
-	if (grant && strlen (grant))
-		js_val = json_object_get (jwt_valid->req_grants, grant);
-	else
-		js_val = jwt_valid->req_grants;
-
-	if (js_val == NULL)
-		return NULL;
-
-	errno = 0;
-
-	return json_dumps (
-		js_val, JSON_SORT_KEYS | JSON_COMPACT | JSON_ENCODE_ANY
-	);
+	return jwt_json_dump (jwt_valid->required_grants, grant);
 
 }
 
@@ -1373,14 +1243,14 @@ const char *jwt_valid_get_grant (
 	jwt_valid_t *jwt_valid, const char *grant
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant)) {
+	if (!jwt_valid || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return NULL;
 	}
 
 	errno = 0;
 
-	return get_js_string (jwt_valid->req_grants, grant);
+	return jwt_json_get_string (jwt_valid->required_grants, grant);
 
 }
 
@@ -1388,14 +1258,14 @@ long jwt_valid_get_grant_int (
 	jwt_valid_t *jwt_valid, const char *grant
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant)) {
+	if (!jwt_valid || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_int (jwt_valid->req_grants, grant);
+	return jwt_json_get_integer (jwt_valid->required_grants, grant);
 
 }
 
@@ -1403,14 +1273,14 @@ int jwt_valid_get_grant_bool (
 	jwt_valid_t *jwt_valid, const char *grant
 ) {
 
-	if (!jwt_valid || !grant || !strlen (grant)) {
+	if (!jwt_valid || !jwt_name_is_valid (grant)) {
 		errno = EINVAL;
 		return 0;
 	}
 
 	errno = 0;
 
-	return get_js_bool (jwt_valid->req_grants, grant);
+	return jwt_json_get_bool (jwt_valid->required_grants, grant);
 
 }
 
@@ -1418,8 +1288,7 @@ int jwt_valid_set_now (
 	jwt_valid_t *jwt_valid, const time_t now
 ) {
 
-	if (!jwt_valid)
-		return EINVAL;
+	if (!jwt_valid) return EINVAL;
 
 	jwt_valid->now = now;
 
@@ -1428,13 +1297,12 @@ int jwt_valid_set_now (
 }
 
 int jwt_valid_set_headers (
-	jwt_valid_t *jwt_valid, int hdr
+	jwt_valid_t *jwt_valid, int headers
 ) {
 
-	if (!jwt_valid)
-		return EINVAL;
+	if (!jwt_valid) return EINVAL;
 
-	jwt_valid->hdr = hdr;
+	jwt_valid->headers = headers;
 
 	return 0;
 
@@ -1444,15 +1312,87 @@ int jwt_valid_del_grants (
 	jwt_valid_t *jwt_valid, const char *grant
 ) {
 
-	if (!jwt_valid)
-		return EINVAL;
+	if (!jwt_valid) return EINVAL;
 
-	if (grant == NULL || !strlen (grant))
-		json_object_clear (jwt_valid->req_grants);
-	else
-		json_object_del (jwt_valid->req_grants, grant);
+	jwt_json_delete (jwt_valid->required_grants, grant);
 
 	return 0;
+
+}
+
+// a claim that is both in the header and in the payload must be the same
+static bool jwt_claim_is_replicated_differently (
+	const jwt_t *jwt, const char *claim
+) {
+
+	const char *header_value = jwt_json_get_string (jwt->headers, claim);
+	const char *grant_value = jwt_json_get_string (jwt->grants, claim);
+
+	return header_value && grant_value && strcmp (header_value, grant_value);
+
+}
+
+// the times of the token against the time of the validation
+static unsigned int jwt_validate_times (
+	const jwt_t *jwt, const jwt_valid_t *jwt_valid
+) {
+
+	unsigned int status = JWT_VALIDATION_SUCCESS;
+
+	const time_t expiration = (time_t) jwt_json_get_integer (jwt->grants, JWT_CLAIM_EXPIRATION);
+	if (jwt_valid->now && (expiration != JWT_GRANT_NOT_FOUND) && (jwt_valid->now >= expiration)) {
+		status |= JWT_VALIDATION_EXPIRED;
+	}
+
+	const time_t not_before = (time_t) jwt_json_get_integer (jwt->grants, JWT_CLAIM_NOT_BEFORE);
+	if (jwt_valid->now && (not_before != JWT_GRANT_NOT_FOUND) && (jwt_valid->now < not_before)) {
+		status |= JWT_VALIDATION_TOO_NEW;
+	}
+
+	return status;
+
+}
+
+// the claims that are in the header and in the payload, the audience can be an array
+static unsigned int jwt_validate_replicated (const jwt_t *jwt) {
+
+	unsigned int status = JWT_VALIDATION_SUCCESS;
+
+	if (jwt_claim_is_replicated_differently (jwt, JWT_CLAIM_ISSUER)) status |= JWT_VALIDATION_ISS_MISMATCH;
+
+	if (jwt_claim_is_replicated_differently (jwt, JWT_CLAIM_SUBJECT)) status |= JWT_VALIDATION_SUB_MISMATCH;
+
+	json_t *header_audience = json_object_get (jwt->headers, JWT_CLAIM_AUDIENCE);
+	json_t *grant_audience = json_object_get (jwt->grants, JWT_CLAIM_AUDIENCE);
+	if (header_audience && grant_audience && !json_equal (header_audience, grant_audience)) {
+		status |= JWT_VALIDATION_AUD_MISMATCH;
+	}
+
+	return status;
+
+}
+
+static unsigned int jwt_validate_required_grants (
+	const jwt_t *jwt, const jwt_valid_t *jwt_valid
+) {
+
+	unsigned int status = JWT_VALIDATION_SUCCESS;
+
+	const char *required_grant = NULL;
+	json_t *required_value = NULL;
+	json_object_foreach (jwt_valid->required_grants, required_grant, required_value) {
+		json_t *actual_value = json_object_get (jwt->grants, required_grant);
+
+		if (!actual_value) {
+			status |= JWT_VALIDATION_GRANT_MISSING;
+		}
+
+		else if (!json_equal (required_value, actual_value)) {
+			status |= JWT_VALIDATION_GRANT_MISMATCH;
+		}
+	}
+
+	return status;
 
 }
 
@@ -1460,12 +1400,7 @@ unsigned int jwt_validate (
 	jwt_t *jwt, jwt_valid_t *jwt_valid
 ) {
 
-	const char *jwt_hdr_str, *jwt_body_str, *req_grant;
-	json_t *js_val_1, *js_val_2;
-	time_t t;
-
-	if (!jwt_valid)
-		return JWT_VALIDATION_ERROR;
+	if (!jwt_valid) return JWT_VALIDATION_ERROR;
 
 	if (!jwt) {
 		jwt_valid->status = JWT_VALIDATION_ERROR;
@@ -1474,51 +1409,16 @@ unsigned int jwt_validate (
 
 	jwt_valid->status = JWT_VALIDATION_SUCCESS;
 
-	/* Validate algorithm */
-	if (jwt_valid->alg != jwt_get_alg (jwt))
-		jwt_valid->status |= JWT_VALIDATION_ALG_MISMATCH;
+	if (jwt_valid->alg != jwt_get_alg (jwt)) jwt_valid->status |= JWT_VALIDATION_ALG_MISMATCH;
 
-	/* Validate expires */
-	t = get_js_int (jwt->grants, "exp");
-	if (jwt_valid->now && t != -1 && jwt_valid->now >= t)
-		jwt_valid->status |= JWT_VALIDATION_EXPIRED;
+	jwt_valid->status |= jwt_validate_times (jwt, jwt_valid);
 
-	/* Validate not-before */
-	t = get_js_int (jwt->grants, "nbf");
-	if (jwt_valid->now && t != -1 && jwt_valid->now < t)
-		jwt_valid->status |= JWT_VALIDATION_TOO_NEW;
+	jwt_valid->status |= jwt_validate_replicated (jwt);
 
-	/* Validate replicated issuer */
-	jwt_hdr_str = get_js_string (jwt->headers, "iss");
-	jwt_body_str = get_js_string (jwt->grants, "iss");
-	if (jwt_hdr_str && jwt_body_str && strcmp (jwt_hdr_str, jwt_body_str))
-		jwt_valid->status |= JWT_VALIDATION_ISS_MISMATCH;
-
-	/* Validate replicated subject */
-	jwt_hdr_str = get_js_string (jwt->headers, "sub");
-	jwt_body_str = get_js_string (jwt->grants, "sub");
-	if (jwt_hdr_str && jwt_body_str && strcmp (jwt_hdr_str, jwt_body_str))
-		jwt_valid->status |= JWT_VALIDATION_SUB_MISMATCH;
-
-	/* Validate replicated audience (might be array or string) */
-	js_val_1 = json_object_get (jwt->headers, "aud");
-	js_val_2 = json_object_get (jwt->grants, "aud");
-	if (js_val_1 && js_val_2 && !json_equal (js_val_1, js_val_2))
-		jwt_valid->status |= JWT_VALIDATION_AUD_MISMATCH;
-
-	/* Validate required grants */
-	json_object_foreach (jwt_valid->req_grants, req_grant, js_val_1) {
-		json_t *act_js_val = json_object_get (jwt->grants, req_grant);
-
-		if (act_js_val && json_equal (js_val_1, act_js_val))
-			continue;
-
-		if (act_js_val)
-			jwt_valid->status |= JWT_VALIDATION_GRANT_MISMATCH;
-		else
-			jwt_valid->status |= JWT_VALIDATION_GRANT_MISSING;
-	}
+	jwt_valid->status |= jwt_validate_required_grants (jwt, jwt_valid);
 
 	return jwt_valid->status;
 
 }
+
+#pragma endregion

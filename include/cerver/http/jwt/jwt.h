@@ -52,18 +52,13 @@ typedef enum jwt_error_t {
  */
 CERVER_PUBLIC const char *jwt_error_str (const jwt_error_t error);
 
-/** JWT Memory allocation overrides */
-typedef void *(*jwt_malloc_t)(size_t);
-typedef void *(*jwt_realloc_t)(void *, size_t);
-typedef void (*jwt_free_t)(void *);
-
 struct json_t;
 
 struct jwt {
 
 	jwt_alg_t alg;
 	unsigned char *key;
-	size_t key_len;
+	size_t key_length;
 	struct json_t *grants;
 	struct json_t *headers;
 
@@ -75,8 +70,11 @@ struct jwt_valid {
 
 	jwt_alg_t alg;
 	time_t now;
-	int hdr;
-	struct json_t *req_grants;
+
+	// the claims that are in the header and in the payload are compared
+	int headers;
+
+	struct json_t *required_grants;
 	unsigned int status;
 
 };
@@ -126,7 +124,7 @@ CERVER_PUBLIC int jwt_new (jwt_t **jwt);
  * @param token Pointer to a valid JWT string, nul terminated.
  * @param key Pointer to the key for validating the JWT signature or for
  *     decrypting the token or NULL if no validation is to be performed.
- * @param key_len The length of the above key.
+ * @param key_length The length of the above key.
  * @return 0 on success, valid errno otherwise.
  *
  * @remark If a key is supplied, the token must pass sig check or decrypt
@@ -142,7 +140,7 @@ CERVER_PUBLIC int jwt_new (jwt_t **jwt);
  */
 CERVER_PUBLIC int jwt_decode (
 	jwt_t **jwt, const char *token,
-	const unsigned char *key, size_t key_len
+	const unsigned char *key, size_t key_length
 );
 
 struct JwtKey;
@@ -273,14 +271,14 @@ CERVER_PUBLIC char *jwt_get_grants_json (
 /**
  * Add a new string grant to this JWT object.
  *
- * Creates a new grant for this object. The string for grant and val
+ * Creates a new grant for this object. The string for grant and value
  * are copied internally, so do not require that the pointer or string
  * remain valid for the lifetime of this object. It is an error if you
  * try to add a grant that already exists.
  *
  * @param jwt Pointer to a JWT object.
  * @param grant String containing the name of the grant to add.
- * @param val String containing the value to be saved for grant. Can be
+ * @param value String containing the value to be saved for grant. Can be
  *     an empty string, but cannot be NULL.
  * @return Returns 0 on success, valid errno otherwise.
  *
@@ -289,7 +287,7 @@ CERVER_PUBLIC char *jwt_get_grants_json (
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
 CERVER_PUBLIC int jwt_add_grant (
-	jwt_t *jwt, const char *grant, const char *val
+	jwt_t *jwt, const char *grant, const char *value
 );
 
 /**
@@ -302,7 +300,7 @@ CERVER_PUBLIC int jwt_add_grant (
  *
  * @param jwt Pointer to a JWT object.
  * @param grant String containing the name of the grant to add.
- * @param val int containing the value to be saved for grant.
+ * @param value int containing the value to be saved for grant.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for integer based grants. If you wish to add
@@ -310,7 +308,7 @@ CERVER_PUBLIC int jwt_add_grant (
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
 CERVER_PUBLIC int jwt_add_grant_int (
-	jwt_t *jwt, const char *grant, long val
+	jwt_t *jwt, const char *grant, long value
 );
 
 /**
@@ -323,7 +321,7 @@ CERVER_PUBLIC int jwt_add_grant_int (
  *
  * @param jwt Pointer to a JWT object.
  * @param grant String containing the name of the grant to add.
- * @param val boolean containing the value to be saved for grant.
+ * @param value boolean containing the value to be saved for grant.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for boolean based grants. If you wish to add
@@ -331,7 +329,7 @@ CERVER_PUBLIC int jwt_add_grant_int (
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
 CERVER_PUBLIC int jwt_add_grant_bool (
-	jwt_t *jwt, const char *grant, int val
+	jwt_t *jwt, const char *grant, int value
 );
 
 /**
@@ -455,14 +453,14 @@ CERVER_PUBLIC char *jwt_get_headers_json (
 /**
  * Add a new string header to this JWT object.
  *
- * Creates a new header for this object. The string for header and val
+ * Creates a new header for this object. The string for header and value
  * are copied internally, so do not require that the pointer or string
  * remain valid for the lifetime of this object. It is an error if you
  * try to add a header that already exists.
  *
  * @param jwt Pointer to a JWT object.
  * @param header String containing the name of the header to add.
- * @param val String containing the value to be saved for header. Can be
+ * @param value String containing the value to be saved for header. Can be
  *     an empty string, but cannot be NULL.
  * @return Returns 0 on success, valid errno otherwise.
  *
@@ -471,7 +469,7 @@ CERVER_PUBLIC char *jwt_get_headers_json (
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
 CERVER_PUBLIC int jwt_add_header (
-	jwt_t *jwt, const char *header, const char *val
+	jwt_t *jwt, const char *header, const char *value
 );
 
 /**
@@ -484,7 +482,7 @@ CERVER_PUBLIC int jwt_add_header (
  *
  * @param jwt Pointer to a JWT object.
  * @param header String containing the name of the header to add.
- * @param val int containing the value to be saved for header.
+ * @param value int containing the value to be saved for header.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for integer based headers. If you wish to add
@@ -492,7 +490,7 @@ CERVER_PUBLIC int jwt_add_header (
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
 CERVER_PUBLIC int jwt_add_header_int (
-	jwt_t *jwt, const char *header, long val
+	jwt_t *jwt, const char *header, long value
 );
 
 /**
@@ -505,7 +503,7 @@ CERVER_PUBLIC int jwt_add_header_int (
  *
  * @param jwt Pointer to a JWT object.
  * @param header String containing the name of the header to add.
- * @param val boolean containing the value to be saved for header.
+ * @param value boolean containing the value to be saved for header.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for boolean based headers. If you wish to add
@@ -513,7 +511,7 @@ CERVER_PUBLIC int jwt_add_header_int (
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
 CERVER_PUBLIC int jwt_add_header_bool (
-	jwt_t *jwt, const char *header, int val
+	jwt_t *jwt, const char *header, int value
 );
 
 /**
@@ -622,8 +620,7 @@ CERVER_PUBLIC int jwt_encode_fp (
  * Fully encode a JWT object and return as a string.
  *
  * Similar to jwt_encode_fp() except that a string is returned. The string
- * must be freed by the caller. If you changed the allocation method using
- * jwt_set_alloc, then you must use jwt_free_str() to free the memory.
+ * must be freed by the caller with free () or jwt_free_str ().
  *
  * @param jwt Pointer to a JWT object.
  * @return A null terminated string on success, NULL on error with errno
@@ -656,18 +653,18 @@ CERVER_PUBLIC void jwt_free_str (char *str);
  * Set an algorithm from jwt_alg_t for this JWT object.
  *
  * Specifies an algorithm for a JWT object. If JWT_ALG_NONE is used, then
- * key must be NULL and len must be 0. All other algorithms must have a
+ * key must be NULL and length must be 0. All other algorithms must have a
  * valid pointer to key data, which may be specific to the algorithm (e.g
  * RS256 expects a PEM formatted RSA key).
  *
  * @param jwt Pointer to a JWT object.
  * @param alg A valid jwt_alg_t specifier.
  * @param key The key data to use for the algorithm.
- * @param len The length of the key data.
+ * @param length The length of the key data.
  * @return Returns 0 on success, valid errno otherwise.
  */
 CERVER_PUBLIC int jwt_set_alg (
-	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t len
+	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t length
 );
 
 /**
@@ -754,7 +751,7 @@ CERVER_PUBLIC unsigned int jwt_valid_get_status (
  *
  * @param jwt_valid Pointer to a JWT validation object.
  * @param grant String containing the name of the grant to add.
- * @param val String containing the value to be saved for grant. Can be
+ * @param value String containing the value to be saved for grant. Can be
  *     an empty string, but cannot be NULL.
  * @return Returns 0 on success, valid errno otherwise.
  *
@@ -763,7 +760,7 @@ CERVER_PUBLIC unsigned int jwt_valid_get_status (
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
 CERVER_PUBLIC int jwt_valid_add_grant (
-	jwt_valid_t *jwt_valid, const char *grant, const char *val
+	jwt_valid_t *jwt_valid, const char *grant, const char *value
 );
 
 /**
@@ -791,7 +788,7 @@ CERVER_PUBLIC const char *jwt_valid_get_grant (
  *
  * @param jwt_valid Pointer to a JWT validation object.
  * @param grant String containing the name of the grant to add.
- * @param val int containing the value to be saved for grant.
+ * @param value int containing the value to be saved for grant.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for integer based grants. If you wish to add
@@ -799,7 +796,7 @@ CERVER_PUBLIC const char *jwt_valid_get_grant (
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
 CERVER_PUBLIC int jwt_valid_add_grant_int (
-	jwt_valid_t *jwt_valid, const char *grant, long val
+	jwt_valid_t *jwt_valid, const char *grant, long value
 );
 
 /**
@@ -832,7 +829,7 @@ CERVER_PUBLIC long jwt_valid_get_grant_int (
  *
  * @param jwt_valid Pointer to a JWT validation object.
  * @param grant String containing the name of the grant to add.
- * @param val boolean containing the value to be saved for grant.
+ * @param value boolean containing the value to be saved for grant.
  * @return Returns 0 on success, valid errno otherwise.
  *
  * Note, this only allows for boolean based grants. If you wish to add
@@ -840,7 +837,7 @@ CERVER_PUBLIC long jwt_valid_get_grant_int (
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
 CERVER_PUBLIC int jwt_valid_add_grant_bool (
-	jwt_valid_t *jwt_valid, const char *grant, int val
+	jwt_valid_t *jwt_valid, const char *grant, int value
 );
 
 /**
@@ -930,14 +927,14 @@ CERVER_PUBLIC int jwt_valid_set_now (
  * tests match for same claims in body.
  *
  * @param jwt_valid Pointer to a JWT validation object.
- * @param hdr When true, test header claims
+ * @param headers When true, test header claims
  * @return Returns 0 on success, valid errno otherwise.
  *
  * @remark jwt_validate() will not fail if iss, sub, aud are not present in JWT
  *     header or body.
  */
 CERVER_PUBLIC int jwt_valid_set_headers (
-	jwt_valid_t *jwt_valid, int hdr
+	jwt_valid_t *jwt_valid, int headers
 );
 
 /** @} */

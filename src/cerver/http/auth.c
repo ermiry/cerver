@@ -608,7 +608,7 @@ static bool http_cerver_auth_jwt_check_headers (
 
 	jwt_valid_t *jwt_valid = NULL;
 	if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
-		jwt_valid->hdr = 1;
+		jwt_valid->headers = 1;
 
 		valid = (jwt_validate (jwt, jwt_valid) == JWT_VALIDATION_SUCCESS);
 
