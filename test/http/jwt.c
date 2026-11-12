@@ -7,6 +7,7 @@
 #include <cerver/http/http.h>
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/jwt/jwt.h>
+#include <cerver/http/jwt/key.h>
 
 #include "../test.h"
 #include "http.h"
@@ -189,13 +190,9 @@ static void test_http_jwt_generate_internal (HttpJwt *http_jwt) {
 
 }
 
-static void test_http_jwt_generate (void) {
+// the RS256 private key of the tests, parsed once as the cerver does
+static JwtKey *test_http_jwt_private_key (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
-
-	test_http_jwt_generate_internal (http_jwt);
-
-	// load key
 	size_t private_key_len = 0;
 	char *private_key = http_cerver_auth_load_key (
 		"./test/http/keys/key.key", &private_key_len
@@ -204,20 +201,47 @@ static void test_http_jwt_generate (void) {
 	test_check_ptr (private_key);
 	test_check_int_ne ((int) private_key_len, 0);
 
-	char *token = http_cerver_auth_generate_jwt_actual (
-		http_jwt, JWT_ALG_RS256, (const unsigned char *) private_key, private_key_len
+	JwtKeyError error = JWT_KEY_ERROR_NONE;
+	JwtKey *key = jwt_key_create (
+		JWT_ALG_RS256, JWT_KEY_TYPE_PRIVATE,
+		(const unsigned char *) private_key, private_key_len, &error
 	);
+
+	free (private_key);
+
+	test_check_ptr (key);
+	test_check_int_eq (error, JWT_KEY_ERROR_NONE, NULL);
+
+	return key;
+
+}
+
+static void test_http_jwt_generate (void) {
+
+	HttpJwt *http_jwt = test_http_jwt_new ();
+
+	test_http_jwt_generate_internal (http_jwt);
+
+	JwtKey *key = test_http_jwt_private_key ();
+
+	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
 
 	test_check_ptr (token);
 	test_check_str_eq (token, base_token, NULL);
 	test_check_str_len (token, strlen (base_token), NULL);
 
+	// a second call replaces the first jwt, it is not lost
+	char *again = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	test_check_ptr (again);
+	test_check_str_eq (again, base_token, NULL);
+
+	free (again);
 	free (token);
 
-	free (private_key);
+	jwt_key_delete (key);
 
 	http_jwt_delete (http_jwt);
-	
+
 }
 
 static void test_http_jwt_generate_bearer (void) {
@@ -227,20 +251,10 @@ static void test_http_jwt_generate_bearer (void) {
 	// add values to token
 	test_http_jwt_generate_internal (http_jwt);
 
-	// load key
-	size_t private_key_len = 0;
-	char *private_key = http_cerver_auth_load_key (
-		"./test/http/keys/key.key", &private_key_len
-	);
-
-	test_check_ptr (private_key);
-	test_check_int_ne ((int) private_key_len, 0);
+	JwtKey *key = test_http_jwt_private_key ();
 
 	// generate bearer token
-	u8 result = http_cerver_auth_generate_bearer_jwt_actual (
-		http_jwt,
-		JWT_ALG_RS256, (const unsigned char *) private_key, private_key_len
-	);
+	u8 result = http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key);
 
 	test_check_unsigned_eq (result, 0, NULL);
 
@@ -249,11 +263,28 @@ static void test_http_jwt_generate_bearer (void) {
 
 	test_check_str_eq (http_jwt->bearer, expected_token, NULL);
 	test_check_str_len (http_jwt->bearer, strlen (expected_token), NULL);
+	test_check_unsigned_eq (http_jwt->bearer_len, strlen (expected_token), NULL);
 
-	free (private_key);
+	jwt_key_delete (key);
 
 	http_jwt_delete (http_jwt);
-	
+
+}
+
+// without a key there is no token
+static void test_http_jwt_generate_without_key (void) {
+
+	HttpJwt *http_jwt = test_http_jwt_new ();
+
+	test_http_jwt_generate_internal (http_jwt);
+
+	test_check_null_ptr (http_cerver_auth_generate_jwt_actual (http_jwt, NULL));
+
+	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, NULL), 1, NULL);
+	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
+
+	http_jwt_delete (http_jwt);
+
 }
 
 // {"typ": "JWT"} as the header, a token without "alg" (found by the jwt fuzzer)
@@ -294,6 +325,8 @@ void http_tests_jwt (void) {
 	test_http_jwt_generate ();
 
 	test_http_jwt_generate_bearer ();
+
+	test_http_jwt_generate_without_key ();
 
 	(void) printf ("Done!\n");
 

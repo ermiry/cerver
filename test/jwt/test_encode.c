@@ -47,7 +47,7 @@ static void test_jwt_encode_fp (void) {
 
 static void test_jwt_encode_str (void) {
 
-	const char res[] = "eyJhbGciOiJOb25lIn0.eyJpYXQiOjE0NzU5ODA1NDUsIm"
+	const char res[] = "eyJhbGciOiJub25lIn0.eyJpYXQiOjE0NzU5ODA1NDUsIm"
 		"lzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJYWFhYLVlZWVktWlpa"
 		"Wi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.";
 
@@ -82,7 +82,7 @@ static void test_jwt_encode_str (void) {
 
 static void test_jwt_encode_alg_none (void) {
 
-	const char res[] = "eyJhbGciOiJOb25lIn0.eyJhdWQiOiJ3d3cucGx1Z2dlcnM"
+	const char res[] = "eyJhbGciOiJub25lIn0.eyJhdWQiOiJ3d3cucGx1Z2dlcnM"
 		"ubmwiLCJleHAiOjE0Nzc1MTQ4MTIsInN1YiI6IlBsdWdnZXJzIFNvZnR3YXJlIn0.";
 
 	jwt_t *jwt = NULL;
@@ -241,7 +241,7 @@ static void test_jwt_encode_hs512 (void) {
 
 static void test_jwt_encode_change_alg (void) {
 
-	const char res[] = "eyJhbGciOiJOb25lIn0.eyJpYXQiOjE0NzU5ODA1NDUsIm"
+	const char res[] = "eyJhbGciOiJub25lIn0.eyJpYXQiOjE0NzU5ODA1NDUsIm"
 		"lzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJYWFhYLVlZWVktWlpa"
 		"Wi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.";
 
