@@ -885,6 +885,22 @@ u8 http_response_send_pieces (
 
 }
 
+u8 http_response_send_pieces_status (
+	const HttpReceive *http_receive, const http_status status,
+	struct iovec *parts, const int n_parts
+) {
+
+	size_t total = 0;
+	for (int i = 0; i < n_parts; i++) total += parts[i].iov_len;
+
+	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
+
+	if (!retval) http_response_sent (http_receive, status, total);
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region message
