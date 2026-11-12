@@ -37,4 +37,8 @@ extern void json_tests_sprintf (void);
 
 extern void json_tests_unpack (void);
 
+extern void json_tests_seed (void);
+
+extern void json_tests_safety (void);
+
 #endif
