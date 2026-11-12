@@ -25,6 +25,10 @@
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/route.h>
+#include <cerver/http/tree.h>
+
+#include <cerver/http/websockets/registry.h>
+#include <cerver/http/websockets/websocket.h>
 
 #include "../test.h"
 
@@ -151,6 +155,10 @@ typedef struct TestReceiveResult {
 	// what the parser found when the request was completed
 	bool keep_alive_requested;
 	size_t unparsed;
+
+	// the 101 was sent, with the bytes after the request kept for its connection
+	bool upgraded;
+	size_t pending_size;
 
 	size_t response_len;
 	char response[TEST_RECEIVE_RESPONSE_SIZE];
@@ -501,6 +509,11 @@ static unsigned int test_receive_uploads_count (void) {
 
 }
 
+// the methods of the WebSocket endpoints, a socket pair never starts their connections
+static const HttpWebSocketHandlers test_receive_web_socket_handlers = {
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+};
+
 static HttpRoute *test_receive_child_route (
 	HttpRoute *parent, const char *path, const HttpHandler handler
 ) {
@@ -533,8 +546,12 @@ static void test_receive_groups_create (HttpCerver *http_cerver) {
 	HttpEndpoint *limited = http_group_post (v2, "limited", test_receive_echo_handler);
 	http_endpoint_set_max_body_size (limited, TEST_RECEIVE_ENDPOINT_MAX_BODY);
 
+	// a request without an upgrade goes to its handler
 	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
-	http_endpoint_set_modifier (socket, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+	http_endpoint_set_web_socket (socket, &test_receive_web_socket_handlers);
+
+	// a request without an upgrade is answered with 426
+	test_check_ptr (http_group_web_socket_add (v2, "only", &test_receive_web_socket_handlers));
 
 	// the methods that the parser accepts since llhttp
 	test_check_ptr (http_group_route_add (v2, REQUEST_METHOD_PROPFIND, "dav", test_receive_echo_handler));
@@ -573,6 +590,10 @@ static Cerver *test_receive_cerver_create (void) {
 
 	HttpRoute *bearer_route = test_receive_child_route (main_route, "bearer", test_receive_echo_handler);
 	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+
+	// the first routes API has no WebSocket connections, they are answered with 501
+	HttpRoute *socket_route = test_receive_child_route (main_route, "socket", test_receive_echo_handler);
+	http_route_set_modifier (socket_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 
 	HttpRoute *body_route = test_receive_child_route (main_route, "body", test_receive_upload_handler);
 	http_route_set_auth (body_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
@@ -686,8 +707,9 @@ static void test_receive_feed (
 
 	test_check_ptr (http_receive);
 
+	// an upgraded connection is read by its WebSocket, never by the parser again
 	size_t start = 0;
-	for (size_t i = 0; (i <= n_cuts) && (connection->socket->sock_fd != -1); i++) {
+	for (size_t i = 0; (i <= n_cuts) && (connection->socket->sock_fd != -1) && !http_receive->upgraded; i++) {
 		const size_t end = (i < n_cuts) ? cuts[i] : request_len;
 		if (end > start) test_receive_feed_piece (http_receive, request + start, end - start);
 		start = end;
@@ -696,6 +718,8 @@ static void test_receive_feed (
 	result.status = http_receive->receive_status;
 	result.keep_alive_requested = http_receive->keep_alive_requested;
 	result.unparsed = http_receive->unparsed;
+	result.upgraded = http_receive->upgraded;
+	result.pending_size = http_receive->web_socket ? http_receive->web_socket->pending_size : 0;
 
 	// a request that was not completed is closed like the receive loop does
 	if (connection->socket->sock_fd != -1) connection_end (connection);
@@ -1984,8 +2008,25 @@ static void test_receive_groups (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 
 	test_receive_whole_case (
-		cerver, "websocket routes are not implemented",
+		cerver, "a websocket endpoint without an upgrade goes to its handler",
 		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	test_receive_whole_case (
+		cerver, "a websocket endpoint without a handler requires the upgrade",
+		"GET /v2/only HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("426"));
+	test_receive_expect (strstr (result.response, "Upgrade: websocket\r\n"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_whole_case (
+		cerver, "a route of the first API with the websocket modifier",
+		"POST /test/socket HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n"
 	);
 
 	test_receive_expect (test_receive_status_is ("501"));
@@ -2335,6 +2376,180 @@ static void test_receive_parser_strict (Cerver *cerver) {
 
 }
 
+// the request of RFC 6455 section 1.3, with its accept
+#define TEST_RECEIVE_WEB_SOCKET_REQUEST(headers)										\
+	"GET /v2/socket HTTP/1.1\r\n"														\
+	"Host: localhost:8080\r\n"															\
+	"Upgrade: websocket\r\n"															\
+	"Connection: Upgrade\r\n"															\
+	"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"									\
+	headers																				\
+	"\r\n"
+
+#define TEST_RECEIVE_WEB_SOCKET_VERSION			"Sec-WebSocket-Version: 13\r\n"
+
+static const char *test_receive_web_socket_accept = { "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n" };
+
+// a masked text frame "Hello" (RFC 6455 section 5.7)
+static const char test_receive_web_socket_frame[] = {
+	(char) 0x81, (char) 0x85, 0x37, (char) 0xfa, 0x21, 0x3d, 0x7f, (char) 0x9f, 0x4d, 0x51, 0x58
+};
+
+#define TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE		sizeof (test_receive_web_socket_frame)
+
+// the upgrade was answered with the 101 of RFC 6455, and its place was given back with the receive
+static void test_receive_web_socket_switched (void) {
+
+	test_receive_expect (test_receive_status_is ("101"));
+	test_receive_expect (result.upgraded);
+	test_receive_expect (strstr (result.response, test_receive_web_socket_accept));
+	test_receive_expect (strstr (result.response, "Upgrade: websocket\r\n"));
+	test_receive_expect (strstr (result.response, "Connection: Upgrade\r\n"));
+	test_receive_expect (!strstr (result.response, "Content-Length"));
+	test_receive_expect (!strstr (result.response, "close"));
+	test_receive_expect (observed.n_handled == 0);
+
+}
+
+// a handshake that was not completed by its connection gives its place back
+static void test_receive_web_socket_released (Cerver *cerver) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
+	test_check_unsigned_eq (http_cerver->web_sockets->reserved, 0, NULL);
+	test_check_unsigned_eq (http_cerver->web_sockets->count, 0, NULL);
+
+}
+
+static void test_receive_web_socket_upgrade_rejected (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "an upgrade without a key",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("400"));
+	test_receive_expect (!result.upgraded);
+
+	test_receive_whole_case (cerver, "an upgrade without a version", TEST_RECEIVE_WEB_SOCKET_REQUEST (""));
+	test_receive_expect (test_receive_status_is ("426"));
+	test_receive_expect (strstr (result.response, "Sec-WebSocket-Version: 13\r\n"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with another version",
+		TEST_RECEIVE_WEB_SOCKET_REQUEST ("Sec-WebSocket-Version: 8\r\n")
+	);
+
+	test_receive_expect (test_receive_status_is ("426"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with a short key",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		"Sec-WebSocket-Key: c2hvcnQ=\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("400"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with two keys",
+		TEST_RECEIVE_WEB_SOCKET_REQUEST ("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION)
+	);
+
+	test_receive_expect (test_receive_status_is ("400"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with a body",
+		TEST_RECEIVE_WEB_SOCKET_REQUEST (TEST_RECEIVE_WEB_SOCKET_VERSION "Content-Length: 5\r\n") "first"
+	);
+
+	test_receive_expect (test_receive_status_is ("400"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with HTTP/1.0",
+		"GET /v2/socket HTTP/1.0\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("400"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade with POST",
+		"POST /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "Content-Length: 0\r\n\r\n"
+	);
+
+	// the endpoint is a GET, a POST goes to the catch all (405 is opt-in)
+	test_receive_expect (!test_receive_status_is ("101"));
+	test_receive_expect (!result.upgraded);
+
+	test_receive_web_socket_released (cerver);
+
+}
+
+// the length of the request before its first frame
+static size_t test_receive_web_socket_header_len = 0;
+
+// the bytes of the frame that came in the piece that completed the request,
+// the pieces after the 101 are read by the thread of the connection, never by the parser
+static size_t test_receive_web_socket_expected_pending (void) {
+
+	size_t expected = TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE;
+
+	if (!strcmp (current_mode, "one byte per recv")) {
+		expected = 0;
+	}
+
+	else if (!strcmp (current_mode, "split at") && (current_offset >= test_receive_web_socket_header_len)) {
+		expected = current_offset - test_receive_web_socket_header_len;
+	}
+
+	return expected;
+
+}
+
+static void test_receive_web_socket_switched_split (void) {
+
+	test_receive_web_socket_switched ();
+	test_receive_expect (result.pending_size == test_receive_web_socket_expected_pending ());
+
+}
+
+// the upgrade of RFC 6455, with the tokens of Firefox, and with the first frame in the same packet
+static void test_receive_web_socket_upgrade (Cerver *cerver) {
+
+	test_receive_web_socket_upgrade_rejected (cerver);
+
+	test_receive_whole_case (
+		cerver, "an upgrade to a websocket endpoint",
+		TEST_RECEIVE_WEB_SOCKET_REQUEST (TEST_RECEIVE_WEB_SOCKET_VERSION)
+	);
+
+	test_receive_web_socket_switched ();
+	test_receive_expect (result.pending_size == 0);
+
+	test_receive_whole_case (
+		cerver, "an upgrade with the tokens in lists",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: WebSocket\r\nConnection: keep-alive, Upgrade\r\n"
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "\r\n"
+	);
+
+	test_receive_web_socket_switched ();
+
+	char request[TEST_RECEIVE_RESPONSE_SIZE];
+	const size_t header_len = strlen (TEST_RECEIVE_WEB_SOCKET_REQUEST (TEST_RECEIVE_WEB_SOCKET_VERSION));
+	test_receive_web_socket_header_len = header_len;
+	(void) memcpy (request, TEST_RECEIVE_WEB_SOCKET_REQUEST (TEST_RECEIVE_WEB_SOCKET_VERSION), header_len);
+	(void) memcpy (request + header_len, test_receive_web_socket_frame, TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE);
+
+	test_receive_every_split (
+		cerver, "an upgrade with its first frame",
+		request, header_len + TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE,
+		test_receive_web_socket_switched_split
+	);
+
+	test_receive_web_socket_released (cerver);
+
+}
+
 // an Upgrade or a CONNECT is answered and closed without waiting for another protocol
 static void test_receive_parser_upgrade (Cerver *cerver) {
 
@@ -2347,13 +2562,7 @@ static void test_receive_parser_upgrade (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 1);
 	test_receive_expect (!strcmp (observed.body, "first"));
 
-	test_receive_whole_case (
-		cerver, "an upgrade to a websocket route",
-		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
-	);
-
-	test_receive_expect (test_receive_status_is ("501"));
-	test_receive_expect (observed.n_handled == 0);
+	test_receive_web_socket_upgrade (cerver);
 
 	test_receive_whole_case (cerver, "a CONNECT", "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
 	test_receive_expect (test_receive_count_responses () == 1);
