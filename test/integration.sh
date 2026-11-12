@@ -41,6 +41,7 @@ PAIRS=(
 	web/admin
 	web/router
 	web/features
+	web/websocket
 )
 
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
