@@ -45,6 +45,7 @@
 #include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/proxy.h"
+#include "cerver/http/recycle.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
@@ -2744,11 +2745,28 @@ static int http_request_body_create (
 
 	HttpRequest *request = http_receive->request;
 
-	request->body = str_new (NULL);
-	if (!request->body) return 1;
+	// the string of the body lives in the arena of the request when it has one,
+	// and its buffer is taken from the ones that the thread reuses
+	String *body = request->arena ?
+		(String *) arena_alloc (request->arena, sizeof (String)) :
+		(String *) malloc (sizeof (String));
+
+	if (!body) return 1;
 
 	const size_t reserve = http_request_body_reserve_size (http_receive, length);
-	if (reserve && str_reserve (request->body, reserve)) return 1;
+
+	size_t capacity = 0;
+	body->str = (char *) http_recycle_buffer_take (reserve, &capacity);
+	if (!body->str) {
+		if (!request->arena) free (body);
+		return 1;
+	}
+
+	body->str[0] = '\0';
+	body->len = 0;
+	body->max_len = capacity;
+
+	request->body = body;
 
 	return str_append_bytes (request->body, at, length);
 
