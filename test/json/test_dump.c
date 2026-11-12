@@ -36,10 +36,8 @@ static void encode_null () {
 	if (json_dumpf (NULL, stderr, JSON_ENCODE_ANY) != -1)
 		fail ("json_dumpf didn't fail for NULL");
 
-#ifdef HAVE_UNISTD_H
 	if (json_dumpfd (NULL, STDERR_FILENO, JSON_ENCODE_ANY) != -1)
 		fail ("json_dumpfd didn't fail for NULL");
-#endif
 
 	/* Don't test json_dump_file to avoid creating a file */
 
@@ -244,8 +242,8 @@ static void dumpb () {
 	json_decref (obj);
 }
 
+// HAVE_UNISTD_H was never defined, so this test was never compiled and json_dumpfd () always failed
 static void dumpfd () {
-#ifdef HAVE_UNISTD_H
 	int fds[2] = {-1, -1};
 	json_t *a, *b;
 
@@ -268,7 +266,6 @@ static void dumpfd () {
 
 	json_decref (a);
 	json_decref (b);
-#endif
 }
 
 static void embed () {

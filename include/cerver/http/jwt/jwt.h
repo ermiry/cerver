@@ -63,7 +63,7 @@ struct jwt {
 
 	jwt_alg_t alg;
 	unsigned char *key;
-	int key_len;
+	size_t key_len;
 	struct json_t *grants;
 	struct json_t *headers;
 
@@ -134,10 +134,32 @@ CERVER_PUBLIC int jwt_new (jwt_t **jwt);
  *     non-encrypted token will be parsed without any checks for a valid
  *     signature, however, standard validation of the token is still
  *     performed.
+ *
+ * The parts must be canonical base64url, the header and the payload json
+ * objects without repeated keys, and the names of the algorithms the exact
+ * ones of RFC 7518 ("none", "HS256", ...). The algorithm comes from the
+ * header: to verify tokens of a single algorithm use jwt_decode_with_key ().
  */
 CERVER_PUBLIC int jwt_decode (
 	jwt_t **jwt, const char *token,
-	const unsigned char *key, int key_len
+	const unsigned char *key, size_t key_len
+);
+
+struct JwtKey;
+
+// decodes a token and verifies it with the key,
+// the header must name the algorithm of the key,
+// so neither "none" nor another algorithm is accepted
+// returns 0 on success, EINVAL or ENOMEM on error
+CERVER_PUBLIC int jwt_decode_with_key (
+	jwt_t **jwt, const char *token, const size_t token_length,
+	const struct JwtKey *key
+);
+
+// signs the jwt with the key, the algorithm of the jwt is the one of the key
+// returns a token deleted with jwt_free_str (), or NULL and errno set on error
+CERVER_PUBLIC char *jwt_encode_with_key (
+	jwt_t *jwt, const struct JwtKey *key
 );
 
 /**
@@ -342,23 +364,6 @@ CERVER_PUBLIC int jwt_add_grants_json (
  */
 CERVER_PUBLIC int jwt_del_grants (
 	jwt_t *jwt, const char *grant
-);
-
-/**
- * @deprecated
- * Delete a grant from this JWT object.
- *
- * Deletes the named grant from this object. It is not an error if there
- * is no grant matching the passed name.
- *
- * @param jwt Pointer to a JWT object.
- * @param grant String containing the name of the grant to delete.
- * @return Returns 0 on success, valid errno otherwise.
- */
-DEPRECATED (
-	CERVER_PUBLIC int jwt_del_grant (
-		jwt_t *jwt, const char *grant
-	)
 );
 
 /** @} */
@@ -662,7 +667,7 @@ CERVER_PUBLIC void jwt_free_str (char *str);
  * @return Returns 0 on success, valid errno otherwise.
  */
 CERVER_PUBLIC int jwt_set_alg (
-	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len
+	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t len
 );
 
 /**

@@ -11,6 +11,9 @@ int main (void) {
 
 	(void) printf ("Testing JSON...\n");
 
+	// before any other test sets the seed with its first object
+	json_tests_seed ();
+
 	json_tests_array ();
 
 	json_tests_chaos ();
@@ -42,6 +45,8 @@ int main (void) {
 	json_tests_sprintf ();
 
 	json_tests_unpack ();
+
+	json_tests_safety ();
 
 	(void) printf ("\nDone with JSON tests!\n\n");
 

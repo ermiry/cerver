@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits.h>
 #include <math.h>
 
 #include <stddef.h>
@@ -24,7 +25,7 @@
 
 #include "cerver/utils/utils.h"
 
-json_t *do_deep_copy (const json_t *json, hashtable_t *parents);
+static json_t *do_deep_copy (const json_t *json, hashtable_t *parents);
 
 static inline void json_init (json_t *json, json_type type) {
 
@@ -48,18 +49,14 @@ int jsonp_loop_check (
 
 /*** object ***/
 
-extern volatile uint32_t hashtable_seed;
-
 json_t *json_object (void) {
 
     json_object_t *object = (json_object_t *) jsonp_malloc (sizeof (json_object_t));
     if (!object)
         return NULL;
 
-    if (!hashtable_seed) {
-        /* Autoseed */
-        json_object_seed (0);
-    }
+    // a random seed if nobody set one before, it only reads the seed after that
+    json_object_seed (0);
 
     json_init (&object->json, JSON_OBJECT);
 
@@ -198,7 +195,7 @@ int json_object_update_missing (json_t *object, json_t *other) {
     return 0;
 }
 
-int do_object_update_recursive (json_t *object, json_t *other, hashtable_t *parents) {
+static int do_object_update_recursive (json_t *object, json_t *other, hashtable_t *parents) {
     const char *key;
     json_t *value;
     char loop_key[LOOP_KEY_LEN];
@@ -525,7 +522,14 @@ static json_t **json_array_grow (json_array_t *array, size_t amount, int copy) {
 
     old_table = array->table;
 
+    // a size whose table does not fit in a size_t is an error, not a smaller table
+    if (amount > (SIZE_MAX / sizeof (json_t *)) - array->size)
+        return NULL;
+
     new_size = MAX (array->size + amount, array->size * 2);
+    if (new_size > (SIZE_MAX / sizeof (json_t *)))
+        new_size = array->size + amount;
+
     new_table = (json_t **) jsonp_malloc (new_size * sizeof (json_t *));
     if (!new_table)
         return NULL;
@@ -890,17 +894,21 @@ json_t *json_vsprintf (const char *fmt, va_list ap) {
         goto out;
     }
 
-    buf = (char *) jsonp_malloc (length + 1);
+    // a format error is negative, and the null of INT_MAX bytes does not fit in an int
+    if ((length < 0) || (length == INT_MAX))
+        goto out;
+
+    buf = (char *) jsonp_malloc ((size_t) length + 1);
     if (!buf)
         goto out;
 
-    vsnprintf (buf, length + 1, fmt, aq);
-    if (!utf8_check_string (buf, length)) {
+    (void) vsnprintf (buf, (size_t) length + 1, fmt, aq);
+    if (!utf8_check_string (buf, (size_t) length)) {
         jsonp_free (buf);
         goto out;
     }
 
-    json = jsonp_stringn_nocheck_own (buf, length);
+    json = jsonp_stringn_nocheck_own (buf, (size_t) length);
 
 out:
     va_end (aq);
@@ -1132,7 +1140,7 @@ json_t *json_deep_copy (const json_t *json) {
 
 }
 
-json_t *do_deep_copy (
+static json_t *do_deep_copy (
     const json_t *json, hashtable_t *parents
 ) {
 

@@ -1,5 +1,12 @@
-#ifndef JANSSON_PRIVATE_H
-#define JANSSON_PRIVATE_H
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See thirdparty.md for details.
+ */
+
+#ifndef _CERVER_HTTP_JSON_PRIVATE_H_
+#define _CERVER_HTTP_JSON_PRIVATE_H_
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -54,30 +61,26 @@ struct json_t;
 struct hashtable_t;
 
 /* Create a string by taking ownership of an existing buffer */
-CERVER_PUBLIC struct json_t *jsonp_stringn_nocheck_own (
+CERVER_HIDDEN struct json_t *jsonp_stringn_nocheck_own (
 	const char *value, size_t len
 );
 
-CERVER_PUBLIC int jsonp_dtostr (
+CERVER_HIDDEN int jsonp_dtostr (
 	char *buffer, size_t size, double value, int prec
 );
 
 /* Wrappers for custom memory functions */
-CERVER_PUBLIC void *jsonp_malloc (
+CERVER_HIDDEN void *jsonp_malloc (
 	size_t size
 ) CERVER_ATTRS ((warn_unused_result));
 
-CERVER_PUBLIC void jsonp_free (void *ptr);
+CERVER_HIDDEN void jsonp_free (void *ptr);
 
-CERVER_PUBLIC char *jsonp_strndup (
-	const char *str, size_t length
-) CERVER_ATTRS ((warn_unused_result));
-
-CERVER_PUBLIC char *jsonp_strdup (
+CERVER_HIDDEN char *jsonp_strdup (
 	const char *str
 ) CERVER_ATTRS ((warn_unused_result));
 
-CERVER_PUBLIC char *jsonp_strndup (
+CERVER_HIDDEN char *jsonp_strndup (
 	const char *str, size_t len
 ) CERVER_ATTRS ((warn_unused_result));
 
@@ -85,7 +88,7 @@ CERVER_PUBLIC char *jsonp_strndup (
 /* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
 #define LOOP_KEY_LEN (2 + (sizeof (struct json_t *) * 2) + 1)
 
-CERVER_PUBLIC int jsonp_loop_check (
+CERVER_HIDDEN int jsonp_loop_check (
 	struct hashtable_t *parents,
 	const struct json_t *json, char *key, size_t key_size
 );

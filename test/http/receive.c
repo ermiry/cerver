@@ -1649,7 +1649,8 @@ static void test_receive_attribute_without_value (Cerver *cerver) {
 
 }
 
-#define TEST_RECEIVE_BEARER_REQUEST_SIZE	(1 << 12)
+// a request with a bearer of up to HTTP_JWT_BEARER_SIZE
+#define TEST_RECEIVE_BEARER_REQUEST_SIZE	(1 << 14)
 #define TEST_RECEIVE_JWT_EXPIRED_SECONDS	3600
 #define TEST_RECEIVE_JWT_VALID_SECONDS		3600
 
@@ -1694,7 +1695,7 @@ static void test_receive_bearer_token (
 	test_check_ptr (http_jwt);
 
 	http_cerver_auth_jwt_add_value (http_jwt, "id", "receive-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int) expires);
+	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) expires);
 
 	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 

@@ -8,12 +8,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdint.h>
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "cerver/config.h"
@@ -30,9 +34,70 @@
 
 #pragma region memory
 
+// the bytes that a parse can allocate for each byte that it reads, 0 has no limit,
+// a body of [{}, {}, ...] takes about 60 bytes of objects for each one of its bytes
+static size_t json_parser_memory_factor = JSON_PARSER_DEFAULT_MEMORY_FACTOR;
+
+// the parse of this thread: the bytes that it can still allocate,
+// and if it ran out of them, so its error says why
+static __thread bool json_parse_limited = false;
+static __thread bool json_parse_exhausted = false;
+static __thread size_t json_parse_budget = 0;
+
+void json_set_parser_memory_factor (size_t factor) {
+
+	__atomic_store_n (&json_parser_memory_factor, factor, __ATOMIC_RELAXED);
+
+}
+
+static void json_parse_budget_start (void) {
+
+	json_parse_limited = (__atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED) > 0);
+	json_parse_exhausted = false;
+	json_parse_budget = JSON_PARSER_MEMORY_MINIMUM;
+
+}
+
+static void json_parse_budget_end (void) {
+
+	json_parse_limited = false;
+	json_parse_budget = 0;
+
+}
+
+// every byte that the parse reads lets it allocate the factor more,
+// so the memory of a document is bounded by its size
+static void json_parse_budget_add (void) {
+
+	if (json_parse_limited) {
+		json_parse_budget += __atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED);
+	}
+
+}
+
+// returns false if the parse has no room for the allocation
+static bool json_parse_budget_take (size_t size) {
+
+	bool taken = true;
+
+	if (json_parse_limited) {
+		if (size > json_parse_budget) {
+			json_parse_exhausted = true;
+			taken = false;
+		}
+
+		else {
+			json_parse_budget -= size;
+		}
+	}
+
+	return taken;
+
+}
+
 void *jsonp_malloc (size_t size) {
 
-	return size ? malloc (size): NULL;
+	return (size && json_parse_budget_take (size)) ? malloc (size) : NULL;
 
 }
 
@@ -64,6 +129,14 @@ char *jsonp_strndup (const char *str, size_t len) {
 
 #pragma region error
 
+// the position of an error is an int in json_error_t,
+// a document of more than INT_MAX bytes keeps the largest one
+static int json_error_position (const size_t position) {
+
+	return (position > (size_t) INT_MAX) ? INT_MAX : (int) position;
+
+}
+
 CERVER_INLINE enum json_error_code json_error_code (
 	const json_error_t *e
 ) {
@@ -93,8 +166,10 @@ void jsonp_error_set_source (
 	json_error_t *error, const char *source
 ) {
 
+	// a long source is cut, the error never had a source without its end
 	if (error && source) {
 		(void) strncpy (error->source, source, JSON_ERROR_SOURCE_LENGTH - 1);
+		error->source[JSON_ERROR_SOURCE_LENGTH - 1] = '\0';
 	}
 
 }
@@ -115,7 +190,7 @@ void jsonp_error_vset (
 
 	error->line = line;
 	error->column = column;
-	error->position = (int)position;
+	error->position = json_error_position (position);
 
 	(void) vsnprintf (error->text, JSON_ERROR_TEXT_LENGTH - 1, msg, ap);
 	error->text[JSON_ERROR_TEXT_LENGTH - 2] = '\0';
@@ -261,75 +336,68 @@ static char strbuffer_pop (strbuffer_t *strbuff) {
 
 #pragma region strconv
 
-#if JSON_HAVE_LOCALECONV
-#include <locale.h>
+// the numbers of json always have a dot, whatever the locale of the process is:
+// they are read and written with a "C" locale that is created once,
+// localeconv () was not thread safe and a decimal point of two bytes
+// ended the process in an assert ()
+static locale_t json_numbers_locale = (locale_t) 0;
+static pthread_once_t json_numbers_locale_once = PTHREAD_ONCE_INIT;
 
-/*
-  - This code assumes that the decimal separator is exactly one
-	character.
+static void json_numbers_locale_create (void) {
 
-  - If setlocale() is called by another thread between the call to
-	localeconv() and the call to sprintf() or strtod(), the result may
-	be wrong. setlocale() is not thread-safe and should not be used
-	this way. Multi-threaded programs should use uselocale() instead.
-*/
-
-static void to_locale (strbuffer_t *strbuffer) {
-
-	const char *point;
-	char *pos;
-
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (strbuffer->value, '.');
-	if (pos)
-		*pos = *point;
+	json_numbers_locale = newlocale (LC_NUMERIC_MASK, "C", (locale_t) 0);
 
 }
 
-static void from_locale (char *buffer) {
+static locale_t json_numbers_locale_get (void) {
 
-	const char *point;
-	char *pos;
+	(void) pthread_once (&json_numbers_locale_once, json_numbers_locale_create);
 
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (buffer, *point);
-	if (pos)
-		*pos = '.';
+	return json_numbers_locale;
 
 }
 
-#endif
+// the lexer only gives numbers, a number that is not read whole is an error,
+// an underflow gives zero or a subnormal value that is valid,
+// only an overflow (an infinite value) is an error
+static int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 
-int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale)
+		return -1;
 
-	double value = 0;
 	char *end = NULL;
 
-	#if JSON_HAVE_LOCALECONV
-	to_locale (strbuffer);
-	#endif
-
 	errno = 0;
-	value = strtod (strbuffer->value, &end);
-	assert (end == strbuffer->value + strbuffer->length);
+	const double value = strtod_l (strbuffer->value, &end, locale);
 
-	if (errno == ERANGE) {
-		/* Overflow or Underflow */
+	if (end != (strbuffer->value + strbuffer->length))
 		return -1;
-	}
+
+	if ((errno == ERANGE) && isinf (value))
+		return -1;
 
 	*out = value;
 	return 0;
+
+}
+
+// NaN and the infinite values are not json
+static int jsonp_dtostr_format (
+	char *buffer, size_t size, double value, int precision
+) {
+
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale || !isfinite (value))
+		return -1;
+
+	const locale_t previous = uselocale (locale);
+
+	const int ret = snprintf (buffer, size, "%.*g", precision, value);
+
+	(void) uselocale (previous);
+
+	return ret;
 
 }
 
@@ -342,19 +410,15 @@ int jsonp_dtostr (
 	size_t length = 0;
 
 	if (precision == 0)
-		precision = 17;
+		precision = JSON_REAL_DEFAULT_PRECISION;
 
-	ret = snprintf (buffer, size, "%.*g", precision, value);
+	ret = jsonp_dtostr_format (buffer, size, value, precision);
 	if (ret < 0)
 		return -1;
 
 	length = (size_t)ret;
 	if (length >= size)
 		return -1;
-
-	#if JSON_HAVE_LOCALECONV
-	from_locale (buffer);
-	#endif
 
 	/* Make sure there's a dot or 'e' in the output. Otherwise
 	   a real is converted to an integer when decoding */
@@ -448,11 +512,11 @@ static int dump_to_fd (
 	const char *buffer, size_t size, void *data
 ) {
 
-	#ifdef HAVE_UNISTD_H
+	// HAVE_UNISTD_H of upstream was never defined, so the dumps to a fd always failed
 	int *dest = (int *)data;
 	if (write (*dest, buffer, size) == (ssize_t)size)
 		return 0;
-	#endif
+
 	return -1;
 
 }
@@ -613,7 +677,9 @@ static int do_dump (
 
 	flags &= ~JSON_EMBED;
 
-	if (!json)
+	// a tree built in code can be deeper than what the parser accepts,
+	// its dump would end the stack of the thread
+	if (!json || (depth > JSON_DUMP_MAX_DEPTH))
 		return -1;
 
 	switch (json_typeof (json)) {
@@ -1065,6 +1131,8 @@ static int stream_get (
 			return STREAM_STATE_EOF;
 		}
 
+		json_parse_budget_add ();
+
 		stream->buffer[0] = c;
 		stream->buffer_pos = 0;
 
@@ -1106,8 +1174,10 @@ static int stream_get (
 
 out:
 	stream->state = STREAM_STATE_ERROR;
-	// error_set(error, stream_to_lex(stream), json_error_invalid_utf8,
-	//           "unable to decode byte 0x%x", c);
+	error_set (
+		error, stream_to_lex (stream), json_error_invalid_utf8,
+		"unable to decode byte 0x%x", (unsigned int) c
+	);
 	return STREAM_STATE_ERROR;
 }
 
@@ -1806,7 +1876,21 @@ static json_t *parse_value (
 
 }
 
-static json_t *parse_json (
+// a parse that ran out of its memory says why, whatever error its parser saw after that
+static void parse_json_exhausted (lex_t *lex, json_error_t *error) {
+
+	if (json_parse_exhausted) {
+		if (error) error->text[0] = '\0';
+
+		error_set (
+			error, lex, json_error_out_of_memory,
+			"the json needs more memory than its size allows"
+		);
+	}
+
+}
+
+static json_t *parse_json_value (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
@@ -1838,8 +1922,24 @@ static json_t *parse_json (
 
 	if (error) {
 		/* Save the position even though there was no error */
-		error->position = (int)lex->stream.position;
+		error->position = json_error_position (lex->stream.position);
 	}
+
+	return result;
+
+}
+
+// the memory of the values is limited by the size of the document
+static json_t *parse_json (
+	lex_t *lex, size_t flags, json_error_t *error
+) {
+
+	json_parse_budget_start ();
+
+	json_t *result = parse_json_value (lex, flags, error);
+	if (!result) parse_json_exhausted (lex, error);
+
+	json_parse_budget_end ();
 
 	return result;
 
@@ -1998,12 +2098,7 @@ json_t *json_loadfd (
 	const char *source;
 	json_t *result;
 
-	#ifdef HAVE_UNISTD_H
-	if (input == STDIN_FILENO)
-		source = "<stdin>";
-	else
-	#endif
-		source = "<stream>";
+	source = (input == STDIN_FILENO) ? "<stdin>" : "<stream>";
 
 	jsonp_error_init (error, source);
 
@@ -2862,6 +2957,13 @@ static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 				return -1;
 			}
 
+			// an integer that does not fit in an int is an error, it was cut before
+			if (root && ((json_integer_value (root) > INT_MAX) || (json_integer_value (root) < INT_MIN))) {
+				set_error (s, "<validation>", json_error_numeric_overflow,
+						  "Integer %" JSON_INTEGER_FORMAT " does not fit in an int", json_integer_value (root));
+				return -1;
+			}
+
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
 				int *target = va_arg (*ap, int *);
 				if (root)
@@ -3111,10 +3213,19 @@ static void print_json_indent (int indent) {
 
 }
 
-static const char *json_plural (int count) {
-	
+// the values of an array and the root have no key
+#define JSON_PRINT_NO_KEY			"(value)"
+
+static const char *json_plural (size_t count) {
+
 	return count == 1 ? "" : "s";
-	
+
+}
+
+static const char *json_print_key (const char *key) {
+
+	return key ? key : JSON_PRINT_NO_KEY;
+
 }
 
 static void print_json_object (
@@ -3126,7 +3237,7 @@ static void print_json_object (
 	const char *key = NULL;
 	json_t *value = NULL;
 	size_t size = json_object_size (element);
-	(void) printf ("JSON Object of %lu pair %s:\n", size, json_plural (size));
+	(void) printf ("JSON Object of %zu pair%s:\n", size, json_plural (size));
 	json_object_foreach (element, key, value) {
 		print_json_indent (indent + 2);
 		print_json_aux (value, indent + 2, key);
@@ -3141,7 +3252,7 @@ static void print_json_array (
 	print_json_indent (indent);
 
 	size_t size = json_array_size (element);
-	(void) printf ("JSON Array of %lu element%s:\n", size, json_plural (size));
+	(void) printf ("JSON Array of %zu element%s:\n", size, json_plural (size));
 	for (size_t i = 0; i < size; i++) {
 		print_json_aux (json_array_get (element, i), indent + 2, key);
 	}
@@ -3153,7 +3264,7 @@ static void print_json_string (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[String] %s: \"%s\"\n", key, json_string_value (element));
+	(void) printf ("[String] %s: \"%s\"\n", json_print_key (key), json_string_value (element));
 
 }
 
@@ -3164,7 +3275,7 @@ static void print_json_integer (
 	print_json_indent (indent);
 	(void) printf (
 		"[Integer] %s: \"%" JSON_INTEGER_FORMAT "\"\n",
-		key, json_integer_value (element)
+		json_print_key (key), json_integer_value (element)
 	);
 
 }
@@ -3174,7 +3285,7 @@ static void print_json_real (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[Real] %s: %f\n", key, json_real_value (element));
+	(void) printf ("[Real] %s: %f\n", json_print_key (key), json_real_value (element));
 
 }
 
@@ -3183,7 +3294,7 @@ static void print_json_true (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: True\n", key);
+	(void) printf ("%s: True\n", json_print_key (key));
 
 }
 
@@ -3192,7 +3303,7 @@ static void print_json_false (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: False\n", key);
+	(void) printf ("%s: False\n", json_print_key (key));
 
 }
 
@@ -3201,7 +3312,7 @@ static void print_json_null (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: NULL\n", key);
+	(void) printf ("%s: NULL\n", json_print_key (key));
 
 }
 
@@ -3229,9 +3340,9 @@ static void print_json_aux (
 }
 
 void json_print (json_t *root) {
-	
-	print_json_aux (root, 0, NULL);
-	
+
+	if (root) print_json_aux (root, 0, NULL);
+
 }
 
 #pragma endregion

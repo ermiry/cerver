@@ -1,12 +1,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
+
+#include <math.h>
 
 #include <cerver/version.h>
 
 #include <cerver/http/http.h>
 #include <cerver/http/origin.h>
 #include <cerver/http/response.h>
+
+#include <cerver/http/json/json.h>
+#include <cerver/http/json/value.h>
 
 #include "../test.h"
 
@@ -476,6 +482,104 @@ static void test_http_response_set_data_ref (void) {
 
 #pragma endregion
 
+#pragma region json
+
+// the body of a compiled response, after its header
+static const char *test_http_response_json_body (const HttpResponse *response) {
+
+	test_check_ptr (response);
+	test_check_ptr (response->data);
+	test_check_unsigned_eq (response->data_len, strlen ((const char *) response->data), NULL);
+
+	return (const char *) response->data;
+
+}
+
+// a message with quotes, a backslash and a control character is still valid json
+static void test_http_response_json_escaped (void) {
+
+	const char *message = "near '\"admin\": true' \\ \n";
+
+	HttpResponse *response = http_response_json_error (HTTP_STATUS_BAD_REQUEST, message);
+	const char *body = test_http_response_json_body (response);
+
+	json_error_t error;
+	json_t *json = json_loads (body, 0, &error);
+	test_check_ptr (json);
+	test_check_unsigned_eq (json_object_size (json), 1, "the message added keys to the json");
+	test_check_str_eq (json_string_value (json_object_get (json, "error")), message, NULL);
+	json_decref (json);
+
+	http_response_delete (response);
+
+	response = http_response_create_json_key_value (HTTP_STATUS_OK, "key\"", "value\"");
+	json = json_loads (test_http_response_json_body (response), 0, &error);
+	test_check_ptr (json);
+	test_check_str_eq (json_string_value (json_object_get (json, "key\"")), "value\"", NULL);
+	json_decref (json);
+	http_response_delete (response);
+
+	// a message that is not UTF-8 can not be json
+	test_check_null_ptr (http_response_json_msg (HTTP_STATUS_OK, "\xff"));
+
+}
+
+// the bodies of the values keep the separators that they had
+static void test_http_response_json_values (void) {
+
+	HttpResponse *response = http_response_json_int_value (HTTP_STATUS_OK, "value", 7);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 7}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_large_int_value (HTTP_STATUS_OK, "value", 4102444800L);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 4102444800}", NULL);
+	http_response_delete (response);
+
+	// a real is not written with %f nor with the locale
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", 1.5);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 1.5}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_bool_value (HTTP_STATUS_OK, "value", true);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": true}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_msg (HTTP_STATUS_OK, "oki doki");
+	test_check_str_eq (test_http_response_json_body (response), "{\"msg\": \"oki doki\"}", NULL);
+	http_response_delete (response);
+
+	// NaN is not json
+	test_check_null_ptr (http_response_json_real_value (HTTP_STATUS_OK, "value", (double) NAN));
+
+}
+
+// the helpers freed the body that the response still had, a second compile read it
+static void test_http_response_json_owned (void) {
+
+	HttpResponse *responses[] = {
+		http_response_json_int_value (HTTP_STATUS_OK, "value", 7),
+		http_response_json_large_int_value (HTTP_STATUS_OK, "value", 7),
+		http_response_json_real_value (HTTP_STATUS_OK, "value", 7.5),
+		http_response_json_bool_value (HTTP_STATUS_OK, "value", false)
+	};
+
+	for (size_t i = 0; i < (sizeof (responses) / sizeof (responses[0])); i++) {
+		test_check_ptr (responses[i]);
+		test_check_bool_eq (responses[i]->data_ref, false, NULL);
+
+		const char *body = test_http_response_json_body (responses[i]);
+		test_check (strstr (body, "\"value\"") != NULL, body);
+
+		test_check_unsigned_eq (http_response_compile (responses[i]), 0, NULL);
+		test_check (strstr ((const char *) responses[i]->res, "\"value\"") != NULL, NULL);
+
+		http_response_delete (responses[i]);
+	}
+
+}
+
+#pragma endregion
+
 void http_tests_responses (void) {
 
 	(void) printf ("Testing HTTP responses...\n");
@@ -503,6 +607,11 @@ void http_tests_responses (void) {
 	// data
 	test_http_response_set_data ();
 	test_http_response_set_data_ref ();
+
+	// json
+	test_http_response_json_escaped ();
+	test_http_response_json_values ();
+	test_http_response_json_owned ();
 
 	test_http_responses_end ();
 
