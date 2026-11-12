@@ -40,6 +40,8 @@
 
 #include "cerver/http/http.h"
 
+#include "cerver/http/websockets/registry.h"
+
 #include "cerver/game/game.h"
 
 #include "cerver/utils/log.h"
@@ -3139,6 +3141,17 @@ static void cerver_drain_report (Cerver *cerver) {
 
 }
 
+// the WebSocket connections of a web cerver go away with 1001, or they are cut
+static void cerver_drain_web_sockets (Cerver *cerver, const bool abort) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	if (http_cerver && http_cerver->web_sockets) {
+		if (abort) http_web_socket_registry_abort (http_cerver->web_sockets);
+		else http_web_socket_registry_go_away (http_cerver->web_sockets);
+	}
+
+}
+
 // waits for the connections in progress using the drain policy and timeout,
 // if they do not finish, a short grace is given before reporting them
 static void cerver_drain (Cerver *cerver) {
@@ -3162,6 +3175,11 @@ static void cerver_drain (Cerver *cerver) {
 			cerver_shutdown_clients (cerver);
 		}
 
+		// the WebSocket connections are closed with 1001, their threads end with their handshake
+		else {
+			cerver_drain_web_sockets (cerver, false);
+		}
+
 		cerver->drained = cerver_drain_wait (cerver, (time_t) cerver->drain_timeout);
 
 		if (!cerver->drained) {
@@ -3169,6 +3187,9 @@ static void cerver_drain (Cerver *cerver) {
 				"Cerver %s was NOT drained in %u secs - waiting %u more secs",
 				cerver->info->name, cerver->drain_timeout, CERVER_DRAIN_GRACE_TIMEOUT
 			);
+
+			// the WebSocket connections that did not end are cut
+			if (cerver->type == CERVER_TYPE_WEB) cerver_drain_web_sockets (cerver, true);
 
 			cerver->drained = cerver_drain_wait (cerver, (time_t) CERVER_DRAIN_GRACE_TIMEOUT);
 		}
