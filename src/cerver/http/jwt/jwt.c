@@ -11,15 +11,42 @@
 
 #include <errno.h>
 
+#include <openssl/crypto.h>
+
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
 
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/config.h"
 #include "cerver/http/jwt/jwt.h"
-#include "cerver/http/jwt/openssl.h"
+#include "cerver/http/jwt/key.h"
 
 #include "cerver/utils/base64.h"
+
+// the name of the algorithm without a signature in a token (RFC 7518 §3.6)
+#define JWT_ALG_NONE_HEADER_NAME		"none"
+
+// the indentation of the pretty dumps
+#define JWT_DUMP_INDENT					4
+
+#define JWT_PART_SEPARATOR				'.'
+
+// the header, the payload and the signature
+typedef struct JwtTokenParts {
+
+	const char *header;
+	size_t header_length;
+
+	const char *payload;
+	size_t payload_length;
+
+	const char *signature;
+	size_t signature_length;
+
+	// the header, the separator and the payload, what is signed
+	size_t signed_length;
+
+} JwtTokenParts;
 
 static jwt_malloc_t pfn_malloc = NULL;
 static jwt_realloc_t pfn_realloc = NULL;
@@ -37,7 +64,7 @@ const char *jwt_error_str (const jwt_error_t error) {
 
 }
 
-void *jwt_malloc (size_t size) {
+static void *jwt_malloc (size_t size) {
 
 	if (pfn_malloc)
 		return pfn_malloc (size);
@@ -55,26 +82,12 @@ static void *jwt_realloc (void *ptr, size_t size) {
 
 }
 
-void jwt_freemem (void *ptr) {
+static void jwt_freemem (void *ptr) {
 
 	if (pfn_free)
 		pfn_free (ptr);
 
 	else free (ptr);
-
-}
-
-static char *jwt_strdup (const char *str) {
-
-	size_t len = strlen (str);
-	char *result = (char *) jwt_malloc (len + 1);
-	if (!result)
-		return NULL;
-
-	(void) memcpy (result, str, len);
-	result[len] = '\0';
-
-	return result;
 
 }
 
@@ -95,8 +108,8 @@ static void *jwt_calloc (size_t nmemb, size_t size) {
 static void jwt_scrub_key (jwt_t *jwt) {
 
 	if (jwt->key) {
-		/* Overwrite it so it's gone from memory. */
-		(void) memset (jwt->key, 0, jwt->key_len);
+		// a memset () before a free () can be removed by the compiler
+		OPENSSL_cleanse (jwt->key, jwt->key_len);
 
 		jwt_freemem (jwt->key);
 		jwt->key = NULL;
@@ -108,7 +121,7 @@ static void jwt_scrub_key (jwt_t *jwt) {
 }
 
 int jwt_set_alg (
-	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len
+	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, size_t len
 ) {
 	/* No matter what happens here, we do this. */
 	jwt_scrub_key (jwt);
@@ -123,7 +136,7 @@ int jwt_set_alg (
 		break;
 
 	default:
-		if (!key || len <= 0)
+		if (!key || !len)
 			return EINVAL;
 
 		jwt->key = (unsigned char *) jwt_malloc (len);
@@ -288,305 +301,285 @@ static int get_js_bool (json_t *js, const char *key) {
 
 }
 
-void *jwt_b64_decode (const char *src, int *ret_len) {
+#pragma region decode
 
-	void *buf;
-	char *new_thing;
-	int len, i, z;
-
-	/* Decode based on RFC-4648 URI safe encoding. */
-	len = (int)strlen (src);
-	new_thing = (char *) alloca (len + 4);
-	if (!new_thing)
-		return NULL;
-
-	for (i = 0; i < len; i++) {
-		switch (src[i]) {
-		case '-':
-			new_thing[i] = '+';
-			break;
-		case '_':
-			new_thing[i] = '/';
-			break;
-		default:
-			new_thing[i] = src[i];
-		}
-	}
-	z = 4 - (i % 4);
-	if (z < 4) {
-		while (z--)
-			new_thing[i++] = '=';
-	}
-	new_thing[i] = '\0';
-
-	// one more byte so the caller can always terminate the result
-	buf = jwt_malloc (i + 1);
-	if (buf == NULL)
-		return NULL;
-
-	*ret_len = base64_decode ((char *) buf, new_thing, strlen (new_thing));
-
-	// invalid base64 input
-	if (*ret_len < 0 || *ret_len > i) {
-		jwt_freemem (buf);
-		return NULL;
-	}
-
-	return buf;
-
-}
-
-static json_t *jwt_b64_decode_json (char *src) {
-
-	json_t *js;
-	char *buf;
-	int len;
-
-	buf = (char *) jwt_b64_decode (src, &len);
-
-	if (buf == NULL)
-		return NULL;
-
-	buf[len] = '\0';
-
-	js = json_loads (buf, 0, NULL);
-
-	jwt_freemem (buf);
-
-	return js;
-
-}
-
-void jwt_base64uri_encode (char *str) {
-
-	int len = (int) strlen (str);
-	int i, t;
-
-	for (i = t = 0; i < len; i++) {
-		switch (str[i]) {
-		case '+':
-			str[t++] = '-';
-			break;
-		case '/':
-			str[t++] = '_';
-			break;
-		case '=':
-			break;
-		default:
-			str[t++] = str[i];
-		}
-	}
-
-	str[t] = '\0';
-
-}
-
-static int jwt_sign (
-	jwt_t *jwt, char **out, unsigned int *len, const char *str
+// a token is three parts separated by dots: header.payload.signature
+// returns 0 on success, EINVAL if it has another form
+static int jwt_token_split (
+	const char *token, const size_t token_length, JwtTokenParts *parts
 ) {
 
-	switch (jwt->alg) {
-		/* HMAC */
-		case JWT_ALG_HS256:
-		case JWT_ALG_HS384:
-		case JWT_ALG_HS512:
-			return jwt_sign_sha_hmac (jwt, out, len, str);
+	const char *end = token + token_length;
 
-		/* RSA */
-		case JWT_ALG_RS256:
-		case JWT_ALG_RS384:
-		case JWT_ALG_RS512:
+	const char *first = (const char *) memchr (token, JWT_PART_SEPARATOR, token_length);
+	if (!first) return EINVAL;
 
-		/* ECC */
-		case JWT_ALG_ES256:
-		case JWT_ALG_ES384:
-		case JWT_ALG_ES512:
-			return jwt_sign_sha_pem (jwt, out, len, str);
+	const char *second = (const char *) memchr (first + 1, JWT_PART_SEPARATOR, (size_t) (end - (first + 1)));
+	if (!second) return EINVAL;
 
-		/* You wut, mate? */
-		default:
-			return EINVAL;
-	}
+	// a third separator is not part of the signature
+	if (memchr (second + 1, JWT_PART_SEPARATOR, (size_t) (end - (second + 1)))) return EINVAL;
 
-}
+	parts->header = token;
+	parts->header_length = (size_t) (first - token);
 
-static int jwt_verify (
-	jwt_t *jwt, const char *head, const char *sig
-) {
+	parts->payload = first + 1;
+	parts->payload_length = (size_t) (second - parts->payload);
 
-	switch (jwt->alg) {
-		/* HMAC */
-		case JWT_ALG_HS256:
-		case JWT_ALG_HS384:
-		case JWT_ALG_HS512:
-			return jwt_verify_sha_hmac (jwt, head, sig);
+	parts->signature = second + 1;
+	parts->signature_length = (size_t) (end - parts->signature);
 
-		/* RSA */
-		case JWT_ALG_RS256:
-		case JWT_ALG_RS384:
-		case JWT_ALG_RS512:
-
-		/* ECC */
-		case JWT_ALG_ES256:
-		case JWT_ALG_ES384:
-		case JWT_ALG_ES512:
-			return jwt_verify_sha_pem (jwt, head, sig);
-
-		/* You wut, mate? */
-		default:
-			return EINVAL;
-	}
-
-}
-
-static int jwt_parse_body (jwt_t *jwt, char *body) {
-
-	if (jwt->grants) {
-		json_decref (jwt->grants);
-		jwt->grants = NULL;
-	}
-
-	jwt->grants = jwt_b64_decode_json (body);
-	if (!jwt->grants)
-		return EINVAL;
+	parts->signed_length = (size_t) (second - token);
 
 	return 0;
 
 }
 
-static int jwt_parse_head (jwt_t *jwt, char *head) {
+// decodes a canonical base64url part, the buffer is allocated with malloc ()
+// returns 0 on success, EINVAL or ENOMEM on error
+static int jwt_part_decode (
+	const char *part, const size_t part_length,
+	unsigned char **decoded, size_t *decoded_length
+) {
 
-	if (jwt->headers) {
-		json_decref (jwt->headers);
-		jwt->headers = NULL;
+	int retval = ENOMEM;
+
+	// one more byte, the result is never empty for malloc ()
+	*decoded = (unsigned char *) jwt_malloc (base64url_decode_length (part_length) + 1);
+	if (*decoded) {
+		retval = 0;
+
+		if (base64url_decode (*decoded, decoded_length, part, part_length)) {
+			jwt_freemem (*decoded);
+			*decoded = NULL;
+			retval = EINVAL;
+		}
 	}
 
-	jwt->headers = jwt_b64_decode_json (head);
-	if (!jwt->headers)
-		return EINVAL;
-
-	return 0;
+	return retval;
 
 }
 
-static int jwt_verify_head (jwt_t *jwt, char *head) {
+// the header and the payload are json objects without repeated keys
+static json_t *jwt_part_decode_object (
+	const char *part, const size_t part_length
+) {
 
-	int ret = 0;
-	if ((ret = jwt_parse_head (jwt, head))) {
-		return ret;
-	}
+	json_t *object = NULL;
 
-	const char *val;
-
-	val = get_js_string (jwt->headers, "alg");
-	jwt->alg = jwt_str_alg (val);
-	if (jwt->alg == JWT_ALG_INVAL) {
-		ret = EINVAL;
-		goto verify_head_done;
-	}
-
-	if (jwt->alg != JWT_ALG_NONE) {
-		if (jwt->key) {
-			if (jwt->key_len <= 0)
-				ret = EINVAL;
+	unsigned char *decoded = NULL;
+	size_t decoded_length = 0;
+	if (!jwt_part_decode (part, part_length, &decoded, &decoded_length)) {
+		object = json_loadb ((const char *) decoded, decoded_length, JSON_REJECT_DUPLICATES, NULL);
+		if (object && !json_is_object (object)) {
+			json_decref (object);
+			object = NULL;
 		}
-		
-		else {
-			jwt_scrub_key (jwt);
-		}
+
+		jwt_freemem (decoded);
 	}
-	
+
+	return object;
+
+}
+
+static int jwt_parse_headers (jwt_t *jwt, const JwtTokenParts *parts) {
+
+	json_decref (jwt->headers);
+
+	jwt->headers = jwt_part_decode_object (parts->header, parts->header_length);
+
+	return jwt->headers ? 0 : EINVAL;
+
+}
+
+static int jwt_parse_grants (jwt_t *jwt, const JwtTokenParts *parts) {
+
+	json_decref (jwt->grants);
+
+	jwt->grants = jwt_part_decode_object (parts->payload, parts->payload_length);
+
+	return jwt->grants ? 0 : EINVAL;
+
+}
+
+// the algorithm that the header names, with the exact names of RFC 7518
+static jwt_alg_t jwt_headers_alg (const jwt_t *jwt) {
+
+	return jwt_str_alg (get_js_string (jwt->headers, "alg"));
+
+}
+
+// checks the signature of the parts with the key
+static int jwt_verify_signature (
+	const JwtKey *key, const JwtTokenParts *parts
+) {
+
+	unsigned char *signature = NULL;
+	size_t signature_length = 0;
+
+	int retval = parts->signature_length ?
+		jwt_part_decode (parts->signature, parts->signature_length, &signature, &signature_length) :
+		EINVAL;
+
+	if (!retval) {
+		retval = jwt_key_verify (
+			key,
+			parts->header, parts->signed_length,
+			signature, signature_length
+		);
+
+		jwt_freemem (signature);
+	}
+
+	return retval;
+
+}
+
+// an unsigned token can not have a key nor a signature
+static int jwt_decode_unsigned (
+	const JwtTokenParts *parts, const size_t key_len
+) {
+
+	return (key_len || parts->signature_length) ? EINVAL : 0;
+
+}
+
+// verifies a token with the raw key of the first API,
+// a key is created for the algorithm that the header names
+static int jwt_decode_raw_key (
+	const jwt_alg_t alg, const JwtTokenParts *parts,
+	const unsigned char *key, const size_t key_len
+) {
+
+	int retval = EINVAL;
+
+	// a token that says HS256 with a public PEM as the key would be verified
+	// with the PEM as its secret, and anybody can sign with a public key
+	JwtKey *verification = jwt_key_create (alg, JWT_KEY_TYPE_PUBLIC, key, key_len, NULL);
+	if (verification && (jwt_key_check_strength (verification) != JWT_KEY_ERROR_SECRET)) {
+		retval = jwt_verify_signature (verification, parts);
+	}
+
+	jwt_key_delete (verification);
+
+	return retval;
+
+}
+
+static int jwt_decode_parts (
+	jwt_t *decoded, const JwtTokenParts *parts,
+	const unsigned char *key, const size_t key_len
+) {
+
+	int retval = jwt_parse_headers (decoded, parts);
+	if (retval) return retval;
+
+	jwt_alg_t alg = jwt_headers_alg (decoded);
+	if (alg == JWT_ALG_INVAL) {
+		retval = EINVAL;
+	}
+
+	else if (alg == JWT_ALG_NONE) {
+		retval = jwt_decode_unsigned (parts, key_len);
+	}
+
+	// without a key, the token is decoded but not verified, as an unsigned one
+	else if (!key_len) {
+		alg = JWT_ALG_NONE;
+	}
+
 	else {
-		/* If alg is NONE, there should not be a key */
-		if (jwt->key){
-			ret = EINVAL;
-		}
+		retval = jwt_decode_raw_key (alg, parts, key, key_len);
 	}
 
-verify_head_done:
-	return ret;
+	if (!retval) retval = jwt_parse_grants (decoded, parts);
+
+	decoded->alg = alg;
+
+	return retval;
 
 }
 
 int jwt_decode (
 	jwt_t **jwt, const char *token,
-	const unsigned char *key, int key_len
+	const unsigned char *key, size_t key_len
 ) {
 
-	char *head = jwt_strdup (token);
-	jwt_t *new_thing = NULL;
-	char *body, *sig;
-	int ret = EINVAL;
-
-	if (!jwt)
-		return EINVAL;
+	if (!jwt) return EINVAL;
 
 	*jwt = NULL;
 
-	if (!head)
-		return ENOMEM;
+	if (!token || (key_len && !key)) return EINVAL;
 
-	/* Find the components. */
-	for (body = head; body[0] != '.'; body++) {
-		if (body[0] == '\0')
-			goto decode_done;
+	JwtTokenParts parts = { NULL, 0, NULL, 0, NULL, 0, 0 };
+	int retval = jwt_token_split (token, strlen (token), &parts);
+	if (retval) return retval;
+
+	jwt_t *decoded = NULL;
+	retval = jwt_new (&decoded);
+	if (!retval) {
+		retval = jwt_decode_parts (decoded, &parts, key, key_len);
+
+		if (retval) jwt_free (decoded);
+		else *jwt = decoded;
 	}
 
-	body[0] = '\0';
-	body++;
-
-	for (sig = body; sig[0] != '.'; sig++) {
-		if (sig[0] == '\0')
-			goto decode_done;
-	}
-
-	sig[0] = '\0';
-	sig++;
-
-	/* Now that we have everything split up, let's check out the
-	 * header. */
-	ret = jwt_new (&new_thing);
-	if (ret) {
-		goto decode_done;
-	}
-
-	/* Copy the key over for verify_head. */
-	if (key_len) {
-		new_thing->key = (unsigned char *) jwt_malloc (key_len);
-		if (new_thing->key == NULL)
-			goto decode_done;
-		(void) memcpy (new_thing->key, key, key_len);
-		new_thing->key_len = key_len;
-	}
-
-	ret = jwt_verify_head (new_thing, head);
-	if (ret)
-		goto decode_done;
-
-	ret = jwt_parse_body (new_thing, body);
-	if (ret)
-		goto decode_done;
-
-	/* Check the signature, if needed. */
-	if (new_thing->alg != JWT_ALG_NONE) {
-		/* Re-add this since it's part of the verified data. */
-		body[-1] = '.';
-		ret = jwt_verify (new_thing, head, sig);
-	} else {
-		ret = 0;
-	}
-
-decode_done:
-	if (ret)
-		jwt_free (new_thing);
-	else
-		*jwt = new_thing;
-
-	jwt_freemem (head);
-
-	return ret;
+	return retval;
 
 }
+
+// the header must name the algorithm of the key,
+// so a token can never choose how it is verified
+static int jwt_decode_with_key_parts (
+	jwt_t *decoded, const JwtTokenParts *parts, const JwtKey *key
+) {
+
+	int retval = jwt_parse_headers (decoded, parts);
+	if (retval) return retval;
+
+	if (jwt_headers_alg (decoded) != key->alg) return EINVAL;
+
+	retval = jwt_verify_signature (key, parts);
+	if (retval) return retval;
+
+	retval = jwt_parse_grants (decoded, parts);
+
+	decoded->alg = key->alg;
+
+	return retval;
+
+}
+
+int jwt_decode_with_key (
+	jwt_t **jwt, const char *token, const size_t token_length,
+	const JwtKey *key
+) {
+
+	if (!jwt) return EINVAL;
+
+	*jwt = NULL;
+
+	if (!token || !key || (key->alg == JWT_ALG_NONE)) return EINVAL;
+
+	JwtTokenParts parts = { NULL, 0, NULL, 0, NULL, 0, 0 };
+	int retval = jwt_token_split (token, token_length, &parts);
+	if (retval) return retval;
+
+	jwt_t *decoded = NULL;
+	retval = jwt_new (&decoded);
+	if (!retval) {
+		retval = jwt_decode_with_key_parts (decoded, &parts, key);
+
+		if (retval) jwt_free (decoded);
+		else *jwt = decoded;
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
 
 const char *jwt_get_grant (jwt_t *jwt, const char *grant) {
 
@@ -659,7 +652,8 @@ int jwt_add_grant (
 	if (!jwt || !grant || !strlen (grant) || !val)
 		return EINVAL;
 
-	if (get_js_string (jwt->grants, grant) != NULL)
+	// a grant of any type is never replaced
+	if (json_object_get (jwt->grants, grant))
 		return EEXIST;
 
 	if (json_object_set_new (jwt->grants, grant, json_string (val)))
@@ -676,7 +670,7 @@ int jwt_add_grant_int (
 	if (!jwt || !grant || !strlen (grant))
 		return EINVAL;
 
-	if (get_js_int (jwt->grants, grant) != -1)
+	if (json_object_get (jwt->grants, grant))
 		return EEXIST;
 
 	if (json_object_set_new (
@@ -695,7 +689,7 @@ int jwt_add_grant_bool (
 	if (!jwt || !grant || !strlen (grant))
 		return EINVAL;
 
-	if (get_js_int (jwt->grants, grant) != -1)
+	if (json_object_get (jwt->grants, grant))
 		return EEXIST;
 
 	if (json_object_set_new (jwt->grants, grant, json_boolean (val)))
@@ -817,7 +811,8 @@ int jwt_add_header (
 	if (!jwt || !header || !strlen (header) || !val)
 		return EINVAL;
 
-	if (get_js_string (jwt->headers, header) != NULL)
+	// a header of any type is never replaced
+	if (json_object_get (jwt->headers, header))
 		return EEXIST;
 
 	if (json_object_set_new (jwt->headers, header, json_string (val)))
@@ -834,7 +829,7 @@ int jwt_add_header_int (
 	if (!jwt || !header || !strlen (header))
 		return EINVAL;
 
-	if (get_js_int (jwt->headers, header) != -1)
+	if (json_object_get (jwt->headers, header))
 		return EEXIST;
 
 	if (json_object_set_new (
@@ -853,7 +848,7 @@ int jwt_add_header_bool (
 	if (!jwt || !header || !strlen (header))
 		return EINVAL;
 
-	if (get_js_int (jwt->headers, header) != -1)
+	if (json_object_get (jwt->headers, header))
 		return EEXIST;
 
 	if (json_object_set_new (jwt->headers, header, json_boolean (val)))
@@ -919,37 +914,35 @@ static int __append_str (char **buf, const char *str) {
 
 }
 
-#define APPEND_STR(__buf, __str) do {		\
-	int ret = __append_str (__buf, __str);	\
-	if (ret)								\
-		return ret;							\
-} while (0)
-
 static int write_js (
 	const json_t *js, char **buf, int pretty
 ) {
 
 	/* Sort keys for repeatability */
-	size_t flags = JSON_SORT_KEYS;
-	char *serial;
+	const size_t flags = JSON_SORT_KEYS | (pretty ? JSON_INDENT (JWT_DUMP_INDENT) : JSON_COMPACT);
 
-	if (pretty) {
-		APPEND_STR (buf, "\n");
-		flags |= JSON_INDENT (4);
-	} else {
-		flags |= JSON_COMPACT;
-	}
+	char *serial = json_dumps (js, flags);
+	if (!serial)
+		return ENOMEM;
 
-	serial = json_dumps (js, flags);
+	int ret = pretty ? __append_str (buf, "\n") : 0;
 
-	APPEND_STR (buf, serial);
+	if (!ret)
+		ret = __append_str (buf, serial);
+
+	if (!ret && pretty)
+		ret = __append_str (buf, "\n");
 
 	jwt_freemem (serial);
 
-	if (pretty)
-		APPEND_STR (buf, "\n");
+	return ret;
 
-	return 0;
+}
+
+// the name of the algorithm in the header of a token
+static const char *jwt_alg_header_name (const jwt_alg_t alg) {
+
+	return (alg == JWT_ALG_NONE) ? JWT_ALG_NONE_HEADER_NAME : jwt_alg_str (alg);
 
 }
 
@@ -975,7 +968,7 @@ static int jwt_write_head (
 	if ((ret = jwt_del_headers (jwt, "alg")))
 		return ret;
 
-	if ((ret = jwt_add_header (jwt, "alg", jwt_alg_str (jwt->alg))))
+	if ((ret = jwt_add_header (jwt, "alg", jwt_alg_header_name (jwt->alg))))
 		return ret;
 
 	return write_js (jwt->headers, buf, pretty);
@@ -1041,101 +1034,147 @@ char *jwt_dump_str (jwt_t *jwt, int pretty) {
 
 }
 
-static int jwt_encode (jwt_t *jwt, char **out) {
+#pragma region encode
 
-	char *buf = NULL, *head, *body, *sig;
-	int ret, head_len, body_len;
-	unsigned int sig_len;
+// adds the separator and the signature in base64url to the signed parts
+static int jwt_encode_signature (
+	char **token, size_t signed_length,
+	const unsigned char *signature, const size_t signature_length
+) {
 
-	/* First the header. */
-	ret = jwt_write_head (jwt, &buf, 0);
-	if (ret) {
-		if (buf)
-			jwt_freemem (buf);
-		return ret;
+	int ret = ENOMEM;
+
+	char *signed_token = (char *) jwt_realloc (
+		*token, signed_length + 1 + base64url_encode_length (signature_length) + 1
+	);
+
+	if (signed_token) {
+		signed_token[signed_length] = JWT_PART_SEPARATOR;
+
+		(void) base64url_encode (
+			signed_token + signed_length + 1, signature, signature_length
+		);
+
+		*token = signed_token;
+		ret = 0;
 	}
-
-	head = (char *) alloca (strlen (buf) * 2);
-	if (head == NULL) {
-		jwt_freemem (buf);
-		return ENOMEM;
-	}
-	base64_encode (head, buf, (int) strlen (buf));
-	head_len = (int) strlen (head);
-
-	jwt_freemem (buf);
-	buf = NULL;
-
-	/* Now the body. */
-	ret = jwt_write_body (jwt, &buf, 0);
-	if (ret) {
-		if (buf)
-			jwt_freemem (buf);
-		return ret;
-	}
-
-	body = (char *) alloca (strlen (buf) * 2);
-	if (body == NULL) {
-		jwt_freemem (buf);
-		return ENOMEM;
-	}
-
-	(void) base64_encode (body, buf, (int) strlen (buf));
-	body_len = (int) strlen (body);
-
-	jwt_freemem (buf);
-	buf = NULL;
-
-	jwt_base64uri_encode (head);
-	jwt_base64uri_encode (body);
-
-	/* Allocate enough to reuse as b64 buffer. */
-	buf = (char *) jwt_malloc (head_len + body_len + 2);
-	if (buf == NULL)
-		return ENOMEM;
-
-	(void) strcpy (buf, head);
-	(void) strcat (buf, ".");
-	(void) strcat (buf, body);
-
-	ret = __append_str (out, buf);
-	if (ret == 0)
-		ret = __append_str (out, ".");
-	if (ret) {
-		if (buf)
-			jwt_freemem (buf);
-		return ret;
-	}
-
-	if (jwt->alg == JWT_ALG_NONE) {
-		jwt_freemem (buf);
-		return 0;
-	}
-
-	/* Now the signature. */
-	ret = jwt_sign (jwt, &sig, &sig_len, buf);
-	jwt_freemem (buf);
-
-	if (ret)
-		return ret;
-
-	buf = (char *) jwt_malloc (sig_len * 2);
-	if (buf == NULL) {
-		jwt_freemem (sig);
-		return ENOMEM;
-	}
-
-	(void) base64_encode (buf, sig, sig_len);
-
-	jwt_freemem (sig);
-
-	jwt_base64uri_encode (buf);
-	ret = __append_str (out, buf);
-	jwt_freemem (buf);
 
 	return ret;
 
 }
+
+// the header and the payload in base64url, signed with the key,
+// or with an empty signature if there is no key
+static int jwt_encode_serialized (
+	const JwtKey *key, const char *header, const char *payload, char **out
+) {
+
+	const size_t header_length = strlen (header);
+	const size_t payload_length = strlen (payload);
+
+	const size_t signed_length = base64url_encode_length (header_length)
+		+ 1 + base64url_encode_length (payload_length);
+
+	// the separator of the signature and the null byte
+	char *token = (char *) jwt_malloc (signed_length + 2);
+	if (!token)
+		return ENOMEM;
+
+	size_t position = base64url_encode (token, (const unsigned char *) header, header_length);
+	token[position++] = JWT_PART_SEPARATOR;
+	(void) base64url_encode (token + position, (const unsigned char *) payload, payload_length);
+
+	int ret = 0;
+	if (key) {
+		unsigned char *signature = NULL;
+		size_t signature_length = 0;
+
+		ret = jwt_key_sign (key, token, signed_length, &signature, &signature_length);
+		if (!ret)
+			ret = jwt_encode_signature (&token, signed_length, signature, signature_length);
+
+		jwt_freemem (signature);
+	}
+
+	else {
+		token[signed_length] = JWT_PART_SEPARATOR;
+		token[signed_length + 1] = '\0';
+	}
+
+	if (ret) jwt_freemem (token);
+	else *out = token;
+
+	return ret;
+
+}
+
+static int jwt_encode_parts (
+	jwt_t *jwt, const JwtKey *key, char **out
+) {
+
+	char *header = NULL;
+	char *payload = NULL;
+
+	int ret = jwt_write_head (jwt, &header, 0);
+
+	if (!ret)
+		ret = jwt_write_body (jwt, &payload, 0);
+
+	if (!ret)
+		ret = jwt_encode_serialized (key, header, payload, out);
+
+	jwt_freemem (header);
+	jwt_freemem (payload);
+
+	return ret;
+
+}
+
+// the token of the first API: the key is created from the raw key of the jwt
+static int jwt_encode (jwt_t *jwt, char **out) {
+
+	if (jwt->alg == JWT_ALG_NONE)
+		return jwt_encode_parts (jwt, NULL, out);
+
+	JwtKey *signing = jwt_key_create (
+		jwt->alg, JWT_KEY_TYPE_PRIVATE, jwt->key, jwt->key_len, NULL
+	);
+
+	if (!signing)
+		return EINVAL;
+
+	int ret = jwt_encode_parts (jwt, signing, out);
+
+	jwt_key_delete (signing);
+
+	return ret;
+
+}
+
+char *jwt_encode_with_key (jwt_t *jwt, const JwtKey *key) {
+
+	char *token = NULL;
+
+	if (!jwt || !key || (key->alg == JWT_ALG_NONE)) {
+		errno = EINVAL;
+		return token;
+	}
+
+	// the raw key of the first API is not used
+	jwt_scrub_key (jwt);
+	jwt->alg = key->alg;
+
+	errno = jwt_encode_parts (jwt, key, &token);
+	if (errno) {
+		jwt_freemem (token);
+		token = NULL;
+	}
+
+	return token;
+
+}
+
+#pragma endregion
 
 int jwt_encode_fp (jwt_t *jwt, FILE *fp) {
 
