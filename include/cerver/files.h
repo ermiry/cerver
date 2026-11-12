@@ -220,8 +220,9 @@ CERVER_EXPORT FILE *file_open_as_file (
 	const char *modes, struct stat *filestatus
 );
 
-// opens and reads a file into a buffer
-// sets file size to the amount of bytes read
+// opens and reads a file into a buffer, terminated with a NUL,
+// allocated with calloc () and released with free ()
+// sets file size (if not NULL) to the amount of bytes read
 CERVER_EXPORT char *file_read (
 	const char *filename, size_t *file_size
 );
