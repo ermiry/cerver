@@ -49,6 +49,7 @@ static CerverEventData *cerver_event_data_new (void) {
 
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
+		event_data->owns_action_args = false;
 	}
 
 	return event_data;
@@ -59,6 +60,10 @@ void cerver_event_data_delete (CerverEventData *event_data) {
 
 	if (event_data) {
 		lobby_release (event_data->lobby);
+
+		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
+			event_data->delete_action_args (event_data->action_args);
+		}
 
 		free (event_data);
 	}
@@ -218,25 +223,27 @@ void cerver_event_trigger_lobby (
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				CerverEventData *event_data = cerver_event_data_create (
+					cerver, client, connection, lobby, event
+				);
+
+				// the event is dropped while its action can still run in its thread,
+				// so the arguments go with the data of this trigger
+				if (event_data && event->drop_after_trigger) {
+					event_data->owns_action_args = true;
+					event->work_args = NULL;
+				}
+
 				// the thread is counted, so the cerver teardown waits for it
 				if (event->create_thread) {
 					(void) thread_group_create (
 						(ThreadGroup *) &cerver->event_threads,
-						event->work,
-						cerver_event_data_create (
-							cerver,
-							client, connection,
-							lobby, event
-						)
+						event->work, event_data
 					);
 				}
 
 				else {
-					(void) event->work (cerver_event_data_create (
-						cerver,
-						client, connection,
-						lobby, event
-					));
+					(void) event->work (event_data);
 				}
 
 				if (event->drop_after_trigger) {

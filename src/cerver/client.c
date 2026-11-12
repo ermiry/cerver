@@ -1255,6 +1255,7 @@ static ClientEventData *client_event_data_new (void) {
 
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
+		event_data->owns_action_args = false;
 	}
 
 	return event_data;
@@ -1269,7 +1270,25 @@ void client_event_data_delete (ClientEventData *event_data) {
 			else free (event_data->response_data);
 		}
 
+		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
+			event_data->delete_action_args (event_data->action_args);
+		}
+
 		free (event_data);
+	}
+
+}
+
+// the event is dropped while its action can still run in its thread,
+// so the arguments and the response that the event releases go with the data of this trigger
+static void client_event_data_take (ClientEventData *event_data, ClientEvent *event) {
+
+	event_data->owns_action_args = true;
+	event->work_args = NULL;
+
+	if (!event_data->owns_response_data && event->response_data && event->delete_response_data) {
+		event_data->owns_response_data = true;
+		event->response_data = NULL;
 	}
 
 }
@@ -1425,23 +1444,21 @@ void client_event_trigger (
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				ClientEventData *event_data = client_event_data_create (client, connection, event);
+				if (event_data && event->drop_after_trigger) {
+					client_event_data_take (event_data, event);
+				}
+
 				// the thread is counted, so client_teardown () waits for it
 				if (event->create_thread) {
 					(void) thread_group_create (
 						(ThreadGroup *) &client->event_threads,
-						event->work,
-						client_event_data_create (
-							client, connection,
-							event
-						)
+						event->work, event_data
 					);
 				}
 
 				else {
-					(void) event->work (client_event_data_create (
-						client, connection,
-						event
-					));
+					(void) event->work (event_data);
 				}
 
 				if (event->drop_after_trigger) {
@@ -1479,6 +1496,10 @@ void client_event_trigger_with_response (
 		event_data->response_data = response;
 		event_data->delete_response_data = delete_response;
 		event_data->owns_response_data = true;
+
+		if (event->drop_after_trigger) {
+			client_event_data_take (event_data, event);
+		}
 
 		if (event->create_thread) {
 			(void) thread_group_create (
@@ -1536,6 +1557,8 @@ static ClientErrorData *client_error_data_new (void) {
 		error_data->connection = NULL;
 
 		error_data->action_args = NULL;
+		error_data->delete_action_args = NULL;
+		error_data->owns_action_args = false;
 
 		error_data->error_message = NULL;
 	}
@@ -1548,6 +1571,10 @@ void client_error_data_delete (ClientErrorData *error_data) {
 
 	if (error_data) {
 		str_delete (error_data->error_message);
+
+		if (error_data->owns_action_args && error_data->action_args && error_data->delete_action_args) {
+			error_data->delete_action_args (error_data->action_args);
+		}
 
 		free (error_data);
 	}
@@ -1681,25 +1708,28 @@ u8 client_error_trigger (
 		if (error) {
 			// trigger the action
 			if (error->work) {
+				ClientErrorData *error_data = client_error_data_create (
+					client, connection, error->work_args, error_message
+				);
+
+				// the error is dropped while its action can still run in its thread,
+				// so the arguments go with the data of this trigger
+				if (error_data && error->drop_after_trigger) {
+					error_data->delete_action_args = error->delete_action_args;
+					error_data->owns_action_args = true;
+					error->work_args = NULL;
+				}
+
 				// the thread is counted, so client_teardown () waits for it
 				if (error->create_thread) {
 					retval = thread_group_create (
 						(ThreadGroup *) &client->event_threads,
-						error->work,
-						client_error_data_create (
-							client, connection,
-							error->work_args,
-							error_message
-						)
+						error->work, error_data
 					);
 				}
 
 				else {
-					(void) error->work (client_error_data_create (
-						client, connection,
-						error->work_args,
-						error_message
-					));
+					(void) error->work (error_data);
 
 					retval = 0;
 				}
