@@ -313,6 +313,13 @@ ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
+TESTZLIB	:=
+
+ifeq ($(ZLIB), 1)
+	TESTFLAGS += -D CERVER_ZLIB
+	TESTZLIB += $(ZLIBLIB)
+endif
+
 TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(SANITIZERFLAGS)
 
 TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
@@ -388,6 +395,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/udp.o -o ./$(TESTTARGET)/udp $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/websockets/*.o -o ./$(TESTTARGET)/websockets $(TESTLIBS) $(TESTZLIB)
 
 INTCERVERIN		:= ./$(TESTBUILD)/cerver
 INTCERVEROUT	:= ./$(TESTTARGET)/cerver
