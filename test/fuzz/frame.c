@@ -1,0 +1,138 @@
+#include <stdint.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <cerver/types/types.h>
+
+#include <cerver/http/websockets/deflate.h>
+#include <cerver/http/websockets/frame.h>
+#include <cerver/http/websockets/message.h>
+
+// raw bytes to the receiver of WebSocket messages (the frames, the messages and permessage-deflate):
+// the first byte selects the size of the pieces (its low bits), the role,
+// the compression and the delivery of the messages in pieces
+
+#define FUZZ_FRAME_HEADER_SIZE			1
+
+#define FUZZ_FRAME_PIECE_BITS			0x1F
+#define FUZZ_FRAME_CLIENT_BIT			0x20
+#define FUZZ_FRAME_DEFLATE_BIT			0x40
+#define FUZZ_FRAME_STREAM_BIT			0x80
+
+// small limits, so the fuzzer reaches them
+#define FUZZ_FRAME_MAX_MESSAGE			(1 << 14)
+
+// every byte that the receiver gives is read, so the sanitizers catch a read past a payload
+static int fuzz_frame_touch (const u8 *payload, const size_t size) {
+
+	volatile u8 sum = 0;
+	for (size_t i = 0; i < size; i++) sum = (u8) (sum + payload[i]);
+
+	return 0;
+
+}
+
+static int fuzz_frame_on_message (void *data, HttpWebSocketOpcode type, const u8 *payload, size_t size) {
+
+	(void) data;
+	(void) type;
+
+	return fuzz_frame_touch (payload, size);
+
+}
+
+static int fuzz_frame_on_fragment (
+	void *data, HttpWebSocketOpcode type,
+	const u8 *payload, size_t size, bool first, bool last
+) {
+
+	(void) data;
+	(void) type;
+	(void) first;
+	(void) last;
+
+	return fuzz_frame_touch (payload, size);
+
+}
+
+static int fuzz_frame_on_control (void *data, const u8 *payload, size_t size) {
+
+	(void) data;
+
+	return fuzz_frame_touch (payload, size);
+
+}
+
+static int fuzz_frame_on_close (void *data, u16 code, const char *reason, size_t length) {
+
+	(void) data;
+	(void) code;
+
+	return fuzz_frame_touch ((const u8 *) reason, length);
+
+}
+
+static const HttpWebSocketReceiverHandlers fuzz_frame_handlers = {
+	fuzz_frame_on_message, NULL, fuzz_frame_on_control, fuzz_frame_on_control, fuzz_frame_on_close
+};
+
+static const HttpWebSocketReceiverHandlers fuzz_frame_stream_handlers = {
+	fuzz_frame_on_message, fuzz_frame_on_fragment, fuzz_frame_on_control, fuzz_frame_on_control, fuzz_frame_on_close
+};
+
+static HttpWebSocketDeflate *fuzz_frame_deflate (const HttpWebSocketRole role) {
+
+	HttpWebSocketDeflateOptions options;
+	http_web_socket_deflate_options_init (&options);
+	options.enabled = true;
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	return http_web_socket_deflate_create (role, &parameters, &options);
+
+}
+
+int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
+
+	if (size < FUZZ_FRAME_HEADER_SIZE) return 0;
+
+	const u8 selector = data[0];
+	const size_t piece = (size_t) (selector & FUZZ_FRAME_PIECE_BITS) + 1;
+	const HttpWebSocketRole role = (selector & FUZZ_FRAME_CLIENT_BIT) ?
+		HTTP_WEB_SOCKET_ROLE_CLIENT : HTTP_WEB_SOCKET_ROLE_SERVER;
+
+	HttpWebSocketDeflate *deflate = (selector & FUZZ_FRAME_DEFLATE_BIT) ? fuzz_frame_deflate (role) : NULL;
+
+	HttpWebSocketReceiver receiver;
+	http_web_socket_receiver_init (
+		&receiver, role, FUZZ_FRAME_MAX_MESSAGE, FUZZ_FRAME_MAX_MESSAGE, deflate,
+		(selector & FUZZ_FRAME_STREAM_BIT) ? &fuzz_frame_stream_handlers : &fuzz_frame_handlers, NULL
+	);
+
+	// each piece is copied to a buffer of its exact size, the receiver unmasks it in place
+	size_t position = FUZZ_FRAME_HEADER_SIZE;
+	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_CONTINUE;
+	while ((position < size) && (result == HTTP_WEB_SOCKET_RECEIVE_CONTINUE)) {
+		const size_t length = ((size - position) < piece) ? (size - position) : piece;
+
+		u8 *buffer = (u8 *) malloc (length);
+		if (!buffer) break;
+		(void) memcpy (buffer, data + position, length);
+
+		size_t parsed = 0;
+		result = http_web_socket_receiver_execute (&receiver, buffer, length, &parsed);
+		free (buffer);
+
+		position += length;
+	}
+
+	http_web_socket_receiver_end (&receiver);
+	http_web_socket_deflate_delete (deflate);
+
+	return 0;
+
+}
