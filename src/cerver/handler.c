@@ -84,6 +84,18 @@ static void handler_data_delete (HandlerData *handler_data) {
 
 }
 
+// the data is released once, by the thread of the handler when it ends,
+// or with the handler when it never had a thread, like a direct handler
+static void handler_data_release (Handler *handler) {
+
+	if (handler->data && handler->data_delete) {
+		handler->data_delete (handler->data);
+	}
+
+	handler->data = NULL;
+
+}
+
 static Handler *handler_new (void) {
 
 	Handler *handler = (Handler *) malloc (sizeof (Handler));
@@ -121,9 +133,14 @@ void handler_delete (void *handler_ptr) {
 	if (handler_ptr) {
 		Handler *handler = (Handler *) handler_ptr;
 
-		// a handler that was never stopped does not keep its thread resources
+		// a handler that was never stopped does not keep its thread resources,
+		// and its thread still uses its data
 		if (handler->joinable) {
 			(void) pthread_detach (handler->thread_id);
+		}
+
+		else {
+			handler_data_release (handler);
 		}
 
 		job_queue_delete (handler->job_queue);
@@ -500,8 +517,7 @@ static void *handler_do (void *handler_ptr) {
 			default: break;
 		}
 
-		if (handler->data_delete)
-			handler->data_delete (handler->data);
+		handler_data_release (handler);
 
 		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {

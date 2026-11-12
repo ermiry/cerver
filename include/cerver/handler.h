@@ -85,7 +85,8 @@ struct _Handler {
 	void *(*data_create) (void *args);
 	void *data_create_args;
 
-	// called at the end of the handler to delete the handler's data
+	// deletes the handler's data once, when its thread ends,
+	// or when the handler is deleted if it never had a thread
 	// if no method is set, it won't be deleted
 	Action data_delete;
 
@@ -97,7 +98,7 @@ struct _Handler {
 	// this option is set to false as default
 	// pros - inmediate handle with no delays
 	//      - handler method can be called from multiple threads
-	// neutral - data create and delete will be executed every time
+	// neutral - the handler method gets the Packet, without the handler's data
 	// cons - calling thread will be busy until handler method is done
 	bool direct_handle;
 
@@ -132,20 +133,23 @@ CERVER_EXPORT Handler *handler_create_with_id (
 );
 
 // sets the handler's data directly
-// this data will be passed to the handler method
-// using a HandlerData structure
+// a handler with a queue passes it to the handler method
+// in a HandlerData structure, a direct handler only gets the Packet
 CERVER_EXPORT void handler_set_data (
 	Handler *handler, void *data
 );
 
-// set a method to create the handler's data before it starts handling any packet
-// this data will be passed to the handler method using a HandlerData structure
+// set a method to create the handler's data in its thread, before it handles any packet,
+// it is passed to the handler method in a HandlerData structure
+// a direct handler does not have a thread, so it is never called
 CERVER_EXPORT void handler_set_data_create (
 	Handler *handler,
 	void *(*data_create) (void *args), void *data_create_args
 );
 
-// set the method to be used to delete the handler's data
+// set the method to be used to delete the handler's data,
+// it is called once, when the thread of the handler ends,
+// or when the handler is deleted if it never had a thread
 CERVER_EXPORT void handler_set_data_delete (
 	Handler *handler, Action data_delete
 );
@@ -154,7 +158,7 @@ CERVER_EXPORT void handler_set_data_delete (
 // the packet directly in the same thread
 // pros     - inmediate handle with no delays
 //          - handler method can be called from multiple threads
-// neutral  - data create and delete will be executed every time
+// neutral  - the handler method gets the Packet, without the handler's data
 // cons     - calling thread will be busy until handler method is done
 CERVER_EXPORT void handler_set_direct_handle (
 	Handler *handler, bool direct_handle
