@@ -1737,7 +1737,7 @@ void cerver_receive_handle_failed (CerverReceive *cr) {
 				} break;
 
 				case RECEIVE_TYPE_ON_HOLD: {
-					on_hold_connection_drop (cr->cerver, cr->connection);
+					on_hold_connection_disconnected (cr->cerver, cr->connection);
 				} break;
 
 				case RECEIVE_TYPE_ADMIN: {

@@ -136,8 +136,15 @@ CERVER_PRIVATE u8 on_hold_connection (
 	struct _Cerver *cerver, struct _Connection *connection
 );
 
-// closes the on hold connection and removes it from the cerver
+// closes the on hold connection and removes it from the cerver,
+// it triggers CERVER_EVENT_ON_HOLD_DROPPED
 CERVER_PRIVATE void on_hold_connection_drop (
+	const struct _Cerver *cerver, struct _Connection *connection
+);
+
+// closes the on hold connection that its client closed or lost,
+// it triggers CERVER_EVENT_ON_HOLD_DISCONNECTED
+CERVER_PRIVATE void on_hold_connection_disconnected (
 	const struct _Cerver *cerver, struct _Connection *connection
 );
 

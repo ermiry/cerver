@@ -1233,9 +1233,10 @@ static u8 on_hold_connection_remove (
 
 }
 
-// closes the on hold connection and removes it from the cerver
-void on_hold_connection_drop (
-	const Cerver *cerver, Connection *connection
+// closes the on hold connection, removes it from the cerver and triggers the event
+static void on_hold_connection_close (
+	const Cerver *cerver, Connection *connection,
+	const CerverEventType event_type
 ) {
 
 	if (cerver && connection) {
@@ -1248,12 +1249,26 @@ void on_hold_connection_drop (
 		// we can now safely delete the connection
 		connection_delete (connection);
 
-		cerver_event_trigger (
-			CERVER_EVENT_ON_HOLD_DROPPED,
-			cerver,
-			NULL, NULL
-		);
+		cerver_event_trigger (event_type, cerver, NULL, NULL);
 	}
+
+}
+
+// closes the on hold connection and removes it from the cerver
+void on_hold_connection_drop (
+	const Cerver *cerver, Connection *connection
+) {
+
+	on_hold_connection_close (cerver, connection, CERVER_EVENT_ON_HOLD_DROPPED);
+
+}
+
+// closes the on hold connection that its client closed or lost
+void on_hold_connection_disconnected (
+	const Cerver *cerver, Connection *connection
+) {
+
+	on_hold_connection_close (cerver, connection, CERVER_EVENT_ON_HOLD_DISCONNECTED);
 
 }
 
