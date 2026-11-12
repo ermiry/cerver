@@ -35,6 +35,7 @@ PAIRS=(
 )
 
 EXAMPLE_PAIRS=(
+	examples/start
 	examples/welcome
 	examples/test
 	examples/handlers

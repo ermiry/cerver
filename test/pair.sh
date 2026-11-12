@@ -18,6 +18,7 @@ source "$ROOT/test/process.sh"
 SERVERS=()
 PORTS=()
 RESTARTS=()
+CLIENT_ARGUMENTS=()
 
 balancer_servers () {
 	SERVERS=(
@@ -61,6 +62,11 @@ case "$PAIR" in
 		;;
 	examples/handlers)
 		example_servers "handlers -t q"
+		;;
+	examples/start)
+		example_servers "start server"
+		CLIENT="examples/bin/start"
+		CLIENT_ARGUMENTS=(client)
 		;;
 	examples/*)
 		example_servers "${PAIR#examples/}"
@@ -140,7 +146,7 @@ for index in "${!SERVERS[@]}"; do
 	fi
 done
 
-"$ROOT/$CLIENT" > "$CLIENT_LOG" 2>&1 &
+"$ROOT/$CLIENT" "${CLIENT_ARGUMENTS[@]}" > "$CLIENT_LOG" 2>&1 &
 CLIENT_PID=$!
 
 CLIENT_HUNG=0
