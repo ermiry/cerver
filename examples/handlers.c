@@ -343,14 +343,12 @@ static void start (HandlersType type) {
 				my_cerver->info->name
 			);
 
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
-
-        cerver_delete (my_cerver);
+		cerver_log_error ("Failed to create cerver!");
 	}
 
 }

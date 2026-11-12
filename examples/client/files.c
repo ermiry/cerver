@@ -293,14 +293,12 @@ static void start (void) {
 				client_cerver->info->name
 			);
 
-			cerver_delete (client_cerver);
+			(void) cerver_teardown (client_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (client_cerver);
 	}
 
 }
