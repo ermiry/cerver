@@ -71,6 +71,24 @@ jobs:
           SANITIZER: address,undefined
         run: bash test/integration.sh
 
+  autobahn:
+    name: Cerver WebSocket conformance (autobahn-testsuite)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Autobahn
+        run: bash test/autobahn/run.sh
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autobahn-reports
+          path: ./autobahn-reports/
+          retention-days: 7
+
   fuzz:
     name: Cerver fuzzing
     runs-on: ubuntu-latest
