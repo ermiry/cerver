@@ -538,6 +538,10 @@ typedef struct ClientEventData {
 	void *action_args;                  // the action arguments
 	Action delete_action_args;
 
+	// the event was dropped after this trigger, so client_event_data_delete ()
+	// releases the action arguments with delete_action_args ()
+	bool owns_action_args;
+
 } ClientEventData;
 
 CERVER_PUBLIC void client_event_data_delete (
@@ -626,6 +630,11 @@ typedef struct ClientErrorData {
 	const struct _Connection *connection;
 
 	void *action_args;                  // the action arguments set by the user
+
+	// the error was dropped after this trigger, so client_error_data_delete ()
+	// releases the action arguments with delete_action_args ()
+	Action delete_action_args;
+	bool owns_action_args;
 
 	String *error_message;
 
