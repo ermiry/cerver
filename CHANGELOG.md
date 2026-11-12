@@ -1,28 +1,36 @@
 ## General
-- Running the test jobs in containers that have IPv6 enabled
-- Described the disconnect matrix & the scheduled jobs too
-- Planned llhttp as the 2.1b-8 & WebSocket on threads next
-- Removed http_parser & now compiling the parser of llhttp
-- Added the third-party code of cerver & its licenses to repo
-- Added incompatibilities of the 2.1b-8 with the llhttp parser
-- Updated CLAUDE.md with llhttp, its methods & the lenient
+- Added the sends with a deadline of the 2.0b-66 in sockets
+- Running autobahn in the tests & with sanitizers scheduled
+- Renamed the third-party file of the repository to lowercase
+- Updated roadmap with WebSocket as 2.1b-9 & later betas
+- Added incompatibilities of the 2.1b-9 with the WebSockets
+- Updated CLAUDE.md with WebSocket, its tests & its client
 
 ## HTTP
-- Added the split headers of llhttp 9.4.3 with its typed spans
-- Seeded llhttp.c of llhttp 9.4.3 restyled with a verified script
-- Updated the api & http sources of the parser to llhttp 9.4.3
-- Using one table of methods with the same values as llhttp
-- Fitting every method of llhttp in the methods of the routes
-- Parsing the requests with llhttp embedded in each receive
-- Using the version & the errors of llhttp in streams & in logs
+- Sending the HTTP responses with the deadline of a cerver
+- Added an incremental UTF-8 validator of WebSocket texts
+- Added WebSocket frame encoder & its incremental parser
+- Added permessage-deflate of RFC 7692 with zlib streams
+- Added a WebSocket handshake of servers & of the clients
+- Added the rules of WebSocket messages, without sockets
+- Added the WebSocket settings that the groups also inherit
+- Added WebSocket endpoints & their groups to routes tree
+- Added WebSocket connections & their registry with rooms
+- Upgrading the requests to WebSocket endpoints in cerver
+- Closing the WebSocket connections with 1001 in the drain
+- Added WebSocket metrics & its section of the admin stats
+- Added a public WebSocket client with retries & its backoff
 
 ## Examples
-- Measuring llhttp alone in the benchmark of the http parser
+- Added WebSocket benchmarks & checks of its allocations
+- Added a WebSocket example of an echo, rooms & its page
 
 ## Tests
-- Testing every method of llhttp in the unit tests of methods
-- Checking the values of llhttp in the request methods tests
-- Testing the parser in the receive & its lenient flags in HTTP
-- Added receive tests of the strict mode & methods of llhttp
-- Added a fuzzer of the HTTP requests with the lenient flags
-- Added request seeds of QUERY, WebDAV, upgrades & PRI
+- Added unit tests for WebSocket texts, frames & messages
+- Added unit tests of the WebSocket handshake & of deflate
+- Added WebSocket server & client tests in a single process
+- Testing upgrades of the WebSocket endpoints in a receive
+- Added the fuzzers of the WebSocket frames & handshake
+- Running autobahn-testsuite against the server & the client
+- Added a WebSocket server & client pair to the integrations
+- Running the WebSocket pair behind nginx with its upgrade
