@@ -74,14 +74,10 @@
 	#define ARRAY_ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE (a) ? (a)[(i)] : (v))
 #endif
 
-// va_copy is a C99 feature. In C89 implementations, it's sometimes
-// available as __va_copy. If not, memcpy() should do the trick
-#ifndef va_copy
-	#ifdef __va_copy
-		#define va_copy __va_copy
-	#else
-		#define va_copy(a, b) memcpy (&(a), &(b), sizeof (va_list))
-	#endif
-#endif
+// cerver is C11 (and C++11), so va_copy always comes from stdarg.h:
+// the memcpy () that was used when this header came first copied
+// the pointer that a va_list parameter is in x86-64, not the list,
+// and every json_pack () and json_unpack () built with clang crashed
+#include <stdarg.h>
 
 #endif
