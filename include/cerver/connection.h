@@ -378,7 +378,8 @@ CERVER_PUBLIC void connection_set_send_queue (
 );
 
 // pushes a packet to the connection's send queue,
-// the send thread sends it and deletes it
+// the send thread sends it and deletes it;
+// the packet always belongs to the connection, one that can not be queued is deleted
 CERVER_PUBLIC void connection_send_packet (
 	Connection *connection, struct _Packet *packet
 );
