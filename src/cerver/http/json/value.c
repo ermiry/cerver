@@ -25,7 +25,7 @@
 
 #include "cerver/utils/utils.h"
 
-json_t *do_deep_copy (const json_t *json, hashtable_t *parents);
+static json_t *do_deep_copy (const json_t *json, hashtable_t *parents);
 
 static inline void json_init (json_t *json, json_type type) {
 
@@ -195,7 +195,7 @@ int json_object_update_missing (json_t *object, json_t *other) {
     return 0;
 }
 
-int do_object_update_recursive (json_t *object, json_t *other, hashtable_t *parents) {
+static int do_object_update_recursive (json_t *object, json_t *other, hashtable_t *parents) {
     const char *key;
     json_t *value;
     char loop_key[LOOP_KEY_LEN];
@@ -1140,7 +1140,7 @@ json_t *json_deep_copy (const json_t *json) {
 
 }
 
-json_t *do_deep_copy (
+static json_t *do_deep_copy (
     const json_t *json, hashtable_t *parents
 ) {
 

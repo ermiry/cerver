@@ -10,21 +10,21 @@
 extern "C" {
 #endif
 
-CERVER_PUBLIC int utf8_encode (
+CERVER_HIDDEN int utf8_encode (
 	int32_t codepoint, char *buffer, size_t *size
 );
 
-CERVER_PUBLIC size_t utf8_check_first (char byte);
+CERVER_HIDDEN size_t utf8_check_first (char byte);
 
-CERVER_PUBLIC size_t utf8_check_full (
+CERVER_HIDDEN size_t utf8_check_full (
 	const char *buffer, size_t size, int32_t *codepoint
 );
 
-CERVER_PUBLIC const char *utf8_iterate (
+CERVER_HIDDEN const char *utf8_iterate (
 	const char *buffer, size_t bufsize, int32_t *codepoint
 );
 
-CERVER_PUBLIC int utf8_check_string (
+CERVER_HIDDEN int utf8_check_string (
 	const char *string, size_t length
 );
 

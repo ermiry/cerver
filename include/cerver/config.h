@@ -28,6 +28,11 @@
 // used by private methods but can be used by the application
 #define CERVER_PUBLIC 			extern
 
+// internal methods that are not exported by libcerver.so,
+// so a process that also loads another library with the same names
+// (like the json of the system) never mixes them
+#define CERVER_HIDDEN			extern __attribute__ ((visibility ("hidden")))
+
 // in C++ an inline function is only emitted where it is used,
 // so the exported functions defined with CERVER_INLINE in the sources
 // must be regular functions to be available to other translation units
