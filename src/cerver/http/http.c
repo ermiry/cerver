@@ -688,6 +688,9 @@ static unsigned int http_cerver_global_init (
 
 	unsigned int errors = 0;
 
+	// the random seed of the json objects, before the threads of the cerver use them
+	json_object_seed (0);
+
 	// init HTTP jwt pool
 	errors |= http_jwt_init_pool ();
 

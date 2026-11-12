@@ -48,18 +48,14 @@ int jsonp_loop_check (
 
 /*** object ***/
 
-extern volatile uint32_t hashtable_seed;
-
 json_t *json_object (void) {
 
     json_object_t *object = (json_object_t *) jsonp_malloc (sizeof (json_object_t));
     if (!object)
         return NULL;
 
-    if (!hashtable_seed) {
-        /* Autoseed */
-        json_object_seed (0);
-    }
+    // a random seed if nobody set one before, it only reads the seed after that
+    json_object_seed (0);
 
     json_init (&object->json, JSON_OBJECT);
 
