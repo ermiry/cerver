@@ -114,6 +114,9 @@ struct _HttpRouteFileStats;
 struct _HttpReceive;
 struct _HttpResponse;
 
+struct _HttpWebSocketRegistry;
+struct HttpWebSocketHandshake;
+
 struct jwt;
 
 #pragma region parser
@@ -390,6 +393,9 @@ struct _HttpCerver {
 	// the most milliseconds that all the sends of a response take together,
 	// 0 uses the send timeout of the cerver (secs)
 	unsigned int send_timeout;
+
+	// the WebSocket connections, their limit and their stats
+	struct _HttpWebSocketRegistry *web_sockets;
 
 	size_t n_timeout_requests;		// answered with 408
 
@@ -1198,6 +1204,12 @@ struct _HttpReceive {
 	// each piece of a stream sets its own
 	struct timespec send_deadline;
 	bool send_deadline_set;
+
+	// the request of an upgrade to a WebSocket endpoint, until its connection starts
+	struct HttpWebSocketHandshake *web_socket;
+
+	// the 101 was sent, the connection belongs to its WebSocket now
+	bool upgraded;
 
 	// the last state of the client that was found, a gone client never comes back
 	HttpClientState client_state;
