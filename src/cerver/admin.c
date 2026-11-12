@@ -717,7 +717,8 @@ void admin_cerver_set_max_fds (
 	AdminCerver *admin_cerver, u32 max_n_fds
 ) {
 
-	if (admin_cerver) admin_cerver->max_n_fds = max_n_fds;
+	// the poll array is created with the cerver, after it the size can not change
+	if (admin_cerver && max_n_fds && !admin_cerver->fds) admin_cerver->max_n_fds = max_n_fds;
 
 }
 
