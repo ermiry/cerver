@@ -1032,7 +1032,7 @@ typedef struct {
 
 #define stream_to_lex(stream) container_of (stream, lex_t, stream)
 
-/*** error reporting ***/
+// the errors of a parse
 
 CERVER_PRINTF_FORMAT (4, 5) static void error_set (
 	json_error_t *error, const lex_t *lex, enum json_error_code code,
@@ -1097,7 +1097,7 @@ CERVER_PRINTF_FORMAT (4, 5) static void error_set (
 	jsonp_error_set (error, line, col, pos, code, "%s", result);
 }
 
-/*** lexical analyzer ***/
+// the lexer
 
 static void stream_init (
 	stream_t *stream, get_func get, void *data
@@ -1115,17 +1115,73 @@ static void stream_init (
 
 }
 
+// the first byte of a character that takes more than one byte in UTF-8
+#define STREAM_MULTI_BYTE_FIRST			0x80
+#define STREAM_MULTI_BYTE_LAST			0xFF
+
+// the stream can not be read after a byte that is not UTF-8
+static int stream_decode_failed (
+	stream_t *stream, json_error_t *error, const int c
+) {
+
+	stream->state = STREAM_STATE_ERROR;
+
+	error_set (
+		error, stream_to_lex (stream), json_error_invalid_utf8,
+		"unable to decode byte 0x%x", (unsigned int) c
+	);
+
+	return STREAM_STATE_ERROR;
+
+}
+
+// reads the rest of a character of many bytes into the buffer
+// returns true if it is valid UTF-8
+static bool stream_read_multi_byte (stream_t *stream, const int c) {
+
+	const size_t count = utf8_check_first ((char) c);
+	if (!count) return false;
+
+	assert (count >= 2);
+
+	for (size_t index = 1; index < count; index++) {
+		stream->buffer[index] = (char) stream->get (stream->data);
+	}
+
+	if (!utf8_check_full (stream->buffer, count, NULL)) return false;
+
+	stream->buffer[count] = '\0';
+
+	return true;
+
+}
+
+// the line and the column of the character that was read
+static void stream_advance (stream_t *stream, const int c) {
+
+	stream->position += 1;
+
+	if (c == '\n') {
+		stream->line += 1;
+		stream->last_column = stream->column;
+		stream->column = 0;
+	}
+
+	// the column of Unicode characters, only the first byte of each one counts
+	else if (utf8_check_first ((char) c)) {
+		stream->column += 1;
+	}
+
+}
+
 static int stream_get (
 	stream_t *stream, json_error_t *error
 ) {
 
-	int c = 0;
-
-	if (stream->state != STREAM_STATE_OK)
-		return stream->state;
+	if (stream->state != STREAM_STATE_OK) return stream->state;
 
 	if (!stream->buffer[stream->buffer_pos]) {
-		c = stream->get (stream->data);
+		const int c = stream->get (stream->data);
 		if (c == EOF) {
 			stream->state = STREAM_STATE_EOF;
 			return STREAM_STATE_EOF;
@@ -1133,52 +1189,24 @@ static int stream_get (
 
 		json_parse_budget_add ();
 
-		stream->buffer[0] = c;
+		stream->buffer[0] = (char) c;
 		stream->buffer_pos = 0;
 
-		if (0x80 <= c && c <= 0xFF) {
-			/* multi-byte UTF-8 sequence */
-			size_t i, count;
+		if ((STREAM_MULTI_BYTE_FIRST <= c) && (c <= STREAM_MULTI_BYTE_LAST)) {
+			if (!stream_read_multi_byte (stream, c)) return stream_decode_failed (stream, error, c);
+		}
 
-			count = utf8_check_first (c);
-			if (!count)
-				goto out;
-
-			assert (count >= 2);
-
-			for (i = 1; i < count; i++)
-				stream->buffer[i] = stream->get (stream->data);
-
-			if (!utf8_check_full (stream->buffer, count, NULL))
-				goto out;
-
-			stream->buffer[count] = '\0';
-		} else
+		else {
 			stream->buffer[1] = '\0';
+		}
 	}
 
-	c = stream->buffer[stream->buffer_pos++];
+	const int c = stream->buffer[stream->buffer_pos++];
 
-	stream->position++;
-	if (c == '\n') {
-		stream->line++;
-		stream->last_column = stream->column;
-		stream->column = 0;
-	} else if (utf8_check_first (c)) {
-		/* track the Unicode character column, so increment only if
-		   this is the first character of a UTF-8 sequence */
-		stream->column++;
-	}
+	stream_advance (stream, c);
 
 	return c;
 
-out:
-	stream->state = STREAM_STATE_ERROR;
-	error_set (
-		error, stream_to_lex (stream), json_error_invalid_utf8,
-		"unable to decode byte 0x%x", (unsigned int) c
-	);
-	return STREAM_STATE_ERROR;
 }
 
 static void stream_unget (stream_t *stream, int c) {
@@ -1286,277 +1314,426 @@ static int32_t decode_unicode_escape (const char *str) {
 
 }
 
-static void lex_scan_string (lex_t *lex, json_error_t *error) {
+// the hex digits of a \uXXXX escape
+#define LEX_UNICODE_ESCAPE_DIGITS		4
 
-	int c;
-	const char *p;
-	char *t;
-	int i;
+// the 'u' and the hex digits of a \uXXXX escape
+#define LEX_UNICODE_ESCAPE_LENGTH		(1 + LEX_UNICODE_ESCAPE_DIGITS)
+
+// the last byte that is a control character in a string
+#define LEX_CONTROL_CHARACTER_LAST		0x1F
+
+// the halves of a character beyond the basic plane in UTF-16 (RFC 8259 §7)
+#define LEX_HIGH_SURROGATE_FIRST		0xD800
+#define LEX_HIGH_SURROGATE_LAST			0xDBFF
+#define LEX_LOW_SURROGATE_FIRST			0xDC00
+#define LEX_LOW_SURROGATE_LAST			0xDFFF
+#define LEX_SURROGATE_SHIFT				10
+#define LEX_SURROGATE_BASE				0x10000
+
+// a control character inside a string is an error
+static bool lex_scan_string_control (lex_t *lex, const int c, json_error_t *error) {
+
+	lex_unget_unsave (lex, c);
+
+	if (c == '\n') {
+		error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
+	}
+
+	else {
+		error_set (error, lex, json_error_invalid_syntax, "control character 0x%x", (unsigned int) c);
+	}
+
+	return false;
+
+}
+
+static bool lex_is_short_escape (const int c) {
+
+	return (c == '"') || (c == '\\') || (c == '/') || (c == 'b')
+		|| (c == 'f') || (c == 'n') || (c == 'r') || (c == 't');
+
+}
+
+// an escape after its '\\': \uXXXX or one of the short ones
+// returns true if it is valid, with the character after it in c
+static bool lex_scan_string_escape (lex_t *lex, int *c, json_error_t *error) {
+
+	*c = lex_get_save (lex, error);
+
+	if (*c == 'u') {
+		*c = lex_get_save (lex, error);
+		for (unsigned int digit = 0; digit < LEX_UNICODE_ESCAPE_DIGITS; digit++) {
+			if (!l_isxdigit (*c)) {
+				error_set (error, lex, json_error_invalid_syntax, "invalid escape");
+				return false;
+			}
+
+			*c = lex_get_save (lex, error);
+		}
+	}
+
+	else if (lex_is_short_escape (*c)) {
+		*c = lex_get_save (lex, error);
+	}
+
+	else {
+		error_set (error, lex, json_error_invalid_syntax, "invalid escape");
+		return false;
+	}
+
+	return true;
+
+}
+
+// reads the string up to its closing quote into the saved text
+// returns true if it is a valid string
+static bool lex_scan_string_read (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get_save (lex, error);
+
+	while (c != '"') {
+		if (c == STREAM_STATE_ERROR) return false;
+
+		if (c == STREAM_STATE_EOF) {
+			error_set (error, lex, json_error_premature_end_of_input, "premature end of input");
+			return false;
+		}
+
+		if ((0 <= c) && (c <= LEX_CONTROL_CHARACTER_LAST)) return lex_scan_string_control (lex, c, error);
+
+		if (c == '\\') {
+			if (!lex_scan_string_escape (lex, &c, error)) return false;
+		}
+
+		else {
+			c = lex_get_save (lex, error);
+		}
+	}
+
+	return true;
+
+}
+
+// an escape whose 4 characters are not hex digits, from its '\\'
+static bool lex_unicode_escape_invalid (lex_t *lex, json_error_t *error, const char *escape) {
+
+	error_set (error, lex, json_error_invalid_syntax, "invalid Unicode escape '%.6s'", escape);
+
+	return false;
+
+}
+
+// a surrogate without its other half
+static bool lex_unicode_value_invalid (lex_t *lex, json_error_t *error, const int32_t value) {
+
+	error_set (error, lex, json_error_invalid_syntax, "invalid Unicode '\\u%04X'", (unsigned int) value);
+
+	return false;
+
+}
+
+// a high surrogate followed by a value that is not a low one
+static bool lex_unicode_pair_invalid (
+	lex_t *lex, json_error_t *error, const int32_t first, const int32_t second
+) {
+
+	error_set (
+		error, lex, json_error_invalid_syntax,
+		"invalid Unicode '\\u%04X\\u%04X'", (unsigned int) first, (unsigned int) second
+	);
+
+	return false;
+
+}
+
+// the code point of a \uXXXX escape that p points to, with the 'u',
+// or of two that form a surrogate pair, p is moved after them
+// returns true if the code point is valid
+static bool lex_decode_unicode (
+	lex_t *lex, json_error_t *error, const char **p, int32_t *code_point
+) {
+
+	int32_t value = decode_unicode_escape (*p);
+	if (value < 0) return lex_unicode_escape_invalid (lex, error, *p - 1);
+
+	*p += LEX_UNICODE_ESCAPE_LENGTH;
+
+	if ((LEX_LOW_SURROGATE_FIRST <= value) && (value <= LEX_LOW_SURROGATE_LAST)) {
+		return lex_unicode_value_invalid (lex, error, value);
+	}
+
+	if ((LEX_HIGH_SURROGATE_FIRST <= value) && (value <= LEX_HIGH_SURROGATE_LAST)) {
+		// a high surrogate must be followed by a low one
+		if (((*p)[0] != '\\') || ((*p)[1] != 'u')) return lex_unicode_value_invalid (lex, error, value);
+
+		*p += 1;
+
+		const int32_t second = decode_unicode_escape (*p);
+		if (second < 0) return lex_unicode_escape_invalid (lex, error, *p - 1);
+
+		*p += LEX_UNICODE_ESCAPE_LENGTH;
+
+		if ((second < LEX_LOW_SURROGATE_FIRST) || (second > LEX_LOW_SURROGATE_LAST)) {
+			return lex_unicode_pair_invalid (lex, error, value, second);
+		}
+
+		value = ((value - LEX_HIGH_SURROGATE_FIRST) << LEX_SURROGATE_SHIFT)
+			+ (second - LEX_LOW_SURROGATE_FIRST) + LEX_SURROGATE_BASE;
+	}
+
+	*code_point = value;
+
+	return true;
+
+}
+
+// the byte of a short escape after its '\\'
+static char lex_short_escape_value (const char escape) {
+
+	char value = escape;
+
+	switch (escape) {
+		case 'b': value = '\b'; break;
+		case 'f': value = '\f'; break;
+		case 'n': value = '\n'; break;
+		case 'r': value = '\r'; break;
+		case 't': value = '\t'; break;
+
+		// '"', '\\' and '/' are themselves
+		default: break;
+	}
+
+	return value;
+
+}
+
+// the value of the saved string with its escapes decoded,
+// it is never longer than its source: a short escape (2 bytes) gives 1 byte,
+// a \uXXXX (6 bytes) at most 3, and a surrogate pair (12 bytes) 4
+// returns true on success
+static bool lex_scan_string_decode (lex_t *lex, json_error_t *error) {
+
+	char *value = (char *) jsonp_malloc (lex->saved_text.length + 1);
+	if (!value) return false;
+
+	lex->value.string.val = value;
+
+	// after the opening quote
+	const char *p = strbuffer_value (&lex->saved_text) + 1;
+
+	while (*p != '"') {
+		if (*p != '\\') {
+			*(value++) = *(p++);
+		}
+
+		else if (*(++p) == 'u') {
+			int32_t code_point = 0;
+			if (!lex_decode_unicode (lex, error, &p, &code_point)) return false;
+
+			size_t length = 0;
+			if (utf8_encode (code_point, value, &length)) assert (0);
+			value += length;
+		}
+
+		else {
+			*(value++) = lex_short_escape_value (*(p++));
+		}
+	}
+
+	*value = '\0';
+	lex->value.string.len = (size_t) (value - lex->value.string.val);
+
+	return true;
+
+}
+
+static void lex_scan_string (lex_t *lex, json_error_t *error) {
 
 	lex->value.string.val = NULL;
 	lex->token = TOKEN_INVALID;
 
-	c = lex_get_save (lex, error);
-
-	while (c != '"') {
-		if (c == STREAM_STATE_ERROR)
-			goto out;
-
-		else if (c == STREAM_STATE_EOF) {
-			error_set (error, lex, json_error_premature_end_of_input,
-					  "premature end of input");
-			goto out;
-		}
-
-		else if (0 <= c && c <= 0x1F) {
-			/* control character */
-			lex_unget_unsave (lex, c);
-			if (c == '\n')
-				error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
-			else
-				error_set (error, lex, json_error_invalid_syntax, "control character 0x%x",
-						  (unsigned int) c);
-			goto out;
-		}
-
-		else if (c == '\\') {
-			c = lex_get_save (lex, error);
-			if (c == 'u') {
-				c = lex_get_save (lex, error);
-				for (i = 0; i < 4; i++) {
-					if (!l_isxdigit (c)) {
-						error_set (error, lex, json_error_invalid_syntax,
-								  "invalid escape");
-						goto out;
-					}
-					c = lex_get_save (lex, error);
-				}
-			} else if (c == '"' || c == '\\' || c == '/' || c == 'b' || c == 'f' ||
-					   c == 'n' || c == 'r' || c == 't')
-				c = lex_get_save (lex, error);
-			else {
-				error_set (error, lex, json_error_invalid_syntax, "invalid escape");
-				goto out;
-			}
-		} else
-			c = lex_get_save (lex, error);
+	if (lex_scan_string_read (lex, error) && lex_scan_string_decode (lex, error)) {
+		lex->token = TOKEN_STRING;
 	}
 
-	/* the actual value is at most of the same length as the source
-	   string, because:
-		 - shortcut escapes (e.g. "\t") (length 2) are converted to 1 byte
-		 - a single \uXXXX escape (length 6) is converted to at most 3 bytes
-		 - two \uXXXX escapes (length 12) forming an UTF-16 surrogate pair
-		   are converted to 4 bytes
-	*/
-	t = (char *) jsonp_malloc (lex->saved_text.length + 1);
-	if (!t) {
-		/* this is not very nice, since TOKEN_INVALID is returned */
-		goto out;
+	else {
+		lex_free_string (lex);
 	}
-	lex->value.string.val = t;
-
-	/* + 1 to skip the " */
-	p = strbuffer_value (&lex->saved_text) + 1;
-
-	while (*p != '"') {
-		if (*p == '\\') {
-			p++;
-			if (*p == 'u') {
-				size_t length;
-				int32_t value;
-
-				value = decode_unicode_escape (p);
-				if (value < 0) {
-					error_set (error, lex, json_error_invalid_syntax,
-							  "invalid Unicode escape '%.6s'", p - 1);
-					goto out;
-				}
-				p += 5;
-
-				if (0xD800 <= value && value <= 0xDBFF) {
-					/* surrogate pair */
-					if (*p == '\\' && *(p + 1) == 'u') {
-						int32_t value2 = decode_unicode_escape (++p);
-						if (value2 < 0) {
-							error_set (error, lex, json_error_invalid_syntax,
-									  "invalid Unicode escape '%.6s'", p - 1);
-							goto out;
-						}
-						p += 5;
-
-						if (0xDC00 <= value2 && value2 <= 0xDFFF) {
-							/* valid second surrogate */
-							value =
-								((value - 0xD800) << 10) + (value2 - 0xDC00) + 0x10000;
-						} else {
-							/* invalid second surrogate */
-							error_set (error, lex, json_error_invalid_syntax,
-									  "invalid Unicode '\\u%04X\\u%04X'", (unsigned int) value, (unsigned int) value2);
-							goto out;
-						}
-					} else {
-						/* no second surrogate */
-						error_set (error, lex, json_error_invalid_syntax,
-								  "invalid Unicode '\\u%04X'", (unsigned int) value);
-						goto out;
-					}
-				} else if (0xDC00 <= value && value <= 0xDFFF) {
-					error_set (error, lex, json_error_invalid_syntax,
-							  "invalid Unicode '\\u%04X'", (unsigned int) value);
-					goto out;
-				}
-
-				if (utf8_encode (value, t, &length))
-					assert (0);
-				t += length;
-			} else {
-				switch (*p) {
-					case '"':
-					case '\\':
-					case '/':
-						*t = *p;
-						break;
-					case 'b':
-						*t = '\b';
-						break;
-					case 'f':
-						*t = '\f';
-						break;
-					case 'n':
-						*t = '\n';
-						break;
-					case 'r':
-						*t = '\r';
-						break;
-					case 't':
-						*t = '\t';
-						break;
-					default:
-						assert (0);
-				}
-				t++;
-				p++;
-			}
-		} else
-			*(t++) = *(p++);
-	}
-	*t = '\0';
-	lex->value.string.len = t - lex->value.string.val;
-	lex->token = TOKEN_STRING;
-	return;
-
-out:
-	lex_free_string (lex);
 
 }
 
-#ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
-#if JSON_INTEGER_IS_LONG_LONG
-#ifdef _MSC_VER /* Microsoft Visual Studio */
-#define json_strtoint _strtoi64
-#else
+// the integers of the json are long long
 #define json_strtoint strtoll
-#endif
-#else
-#define json_strtoint strtol
-#endif
-#endif
 
-static int lex_scan_number (
-	lex_t *lex, int c, json_error_t *error
-) {
+// the base of the integers of the json text
+#define LEX_INTEGER_BASE				10
 
-	const char *saved_text;
-	char *end;
-	double doubleval;
+// a part of a number that is not valid, never a byte nor a state of the stream
+#define LEX_NUMBER_INVALID				-3
 
-	lex->token = TOKEN_INVALID;
+// reads digits while they come, returns the first character that is not one
+static int lex_scan_digits (lex_t *lex, json_error_t *error) {
 
-	if (c == '-')
+	int c = 0;
+
+	do {
 		c = lex_get_save (lex, error);
+	} while (l_isdigit (c));
+
+	return c;
+
+}
+
+// an integer that fits in a json_int_t
+// returns 0 on success, -1 on error
+static int lex_scan_integer (lex_t *lex, int c, json_error_t *error) {
+
+	lex_unget_unsave (lex, c);
+
+	const char *saved_text = strbuffer_value (&lex->saved_text);
+
+	char *end = NULL;
+	errno = 0;
+	const json_int_t integer = json_strtoint (saved_text, &end, LEX_INTEGER_BASE);
+	if (errno == ERANGE) {
+		if (integer < 0) {
+			error_set (error, lex, json_error_numeric_overflow, "too big negative integer");
+		}
+
+		else {
+			error_set (error, lex, json_error_numeric_overflow, "too big integer");
+		}
+
+		return -1;
+	}
+
+	assert (end == saved_text + lex->saved_text.length);
+
+	lex->token = TOKEN_INTEGER;
+	lex->value.integer = integer;
+
+	return 0;
+
+}
+
+// the digits after the dot of a real
+// returns the character after them, or LEX_NUMBER_INVALID if there are none
+static int lex_scan_fraction (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get (lex, error);
+	if (!l_isdigit (c)) {
+		lex_unget (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
+
+	lex_save (lex, c);
+
+	return lex_scan_digits (lex, error);
+
+}
+
+// the exponent of a real, with its sign and its digits
+// returns the character after them, or LEX_NUMBER_INVALID if there are no digits
+static int lex_scan_exponent (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get_save (lex, error);
+	if ((c == '+') || (c == '-')) c = lex_get_save (lex, error);
+
+	if (!l_isdigit (c)) {
+		lex_unget_unsave (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
+
+	return lex_scan_digits (lex, error);
+
+}
+
+// the integer part of a number: a single 0 or digits that do not start with 0
+// returns the character after it, or LEX_NUMBER_INVALID if it is not valid
+static int lex_scan_integer_part (lex_t *lex, int c, json_error_t *error) {
 
 	if (c == '0') {
 		c = lex_get_save (lex, error);
 		if (l_isdigit (c)) {
 			lex_unget_unsave (lex, c);
-			goto out;
+			return LEX_NUMBER_INVALID;
 		}
-	} else if (l_isdigit (c)) {
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
-	} else {
-		lex_unget_unsave (lex, c);
-		goto out;
 	}
 
-	if (!(lex->flags & JSON_DECODE_INT_AS_REAL) && c != '.' && c != 'E' && c != 'e') {
-		json_int_t intval;
+	else if (l_isdigit (c)) {
+		c = lex_scan_digits (lex, error);
+	}
 
+	else {
 		lex_unget_unsave (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
 
-		saved_text = strbuffer_value (&lex->saved_text);
+	return c;
 
-		errno = 0;
-		intval = json_strtoint (saved_text, &end, 10);
-		if (errno == ERANGE) {
-			if (intval < 0)
-				error_set (error, lex, json_error_numeric_overflow,
-						  "too big negative integer");
-			else
-				error_set (error, lex, json_error_numeric_overflow, "too big integer");
-			goto out;
-		}
+}
 
-		assert (end == saved_text + lex->saved_text.length);
+static int lex_scan_number (
+	lex_t *lex, int c, json_error_t *error
+) {
 
-		lex->token = TOKEN_INTEGER;
-		lex->value.integer = intval;
-		return 0;
+	lex->token = TOKEN_INVALID;
+
+	if (c == '-') c = lex_get_save (lex, error);
+
+	c = lex_scan_integer_part (lex, c, error);
+	if (c == LEX_NUMBER_INVALID) return -1;
+
+	if (!(lex->flags & JSON_DECODE_INT_AS_REAL) && (c != '.') && (c != 'E') && (c != 'e')) {
+		return lex_scan_integer (lex, c, error);
 	}
 
 	if (c == '.') {
-		c = lex_get (lex, error);
-		if (!l_isdigit (c)) {
-			lex_unget (lex, c);
-			goto out;
-		}
-		lex_save (lex, c);
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
+		c = lex_scan_fraction (lex, error);
+		if (c == LEX_NUMBER_INVALID) return -1;
 	}
 
-	if (c == 'E' || c == 'e') {
-		c = lex_get_save (lex, error);
-		if (c == '+' || c == '-')
-			c = lex_get_save (lex, error);
-
-		if (!l_isdigit (c)) {
-			lex_unget_unsave (lex, c);
-			goto out;
-		}
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
+	if ((c == 'E') || (c == 'e')) {
+		c = lex_scan_exponent (lex, error);
+		if (c == LEX_NUMBER_INVALID) return -1;
 	}
 
 	lex_unget_unsave (lex, c);
 
-	if (jsonp_strtod (&lex->saved_text, &doubleval)) {
+	double real = 0;
+	if (jsonp_strtod (&lex->saved_text, &real)) {
 		error_set (error, lex, json_error_numeric_overflow, "real number overflow");
-		goto out;
+		return -1;
 	}
 
 	lex->token = TOKEN_REAL;
-	lex->value.real = doubleval;
+	lex->value.real = real;
+
 	return 0;
 
-out:
-	return -1;
+}
+
+#define LEX_WORD_TRUE					"true"
+#define LEX_WORD_FALSE					"false"
+#define LEX_WORD_NULL					"null"
+
+// the whole word is read, so its error is clearer
+static void lex_scan_word (lex_t *lex, json_error_t *error) {
+
+	int c = 0;
+	do {
+		c = lex_get_save (lex, error);
+	} while (l_isalpha (c));
+
+	lex_unget_unsave (lex, c);
+
+	const char *saved_text = strbuffer_value (&lex->saved_text);
+
+	if (!strcmp (saved_text, LEX_WORD_TRUE)) lex->token = TOKEN_TRUE;
+	else if (!strcmp (saved_text, LEX_WORD_FALSE)) lex->token = TOKEN_FALSE;
+	else if (!strcmp (saved_text, LEX_WORD_NULL)) lex->token = TOKEN_NULL;
+	else lex->token = TOKEN_INVALID;
 
 }
 
@@ -1577,12 +1754,12 @@ static int lex_scan (
 
 	if (c == STREAM_STATE_EOF) {
 		lex->token = TOKEN_EOF;
-		goto out;
+		return lex->token;
 	}
 
 	if (c == STREAM_STATE_ERROR) {
 		lex->token = TOKEN_INVALID;
-		goto out;
+		return lex->token;
 	}
 
 	lex_save (lex, c);
@@ -1593,40 +1770,21 @@ static int lex_scan (
 	else if (c == '"')
 		lex_scan_string (lex, error);
 
-	else if (l_isdigit (c) || c == '-') {
-		if (lex_scan_number (lex, c, error))
-			goto out;
+	// a number that fails keeps its invalid token
+	else if (l_isdigit (c) || (c == '-')) {
+		(void) lex_scan_number (lex, c, error);
 	}
 
 	else if (l_isalpha (c)) {
-		/* eat up the whole identifier for clearer error messages */
-		const char *saved_text;
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isalpha (c));
-		lex_unget_unsave (lex, c);
-
-		saved_text = strbuffer_value (&lex->saved_text);
-
-		if (strcmp (saved_text, "true") == 0)
-			lex->token = TOKEN_TRUE;
-		else if (strcmp (saved_text, "false") == 0)
-			lex->token = TOKEN_FALSE;
-		else if (strcmp (saved_text, "null") == 0)
-			lex->token = TOKEN_NULL;
-		else
-			lex->token = TOKEN_INVALID;
+		lex_scan_word (lex, error);
 	}
 
+	// the rest of the UTF-8 sequence is saved, so its error is valid UTF-8
 	else {
-		/* save the rest of the input UTF-8 sequence to get an error
-		   message of valid UTF-8 */
 		lex_save_cached (lex);
 		lex->token = TOKEN_INVALID;
 	}
 
-out:
 	return lex->token;
 
 }
