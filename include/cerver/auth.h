@@ -59,10 +59,9 @@ struct _AuthData {
 	void *auth_data;
 	size_t auth_data_size;
 
-	// recover data used for authentication
-	// after a success auth, it will be added to the client
-	// if not, it should be dispossed by user defined auth method
-	// and set to NULL
+	// data that the authenticate method can recover, like the user of the credentials,
+	// after a success auth that creates a client, it becomes the data of the client
+	// (client_set_data ()), otherwise it is released with delete_data
 	void *data;
 	Action delete_data;         // how to delete the data
 
