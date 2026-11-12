@@ -33,6 +33,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/sessions.h"
 #include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
@@ -236,7 +237,7 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && msg) {
 		if (cerver->info) {
 			(void) strncpy (
 				cerver->info->welcome, msg, CERVER_INFO_WELCOME_SIZE - 1
@@ -945,7 +946,7 @@ void cerver_set_receive_buffer_size (
 	Cerver *cerver, const size_t size
 ) {
 
-	if (cerver) cerver->receive_buffer_size = size;
+	if (cerver && size) cerver->receive_buffer_size = size;
 
 }
 
@@ -1330,7 +1331,7 @@ void cerver_set_on_hold_receive_buffer_size (
 	Cerver *cerver, const size_t on_hold_receive_buffer_size
 ) {
 
-	if (cerver) {
+	if (cerver && on_hold_receive_buffer_size) {
 		cerver->on_hold_receive_buffer_size = on_hold_receive_buffer_size;
 	}
 
@@ -1344,13 +1345,14 @@ u8 cerver_set_sessions (
 
 	u8 retval = 1;
 
+	// without a generator, the default one gives an id based on the current time
 	if (cerver) {
-		if (session_id_generator) {
-			cerver->session_id_generator = session_id_generator;
-			cerver->use_sessions = true;
+		cerver->session_id_generator = session_id_generator ?
+			session_id_generator : session_default_generate_id;
 
-			retval = 0;
-		}
+		cerver->use_sessions = true;
+
+		retval = 0;
 	}
 
 	return retval;
@@ -1372,7 +1374,7 @@ void cerver_set_max_received_packet_size (
 	Cerver *cerver, size_t max_received_packet_size
 ) {
 
-	if (cerver) cerver->max_received_packet_size = max_received_packet_size;
+	if (cerver && max_received_packet_size) cerver->max_received_packet_size = max_received_packet_size;
 
 }
 

@@ -788,7 +788,7 @@ CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
 // you can pass your own session generator method that must take a SessionData as the argument
 // and must return a char * representing the session id (token) for the client
 // allocated with malloc (), cerver copies it and releases it with free ()
-// or use the default one
+// or pass NULL to use the default one, 32 random bytes of the kernel in hex characters
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_sessions (
 	Cerver *cerver, void *(*session_id_generator) (const void *)
