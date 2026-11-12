@@ -445,6 +445,7 @@ integration-web:
 	@mkdir -p ./$(TESTTARGET)/web
 	$(CC) $(TESTINC) $(INTWEBIN)/admin.o -o $(INTWEBOUT)/admin $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/autobahn.o -o $(INTWEBOUT)/autobahn $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/auth.o -o $(INTWEBOUT)/auth $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/disconnect.o -o $(INTWEBOUT)/disconnect $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/features.o -o $(INTWEBOUT)/features $(INTWEBLIBS)
@@ -466,6 +467,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/admin.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/admin $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/api.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/api $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/auth.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/auth $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/autobahn.o -o $(INTWEBCLIENTOUT)/autobahn $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/disconnect.o -o $(INTWEBCLIENTOUT)/disconnect $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/features.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/features $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/jobs.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/jobs $(INTWEBCLIENTLIBS)

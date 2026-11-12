@@ -1,0 +1,12 @@
+{
+	"outdir": "/reports/server",
+	"servers": [
+		{
+			"agent": "cerver",
+			"url": "ws://cerver:9001/ws/echo"
+		}
+	],
+	"cases": ["*"],
+	"exclude-cases": [],
+	"exclude-agent-cases": {}
+}
