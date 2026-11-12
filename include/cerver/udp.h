@@ -121,7 +121,8 @@ CERVER_EXPORT void cerver_set_udp_max_peers (
 	struct _Cerver *cerver, const u32 max_peers
 );
 
-// returns the number of peers of an UDP cerver, the pending ones too
+// returns the number of peers of an UDP cerver, the pending ones too,
+// a removed peer is already out of the stats of the cerver when it is not counted
 CERVER_EXPORT size_t cerver_udp_peers_count (const struct _Cerver *cerver);
 
 // reads the header of a datagram that has a single packet,
