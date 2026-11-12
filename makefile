@@ -565,6 +565,7 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/frames.o -o ./$(BENCHTARGET)/frames $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
@@ -574,11 +575,12 @@ tree: $(BENCHBUILD)/tree.$(OBJEXT)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/tree.o -o ./$(BENCHTARGET)/tree $(BENCHLIBS)
 
-# a web server and a load generator that work in any architecture
-load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT)
+# a web server and the load generators of its requests and its WebSocket messages, in any architecture
+load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT) $(BENCHBUILD)/messages.$(OBJEXT)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/server.o -o ./$(BENCHTARGET)/server $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/load.o -o ./$(BENCHTARGET)/load $(PTHREAD)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/messages.o -o ./$(BENCHTARGET)/messages $(PTHREAD)
 
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)

@@ -14,6 +14,9 @@
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/route.h>
+#include <cerver/http/tree.h>
+
+#include <cerver/http/websockets/websocket.h>
 
 #include <cerver/utils/log.h>
 
@@ -81,6 +84,19 @@ static void bench_json_handler (
 
 }
 
+// GET /ws/echo, a WebSocket that answers every message with itself
+static void bench_web_socket_echo (
+	HttpWebSocket *web_socket, HttpWebSocketOpcode type, const void *data, size_t size
+) {
+
+	(void) http_web_socket_send (web_socket, type, data, size);
+
+}
+
+static const HttpWebSocketHandlers bench_web_socket_handlers = {
+	NULL, NULL, bench_web_socket_echo, NULL, NULL, NULL, NULL, NULL
+};
+
 static void bench_server_routes (HttpCerver *http_cerver) {
 
 	HttpRoute *bench_route = http_route_create (REQUEST_METHOD_GET, "bench", bench_handler);
@@ -88,6 +104,12 @@ static void bench_server_routes (HttpCerver *http_cerver) {
 
 	HttpRoute *json_route = http_route_create (REQUEST_METHOD_POST, "json", bench_json_handler);
 	http_route_child_add (bench_route, json_route);
+
+	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
+	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &bench_web_socket_handlers);
+
+	// the pings would be measured as messages
+	http_endpoint_set_web_socket_ping (echo, 0, 0);
 
 }
 
