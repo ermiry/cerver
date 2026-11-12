@@ -1343,7 +1343,7 @@ u8 cerver_set_sessions (
 
 	u8 retval = 1;
 
-	// without a generator, the default one gives an id based on the current time
+	// without a generator, the default one gives 32 random bytes of the kernel in hex characters
 	if (cerver) {
 		cerver->session_id_generator = session_id_generator ?
 			session_id_generator : session_default_generate_id;
@@ -1569,9 +1569,7 @@ void cerver_handlers_print_info (Cerver *cerver) {
 
 }
 
-// adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
-// returns 0 on success, 1 on error
+// the id of the handler is below n_handlers and nothing has it yet
 static bool cerver_handlers_slot_is_free (const Cerver *cerver, const Handler *handler) {
 
 	return cerver->handlers
@@ -1580,6 +1578,9 @@ static bool cerver_handlers_slot_is_free (const Cerver *cerver, const Handler *h
 
 }
 
+// adds a new handler to the cerver handlers array
+// in the slot of its id, that must be below n_handlers and free
+// returns 0 on success, 1 on error
 u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
 	u8 retval = 1;
