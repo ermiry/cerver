@@ -124,6 +124,13 @@ void cerver_error_event_delete (void *event_ptr) {
 
 }
 
+// an error type indexes the error events of the cerver
+static inline bool cerver_error_type_is_valid (const CerverErrorType error_type) {
+
+	return (unsigned int) error_type < CERVER_MAX_ERRORS;
+
+}
+
 // registers an action to be triggered when the specified error event occurs
 // if there is an existing action registered to an error event, it will be overrided
 // a newly allocated CerverErrorEventData structure will be passed to your method
@@ -138,7 +145,7 @@ u8 cerver_error_event_register (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		CerverErrorEvent *error = cerver_error_event_new ();
 		if (error) {
 			error->type = error_type;
@@ -172,7 +179,7 @@ u8 cerver_error_event_unregister (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		if (cerver->errors[error_type]) {
 			cerver_error_event_delete (cerver->errors[error_type]);
 			cerver->errors[error_type] = NULL;
@@ -193,7 +200,7 @@ void cerver_error_event_trigger (
 	const char *error_message
 ) {
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		CerverErrorEvent *error = cerver->errors[error_type];
 		if (error) {
 			// trigger the action
