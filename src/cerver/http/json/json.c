@@ -2603,73 +2603,120 @@ static char *read_string (
 
 }
 
+// the format of an optional value, that can be NULL
+#define PACK_OPTIONAL_VALUE				'*'
+
+// the token that follows the value, without moving the scanner
+static char pack_peek_next (scanner_t *s) {
+
+	next_token (s);
+	const char next = token (s);
+	prev_token (s);
+
+	return next;
+
+}
+
+// a format that ends before its object or array, it can not be recovered from
+static bool pack_check_format_end (scanner_t *s) {
+
+	if (!token (s)) {
+		set_error (s, "<format>", json_error_invalid_format, "Unexpected end of format string");
+		return false;
+	}
+
+	return true;
+
+}
+
+// a "key": value of the object, the errors of the arguments are kept in the scanner
+// returns false on an error of the format, that ends the object
+static bool pack_object_member (scanner_t *s, va_list *ap, json_t *object) {
+
+	if (!pack_check_format_end (s)) return false;
+
+	if (token (s) != 's') {
+		set_error (s, "<format>", json_error_invalid_format, "Expected format 's', got '%c'", token (s));
+		return false;
+	}
+
+	size_t length = 0;
+	int ours = 0;
+	char *key = read_string (s, ap, "object key", &length, &ours, 0);
+
+	next_token (s);
+
+	const char value_format = pack_peek_next (s);
+
+	json_t *value = pack (s, ap);
+	if (!value) {
+		if (value_format != PACK_OPTIONAL_VALUE) {
+			set_error (s, "<args>", json_error_null_value, "NULL object value");
+			s->has_error = 1;
+		}
+	}
+
+	else if (s->has_error) {
+		json_decref (value);
+	}
+
+	else if (json_object_set_new_nocheck (object, key, value)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Unable to add key \"%s\"", key);
+		s->has_error = 1;
+	}
+
+	if (ours) jsonp_free (key);
+
+	next_token (s);
+
+	return true;
+
+}
+
 static json_t *pack_object (scanner_t *s, va_list *ap) {
 
 	json_t *object = json_object ();
 	next_token (s);
 
-	while (token (s) != '}') {
-		char *key;
-		size_t len;
-		int ours;
-		json_t *value;
-		char valueOptional;
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			goto error;
-		}
-
-		if (token (s) != 's') {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token (s));
-			goto error;
-		}
-
-		key = read_string (s, ap, "object key", &len, &ours, 0);
-
-		next_token (s);
-
-		next_token (s);
-		valueOptional = token (s);
-		prev_token (s);
-
-		value = pack (s, ap);
-		if (!value) {
-			if (ours)
-				jsonp_free (key);
-
-			if (valueOptional != '*') {
-				set_error (s, "<args>", json_error_null_value, "NULL object value");
-				s->has_error = 1;
-			}
-
-			next_token (s);
-			continue;
-		}
-
-		if (s->has_error)
-			json_decref (value);
-
-		if (!s->has_error && json_object_set_new_nocheck (object, key, value)) {
-			set_error (s, "<internal>", json_error_out_of_memory,
-					  "Unable to add key \"%s\"", key);
-			s->has_error = 1;
-		}
-
-		if (ours)
-			jsonp_free (key);
-
-		next_token (s);
+	bool packed = true;
+	while (packed && (token (s) != '}')) {
+		packed = pack_object_member (s, ap, object);
 	}
 
-	if (!s->has_error)
-		return object;
+	if (!packed || s->has_error) {
+		json_decref (object);
+		object = NULL;
+	}
 
-error:
-	json_decref (object);
-	return NULL;
+	return object;
+
+}
+
+// a value of the array, the errors of the arguments are kept in the scanner
+// returns false on an error of the format, that ends the array
+static bool pack_array_element (scanner_t *s, va_list *ap, json_t *array) {
+
+	if (!pack_check_format_end (s)) return false;
+
+	const char value_format = pack_peek_next (s);
+
+	json_t *value = pack (s, ap);
+	if (!value) {
+		if (value_format != PACK_OPTIONAL_VALUE) s->has_error = 1;
+	}
+
+	else if (s->has_error) {
+		json_decref (value);
+	}
+
+	else if (json_array_append_new (array, value)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Unable to append to array");
+		s->has_error = 1;
+	}
+
+	next_token (s);
+
+	return true;
 
 }
 
@@ -2678,49 +2725,17 @@ static json_t *pack_array (scanner_t *s, va_list *ap) {
 	json_t *array = json_array ();
 	next_token (s);
 
-	while (token (s) != ']') {
-		json_t *value;
-		char valueOptional;
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			/* Format string errors are unrecoverable. */
-			goto error;
-		}
-
-		next_token (s);
-		valueOptional = token (s);
-		prev_token (s);
-
-		value = pack (s, ap);
-		if (!value) {
-			if (valueOptional != '*') {
-				s->has_error = 1;
-			}
-
-			next_token (s);
-			continue;
-		}
-
-		if (s->has_error)
-			json_decref (value);
-
-		if (!s->has_error && json_array_append_new (array, value)) {
-			set_error (s, "<internal>", json_error_out_of_memory,
-					  "Unable to append to array");
-			s->has_error = 1;
-		}
-
-		next_token (s);
+	bool packed = true;
+	while (packed && (token (s) != ']')) {
+		packed = pack_array_element (s, ap, array);
 	}
 
-	if (!s->has_error)
-		return array;
+	if (!packed || s->has_error) {
+		json_decref (array);
+		array = NULL;
+	}
 
-error:
-	json_decref (array);
-	return NULL;
+	return array;
 
 }
 
@@ -2871,137 +2886,201 @@ static json_t *pack (scanner_t *s, va_list *ap) {
 
 static int unpack (scanner_t *s, json_t *root, va_list *ap);
 
+// how an object format ends: '!' every key must be unpacked, '*' some can be left
+#define UNPACK_STRICT_NONE				0
+#define UNPACK_STRICT_ALL				1
+#define UNPACK_STRICT_SOME				-1
+
+#define UNPACK_STRICT_ALL_FORMAT		'!'
+#define UNPACK_STRICT_SOME_FORMAT		'*'
+#define UNPACK_OPTIONAL_FORMAT			'?'
+
+#define UNPACK_KEYS_SEPARATOR			", "
+
+// what an object of the format keeps while its members are unpacked:
+// a set (a hashtable) of the keys that were unpacked, because the same key can be unpacked many times
+typedef struct UnpackObject {
+
+	hashtable_t keys;
+	int strict;
+	bool got_optional;
+
+} UnpackObject;
+
+// the value of the key, NULL when the object is skipped or an optional key is missing
+// returns 0 on success, -1 if a key that is not optional is missing
+static int unpack_object_value (
+	scanner_t *s, json_t *root, const char *key, const bool optional, json_t **value
+) {
+
+	*value = root ? json_object_get (root, key) : NULL;
+
+	if (root && !*value && !optional) {
+		set_error (s, "<validation>", json_error_item_not_found, "Object item not found: %s", key);
+		return -1;
+	}
+
+	return 0;
+
+}
+
+// a "key": value of the format, the key is the next argument
+// returns 0 on success, -1 on error
+static int unpack_object_member (
+	scanner_t *s, json_t *root, va_list *ap, UnpackObject *unpacked
+) {
+
+	if (token (s) != 's') {
+		set_error (s, "<format>", json_error_invalid_format, "Expected format 's', got '%c'", token (s));
+		return -1;
+	}
+
+	const char *key = va_arg (*ap, const char *);
+	if (!key) {
+		set_error (s, "<args>", json_error_null_value, "NULL object key");
+		return -1;
+	}
+
+	next_token (s);
+
+	bool optional = false;
+	if (token (s) == UNPACK_OPTIONAL_FORMAT) {
+		optional = true;
+		unpacked->got_optional = true;
+		next_token (s);
+	}
+
+	json_t *value = NULL;
+	if (unpack_object_value (s, root, key, optional, &value)) return -1;
+
+	if (unpack (s, value, ap)) return -1;
+
+	(void) hashtable_set (&unpacked->keys, key, json_null ());
+
+	next_token (s);
+
+	return 0;
+
+}
+
+// the members of the format up to its '}'
+// returns 0 on success, -1 on error
+static int unpack_object_members (
+	scanner_t *s, json_t *root, va_list *ap, UnpackObject *unpacked
+) {
+
+	next_token (s);
+
+	while (token (s) != '}') {
+		if (unpacked->strict != UNPACK_STRICT_NONE) {
+			set_error (
+				s, "<format>", json_error_invalid_format,
+				"Expected '}' after '%c', got '%c'",
+				(unpacked->strict == UNPACK_STRICT_ALL) ? UNPACK_STRICT_ALL_FORMAT : UNPACK_STRICT_SOME_FORMAT,
+				token (s)
+			);
+
+			return -1;
+		}
+
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format, "Unexpected end of format string");
+			return -1;
+		}
+
+		if ((token (s) == UNPACK_STRICT_ALL_FORMAT) || (token (s) == UNPACK_STRICT_SOME_FORMAT)) {
+			unpacked->strict = (token (s) == UNPACK_STRICT_ALL_FORMAT) ? UNPACK_STRICT_ALL : UNPACK_STRICT_SOME;
+			next_token (s);
+		}
+
+		else if (unpack_object_member (s, root, ap, unpacked)) {
+			return -1;
+		}
+	}
+
+	return 0;
+
+}
+
+// adds a key that was left to the list of the error message,
+// keys_result is 1 before the list is created, 0 while it is fine, -1 on error
+static int unpack_object_left_key (strbuffer_t *left_keys, int keys_result, const char *key) {
+
+	if (keys_result == 1) {
+		keys_result = strbuffer_init (left_keys);
+	}
+
+	else if (!keys_result) {
+		keys_result = strbuffer_append_bytes (left_keys, UNPACK_KEYS_SEPARATOR, strlen (UNPACK_KEYS_SEPARATOR));
+	}
+
+	if (!keys_result) keys_result = strbuffer_append_bytes (left_keys, key, strlen (key));
+
+	return keys_result;
+
+}
+
+// with '!' or JSON_STRICT, every key of the object that is not optional must have been unpacked
+// returns 0 on success, -1 if keys were left
+static int unpack_object_check_left (scanner_t *s, json_t *root, UnpackObject *unpacked) {
+
+	if (!unpacked->got_optional && (json_object_size (root) == unpacked->keys.size)) return 0;
+
+	int keys_result = 1;
+	strbuffer_t left_keys;
+	long left = 0;
+
+	const char *key = NULL;
+	json_t *value = NULL;
+	json_object_foreach (root, key, value) {
+		if (!hashtable_get (&unpacked->keys, key)) {
+			left += 1;
+			keys_result = unpack_object_left_key (&left_keys, keys_result, key);
+		}
+	}
+
+	if (!left) return 0;
+
+	set_error (
+		s, "<validation>", json_error_end_of_input_expected,
+		"%li object item(s) left unpacked: %s", left,
+		keys_result ? "<unknown>" : strbuffer_value (&left_keys)
+	);
+
+	strbuffer_close (&left_keys);
+
+	return -1;
+
+}
+
 static int unpack_object (scanner_t *s, json_t *root, va_list *ap) {
 
-	int ret = -1;
-	int strict = 0;
-	int gotopt = 0;
+	UnpackObject unpacked = CERVER_ZERO_INITIALIZER;
+	unpacked.strict = UNPACK_STRICT_NONE;
+	unpacked.got_optional = false;
 
-	/* Use a set (emulated by a hashtable) to check that all object
-	   keys are accessed. Checking that the correct number of keys
-	   were accessed is not enough, as the same key can be unpacked
-	   multiple times.
-	*/
-	hashtable_t key_set;
-
-	if (hashtable_init (&key_set)) {
+	if (hashtable_init (&unpacked.keys)) {
 		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		return -1;
 	}
 
+	int retval = -1;
+
 	if (root && !json_is_object (root)) {
-		set_error (s, "<validation>", json_error_wrong_type, "Expected object, got %s",
-				  type_name (root));
-		goto out;
-	}
-	next_token (s);
-
-	while (token (s) != '}') {
-		const char *key;
-		json_t *value;
-		int opt = 0;
-
-		if (strict != 0) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected '}' after '%c', got '%c'", (strict == 1 ? '!' : '*'),
-					  token (s));
-			goto out;
-		}
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			goto out;
-		}
-
-		if (token (s) == '!' || token (s) == '*') {
-			strict = (token (s) == '!' ? 1 : -1);
-			next_token (s);
-			continue;
-		}
-
-		if (token (s) != 's') {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token (s));
-			goto out;
-		}
-
-		key = va_arg (*ap, const char *);
-		if (!key) {
-			set_error (s, "<args>", json_error_null_value, "NULL object key");
-			goto out;
-		}
-
-		next_token (s);
-
-		if (token (s) == '?') {
-			opt = gotopt = 1;
-			next_token (s);
-		}
-
-		if (!root) {
-			/* skipping */
-			value = NULL;
-		} else {
-			value = json_object_get (root, key);
-			if (!value && !opt) {
-				set_error (s, "<validation>", json_error_item_not_found,
-						  "Object item not found: %s", key);
-				goto out;
-			}
-		}
-
-		if (unpack (s, value, ap))
-			goto out;
-
-		hashtable_set (&key_set, key, json_null ());
-		next_token (s);
+		set_error (s, "<validation>", json_error_wrong_type, "Expected object, got %s", type_name (root));
 	}
 
-	if (strict == 0 && (s->flags & JSON_STRICT))
-		strict = 1;
+	else if (!unpack_object_members (s, root, ap, &unpacked)) {
+		if ((unpacked.strict == UNPACK_STRICT_NONE) && (s->flags & JSON_STRICT)) unpacked.strict = UNPACK_STRICT_ALL;
 
-	if (root && strict == 1) {
-		/* We need to check that all non optional items have been parsed */
-		const char *key;
-		/* keys_res is 1 for uninitialized, 0 for success, -1 for error. */
-		int keys_res = 1;
-		strbuffer_t unrecognized_keys;
-		json_t *value;
-		long unpacked = 0;
-
-		if (gotopt || json_object_size (root) != key_set.size) {
-			json_object_foreach (root, key, value) {
-				if (!hashtable_get (&key_set, key)) {
-					unpacked++;
-
-					/* Save unrecognized keys for the error message */
-					if (keys_res == 1) {
-						keys_res = strbuffer_init (&unrecognized_keys);
-					} else if (!keys_res) {
-						keys_res = strbuffer_append_bytes (&unrecognized_keys, ", ", 2);
-					}
-
-					if (!keys_res)
-						keys_res =
-							strbuffer_append_bytes (&unrecognized_keys, key, strlen (key));
-				}
-			}
-		}
-		if (unpacked) {
-			set_error (s, "<validation>", json_error_end_of_input_expected,
-					  "%li object item(s) left unpacked: %s", unpacked,
-					  keys_res ? "<unknown>" : strbuffer_value (&unrecognized_keys));
-			strbuffer_close (&unrecognized_keys);
-			goto out;
-		}
+		retval = (root && (unpacked.strict == UNPACK_STRICT_ALL)) ?
+			unpack_object_check_left (s, root, &unpacked) : 0;
 	}
 
-	ret = 0;
+	hashtable_close (&unpacked.keys);
 
-out:
-	hashtable_close (&key_set);
-	return ret;
+	return retval;
+
 }
 
 static int unpack_array (scanner_t *s, json_t *root, va_list *ap) {
