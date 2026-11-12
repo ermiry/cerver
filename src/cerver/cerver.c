@@ -1453,18 +1453,11 @@ int cerver_set_multiple_handlers (
 
 	int retval = 1;
 
-	if (cerver) {
-		cerver->multiple_handlers = true;
-		cerver->n_handlers = n_handlers;
-
-		cerver->handlers = (Handler **) calloc (cerver->n_handlers, sizeof (Handler *));
+	if (cerver && n_handlers && !cerver->handlers) {
+		cerver->handlers = (Handler **) calloc (n_handlers, sizeof (Handler *));
 		if (cerver->handlers) {
-			for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
-				cerver->handlers[idx] = NULL;
-
-			// 27/05/2020 -- moved to cerver_handlers_start ()
-			// cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			// pthread_mutex_init (cerver->handlers_lock, NULL);
+			cerver->multiple_handlers = true;
+			cerver->n_handlers = n_handlers;
 
 			retval = 0;
 		}
@@ -1579,12 +1572,20 @@ void cerver_handlers_print_info (Cerver *cerver) {
 // adds a new handler to the cerver handlers array
 // is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
 // returns 0 on success, 1 on error
+static bool cerver_handlers_slot_is_free (const Cerver *cerver, const Handler *handler) {
+
+	return cerver->handlers
+		&& (handler->id >= 0) && ((unsigned int) handler->id < cerver->n_handlers)
+		&& !cerver->handlers[handler->id];
+
+}
+
 u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
 	u8 retval = 1;
 
 	if (cerver && handler) {
-		if (cerver->handlers) {
+		if (cerver_handlers_slot_is_free (cerver, handler)) {
 			cerver->handlers[handler->id] = handler;
 
 			handler->type = HANDLER_TYPE_CERVER;
@@ -1599,17 +1600,11 @@ u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 }
 
 // returns the current number of app handlers (multiple handlers option)
+// it is set before the cerver starts, so it is read without the handlers lock,
+// that the cerver only has after its handlers started
 unsigned int cerver_get_n_handlers (Cerver *cerver) {
 
-	unsigned int retval = 0;
-
-	if (cerver) {
-		(void) pthread_mutex_lock (cerver->handlers_lock);
-		retval = cerver->n_handlers;
-		(void) pthread_mutex_unlock (cerver->handlers_lock);
-	}
-
-	return retval;
+	return cerver ? cerver->n_handlers : 0;
 
 }
 
