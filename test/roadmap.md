@@ -513,6 +513,12 @@ umbrales de asignaciones contra la 2.0b-67.
 | `test/http/receive.c` (capacidad del body) | El body se reserva una vez desde su `Content-Length`, en la clase que lo contiene | — (ajustado al tamaño de la clase) |
 | `test/performance.sh` | GET 0 y POST JSON 14 asignaciones por petición | La 2.0b-67 da 1 y 19 |
 
+### 2.0b-69, el estilo de JWT y JSON
+
+Sin tests nuevos: el estilo no cambia el comportamiento. Lo validan los tests de `test/jwt/`, `test/json/` y
+`test/http/` (los tokens, las respuestas), el fuzz de `json` y `jwt` a 300 s, los símbolos exportados iguales a los
+de la 2.0b-68 y `internal.o` con el mismo código.
+
 ### Pendiente
 
 - **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `scheduled.yml`.

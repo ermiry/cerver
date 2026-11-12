@@ -1,17 +1,13 @@
 ## General
-- Updated roadmap with the hot objects that HTTP recycles
-- Updated tests roadmap with mutants of the HTTP recycler
-- Updated CLAUDE.md with the recycled responses & body
-- Added the incompatibilities of 2.0b-68 & recycled objects
+- Updated roadmap with the style of the JWT & of the JSON
+- Updated tests roadmap with the checks of the JSON style
+- Updated CLAUDE.md with the style of the vendored JSON
+- Added the incompatibilities of the 2.0b-69 in JWT & JSON
 
 ## HTTP
-- Added a recycler for HTTP responses & buffers per thread
-- Keeping stats of the files of each request in thread arenas
-- Recycling responses with their own headers written inside
-- Reserving the bodies in recycled buffers & request arenas
-
-## Tests
-- Added tests of the recycled responses & the body buffers
-- Registering the recycle tests in the main file of HTTP tests
-- Expecting bodies reserved in the classes of reused buffers
-- Lowering allocations per request for the performance tests
+- Restyled the JWT with the full names, constants & helpers
+- Restyled JSON values with full names, helpers & no config
+- Restyled the hash tables of the JSON objects with helpers
+- Replaced the gotos of the JSON lexer with its own helpers
+- Replaced JSON parser gotos with helpers for its members
+- Replaced gotos of JSON pack & unpack with their helpers
