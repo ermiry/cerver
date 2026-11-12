@@ -14,7 +14,10 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "cerver/config.h"
@@ -323,75 +326,68 @@ static char strbuffer_pop (strbuffer_t *strbuff) {
 
 #pragma region strconv
 
-#if JSON_HAVE_LOCALECONV
-#include <locale.h>
+// the numbers of json always have a dot, whatever the locale of the process is:
+// they are read and written with a "C" locale that is created once,
+// localeconv () was not thread safe and a decimal point of two bytes
+// ended the process in an assert ()
+static locale_t json_numbers_locale = (locale_t) 0;
+static pthread_once_t json_numbers_locale_once = PTHREAD_ONCE_INIT;
 
-/*
-  - This code assumes that the decimal separator is exactly one
-	character.
+static void json_numbers_locale_create (void) {
 
-  - If setlocale() is called by another thread between the call to
-	localeconv() and the call to sprintf() or strtod(), the result may
-	be wrong. setlocale() is not thread-safe and should not be used
-	this way. Multi-threaded programs should use uselocale() instead.
-*/
-
-static void to_locale (strbuffer_t *strbuffer) {
-
-	const char *point;
-	char *pos;
-
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (strbuffer->value, '.');
-	if (pos)
-		*pos = *point;
+	json_numbers_locale = newlocale (LC_NUMERIC_MASK, "C", (locale_t) 0);
 
 }
 
-static void from_locale (char *buffer) {
+static locale_t json_numbers_locale_get (void) {
 
-	const char *point;
-	char *pos;
+	(void) pthread_once (&json_numbers_locale_once, json_numbers_locale_create);
 
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (buffer, *point);
-	if (pos)
-		*pos = '.';
+	return json_numbers_locale;
 
 }
 
-#endif
+// the lexer only gives numbers, a number that is not read whole is an error,
+// an underflow gives zero or a subnormal value that is valid,
+// only an overflow (an infinite value) is an error
+static int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 
-int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale)
+		return -1;
 
-	double value = 0;
 	char *end = NULL;
 
-	#if JSON_HAVE_LOCALECONV
-	to_locale (strbuffer);
-	#endif
-
 	errno = 0;
-	value = strtod (strbuffer->value, &end);
-	assert (end == strbuffer->value + strbuffer->length);
+	const double value = strtod_l (strbuffer->value, &end, locale);
 
-	if (errno == ERANGE) {
-		/* Overflow or Underflow */
+	if (end != (strbuffer->value + strbuffer->length))
 		return -1;
-	}
+
+	if ((errno == ERANGE) && isinf (value))
+		return -1;
 
 	*out = value;
 	return 0;
+
+}
+
+// NaN and the infinite values are not json
+static int jsonp_dtostr_format (
+	char *buffer, size_t size, double value, int precision
+) {
+
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale || !isfinite (value))
+		return -1;
+
+	const locale_t previous = uselocale (locale);
+
+	const int ret = snprintf (buffer, size, "%.*g", precision, value);
+
+	(void) uselocale (previous);
+
+	return ret;
 
 }
 
@@ -404,19 +400,15 @@ int jsonp_dtostr (
 	size_t length = 0;
 
 	if (precision == 0)
-		precision = 17;
+		precision = JSON_REAL_DEFAULT_PRECISION;
 
-	ret = snprintf (buffer, size, "%.*g", precision, value);
+	ret = jsonp_dtostr_format (buffer, size, value, precision);
 	if (ret < 0)
 		return -1;
 
 	length = (size_t)ret;
 	if (length >= size)
 		return -1;
-
-	#if JSON_HAVE_LOCALECONV
-	from_locale (buffer);
-	#endif
 
 	/* Make sure there's a dot or 'e' in the output. Otherwise
 	   a real is converted to an integer when decoding */
