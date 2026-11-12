@@ -113,6 +113,12 @@ static void auth_data_delete (AuthData *auth_data) {
 	if (auth_data) {
 		str_delete (auth_data->token);
 		if (auth_data->auth_data) free (auth_data->auth_data);
+
+		// the data that the authenticate method recovered and no client took
+		if (auth_data->data && auth_data->delete_data) {
+			auth_data->delete_data (auth_data->data);
+		}
+
 		free (auth_data);
 	}
 
@@ -275,7 +281,13 @@ static Client *auth_create_new_client (
 	if (client) {
 		connection_register_to_client (client, packet->connection);
 
-		// client_set_data (client, auth_data->data, auth_data->delete_data);
+		// the data that the authenticate method recovered belongs to the new client
+		if (auth_data->data) {
+			client_set_data (client, auth_data->data, auth_data->delete_data);
+
+			auth_data->data = NULL;
+			auth_data->delete_data = NULL;
+		}
 
 		// if the cerver is configured to use sessions,
 		// this client has the first connection associated with the id & auth data
