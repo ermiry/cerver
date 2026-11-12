@@ -895,6 +895,123 @@ a esta beta, que todavía no es la de producción. El core de `http` queda idén
 stress, histogram, system, los fuzzers `serializer` y `game`, los pares `cerver/game`, `cerver/schemas`,
 `balancer/custom` y `examples/*`).
 
+#### 4.3.11 La seguridad de JWT y JSON (Beta 2.0b-67) — implementado, sin commits
+
+Con dos hallazgos del CI de la 2.0b-66 (PR #403): el `va_copy` de `cerver/config.h` que rompía `json_pack ()` /
+`json_unpack ()` con clang en x86-64, y el send timeout de valgrind en `test/http/disconnect.c` (16 → 64 s).
+
+**El diagnóstico (2026-11-11):** una auditoría del JWT (libjwt ~1.12 vendorizado, MPL-2.0) y del JSON (jansson ~2.13
+vendorizado, MIT) encontró:
+
+- **JWT:**
+  - un desborde de 1 byte en `jwt_encode` con un token sin valores;
+  - `http_cerver_auth_validate_jwt` lee fuera del string y crashea sin llave;
+  - `bearer_len` / `json_len` reportan más bytes de los que hay;
+  - el HMAC se compara con `strcmp`;
+  - `jwt_decode` devuelve éxito sin verificar si falla la copia de la llave;
+  - una llave vacía apaga la verificación;
+  - nada revisa que la llave corresponda al algoritmo;
+  - el PEM se re-parsea en cada petición.
+- **JSON:**
+  - el seed del hash es `time (NULL)` y se escribe sin sincronizar (los `HAVE_*` de upstream nunca se definen);
+  - las respuestas JSON de cerver se arman con `printf` sin escapar;
+  - cuatro helpers liberan el buffer que la respuesta todavía usa;
+  - `json_dumpfd` nunca funciona;
+  - el parser no tiene límite de memoria (50–70× el body);
+  - el `strtod` depende del locale (un `assert` alcanzable);
+  - toda la librería se exporta sin visibilidad.
+
+**Las decisiones:** tres betas, una por sesión: **2.0b-67 la seguridad**, 2.0b-68 los objetos calientes (§4.3.12),
+2.0b-69 el estilo (§4.3.13). Los archivos compartidos con `core` (`utils/base64.c`) se llevan a `core` en la 1.9; el
+JSON se muda al core (issue #207) en la 1.9.
+
+**El JWT:**
+
+- El encode con los tamaños de `base64_encode_len ()`, sin `alloca`.
+- La API de `auth.c`:
+  - el prefijo `Bearer ` validado;
+  - las llaves que faltan dan error;
+  - un bearer o un JSON que no caben son un error;
+  - el JSON con valor se arma con la librería.
+- **La verificación:**
+  - el HMAC se compara en tiempo constante (`CRYPTO_memcmp`) sobre la firma decodificada;
+  - `jwt_decode` rechaza un algoritmo distinto al esperado antes de verificar;
+  - el PEM se parsea una vez a un `EVP_PKEY` al cargar la llave;
+  - la llave tiene que corresponder al algoritmo (HS con un secreto del tamaño del hash, RS con 2048 bits o más, ES con
+    su curva), o `cerver_start` falla;
+  - las llaves se borran con `OPENSSL_cleanse`;
+  - `JWT_ALG_NONE` no se acepta en HTTP: `http_cerver_auth_set_jwt_algorithm ()` devuelve `u8`.
+- **El parseo estricto:**
+  - base64url canónico (`base64url_encode` / `base64url_decode`);
+  - un tamaño máximo de token (2^13, configurable);
+  - los nombres de algoritmo sensibles a mayúsculas;
+  - el header y el payload son objetos sin llaves repetidas;
+  - las firmas ECDSA salen con S bajo.
+- **La expiración** (por default igual que antes):
+  - `exp` requerido opcional;
+  - un leeway en segundos;
+  - `iss` / `aud` esperados opcionales;
+  - un `nbf` que no es entero falla;
+  - los valores enteros del token son `int64_t`.
+
+**El JSON:**
+
+- El seed con `RAND_bytes ()` al iniciar HTTP, con la versión atómica de `json_object_seed ()`.
+- Las respuestas JSON de cerver con `json_pack ()` (con escape, los reales sin locale, `NaN` es error), dueñas de su
+  buffer.
+- Un presupuesto de memoria por hilo durante el parseo, proporcional a la entrada.
+- El `strtod` y los reales con un locale "C" propio.
+- `json_dumpfd ()`.
+- Menores: la profundidad en el dump, el underflow, el error de UTF-8, el `i` de unpack fuera de rango, los overflows
+  de tamaño, `json_print ()`.
+
+**Los símbolos:**
+
+- `CERVER_PRIVATE` es oculto (`-fvisibility=hidden`); los internos del JSON y del JWT pasan a `CERVER_PRIVATE` o
+  `static`.
+- Los `json_*` siguen públicos: libauth los usa.
+- Los avisos de licencia de jansson y libjwt.
+
+**Los tests:** cada arreglo con su test visto fallar contra la 2.0b-66; los fuzzers de JWT con HMAC, ES y el round
+trip, y uno de la API de `auth.c`; el de JSON con los flags y pack / unpack.
+
+#### 4.3.12 Los objetos calientes de HTTP (Beta 2.0b-68) — planeada
+
+Las 19 asignaciones de POST JSON de `performance.sh`:
+- 1 `HttpRouteFileStats` en cada petición (la única de GET);
+- 2 del body (`String` + su reserva);
+- 1 `HttpResponse` de ~16.7 KB que se limpia con `memset`;
+- 1 `vasprintf` de la cabecera;
+- 14 del `json_loads ()` del handler.
+
+**El plan:**
+
+- Los stats de archivos dentro de `HttpReceive` o en la arena (GET 1 → 0).
+- El body en la arena hasta un tope, o en una caché por hilo de clases potencia de 2, con el patrón de los paquetes
+  (`packets.c`): un puntero `__thread`, un destructor de `pthread_key` que vacía a la `FreeList` global, y límite 0
+  con `CERVER_RECYCLE_DISABLED`.
+- `HttpResponse` en una caché por hilo + `FreeList`, midiendo si la tabla de cabeceras (64 × 256 B) se puede achicar.
+- La cabecera con `snprintf` en la arena.
+- **Un A/B:** una caché por hilo por clases detrás de `jsonp_malloc` / `jsonp_free`. Se queda solo si mejora las req/s
+  más que la dispersión, medido en x86 y aarch64.
+- Los umbrales nuevos de `performance.sh`.
+- Las issues #182, #328 y #145.
+
+#### 4.3.13 El estilo de JWT y JSON (Beta 2.0b-69) — planeada
+
+Las convenciones de cerver completas en el código vendorizado:
+
+- **Los nombres:** palabras completas (`strbuff`, `new_thing`, `js`, `hdr`, …).
+- **El flujo:** helpers estáticos en lugar de los `goto` y de los macros con `return` (`SIGN_ERROR`, `VERIFY_ERROR`,
+  `APPEND_STR`).
+- **El formato:** constantes nombradas, `#pragma region`, la línea en blanco después de `{`, los guards
+  `_CERVER_HTTP_JSON_*_H_`.
+- **El JWT:**
+  - `JWT_ALG_MAP` con el digest y el tipo de llave en lugar de los seis `switch`;
+  - sin `jwt/config.h`, sin los `pfn_*` y sin el bloque de OpenSSL < 1.1.
+- **Lo que se conserva:** los headers de licencia y el lookup3 de Bob Jenkins.
+- **La validación:** objetos idénticos donde el estilo no cambia código.
+
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
 Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.
