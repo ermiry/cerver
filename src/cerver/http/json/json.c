@@ -1828,90 +1828,106 @@ static void lex_close (lex_t *lex) {
 
 }
 
-/*** parser ***/
+// the parser
 
 static json_t *parse_value (
 	lex_t *lex, size_t flags, json_error_t *error
 );
+
+// the key of a member: a string without NUL bytes that is not repeated if they are rejected
+// returns the key, released with jsonp_free (), or NULL on error
+static char *parse_object_key (
+	lex_t *lex, size_t flags, json_error_t *error, const json_t *object
+) {
+
+	if (lex->token != TOKEN_STRING) {
+		error_set (error, lex, json_error_invalid_syntax, "string or '}' expected");
+		return NULL;
+	}
+
+	size_t length = 0;
+	char *key = lex_steal_string (lex, &length);
+	if (!key) return NULL;
+
+	if (memchr (key, '\0', length)) {
+		error_set (error, lex, json_error_null_byte_in_key, "NUL byte in object key not supported");
+	}
+
+	else if ((flags & JSON_REJECT_DUPLICATES) && json_object_get (object, key)) {
+		error_set (error, lex, json_error_duplicate_key, "duplicate object key");
+	}
+
+	else {
+		return key;
+	}
+
+	jsonp_free (key);
+
+	return NULL;
+
+}
+
+// a "key": value of the object
+// returns true if it was parsed and set
+static bool parse_object_member (
+	lex_t *lex, size_t flags, json_error_t *error, json_t *object
+) {
+
+	char *key = parse_object_key (lex, flags, error, object);
+	if (!key) return false;
+
+	bool parsed = false;
+
+	lex_scan (lex, error);
+	if (lex->token != ':') {
+		error_set (error, lex, json_error_invalid_syntax, "':' expected");
+	}
+
+	else {
+		lex_scan (lex, error);
+
+		json_t *value = parse_value (lex, flags, error);
+		parsed = value && !json_object_set_new_nocheck (object, key, value);
+	}
+
+	jsonp_free (key);
+
+	return parsed;
+
+}
 
 static json_t *parse_object (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
 	json_t *object = json_object ();
-	if (!object)
-		return NULL;
+	if (!object) return NULL;
 
 	lex_scan (lex, error);
-	if (lex->token == '}')
-		return object;
+	if (lex->token == '}') return object;
 
-	while (1) {
-		char *key;
-		size_t len;
-		json_t *value;
-
-		if (lex->token != TOKEN_STRING) {
-			error_set (error, lex, json_error_invalid_syntax, "string or '}' expected");
-			goto error;
-		}
-
-		key = lex_steal_string (lex, &len);
-		if (!key)
-			return NULL;
-		if (memchr (key, '\0', len)) {
-			jsonp_free (key);
-			error_set (error, lex, json_error_null_byte_in_key,
-					  "NUL byte in object key not supported");
-			goto error;
-		}
-
-		if (flags & JSON_REJECT_DUPLICATES) {
-			if (json_object_get (object, key)) {
-				jsonp_free (key);
-				error_set (error, lex, json_error_duplicate_key, "duplicate object key");
-				goto error;
-			}
-		}
+	bool parsed = true;
+	while (parsed) {
+		parsed = parse_object_member (lex, flags, error, object);
+		if (!parsed) break;
 
 		lex_scan (lex, error);
-		if (lex->token != ':') {
-			jsonp_free (key);
-			error_set (error, lex, json_error_invalid_syntax, "':' expected");
-			goto error;
-		}
-
-		lex_scan (lex, error);
-		value = parse_value (lex, flags, error);
-		if (!value) {
-			jsonp_free (key);
-			goto error;
-		}
-
-		if (json_object_set_new_nocheck (object, key, value)) {
-			jsonp_free (key);
-			goto error;
-		}
-
-		jsonp_free (key);
-
-		lex_scan (lex, error);
-		if (lex->token != ',')
-			break;
+		if (lex->token != ',') break;
 
 		lex_scan (lex, error);
 	}
 
-	if (lex->token != '}') {
+	if (parsed && (lex->token != '}')) {
 		error_set (error, lex, json_error_invalid_syntax, "'}' expected");
-		goto error;
+		parsed = false;
+	}
+
+	if (!parsed) {
+		json_decref (object);
+		object = NULL;
 	}
 
 	return object;
-
-error:
-	json_decref (object);
-	return NULL;
 
 }
 
@@ -1920,39 +1936,36 @@ static json_t *parse_array (
 ) {
 
 	json_t *array = json_array ();
-	if (!array)
-		return NULL;
+	if (!array) return NULL;
 
 	lex_scan (lex, error);
-	if (lex->token == ']')
-		return array;
+	if (lex->token == ']') return array;
 
+	bool parsed = true;
 	while (lex->token) {
-		json_t *elem = parse_value (lex, flags, error);
-		if (!elem)
-			goto error;
+		json_t *element = parse_value (lex, flags, error);
 
-		if (json_array_append_new (array, elem)) {
-			goto error;
-		}
+		// the array releases the element when it fails to append it
+		parsed = element && !json_array_append_new (array, element);
+		if (!parsed) break;
 
 		lex_scan (lex, error);
-		if (lex->token != ',')
-			break;
+		if (lex->token != ',') break;
 
 		lex_scan (lex, error);
 	}
 
-	if (lex->token != ']') {
+	if (parsed && (lex->token != ']')) {
 		error_set (error, lex, json_error_invalid_syntax, "']' expected");
-		goto error;
+		parsed = false;
+	}
+
+	if (!parsed) {
+		json_decref (array);
+		array = NULL;
 	}
 
 	return array;
-
-error:
-	json_decref (array);
-	return NULL;
 
 }
 
