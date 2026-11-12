@@ -1221,6 +1221,13 @@ void client_broadcast_to_all_avl (
 
 u8 client_event_unregister (Client *client, ClientEventType event_type);
 
+// an event type indexes the events of the client
+static inline bool client_event_type_is_valid (const ClientEventType event_type) {
+
+	return (unsigned int) event_type < CLIENT_MAX_EVENTS;
+
+}
+
 // get the description for the current event type
 const char *client_event_type_description (const ClientEventType type) {
 
@@ -1344,7 +1351,7 @@ u8 client_event_register (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client_event_new ();
 		if (event) {
 			event->type = event_type;
@@ -1378,7 +1385,7 @@ u8 client_event_unregister (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		if (client->events[event_type]) {
 			client_event_delete (client->events[event_type]);
 			client->events[event_type] = NULL;
@@ -1397,7 +1404,7 @@ void client_event_set_response (
 	void *response_data, Action delete_response_data
 ) {
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			event->response_data = response_data;
@@ -1413,7 +1420,7 @@ void client_event_trigger (
 	const Client *client, const Connection *connection
 ) {
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			// trigger the action
@@ -1463,7 +1470,8 @@ void client_event_trigger_with_response (
 	void *response, Action delete_response
 ) {
 
-	ClientEvent *event = client ? client->events[event_type] : NULL;
+	ClientEvent *event = (client && client_event_type_is_valid (event_type)) ?
+		client->events[event_type] : NULL;
 	ClientEventData *event_data = (event && event->work) ?
 		client_event_data_create (client, connection, event) : NULL;
 
@@ -1499,6 +1507,13 @@ void client_event_trigger_with_response (
 #pragma region errors
 
 u8 client_error_unregister (Client *client, const ClientErrorType error_type);
+
+// an error type indexes the errors of the client
+static inline bool client_error_type_is_valid (const ClientErrorType error_type) {
+
+	return (unsigned int) error_type < CLIENT_MAX_ERRORS;
+
+}
 
 // get the description for the current error type
 const char *client_error_type_description (const ClientErrorType type) {
@@ -1606,7 +1621,7 @@ u8 client_error_register (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		ClientError *error = client_error_new ();
 		if (error) {
 			error->type = error_type;
@@ -1638,7 +1653,7 @@ u8 client_error_unregister (Client *client, const ClientErrorType error_type) {
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		if (client->errors[error_type]) {
 			client_error_delete (client->errors[error_type]);
 			client->errors[error_type] = NULL;
@@ -1661,7 +1676,7 @@ u8 client_error_trigger (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		ClientError *error = client->errors[error_type];
 		if (error) {
 			// trigger the action
