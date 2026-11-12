@@ -701,6 +701,7 @@ int main (void) {
 	http_tests_tree ();
 	http_tests_requests ();
 	http_tests_responses ();
+	http_tests_recycle ();
 	http_tests_multiparts ();
 	http_tests_urls ();
 	http_tests_utils ();

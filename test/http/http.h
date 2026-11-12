@@ -28,6 +28,8 @@ extern void http_tests_requests (void);
 
 extern void http_tests_responses (void);
 
+extern void http_tests_recycle (void);
+
 extern void http_tests_multiparts (void);
 
 extern void http_tests_urls (void);
