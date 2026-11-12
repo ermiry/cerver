@@ -250,6 +250,7 @@ exapp:
 	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
 
 base: $(EXOBJS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/start.o -o ./$(EXATARGET)/start $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers $(EXALIBS) $(EXAPPLINK)
@@ -265,17 +266,17 @@ base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS) $(EXAPPLINK)
 
+# the load balancer and its service, with the app library
+services: $(EXOBJS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) $(EXAPPLINK)
+	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) $(EXAPPLINK)
+
 client: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/client
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/game.o -o ./$(EXATARGET)/client/game $(EXALIBS) $(EXAPPLINK)
-
-# the load balancer and its service, with the app library
-services: $(EXOBJS)
-	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) $(EXAPPLINK)
-	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) $(EXAPPLINK)
 
 web: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/web
@@ -564,7 +565,7 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
 endif
 
-BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))

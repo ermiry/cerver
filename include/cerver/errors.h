@@ -117,6 +117,11 @@ typedef struct CerverErrorEventData {
 
 	void *action_args;                  // the action arguments
 
+	// the error was dropped after this trigger, so cerver_error_event_data_delete ()
+	// releases the action arguments with delete_action_args ()
+	Action delete_action_args;
+	bool owns_action_args;
+
 	String *error_message;
 
 } CerverErrorEventData;

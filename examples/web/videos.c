@@ -141,14 +141,12 @@ int main (void) {
 				videos_service->info->name
 			);
 
-			cerver_delete (videos_service);
+			(void) cerver_teardown (videos_service);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (videos_service);
 	}
 
 	cerver_end ();

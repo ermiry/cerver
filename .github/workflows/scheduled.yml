@@ -37,6 +37,24 @@ jobs:
           SANITIZER: thread
         run: bash test/repeat.sh test/bin/routing 20
 
+      - name: Client features
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/features 20
+
+      - name: Client files
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/files 20
+
+      - name: Cerver lobby
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/lobby 20
+
       - name: Game
         env:
           SANITIZER: thread
@@ -59,6 +77,16 @@ jobs:
       - name: Threads pair
         run: bash test/repeat.sh cerver/threads 200
 
+      - name: Balancer round robin pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/round_robin 50
+
+      - name: Balancer handler id pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/handler_id 50
+
       - name: Client lifecycle
         env:
           BUILD: 0
@@ -67,7 +95,7 @@ jobs:
       - name: Cerver core
         env:
           BUILD: 0
-        run: bash test/repeat.sh test/bin/cerver/core 50
+        run: bash test/repeat.sh test/bin/cerver/core 100
 
       - name: Cerver UDP peers
         env:

@@ -658,7 +658,7 @@ CERVER_PUBLIC u8 packet_route_between_connections (
 
 // check if packet has a compatible protocol id and a version:
 // the same protocol id and major, and a minor that is not newer than the local one
-// the version is not part of the packet header, so a received packet has the initial one
+// a received packet has the protocol id and version of its header, a created one the local ones
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (const Packet *packet);
 

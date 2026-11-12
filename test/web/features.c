@@ -247,7 +247,7 @@ int main (int argc, char **argv) {
 
 		else {
 			cerver_log_error ("Failed to start %s!", features_cerver->info->name);
-			cerver_delete (features_cerver);
+			(void) cerver_teardown (features_cerver);
 		}
 	}
 

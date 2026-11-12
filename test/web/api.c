@@ -156,14 +156,12 @@ int main (void) {
 				api_cerver->info->name
 			);
 
-			cerver_delete (api_cerver);
+			(void) cerver_teardown (api_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (api_cerver);
 	}
 
 	cerver_end ();

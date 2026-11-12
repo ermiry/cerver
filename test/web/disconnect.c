@@ -354,7 +354,7 @@ int main (int argc, char **argv) {
 
 			else {
 				cerver_log_error ("Failed to start %s!", disconnect_cerver->info->name);
-				cerver_delete (disconnect_cerver);
+				(void) cerver_teardown (disconnect_cerver);
 			}
 		}
 

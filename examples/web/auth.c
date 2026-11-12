@@ -214,14 +214,12 @@ int main (void) {
 				auth_cerver->info->name
 			);
 
-			cerver_delete (auth_cerver);
+			(void) cerver_teardown (auth_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (auth_cerver);
 	}
 
 	cerver_end ();

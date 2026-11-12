@@ -46,6 +46,8 @@ static CerverErrorEventData *cerver_error_event_data_new (void) {
 		error_event_data->connection = NULL;
 
 		error_event_data->action_args = NULL;
+		error_event_data->delete_action_args = NULL;
+		error_event_data->owns_action_args = false;
 
 		error_event_data->error_message = NULL;
 	}
@@ -58,6 +60,13 @@ void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
 	if (error_event_data) {
 		str_delete (error_event_data->error_message);
+
+		if (
+			error_event_data->owns_action_args
+			&& error_event_data->action_args && error_event_data->delete_action_args
+		) {
+			error_event_data->delete_action_args (error_event_data->action_args);
+		}
 
 		free (error_event_data);
 	}
@@ -124,6 +133,13 @@ void cerver_error_event_delete (void *event_ptr) {
 
 }
 
+// an error type indexes the error events of the cerver
+static inline bool cerver_error_type_is_valid (const CerverErrorType error_type) {
+
+	return (unsigned int) error_type < CERVER_MAX_ERRORS;
+
+}
+
 // registers an action to be triggered when the specified error event occurs
 // if there is an existing action registered to an error event, it will be overrided
 // a newly allocated CerverErrorEventData structure will be passed to your method
@@ -138,7 +154,7 @@ u8 cerver_error_event_register (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		CerverErrorEvent *error = cerver_error_event_new ();
 		if (error) {
 			error->type = error_type;
@@ -172,7 +188,7 @@ u8 cerver_error_event_unregister (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		if (cerver->errors[error_type]) {
 			cerver_error_event_delete (cerver->errors[error_type]);
 			cerver->errors[error_type] = NULL;
@@ -193,32 +209,33 @@ void cerver_error_event_trigger (
 	const char *error_message
 ) {
 
-	if (cerver) {
+	if (cerver && cerver_error_type_is_valid (error_type)) {
 		CerverErrorEvent *error = cerver->errors[error_type];
 		if (error) {
 			// trigger the action
 			if (error->work) {
+				CerverErrorEventData *error_event_data = cerver_error_event_data_create (
+					cerver, client, connection, error->work_args, error_message
+				);
+
+				// the error is dropped while its action can still run in its thread,
+				// so the arguments go with the data of this trigger
+				if (error_event_data && error->drop_after_trigger) {
+					error_event_data->delete_action_args = error->delete_action_args;
+					error_event_data->owns_action_args = true;
+					error->work_args = NULL;
+				}
+
 				// the thread is counted, so the cerver teardown waits for it
 				if (error->create_thread) {
 					(void) thread_group_create (
 						(ThreadGroup *) &cerver->event_threads,
-						error->work,
-						cerver_error_event_data_create (
-							cerver,
-							client, connection,
-							error->work_args,
-							error_message
-						)
+						error->work, error_event_data
 					);
 				}
 
 				else {
-					error->work (cerver_error_event_data_create (
-						cerver,
-						client, connection,
-						error->work_args,
-						error_message
-					));
+					(void) error->work (error_event_data);
 				}
 
 				if (error->drop_after_trigger) {

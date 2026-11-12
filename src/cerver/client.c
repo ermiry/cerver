@@ -1221,6 +1221,13 @@ void client_broadcast_to_all_avl (
 
 u8 client_event_unregister (Client *client, ClientEventType event_type);
 
+// an event type indexes the events of the client
+static inline bool client_event_type_is_valid (const ClientEventType event_type) {
+
+	return (unsigned int) event_type < CLIENT_MAX_EVENTS;
+
+}
+
 // get the description for the current event type
 const char *client_event_type_description (const ClientEventType type) {
 
@@ -1248,6 +1255,7 @@ static ClientEventData *client_event_data_new (void) {
 
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
+		event_data->owns_action_args = false;
 	}
 
 	return event_data;
@@ -1262,7 +1270,25 @@ void client_event_data_delete (ClientEventData *event_data) {
 			else free (event_data->response_data);
 		}
 
+		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
+			event_data->delete_action_args (event_data->action_args);
+		}
+
 		free (event_data);
+	}
+
+}
+
+// the event is dropped while its action can still run in its thread,
+// so the arguments and the response that the event releases go with the data of this trigger
+static void client_event_data_take (ClientEventData *event_data, ClientEvent *event) {
+
+	event_data->owns_action_args = true;
+	event->work_args = NULL;
+
+	if (!event_data->owns_response_data && event->response_data && event->delete_response_data) {
+		event_data->owns_response_data = true;
+		event->response_data = NULL;
 	}
 
 }
@@ -1344,7 +1370,7 @@ u8 client_event_register (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client_event_new ();
 		if (event) {
 			event->type = event_type;
@@ -1378,7 +1404,7 @@ u8 client_event_unregister (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		if (client->events[event_type]) {
 			client_event_delete (client->events[event_type]);
 			client->events[event_type] = NULL;
@@ -1397,7 +1423,7 @@ void client_event_set_response (
 	void *response_data, Action delete_response_data
 ) {
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			event->response_data = response_data;
@@ -1413,28 +1439,26 @@ void client_event_trigger (
 	const Client *client, const Connection *connection
 ) {
 
-	if (client) {
+	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				ClientEventData *event_data = client_event_data_create (client, connection, event);
+				if (event_data && event->drop_after_trigger) {
+					client_event_data_take (event_data, event);
+				}
+
 				// the thread is counted, so client_teardown () waits for it
 				if (event->create_thread) {
 					(void) thread_group_create (
 						(ThreadGroup *) &client->event_threads,
-						event->work,
-						client_event_data_create (
-							client, connection,
-							event
-						)
+						event->work, event_data
 					);
 				}
 
 				else {
-					(void) event->work (client_event_data_create (
-						client, connection,
-						event
-					));
+					(void) event->work (event_data);
 				}
 
 				if (event->drop_after_trigger) {
@@ -1463,7 +1487,8 @@ void client_event_trigger_with_response (
 	void *response, Action delete_response
 ) {
 
-	ClientEvent *event = client ? client->events[event_type] : NULL;
+	ClientEvent *event = (client && client_event_type_is_valid (event_type)) ?
+		client->events[event_type] : NULL;
 	ClientEventData *event_data = (event && event->work) ?
 		client_event_data_create (client, connection, event) : NULL;
 
@@ -1471,6 +1496,10 @@ void client_event_trigger_with_response (
 		event_data->response_data = response;
 		event_data->delete_response_data = delete_response;
 		event_data->owns_response_data = true;
+
+		if (event->drop_after_trigger) {
+			client_event_data_take (event_data, event);
+		}
 
 		if (event->create_thread) {
 			(void) thread_group_create (
@@ -1500,6 +1529,13 @@ void client_event_trigger_with_response (
 
 u8 client_error_unregister (Client *client, const ClientErrorType error_type);
 
+// an error type indexes the errors of the client
+static inline bool client_error_type_is_valid (const ClientErrorType error_type) {
+
+	return (unsigned int) error_type < CLIENT_MAX_ERRORS;
+
+}
+
 // get the description for the current error type
 const char *client_error_type_description (const ClientErrorType type) {
 
@@ -1521,6 +1557,8 @@ static ClientErrorData *client_error_data_new (void) {
 		error_data->connection = NULL;
 
 		error_data->action_args = NULL;
+		error_data->delete_action_args = NULL;
+		error_data->owns_action_args = false;
 
 		error_data->error_message = NULL;
 	}
@@ -1533,6 +1571,10 @@ void client_error_data_delete (ClientErrorData *error_data) {
 
 	if (error_data) {
 		str_delete (error_data->error_message);
+
+		if (error_data->owns_action_args && error_data->action_args && error_data->delete_action_args) {
+			error_data->delete_action_args (error_data->action_args);
+		}
 
 		free (error_data);
 	}
@@ -1606,7 +1648,7 @@ u8 client_error_register (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		ClientError *error = client_error_new ();
 		if (error) {
 			error->type = error_type;
@@ -1638,7 +1680,7 @@ u8 client_error_unregister (Client *client, const ClientErrorType error_type) {
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		if (client->errors[error_type]) {
 			client_error_delete (client->errors[error_type]);
 			client->errors[error_type] = NULL;
@@ -1661,30 +1703,33 @@ u8 client_error_trigger (
 
 	u8 retval = 1;
 
-	if (client) {
+	if (client && client_error_type_is_valid (error_type)) {
 		ClientError *error = client->errors[error_type];
 		if (error) {
 			// trigger the action
 			if (error->work) {
+				ClientErrorData *error_data = client_error_data_create (
+					client, connection, error->work_args, error_message
+				);
+
+				// the error is dropped while its action can still run in its thread,
+				// so the arguments go with the data of this trigger
+				if (error_data && error->drop_after_trigger) {
+					error_data->delete_action_args = error->delete_action_args;
+					error_data->owns_action_args = true;
+					error->work_args = NULL;
+				}
+
 				// the thread is counted, so client_teardown () waits for it
 				if (error->create_thread) {
 					retval = thread_group_create (
 						(ThreadGroup *) &client->event_threads,
-						error->work,
-						client_error_data_create (
-							client, connection,
-							error->work_args,
-							error_message
-						)
+						error->work, error_data
 					);
 				}
 
 				else {
-					(void) error->work (client_error_data_create (
-						client, connection,
-						error->work_args,
-						error_message
-					));
+					(void) error->work (error_data);
 
 					retval = 0;
 				}
@@ -2966,6 +3011,11 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 				"Failed to correctly check cerver info!"
 			);
 		}
+
+		// the info is in the cerver report of the connection
+		else {
+			client_event_trigger (CLIENT_EVENT_CERVER_INFO, packet->client, packet->connection);
+		}
 	}
 
 }
@@ -2980,7 +3030,9 @@ static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
 			client_cerver_packet_handle_info (packet);
 			break;
 
-		// the cerves is going to be teardown, we have to disconnect
+		// the cerver is going to teardown and closes the connection right after it,
+		// the receive loop ends or reconnects the connection like with any close,
+		// and the other connections of the client are not affected
 		case CERVER_PACKET_TYPE_TEARDOWN:
 			#ifdef CLIENT_DEBUG
 			cerver_log (
@@ -2989,10 +3041,7 @@ static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
 			);
 			#endif
 
-			client_got_disconnected (packet->client);
-			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
-
-			error = CLIENT_HANDLER_ERROR_CLOSED;
+			client_event_trigger (CLIENT_EVENT_CERVER_TEARDOWN, packet->client, packet->connection);
 			break;
 
 		default:

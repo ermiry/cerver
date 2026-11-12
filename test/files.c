@@ -294,11 +294,31 @@ static void test_file_read_json (void)  {
 
 }
 
+// the size is the bytes that were read: a directory is opened but nothing is read from it
+static void test_file_read_size (void) {
+
+	size_t file_size = 0;
+	char *file_contents = file_read ("./test/data", &file_size);
+
+	test_check_unsigned_eq (file_size, 0, "the size of a read is not the bytes that were read");
+
+	free (file_contents);
+
+	file_contents = file_read ("./test/data/test.txt", NULL);
+	test_check_ptr (file_contents);
+	test_check_str_eq (file_contents, test_string, NULL);
+
+	free (file_contents);
+
+}
+
 static void test_file_read (void) {
 
 	test_file_read_text ();
 
 	test_file_read_json ();
+
+	test_file_read_size ();
 
 }
 

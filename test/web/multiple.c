@@ -394,14 +394,12 @@ int main (void) {
 				web_cerver->info->name
 			);
 
-			cerver_delete (web_cerver);
+			(void) cerver_teardown (web_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (web_cerver);
 	}
 
 	cerver_end ();

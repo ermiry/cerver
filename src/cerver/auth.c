@@ -113,6 +113,12 @@ static void auth_data_delete (AuthData *auth_data) {
 	if (auth_data) {
 		str_delete (auth_data->token);
 		if (auth_data->auth_data) free (auth_data->auth_data);
+
+		// the data that the authenticate method recovered and no client took
+		if (auth_data->data && auth_data->delete_data) {
+			auth_data->delete_data (auth_data->data);
+		}
+
 		free (auth_data);
 	}
 
@@ -275,7 +281,13 @@ static Client *auth_create_new_client (
 	if (client) {
 		connection_register_to_client (client, packet->connection);
 
-		// client_set_data (client, auth_data->data, auth_data->delete_data);
+		// the data that the authenticate method recovered belongs to the new client
+		if (auth_data->data) {
+			client_set_data (client, auth_data->data, auth_data->delete_data);
+
+			auth_data->data = NULL;
+			auth_data->delete_data = NULL;
+		}
 
 		// if the cerver is configured to use sessions,
 		// this client has the first connection associated with the id & auth data
@@ -1233,9 +1245,10 @@ static u8 on_hold_connection_remove (
 
 }
 
-// closes the on hold connection and removes it from the cerver
-void on_hold_connection_drop (
-	const Cerver *cerver, Connection *connection
+// closes the on hold connection, removes it from the cerver and triggers the event
+static void on_hold_connection_close (
+	const Cerver *cerver, Connection *connection,
+	const CerverEventType event_type
 ) {
 
 	if (cerver && connection) {
@@ -1248,12 +1261,26 @@ void on_hold_connection_drop (
 		// we can now safely delete the connection
 		connection_delete (connection);
 
-		cerver_event_trigger (
-			CERVER_EVENT_ON_HOLD_DROPPED,
-			cerver,
-			NULL, NULL
-		);
+		cerver_event_trigger (event_type, cerver, NULL, NULL);
 	}
+
+}
+
+// closes the on hold connection and removes it from the cerver
+void on_hold_connection_drop (
+	const Cerver *cerver, Connection *connection
+) {
+
+	on_hold_connection_close (cerver, connection, CERVER_EVENT_ON_HOLD_DROPPED);
+
+}
+
+// closes the on hold connection that its client closed or lost
+void on_hold_connection_disconnected (
+	const Cerver *cerver, Connection *connection
+) {
+
+	on_hold_connection_close (cerver, connection, CERVER_EVENT_ON_HOLD_DISCONNECTED);
 
 }
 

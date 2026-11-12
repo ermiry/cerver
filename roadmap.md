@@ -922,8 +922,8 @@ vendorizado, MIT) encontró:
   - toda la librería se exporta sin visibilidad.
 
 **Las decisiones:** tres betas, una por sesión: **2.0b-67 la seguridad**, 2.0b-68 los objetos calientes (§4.3.12),
-2.0b-69 el estilo (§4.3.13). Los archivos compartidos con `core` (`utils/base64.c`) se llevan a `core` en la 1.9; el
-JSON se muda al core (issue #207) en la 1.9.
+2.0b-69 el estilo (§4.3.13). Los archivos compartidos con `core` (`config.h`, `utils/base64.{h,c}`) se llevan a
+`core` en la 1.8.2 (§4.3.14); el JSON se muda al core (issue #207) en la 1.9.
 
 **El JWT:**
 
@@ -1047,8 +1047,33 @@ Las convenciones de cerver completas en el código vendorizado:
   `JSON_HAVE_*` ni `JANSSON_USING_CMAKE`; los parámetros de `value.h` y `private.h` con nombres completos.
 - **La validación:** los símbolos exportados son idénticos a los de la 2.0b-68 y `internal.o` (solo macros) compila
   al mismo código; los demás archivos cambian código y los cubren los tests de JSON y JWT y su fuzz de 300 s.
-- **Para la 2.0b-70:** los nombres del resto de `json.c` (`s`, `c`, `ap`, `fmt`, `strbuff`, `pos`, `str`, `len`, …:
-  unos 800) y los de `json.h`, que van juntos.
+- **Para la 2.0b-71:** los nombres del resto de `json.c` (`s`, `c`, `ap`, `fmt`, `strbuff`, `pos`, `str`, `len`, …:
+  unos 800) y los de `json.h`, que van juntos (la 2.0b-70 es el port de la 1.8.1, §4.3.14).
+
+#### 4.3.14 El port de la 1.8.1 (Beta 2.0b-70) — implementado
+
+Que `http` sea la rama con el código más actualizado: todo lo de `core` que faltaba aquí.
+
+- **La 1.8.1:** los 20 arreglos que salieron al documentar el core en el wiki (el socket que se cerraba dos veces, los
+  datos de los handlers, los handlers múltiples directos y sus límites, los setters, el id de sesión con
+  `getrandom ()`, los tipos de eventos y errores fuera de rango, los argumentos de los eventos con drop, el aviso de
+  teardown, los eventos que nunca se disparaban, `AuthData.data`, admin, la conexión, `file_read ()`,
+  `c_string_concat_safe ()`), sus tests, `examples/start.c` con su par y los examples que liberan un cerver que no
+  arrancó con `cerver_teardown ()`.
+- **Lo propio de `http`:** los examples y servidores web con `cerver_teardown ()`; un cerver web no manda el paquete
+  de teardown del cerver a sus conexiones HTTP; el README de la 2.0; `start.md`, `build.md` y `docs.yml` borrados
+  (la documentación es el wiki).
+- **Lo que `core` llevaba adelante:** los saltos de línea finales de los Dockerfiles y scripts, `coverage.sh` con
+  `COVERAGE=1`, `test.sh` con `allocations.sh`, `uninstall.sh` y el rpath de los benchmarks (en `BENCHLIBS` del
+  `makefile`); en `scheduled.yml`, TSan sobre `client/features`, `client/files` y `cerver/lobby`, los pares
+  `balancer/round_robin` y `balancer/handler_id`, y `cerver/core` ×100; el target `services` antes de `client`.
+- **La carrera de `cerver/peers`** (el CI del PR #408 de la 1.8.1, la falla no reproducida de la 1.8b-5): un peer UDP
+  que se borraba bajaba `udp_peers_count` antes de restar sus estadísticas, y `test_peers_auth_failed` esperaba el
+  conteo y leía `current_n_hold_connections` sin esperar. Las estadísticas van antes del conteo, que se publica con
+  release y se lee con acquire, y el test espera la estadística. Igual que en `core` (la 1.8.2).
+- **Lo que baja a `core` en la 1.8.2:** `config.h` (`CERVER_HIDDEN`, `<stdarg.h>`), `utils/base64.{h,c}` con sus
+  tests, `.codecov.yml`, `.gitignore`, `make clean-tests` en `beta.yml` y `production.yml`, los espacios al final
+  del `makefile`, y los comentarios corregidos en el port (`cerver_set_sessions ()`, `cerver_handlers_add ()`).
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 

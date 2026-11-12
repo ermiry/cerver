@@ -33,6 +33,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/sessions.h"
 #include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
@@ -236,7 +237,7 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && msg) {
 		if (cerver->info) {
 			(void) strncpy (
 				cerver->info->welcome, msg, CERVER_INFO_WELCOME_SIZE - 1
@@ -945,7 +946,7 @@ void cerver_set_receive_buffer_size (
 	Cerver *cerver, const size_t size
 ) {
 
-	if (cerver) cerver->receive_buffer_size = size;
+	if (cerver && size) cerver->receive_buffer_size = size;
 
 }
 
@@ -1330,7 +1331,7 @@ void cerver_set_on_hold_receive_buffer_size (
 	Cerver *cerver, const size_t on_hold_receive_buffer_size
 ) {
 
-	if (cerver) {
+	if (cerver && on_hold_receive_buffer_size) {
 		cerver->on_hold_receive_buffer_size = on_hold_receive_buffer_size;
 	}
 
@@ -1344,13 +1345,14 @@ u8 cerver_set_sessions (
 
 	u8 retval = 1;
 
+	// without a generator, the default one gives 32 random bytes of the kernel in hex characters
 	if (cerver) {
-		if (session_id_generator) {
-			cerver->session_id_generator = session_id_generator;
-			cerver->use_sessions = true;
+		cerver->session_id_generator = session_id_generator ?
+			session_id_generator : session_default_generate_id;
 
-			retval = 0;
-		}
+		cerver->use_sessions = true;
+
+		retval = 0;
 	}
 
 	return retval;
@@ -1372,7 +1374,7 @@ void cerver_set_max_received_packet_size (
 	Cerver *cerver, size_t max_received_packet_size
 ) {
 
-	if (cerver) cerver->max_received_packet_size = max_received_packet_size;
+	if (cerver && max_received_packet_size) cerver->max_received_packet_size = max_received_packet_size;
 
 }
 
@@ -1453,18 +1455,11 @@ int cerver_set_multiple_handlers (
 
 	int retval = 1;
 
-	if (cerver) {
-		cerver->multiple_handlers = true;
-		cerver->n_handlers = n_handlers;
-
-		cerver->handlers = (Handler **) calloc (cerver->n_handlers, sizeof (Handler *));
+	if (cerver && n_handlers && !cerver->handlers) {
+		cerver->handlers = (Handler **) calloc (n_handlers, sizeof (Handler *));
 		if (cerver->handlers) {
-			for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
-				cerver->handlers[idx] = NULL;
-
-			// 27/05/2020 -- moved to cerver_handlers_start ()
-			// cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			// pthread_mutex_init (cerver->handlers_lock, NULL);
+			cerver->multiple_handlers = true;
+			cerver->n_handlers = n_handlers;
 
 			retval = 0;
 		}
@@ -1576,15 +1571,24 @@ void cerver_handlers_print_info (Cerver *cerver) {
 
 }
 
+// the id of the handler is below n_handlers and nothing has it yet
+static bool cerver_handlers_slot_is_free (const Cerver *cerver, const Handler *handler) {
+
+	return cerver->handlers
+		&& (handler->id >= 0) && ((unsigned int) handler->id < cerver->n_handlers)
+		&& !cerver->handlers[handler->id];
+
+}
+
 // adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// in the slot of its id, that must be below n_handlers and free
 // returns 0 on success, 1 on error
 u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
 	u8 retval = 1;
 
 	if (cerver && handler) {
-		if (cerver->handlers) {
+		if (cerver_handlers_slot_is_free (cerver, handler)) {
 			cerver->handlers[handler->id] = handler;
 
 			handler->type = HANDLER_TYPE_CERVER;
@@ -1599,17 +1603,11 @@ u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 }
 
 // returns the current number of app handlers (multiple handlers option)
+// it is set before the cerver starts, so it is read without the handlers lock,
+// that the cerver only has after its handlers started
 unsigned int cerver_get_n_handlers (Cerver *cerver) {
 
-	unsigned int retval = 0;
-
-	if (cerver) {
-		(void) pthread_mutex_lock (cerver->handlers_lock);
-		retval = cerver->n_handlers;
-		(void) pthread_mutex_unlock (cerver->handlers_lock);
-	}
-
-	return retval;
+	return cerver ? cerver->n_handlers : 0;
 
 }
 
@@ -1773,6 +1771,8 @@ Cerver *cerver_create_web (
 
 #pragma region init
 
+static void cerver_close_socket (Cerver *cerver);
+
 // every address of the cerver's family
 static void cerver_network_init_address_any (Cerver *cerver) {
 
@@ -1838,7 +1838,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 			cerver->info->name, cerver->bind_address
 		);
 
-		close (cerver->sock);
+		cerver_close_socket (cerver);
 
 		return retval;
 	}
@@ -1878,7 +1878,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 			cerver->info->name
 		);
 
-		close (cerver->sock);
+		cerver_close_socket (cerver);
 	}
 
 	return retval;
@@ -1913,7 +1913,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 					cerver->info->name
 				);
 
-				close (cerver->sock);
+				cerver_close_socket (cerver);
 
 				retval = 1;     // error
 			}
@@ -2938,7 +2938,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 						cerver->info->name
 					);
 
-					close (cerver->sock);
+					cerver_close_socket (cerver);
 				}
 			}
 
@@ -2973,7 +2973,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 						cerver->info->name
 					);
 
-					close (cerver->sock);
+					cerver_close_socket (cerver);
 				}
 			}
 
@@ -3425,6 +3425,70 @@ static void cerver_shutdown_connection (void *connection_ptr, void *args) {
 
 }
 
+// the packet that tells the clients that the cerver is going to teardown
+typedef struct CerverTeardownNotice {
+
+	Cerver *cerver;
+	Client *client;
+	const Packet *packet;
+
+} CerverTeardownNotice;
+
+static void cerver_notify_teardown_connection (void *connection_ptr, void *notice_ptr) {
+
+	const CerverTeardownNotice *notice = (const CerverTeardownNotice *) notice_ptr;
+
+	size_t sent = 0;
+	(void) packet_send_to (
+		notice->packet, &sent, false,
+		notice->cerver, notice->client, (Connection *) connection_ptr, NULL
+	);
+
+}
+
+// must be called with the clients tree locked
+static void cerver_notify_teardown_clients (const AVLNode *node, CerverTeardownNotice *notice) {
+
+	if (node) {
+		cerver_notify_teardown_clients (node->left, notice);
+
+		Client *client = (Client *) node->id;
+		if (client && client->connections) {
+			notice->client = client;
+			(void) dlist_traverse (client->connections, cerver_notify_teardown_connection, notice);
+		}
+
+		cerver_notify_teardown_clients (node->right, notice);
+	}
+
+}
+
+// the clients learn that the cerver is going to teardown
+// before the drain shuts their connections down,
+// a web cerver never writes a cerver packet into an HTTP connection
+static void cerver_notify_teardown (Cerver *cerver) {
+
+	if (
+		(cerver->type != CERVER_TYPE_WEB)
+		&& cerver->clients
+		&& (CERVER_STATS_GET (cerver->stats->current_n_connected_clients) > 0)
+	) {
+		Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
+		if (packet) {
+			CerverTeardownNotice notice = { cerver, NULL, packet };
+
+			(void) pthread_mutex_lock (cerver->clients->mutex);
+
+			cerver_notify_teardown_clients (cerver->clients->root, &notice);
+
+			(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+			packet_delete (packet);
+		}
+	}
+
+}
+
 // must be called with the clients tree locked
 static void cerver_shutdown_clients_connections (const AVLNode *node) {
 
@@ -3569,14 +3633,7 @@ static void cerver_destroy_on_hold_connections (Cerver *cerver) {
 static void cerver_destroy_clients (Cerver *cerver) {
 
 	if (cerver) {
-		if (cerver->stats->current_n_connected_clients > 0) {
-			// send a cerver teardown packet to all clients connected to cerver
-			Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
-			if (packet) {
-				client_broadcast_to_all_avl (cerver->clients->root, cerver, packet);
-				packet_delete (packet);
-			}
-		}
+		// the clients got the teardown packet before the drain (cerver_notify_teardown ())
 
 		// destroy the sock fd client map
 		htab_destroy (cerver->client_sock_fd_map);
@@ -3638,6 +3695,8 @@ static void cerver_clean (Cerver *cerver) {
 	if (cerver) {
 		// stop accepting new connections
 		cerver_stop_request (cerver);
+
+		cerver_notify_teardown (cerver);
 
 		// the lobbies stop their threads and give their connections back
 		game_cerver_stop (cerver);

@@ -319,7 +319,7 @@ static u8 udp_peer_insert (Cerver *cerver, UdpPeer *peer) {
 
 	if (!htab_insert (cerver->udp->addresses, peer->key, key_size, peer, sizeof (UdpPeer))) {
 		if (!dlist_insert_at_end (cerver->udp->peers, peer)) {
-			(void) __atomic_add_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELAXED);
+			(void) __atomic_add_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELEASE);
 
 			retval = 0;
 		}
@@ -363,9 +363,11 @@ static void udp_peer_remove (
 			);
 		}
 
-		(void) __atomic_sub_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELAXED);
-
+		// the stats change before the count is released,
+		// so a thread that sees the new count also sees the new stats
 		udp_peer_remove_stats (cerver, peer);
+
+		(void) __atomic_sub_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELEASE);
 
 		if ((event != CERVER_EVENT_NONE) && peer->client) {
 			cerver_event_trigger (event, cerver, peer->client, peer->connection);
@@ -1265,10 +1267,11 @@ void cerver_set_udp_max_peers (Cerver *cerver, const u32 max_peers) {
 
 }
 
-// returns the number of peers of an UDP cerver, the pending ones too
+// returns the number of peers of an UDP cerver, the pending ones too,
+// a removed peer is already out of the stats of the cerver when it is not counted
 size_t cerver_udp_peers_count (const Cerver *cerver) {
 
-	return cerver ? (size_t) __atomic_load_n (&cerver->udp_peers_count, __ATOMIC_RELAXED) : 0;
+	return cerver ? (size_t) __atomic_load_n (&cerver->udp_peers_count, __ATOMIC_ACQUIRE) : 0;
 
 }
 
