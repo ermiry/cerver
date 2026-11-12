@@ -1,5 +1,12 @@
-#ifndef JANSSON_PRIVATE_H
-#define JANSSON_PRIVATE_H
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See thirdparty.md for details.
+ */
+
+#ifndef _CERVER_HTTP_JSON_PRIVATE_H_
+#define _CERVER_HTTP_JSON_PRIVATE_H_
 
 #include <stdarg.h>
 #include <stddef.h>
