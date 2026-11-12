@@ -1019,7 +1019,7 @@ Las 19 asignaciones de POST JSON de `performance.sh`:
   «Implementaciones propias en lugar de los vendorizados»). Además la Mac estaba cargada por otra sesión: x86 y la
   dispersión de las req/s quedan pendientes.
 
-#### 4.3.13 El estilo de JWT y JSON (Beta 2.0b-69) — planeada
+#### 4.3.13 El estilo de JWT y JSON (Beta 2.0b-69) — implementado
 
 Las convenciones de cerver completas en el código vendorizado:
 
@@ -1033,6 +1033,22 @@ Las convenciones de cerver completas en el código vendorizado:
   - sin `jwt/config.h`, sin los `pfn_*` y sin el bloque de OpenSSL < 1.1.
 - **Lo que se conserva:** los headers de licencia y el lookup3 de Bob Jenkins.
 - **La validación:** objetos idénticos donde el estilo no cambia código.
+
+**Lo que se hizo (2026-11-11):**
+
+- **El JWT completo:** `jwt.c` reescrito con el estilo de cerver (nombres completos, regiones, constantes con nombre
+  para los claims y los headers, helpers de los valores de JSON que comparten los grants, los headers y la
+  validación, `jwt_dup ()` sin `goto`, `jwt_validate ()` en tres helpers); sin `jwt/config.h` ni los `pfn_*` (nunca se
+  podían fijar: no había `jwt_set_alloc ()`); `jwt_t.key_length`, `jwt_valid_t.headers` y `required_grants`. Los
+  `switch` del algoritmo ya los había quitado la tabla de `jwt/key.c` (2.0b-67); el de `alg.c` es el del X-macro.
+  El bloque de OpenSSL < 1.1 ya no existía desde la 2.0b-66.
+- **El JSON:** `value.c` y la tabla de `hashtable.c` reescritos (el lookup3 igual); **ningún `goto` queda en el
+  JSON**: los 43 de `json.c` (el lexer, el parser, `pack_*` y `unpack_object`) pasaron a helpers; sin los
+  `JSON_HAVE_*` ni `JANSSON_USING_CMAKE`; los parámetros de `value.h` y `private.h` con nombres completos.
+- **La validación:** los símbolos exportados son idénticos a los de la 2.0b-68 y `internal.o` (solo macros) compila
+  al mismo código; los demás archivos cambian código y los cubren los tests de JSON y JWT y su fuzz de 300 s.
+- **Para la 2.0b-70:** los nombres del resto de `json.c` (`s`, `c`, `ap`, `fmt`, `strbuff`, `pos`, `str`, `len`, …:
+  unos 800) y los de `json.h`, que van juntos.
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
