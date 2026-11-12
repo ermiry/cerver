@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdint.h>
 
@@ -30,9 +31,70 @@
 
 #pragma region memory
 
+// the bytes that a parse can allocate for each byte that it reads, 0 has no limit,
+// a body of [{}, {}, ...] takes about 60 bytes of objects for each one of its bytes
+static size_t json_parser_memory_factor = JSON_PARSER_DEFAULT_MEMORY_FACTOR;
+
+// the parse of this thread: the bytes that it can still allocate,
+// and if it ran out of them, so its error says why
+static __thread bool json_parse_limited = false;
+static __thread bool json_parse_exhausted = false;
+static __thread size_t json_parse_budget = 0;
+
+void json_set_parser_memory_factor (size_t factor) {
+
+	__atomic_store_n (&json_parser_memory_factor, factor, __ATOMIC_RELAXED);
+
+}
+
+static void json_parse_budget_start (void) {
+
+	json_parse_limited = (__atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED) > 0);
+	json_parse_exhausted = false;
+	json_parse_budget = JSON_PARSER_MEMORY_MINIMUM;
+
+}
+
+static void json_parse_budget_end (void) {
+
+	json_parse_limited = false;
+	json_parse_budget = 0;
+
+}
+
+// every byte that the parse reads lets it allocate the factor more,
+// so the memory of a document is bounded by its size
+static void json_parse_budget_add (void) {
+
+	if (json_parse_limited) {
+		json_parse_budget += __atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED);
+	}
+
+}
+
+// returns false if the parse has no room for the allocation
+static bool json_parse_budget_take (size_t size) {
+
+	bool taken = true;
+
+	if (json_parse_limited) {
+		if (size > json_parse_budget) {
+			json_parse_exhausted = true;
+			taken = false;
+		}
+
+		else {
+			json_parse_budget -= size;
+		}
+	}
+
+	return taken;
+
+}
+
 void *jsonp_malloc (size_t size) {
 
-	return size ? malloc (size): NULL;
+	return (size && json_parse_budget_take (size)) ? malloc (size) : NULL;
 
 }
 
@@ -1065,6 +1127,8 @@ static int stream_get (
 			return STREAM_STATE_EOF;
 		}
 
+		json_parse_budget_add ();
+
 		stream->buffer[0] = c;
 		stream->buffer_pos = 0;
 
@@ -1806,7 +1870,21 @@ static json_t *parse_value (
 
 }
 
-static json_t *parse_json (
+// a parse that ran out of its memory says why, whatever error its parser saw after that
+static void parse_json_exhausted (lex_t *lex, json_error_t *error) {
+
+	if (json_parse_exhausted) {
+		if (error) error->text[0] = '\0';
+
+		error_set (
+			error, lex, json_error_out_of_memory,
+			"the json needs more memory than its size allows"
+		);
+	}
+
+}
+
+static json_t *parse_json_value (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
@@ -1840,6 +1918,22 @@ static json_t *parse_json (
 		/* Save the position even though there was no error */
 		error->position = (int)lex->stream.position;
 	}
+
+	return result;
+
+}
+
+// the memory of the values is limited by the size of the document
+static json_t *parse_json (
+	lex_t *lex, size_t flags, json_error_t *error
+) {
+
+	json_parse_budget_start ();
+
+	json_t *result = parse_json_value (lex, flags, error);
+	if (!result) parse_json_exhausted (lex, error);
+
+	json_parse_budget_end ();
 
 	return result;
 

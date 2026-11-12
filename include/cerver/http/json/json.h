@@ -145,6 +145,11 @@ typedef size_t (*json_load_callback_t) (
 	void *buffer, size_t buflen, void *data
 );
 
+// sets the bytes of values that a parse can allocate for each byte that it reads,
+// a document that needs more fails with json_error_out_of_memory,
+// the default value is JSON_PARSER_DEFAULT_MEMORY_FACTOR, 0 has no limit
+CERVER_PUBLIC void json_set_parser_memory_factor (size_t factor);
+
 CERVER_PUBLIC json_t *json_loads (
 	const char *input, size_t flags, json_error_t *error
 ) CERVER_ATTRS ((warn_unused_result));
