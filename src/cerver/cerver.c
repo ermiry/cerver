@@ -3424,6 +3424,65 @@ static void cerver_shutdown_connection (void *connection_ptr, void *args) {
 
 }
 
+// the packet that tells the clients that the cerver is going to teardown
+typedef struct CerverTeardownNotice {
+
+	Cerver *cerver;
+	Client *client;
+	const Packet *packet;
+
+} CerverTeardownNotice;
+
+static void cerver_notify_teardown_connection (void *connection_ptr, void *notice_ptr) {
+
+	const CerverTeardownNotice *notice = (const CerverTeardownNotice *) notice_ptr;
+
+	size_t sent = 0;
+	(void) packet_send_to (
+		notice->packet, &sent, false,
+		notice->cerver, notice->client, (Connection *) connection_ptr, NULL
+	);
+
+}
+
+// must be called with the clients tree locked
+static void cerver_notify_teardown_clients (const AVLNode *node, CerverTeardownNotice *notice) {
+
+	if (node) {
+		cerver_notify_teardown_clients (node->left, notice);
+
+		Client *client = (Client *) node->id;
+		if (client && client->connections) {
+			notice->client = client;
+			(void) dlist_traverse (client->connections, cerver_notify_teardown_connection, notice);
+		}
+
+		cerver_notify_teardown_clients (node->right, notice);
+	}
+
+}
+
+// the clients learn that the cerver is going to teardown
+// before the drain shuts their connections down
+static void cerver_notify_teardown (Cerver *cerver) {
+
+	if (cerver->clients && (CERVER_STATS_GET (cerver->stats->current_n_connected_clients) > 0)) {
+		Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
+		if (packet) {
+			CerverTeardownNotice notice = { cerver, NULL, packet };
+
+			(void) pthread_mutex_lock (cerver->clients->mutex);
+
+			cerver_notify_teardown_clients (cerver->clients->root, &notice);
+
+			(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+			packet_delete (packet);
+		}
+	}
+
+}
+
 // must be called with the clients tree locked
 static void cerver_shutdown_clients_connections (const AVLNode *node) {
 
@@ -3568,14 +3627,7 @@ static void cerver_destroy_on_hold_connections (Cerver *cerver) {
 static void cerver_destroy_clients (Cerver *cerver) {
 
 	if (cerver) {
-		if (cerver->stats->current_n_connected_clients > 0) {
-			// send a cerver teardown packet to all clients connected to cerver
-			Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
-			if (packet) {
-				client_broadcast_to_all_avl (cerver->clients->root, cerver, packet);
-				packet_delete (packet);
-			}
-		}
+		// the clients got the teardown packet before the drain (cerver_notify_teardown ())
 
 		// destroy the sock fd client map
 		htab_destroy (cerver->client_sock_fd_map);
@@ -3637,6 +3689,8 @@ static void cerver_clean (Cerver *cerver) {
 	if (cerver) {
 		// stop accepting new connections
 		cerver_stop_request (cerver);
+
+		cerver_notify_teardown (cerver);
 
 		// the lobbies stop their threads and give their connections back
 		game_cerver_stop (cerver);
