@@ -3463,10 +3463,15 @@ static void cerver_notify_teardown_clients (const AVLNode *node, CerverTeardownN
 }
 
 // the clients learn that the cerver is going to teardown
-// before the drain shuts their connections down
+// before the drain shuts their connections down,
+// a web cerver never writes a cerver packet into an HTTP connection
 static void cerver_notify_teardown (Cerver *cerver) {
 
-	if (cerver->clients && (CERVER_STATS_GET (cerver->stats->current_n_connected_clients) > 0)) {
+	if (
+		(cerver->type != CERVER_TYPE_WEB)
+		&& cerver->clients
+		&& (CERVER_STATS_GET (cerver->stats->current_n_connected_clients) > 0)
+	) {
 		Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
 		if (packet) {
 			CerverTeardownNotice notice = { cerver, NULL, packet };
