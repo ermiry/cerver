@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include <openssl/crypto.h>
 #include <openssl/sha.h>
 
 #include "cerver/types/types.h"
@@ -54,6 +55,7 @@
 
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
+#include "cerver/http/jwt/key.h"
 
 #include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
@@ -272,6 +274,12 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->jwt_max_size = HTTP_CERVER_DEFAULT_JWT_MAX_SIZE;
+		http_cerver->jwt_require_expiration = HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION;
+		http_cerver->jwt_leeway_seconds = HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS;
+		http_cerver->jwt_issuer = NULL;
+		http_cerver->jwt_audience = NULL;
+
 		http_cerver->n_origins = 0;
 		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
 			http_origin_reset (&http_cerver->origins_whitelist[i]);
@@ -378,10 +386,13 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		dlist_delete (http_cerver->routes);
 
 		str_delete (http_cerver->jwt_opt_key_name);
-		str_delete (http_cerver->jwt_private_key);
+		jwt_key_delete (http_cerver->jwt_private_key);
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
-		str_delete (http_cerver->jwt_public_key);
+		jwt_key_delete (http_cerver->jwt_public_key);
+
+		str_delete (http_cerver->jwt_issuer);
+		str_delete (http_cerver->jwt_audience);
 
 		if (http_cerver->custom_data) {
 			if (http_cerver->delete_custom_data) {
@@ -523,96 +534,98 @@ static unsigned int http_cerver_init_responses (void) {
 
 }
 
-static unsigned int http_cerver_init_load_jwt_private_key (
-	HttpCerver *http_cerver
+// the key of the file is created for the algorithm of the cerver,
+// it must have the type, the curve and the strength that the algorithm asks
+// returns the key, or NULL and the reason in error
+static JwtKey *http_cerver_init_create_jwt_key (
+	const HttpCerver *http_cerver,
+	const unsigned char *material, const size_t material_length,
+	const JwtKeyType type, JwtKeyError *error
 ) {
 
-	unsigned int retval = 1;
-
-	size_t private_keylen = 0;
-	char *private_key = file_read (
-		http_cerver->jwt_opt_key_name->str, &private_keylen
+	JwtKey *key = jwt_key_create (
+		http_cerver->jwt_alg, type, material, material_length, error
 	);
 
-	if (private_key) {
-		http_cerver->jwt_private_key = str_new (NULL);
-		http_cerver->jwt_private_key->str = private_key;
-		http_cerver->jwt_private_key->len = private_keylen;
+	if (key) {
+		*error = jwt_key_check_strength (key);
+		if (*error != JWT_KEY_ERROR_NONE) {
+			jwt_key_delete (key);
+			key = NULL;
+		}
+	}
 
-		// printf ("\n%s\n", http_cerver->jwt_private_key->str);
+	return key;
 
-		cerver_log_success (
-			"Loaded cerver's %s http jwt PRIVATE key (size %zu)!",
-			http_cerver->cerver->info->name,
-			http_cerver->jwt_private_key->len
+}
+
+// reads the file of a key, its content is cleared after the key is created
+// returns the key, or NULL if it can not be used: the cerver does not start
+static JwtKey *http_cerver_init_load_jwt_key (
+	const HttpCerver *http_cerver,
+	const String *filename, const JwtKeyType type
+) {
+
+	JwtKey *key = NULL;
+	JwtKeyError error = JWT_KEY_ERROR_EMPTY;
+
+	size_t material_length = 0;
+	char *material = file_read (filename->str, &material_length);
+	const bool read = (material != NULL);
+	if (read) {
+		key = http_cerver_init_create_jwt_key (
+			http_cerver,
+			(const unsigned char *) material, material_length,
+			type, &error
 		);
 
-		retval = 0;
+		OPENSSL_cleanse (material, material_length);
+		free (material);
+	}
+
+	if (key) {
+		cerver_log_success (
+			"Loaded cerver's %s http jwt %s key for %s!",
+			http_cerver->cerver->info->name,
+			jwt_key_type_to_string (type), jwt_alg_str (http_cerver->jwt_alg)
+		);
 	}
 
 	else {
 		cerver_log_error (
-			"Failed to load cerver's %s http jwt PRIVATE key!",
-			http_cerver->cerver->info->name
-		);
-	}
-
-	return retval;
-
-}
-
-static unsigned int http_cerver_init_load_jwt_public_key (
-	HttpCerver *http_cerver
-) {
-
-	unsigned int retval = 1;
-
-	size_t public_keylen = 0;
-	char *public_key = file_read (
-		http_cerver->jwt_opt_pub_key_name->str, &public_keylen
-	);
-
-	if (public_key) {
-		http_cerver->jwt_public_key = str_new (NULL);
-		http_cerver->jwt_public_key->str = public_key;
-		http_cerver->jwt_public_key->len = public_keylen;
-
-		// printf ("\n%s\n", http_cerver->jwt_public_key->str);
-
-		cerver_log_success (
-			"Loaded cerver's %s http jwt PUBLIC key (size %zu)!",
+			"Failed to load cerver's %s http jwt %s key %s for %s: %s",
 			http_cerver->cerver->info->name,
-			http_cerver->jwt_public_key->len
-		);
-
-		retval = 0;
-	}
-
-	else {
-		cerver_log_error (
-			"Failed to load cerver's %s http jwt PUBLIC key!",
-			http_cerver->cerver->info->name
+			jwt_key_type_to_string (type), filename->str,
+			jwt_alg_str (http_cerver->jwt_alg),
+			read ? jwt_key_error_to_string (error) : "The file can not be read"
 		);
 	}
 
-	return retval;
+	return key;
 
 }
 
+// a key that can not be used is an error, so the cerver does not start
 static unsigned int http_cerver_init_load_jwt_keys (
 	HttpCerver *http_cerver
 ) {
 
-	unsigned int errors = 0 ;
+	unsigned int errors = 0;
 
-	if (http_cerver->jwt_opt_key_name) {
-		cerver_log_msg ("Loading jwt PRIVATE key...");
-		errors |= http_cerver_init_load_jwt_private_key (http_cerver);
+	if (http_cerver->jwt_opt_key_name && !http_cerver->jwt_private_key) {
+		http_cerver->jwt_private_key = http_cerver_init_load_jwt_key (
+			http_cerver, http_cerver->jwt_opt_key_name, JWT_KEY_TYPE_PRIVATE
+		);
+
+		if (!http_cerver->jwt_private_key) errors |= 1;
 	}
 
-	if (http_cerver->jwt_opt_pub_key_name) {
-		cerver_log_msg ("Loading jwt PUBLIC key...");
-		errors |= http_cerver_init_load_jwt_public_key (http_cerver);
+	if (http_cerver->jwt_opt_pub_key_name && !http_cerver->jwt_public_key) {
+		http_cerver->jwt_public_key = http_cerver_init_load_jwt_key (
+			http_cerver, http_cerver->jwt_opt_pub_key_name, JWT_KEY_TYPE_PUBLIC
+		);
+
+		if (!http_cerver->jwt_public_key) errors |= 1;
 	}
 
 	return errors;
@@ -1660,13 +1673,40 @@ char *http_cerver_auth_load_key (
 
 }
 
+// the algorithms of the tokens of a cerver always sign them
+static bool http_cerver_auth_jwt_algorithm_is_valid (const jwt_alg_t jwt_alg) {
+
+	return (jwt_alg > JWT_ALG_NONE) && (jwt_alg < JWT_ALG_INVAL);
+
+}
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
-// the default value is JWT_ALG_HS256
-void http_cerver_auth_set_jwt_algorithm (
+// the default value is JWT_ALG_HS256, JWT_ALG_NONE is not accepted
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_set_jwt_algorithm (
 	HttpCerver *http_cerver, const jwt_alg_t jwt_alg
 ) {
 
-	if (http_cerver) http_cerver->jwt_alg = jwt_alg;
+	u8 retval = 1;
+
+	if (http_cerver && http_cerver_auth_jwt_algorithm_is_valid (jwt_alg)) {
+		http_cerver->jwt_alg = jwt_alg;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// a setter called again replaces the value it set before
+static void http_cerver_auth_set_string (
+	String **destination, const char *value
+) {
+
+	str_delete (*destination);
+
+	*destination = value ? str_new (value) : NULL;
 
 }
 
@@ -1676,7 +1716,7 @@ void http_cerver_auth_set_jwt_priv_key_filename (
 ) {
 
 	if (http_cerver) {
-		http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_key_name, filename);
 	}
 
 }
@@ -1687,7 +1727,61 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 ) {
 
 	if (http_cerver) {
-		http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_pub_key_name, filename);
+	}
+
+}
+
+// sets the longest bearer token that is decoded,
+// a longer one is rejected without decoding it
+// the default value is HTTP_CERVER_DEFAULT_JWT_MAX_SIZE, 0 has no limit
+void http_cerver_auth_set_jwt_max_size (
+	HttpCerver *http_cerver, const size_t max_size
+) {
+
+	if (http_cerver) http_cerver->jwt_max_size = max_size;
+
+}
+
+// sets if a token without "exp" is rejected
+// the default value is HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION
+void http_cerver_auth_set_jwt_require_expiration (
+	HttpCerver *http_cerver, const bool require
+) {
+
+	if (http_cerver) http_cerver->jwt_require_expiration = require;
+
+}
+
+// sets the seconds of clock skew that are accepted in "exp" and "nbf"
+// the default value is HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS
+void http_cerver_auth_set_jwt_leeway_seconds (
+	HttpCerver *http_cerver, const unsigned int leeway_seconds
+) {
+
+	if (http_cerver) http_cerver->jwt_leeway_seconds = leeway_seconds;
+
+}
+
+// sets the "iss" that every token must have, NULL accepts any
+void http_cerver_auth_set_jwt_issuer (
+	HttpCerver *http_cerver, const char *issuer
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_issuer, issuer);
+	}
+
+}
+
+// sets the "aud" that every token must have, as its value or in its array,
+// NULL accepts any
+void http_cerver_auth_set_jwt_audience (
+	HttpCerver *http_cerver, const char *audience
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_audience, audience);
 	}
 
 }
@@ -4192,9 +4286,6 @@ static void http_receive_handle_select_failed_auth (
 
 }
 
-static const char *bearer_prefix = { "Bearer " };
-static const size_t bearer_prefix_len = 7;
-
 // returns true if the request has a valid bearer JWT
 // the route's decode_data method sets the request's decoded data
 static bool http_receive_handle_select_auth_bearer (
@@ -4208,70 +4299,27 @@ static bool http_receive_handle_select_auth_bearer (
 	// the header must be "Bearer <token>"
 	// and a token can only be validated with the cerver's public key
 	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
-	if (
-		!authorization
-		|| (authorization->len <= bearer_prefix_len)
-		|| strncmp (authorization->str, bearer_prefix, bearer_prefix_len)
-		|| !http_cerver->jwt_public_key
-	) {
+	const char *token = authorization ?
+		http_cerver_auth_bearer_token (authorization->str, authorization->len) : NULL;
+
+	jwt_t *jwt = token ? http_cerver_auth_jwt_verify (
+		http_cerver, token, authorization->len - HTTP_JWT_BEARER_PREFIX_LENGTH
+	) : NULL;
+
+	if (jwt) {
+		if (found->decode_data) {
+			request->decoded_data = found->decode_data (jwt->grants);
+			request->delete_decoded_data = found->delete_decoded_data;
+		}
+
+		jwt_free (jwt);
+
+		authenticated = true;
+	}
+
+	else {
 		http_receive_handle_select_failed_auth (http_receive);
-		return authenticated;
 	}
-
-	char *token = authorization->str + bearer_prefix_len;
-
-	jwt_t *jwt = NULL;
-	jwt_valid_t *jwt_valid = NULL;
-	if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
-		jwt_valid->hdr = 1;
-		jwt_valid->now = time (NULL);
-
-		if (!jwt_decode (
-			&jwt, token,
-			(unsigned char *) http_cerver->jwt_public_key->str,
-			http_cerver->jwt_public_key->len
-		)) {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_debug ("JWT decoded successfully!");
-			#endif
-
-			if (!jwt_validate (jwt, jwt_valid)) {
-				#ifdef HTTP_AUTH_DEBUG
-				cerver_log_success ("JWT is authentic!");
-				#endif
-
-				if (found->decode_data) {
-					request->decoded_data = found->decode_data (jwt->grants);
-					request->delete_decoded_data = found->delete_decoded_data;
-				}
-
-				authenticated = true;
-			}
-
-			else {
-				#ifdef HTTP_AUTH_DEBUG
-				cerver_log_error (
-					"Failed to validate JWT: %08x",
-					jwt_valid_get_status (jwt_valid)
-				);
-				#endif
-
-				http_receive_handle_select_failed_auth (http_receive);
-			}
-
-			jwt_free (jwt);
-		}
-
-		else {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_error ("Invalid JWT!");
-			#endif
-
-			http_receive_handle_select_failed_auth (http_receive);
-		}
-	}
-
-	jwt_valid_free (jwt_valid);
 
 	return authenticated;
 

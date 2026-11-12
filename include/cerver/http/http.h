@@ -97,6 +97,15 @@
 // the responses are counted by their status code, from 100 to 599
 #define HTTP_CERVER_RESPONSES_STATUS_SIZE			600
 
+// the longest bearer token that is decoded, 0 has no limit
+#define HTTP_CERVER_DEFAULT_JWT_MAX_SIZE			(1 << 13)
+
+// a token without "exp" is accepted unless the cerver requires it
+#define HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION	false
+
+// the seconds of clock skew accepted in "exp" and "nbf"
+#define HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS		0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -111,6 +120,7 @@ struct _HttpReceive;
 struct _HttpResponse;
 
 struct jwt;
+struct JwtKey;
 
 #pragma region stages
 
@@ -272,10 +282,16 @@ struct _HttpCerver {
 	jwt_alg_t jwt_alg;
 
 	String *jwt_opt_key_name;		// jwt private key filename
-	String *jwt_private_key;		// jwt actual private key
+	struct JwtKey *jwt_private_key;	// signs the tokens, loaded when the cerver starts
 
 	String *jwt_opt_pub_key_name;	// jwt public key filename
-	String *jwt_public_key;			// jwt actual public key
+	struct JwtKey *jwt_public_key;	// verifies the tokens, loaded when the cerver starts
+
+	size_t jwt_max_size;			// the longest token that is decoded, 0 has no limit
+	bool jwt_require_expiration;	// a token without "exp" is rejected
+	unsigned int jwt_leeway_seconds;// clock skew accepted in "exp" and "nbf"
+	String *jwt_issuer;				// the "iss" that a token must have, if it is set
+	String *jwt_audience;			// the "aud" that a token must have, if it is set
 
 	u8 n_origins;
 	HttpOrigin origins_whitelist[HTTP_ORIGINS_SIZE];
