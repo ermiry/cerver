@@ -41,8 +41,12 @@
 #include "cerver/http/utils.h"
 
 #include "cerver/http/json/json.h"
+#include "cerver/http/json/value.h"
 
 #include "cerver/utils/utils.h"
+
+// the separators ", " and ": " of the json bodies, as they were written before
+#define HTTP_RESPONSE_JSON_DUMP_FLAGS		0
 
 typedef struct HttpResponseProducer {
 
@@ -2282,26 +2286,61 @@ HttpResponse *http_response_create_json (
 
 }
 
-HttpResponse *http_response_create_json_key_value (
-	const http_status status, const char *key, const char *value
+// the body { "key": value } of the json responses,
+// the key and a string value are escaped by the json library,
+// a real is written without the locale, and a NaN or an infinite value is an error
+// it takes the value, as json_object_set_new () does
+// returns the body allocated with malloc (), or NULL on error
+static char *http_response_json_body (const char *key, json_t *value) {
+
+	char *body = NULL;
+
+	json_t *json = json_object ();
+	if (json && value) {
+		// the value is released by the object, also when it fails to set it
+		if (!json_object_set_new (json, key, value)) {
+			body = json_dumps (json, HTTP_RESPONSE_JSON_DUMP_FLAGS);
+		}
+	}
+
+	else {
+		json_decref (value);
+	}
+
+	json_decref (json);
+
+	return body;
+
+}
+
+// the response owns the json, so its data is never left dangling,
+// a response that is compiled again or sent in parts still has its body
+static HttpResponse *http_response_create_json_owned (
+	const http_status status, char *json
 ) {
 
 	HttpResponse *response = NULL;
 
-	if (key && value) {
-		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
+	if (json) {
+		response = http_response_create_json_common (
+			status, json, strlen (json)
+		);
 
-			// the response owns the json, so its data is never left dangling
-			if (response) response->data_ref = false;
-			else free (json);
-		}
+		if (response) response->data_ref = false;
+		else free (json);
 	}
 
 	return response;
+
+}
+
+HttpResponse *http_response_create_json_key_value (
+	const http_status status, const char *key, const char *value
+) {
+
+	return (key && value) ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_string (value))
+	) : NULL;
 
 }
 
@@ -2312,20 +2351,9 @@ HttpResponse *http_response_json_int_value (
 	const http_status status, const char *key, const int value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %d}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_integer ((json_int_t) value))
+	) : NULL;
 
 }
 
@@ -2362,20 +2390,9 @@ HttpResponse *http_response_json_large_int_value (
 	const http_status status, const char *key, const long value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %ld}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_integer ((json_int_t) value))
+	) : NULL;
 
 }
 
@@ -2412,20 +2429,9 @@ HttpResponse *http_response_json_real_value (
 	const http_status status, const char *key, const double value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %f}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_real (value))
+	) : NULL;
 
 }
 
@@ -2455,27 +2461,6 @@ u8 http_response_json_real_value_send (
 
 }
 
-static char *http_response_create_json_bool_string (
-	const char *key, const bool value
-) {
-
-	char *json_string_value = NULL;
-
-	json_t *json = json_object ();
-	if (json) {
-		(void) json_object_set_new (
-			json, key, json_boolean (value)
-		);
-
-		json_string_value = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	return json_string_value;
-
-}
-
 // creates a HTTP response with the defined status code
 // with a json body of type { "key": bool_value }
 // returns a new HTTP response instance ready to be sent
@@ -2483,20 +2468,9 @@ HttpResponse *http_response_json_bool_value (
 	const http_status status, const char *key, const bool value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = http_response_create_json_bool_string (key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_boolean (value))
+	) : NULL;
 
 }
 
@@ -2526,27 +2500,25 @@ u8 http_response_json_bool_value_send (
 
 }
 
+// a message that is not valid UTF-8 can not be json, there is no response
 static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
+	char *json = http_response_json_body (key, json_string (value));
+	if (!json) return NULL;
+
 	HttpResponse *response = (HttpResponse *) http_response_new ();
-	if (response) {
+	if (!response) {
+		free (json);
+	}
+
+	else {
 		response->status = status;
 
 		// body
-		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
-		if (json) {
-			response->data = json;
-			response->data_len = strlen (json);
-		}
-
-		// header
-		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_TYPE, "application/json");
-
-		// char json_len[16] = { 0 };
-		// snprintf (json_len, 16, "%ld", response->data_len);
-		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
+		response->data = json;
+		response->data_len = strlen (json);
 
 		response->header = c_string_create (
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
@@ -2672,17 +2644,25 @@ u8 http_response_json_key_value_send (
 
 }
 
+// a body that can not be copied is an error, not a response with uninitialized bytes
 static HttpResponse *http_response_json_custom_internal (
 	const http_status status, const char *json
 ) {
 
+	char *body = strdup (json);
+	if (!body) return NULL;
+
 	HttpResponse *response = (HttpResponse *) http_response_new ();
-	if (response) {
+	if (!response) {
+		free (body);
+	}
+
+	else {
 		response->status = status;
 
 		// body
-		response->data = strdup (json);
-		response->data_len = strlen (json);
+		response->data = body;
+		response->data_len = strlen (body);
 
 		// header
 		response->header = c_string_create (
@@ -2710,7 +2690,7 @@ HttpResponse *http_response_json_custom (
 	if (json) {
 		response = http_response_json_custom_internal (status, json);
 
-		(void) http_response_compile (response);
+		if (response) (void) http_response_compile (response);
 	}
 
 	return response;
