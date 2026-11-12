@@ -1039,12 +1039,13 @@ char *file_read (const char *filename, size_t *file_size) {
 	if (filename) {
 		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
-			*file_size = (size_t) filestatus.st_size;
-
 			size_t n_read = 0;
 			file_contents = file_read_internal (
 				filename, (size_t) filestatus.st_size, &n_read
 			);
+
+			// the bytes that were read, the file can change after the stat ()
+			if (file_size) *file_size = n_read;
 		}
 	}
 
