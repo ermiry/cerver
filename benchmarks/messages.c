@@ -85,6 +85,14 @@ typedef struct MessagesContext {
 
 	unsigned int failed;
 
+	// the connections send their first message together, when all of them are open:
+	// the time of the messages goes from the first one that is sent to the last echo,
+	// without the time to connect, to upgrade and to close the connections
+	pthread_barrier_t ready;
+	bool timed;
+	double started;
+	double ended;
+
 	pthread_mutex_t mutex;
 
 } MessagesContext;
@@ -209,15 +217,43 @@ static size_t messages_frame (unsigned char *frame, const size_t size) {
 
 }
 
-// reads the echo of the server, a frame without a mask
+// the payload that was sent is all zeros, and its echo has no mask
+static bool messages_payload_is_echo (const unsigned char *payload, const size_t size) {
+
+	bool echo = true;
+
+	for (size_t i = 0; echo && (i < size); i++) echo = (payload[i] == 0);
+
+	return echo;
+
+}
+
+// reads the echo of the server, a frame without a mask, with the length and the bytes that were sent
 static bool messages_echo (const int fd, unsigned char *payload, const size_t size) {
 
 	const size_t header = (size <= MESSAGES_SMALL_LENGTH) ? MESSAGES_SMALL_HEADER : MESSAGES_MEDIUM_HEADER;
 
+	const size_t expected = (size <= MESSAGES_SMALL_LENGTH) ? size : MESSAGES_LENGTH_16;
+
 	unsigned char bytes[MESSAGES_MAX_HEADER];
 	return messages_receive_all (fd, bytes, header)
 		&& (bytes[0] == MESSAGES_FIN_BINARY)
-		&& messages_receive_all (fd, payload, size);
+		&& (bytes[1] == expected)
+		&& messages_receive_all (fd, payload, size)
+		&& messages_payload_is_echo (payload, size);
+
+}
+
+// the first message of the connections that was sent and the last echo that was read
+static void messages_timed (MessagesContext *context, const double started, const double ended) {
+
+	(void) pthread_mutex_lock (&context->mutex);
+
+	if (!context->timed || (started < context->started)) context->started = started;
+	if (!context->timed || (ended > context->ended)) context->ended = ended;
+	context->timed = true;
+
+	(void) pthread_mutex_unlock (&context->mutex);
 
 }
 
@@ -241,6 +277,10 @@ static void *messages_thread (void *connection_ptr) {
 	const int fd = messages_connect (context->port);
 	bool connected = (fd >= 0) && frame && payload && messages_upgrade (fd, context->path);
 
+	// every connection waits here, also the ones that failed
+	(void) pthread_barrier_wait (&context->ready);
+	const double started = messages_now ();
+
 	double *latencies = context->latencies + ((size_t) connection->index * context->messages);
 	for (unsigned int i = 0; i < context->messages; i++) {
 		const double start = messages_now ();
@@ -255,6 +295,8 @@ static void *messages_thread (void *connection_ptr) {
 			messages_failed (context);
 		}
 	}
+
+	messages_timed (context, started, messages_now ());
 
 	// the close of the client, the server answers and ends the connection
 	if (fd >= 0) {
@@ -317,7 +359,8 @@ int main (int argc, char **argv) {
 	pthread_t *threads = (pthread_t *) calloc (connections, sizeof (pthread_t));
 	MessagesConnection *connection = (MessagesConnection *) calloc (connections, sizeof (MessagesConnection));
 
-	const double start = messages_now ();
+	(void) pthread_barrier_init (&context.ready, NULL, connections);
+
 	for (unsigned int i = 0; i < connections; i++) {
 		connection[i].context = &context;
 		connection[i].index = i;
@@ -326,7 +369,9 @@ int main (int argc, char **argv) {
 
 	for (unsigned int i = 0; i < connections; i++) (void) pthread_join (threads[i], NULL);
 
-	const double elapsed = messages_now () - start;
+	(void) pthread_barrier_destroy (&context.ready);
+
+	const double elapsed = context.ended - context.started;
 
 	qsort (context.latencies, total, sizeof (double), messages_compare);
 
