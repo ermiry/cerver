@@ -12,13 +12,19 @@
 // raw bytes to the receiver of WebSocket messages (the frames, the messages and permessage-deflate):
 // the first byte selects the size of the pieces (its low bits), the role,
 // the compression and the delivery of the messages in pieces
+// the second one is the compression that was negotiated: the peer starts every message from zero
+// (its first bit) and the window bits of both sides, from 8 to 15 (its next three bits)
 
-#define FUZZ_FRAME_HEADER_SIZE			1
+#define FUZZ_FRAME_HEADER_SIZE			2
 
 #define FUZZ_FRAME_PIECE_BITS			0x1F
 #define FUZZ_FRAME_CLIENT_BIT			0x20
 #define FUZZ_FRAME_DEFLATE_BIT			0x40
 #define FUZZ_FRAME_STREAM_BIT			0x80
+
+#define FUZZ_FRAME_RESET_BIT			0x01
+#define FUZZ_FRAME_WINDOW_SHIFT			1
+#define FUZZ_FRAME_WINDOW_BITS			0x07
 
 // small limits, so the fuzzer reaches them
 #define FUZZ_FRAME_MAX_MESSAGE			(1 << 14)
@@ -81,16 +87,26 @@ static const HttpWebSocketReceiverHandlers fuzz_frame_stream_handlers = {
 	fuzz_frame_on_message, fuzz_frame_on_fragment, fuzz_frame_on_control, fuzz_frame_on_control, fuzz_frame_on_close
 };
 
-static HttpWebSocketDeflate *fuzz_frame_deflate (const HttpWebSocketRole role) {
+// the compression of the connection with the parameters of the second byte of the input,
+// only the one of 15 bits that keeps its context was fuzzed
+static HttpWebSocketDeflate *fuzz_frame_deflate (const HttpWebSocketRole role, const u8 negotiated) {
 
 	HttpWebSocketDeflateOptions options;
 	http_web_socket_deflate_options_init (&options);
 	options.enabled = true;
 
+	const u8 window_bits = (u8) (
+		HTTP_WEB_SOCKET_DEFLATE_MIN_WINDOW_BITS + ((negotiated >> FUZZ_FRAME_WINDOW_SHIFT) & FUZZ_FRAME_WINDOW_BITS)
+	);
+
+	const bool reset = (negotiated & FUZZ_FRAME_RESET_BIT) != 0;
+
 	HttpWebSocketDeflateParameters parameters;
 	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
-	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
-	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.server_max_window_bits = window_bits;
+	parameters.client_max_window_bits = window_bits;
+	parameters.server_no_context_takeover = reset;
+	parameters.client_no_context_takeover = reset;
 
 	return http_web_socket_deflate_create (role, &parameters, &options);
 
@@ -105,7 +121,7 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 	const HttpWebSocketRole role = (selector & FUZZ_FRAME_CLIENT_BIT) ?
 		HTTP_WEB_SOCKET_ROLE_CLIENT : HTTP_WEB_SOCKET_ROLE_SERVER;
 
-	HttpWebSocketDeflate *deflate = (selector & FUZZ_FRAME_DEFLATE_BIT) ? fuzz_frame_deflate (role) : NULL;
+	HttpWebSocketDeflate *deflate = (selector & FUZZ_FRAME_DEFLATE_BIT) ? fuzz_frame_deflate (role, data[1]) : NULL;
 
 	HttpWebSocketReceiver receiver;
 	http_web_socket_receiver_init (
