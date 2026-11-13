@@ -2761,6 +2761,21 @@ static int http_receive_close_known_header (
 
 }
 
+// counts a header of the request, or a trailer of its chunked body
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_count_header (HttpReceive *http_receive) {
+
+	http_receive->n_headers += 1;
+
+	const unsigned int max_headers = http_receive->http_cerver->max_headers;
+
+	return (max_headers && (http_receive->n_headers > max_headers)) ?
+		http_receive_reject (
+			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		) : 0;
+
+}
+
 // saves a complete header in the request
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_save_header (
@@ -2771,14 +2786,7 @@ static int http_receive_save_header (
 	const char *value = (value_buffer && value_buffer->str) ? value_buffer->str : "";
 	const size_t value_len = value_buffer ? value_buffer->len : 0;
 
-	http_receive->n_headers += 1;
-
-	const unsigned int max_headers = http_receive->http_cerver->max_headers;
-	if (max_headers && (http_receive->n_headers > max_headers)) {
-		return http_receive_reject (
-			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
-		);
-	}
+	if (http_receive_count_header (http_receive)) return 1;
 
 	const http_header type = http_header_type_by_string (field->str);
 	if (type != HTTP_HEADER_UNDEFINED) {
@@ -3046,6 +3054,20 @@ static inline bool http_receive_headers_are_complete (const HttpReceive *http_re
 
 }
 
+// the trailers of a chunked body and the extensions of its chunks are not kept,
+// but their bytes count for the size of the headers:
+// a body can not be followed by trailers without an end, nor a chunk have an extension without one
+static int http_receive_handle_discarded (
+	llhttp_t *parser, const char *at, size_t length
+) {
+
+	(void) at;
+
+	return http_receive_check_header_size ((HttpReceive *) parser->data, length) ?
+		HTTP_RECEIVE_PARSER_STOP : 0;
+
+}
+
 // a header field can arrive in many pieces, it is closed with its value
 static int http_receive_handle_header_field (
 	llhttp_t *parser, const char *at, size_t length
@@ -3053,8 +3075,9 @@ static int http_receive_handle_header_field (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	// the trailers of a chunked body are not used
-	if (http_receive_headers_are_complete (http_receive)) return 0;
+	if (http_receive_headers_are_complete (http_receive)) {
+		return http_receive_handle_discarded (parser, at, length);
+	}
 
 	// the first field ends the request line
 	http_receive->stage = HTTP_STAGE_HEADERS;
@@ -3075,7 +3098,9 @@ static int http_receive_handle_header_value (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	if (http_receive_headers_are_complete (http_receive)) return 0;
+	if (http_receive_headers_are_complete (http_receive)) {
+		return http_receive_handle_discarded (parser, at, length);
+	}
 
 	if (http_receive_check_header_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
 
@@ -3087,7 +3112,7 @@ static int http_receive_handle_header_value (
 }
 
 // the field and the value are complete, the header is saved in the request
-// the trailers of a chunked body are discarded
+// the trailers of a chunked body are discarded, each one counts as a header
 static int http_receive_handle_header_value_complete (llhttp_t *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -3096,6 +3121,8 @@ static int http_receive_handle_header_value_complete (llhttp_t *parser) {
 	if (http_receive_headers_are_complete (http_receive)) {
 		http_receive_buffer_reset (http_receive->field_buffer);
 		http_receive_buffer_reset (http_receive->value_buffer);
+
+		rejected = http_receive_count_header (http_receive);
 	}
 
 	else {
@@ -4121,6 +4148,8 @@ static void http_receive_settings_init (llhttp_settings_t *settings) {
 	settings->on_header_field = http_receive_handle_header_field;
 	settings->on_header_value = http_receive_handle_header_value;
 	settings->on_header_value_complete = http_receive_handle_header_value_complete;
+	settings->on_chunk_extension_name = http_receive_handle_discarded;
+	settings->on_chunk_extension_value = http_receive_handle_discarded;
 	settings->on_headers_complete = http_receive_handle_headers_completed;
 	settings->on_body = http_receive_handle_body;
 	settings->on_message_complete = http_receive_handle_message_completed;
