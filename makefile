@@ -605,8 +605,9 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
-FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
+FUZZRECOVER		:= -fno-sanitize-recover=undefined
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS) $(FUZZRECOVER)
+FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS) $(FUZZRECOVER)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
 
