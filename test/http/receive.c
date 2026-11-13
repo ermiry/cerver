@@ -17,6 +17,7 @@
 
 #include <cerver/collections/arena.h>
 
+#include <cerver/http/access.h>
 #include <cerver/http/auth.h>
 #include <cerver/http/headers.h>
 #include <cerver/http/http.h>
@@ -87,6 +88,9 @@
 // when it is set, the requests are created like a worker thread does, in its arena
 static Arena *receive_arena = NULL;
 static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL, NULL, NULL };
+
+// the receive that uses the arena and the buffers, it is not in the arena of its request
+static HttpReceive receive_storage;
 
 static const char *public_file_content = { "<html>public</html>" };
 static const char *secret_file_content = { "secret-content" };
@@ -159,6 +163,9 @@ typedef struct TestReceiveResult {
 	// what the parser found when the request was completed
 	bool keep_alive_requested;
 	size_t unparsed;
+
+	// the client can find the end of the response without the close of the connection
+	bool framed;
 
 	// the 101 was sent, with the bytes after the request kept for its connection
 	bool upgraded;
@@ -314,6 +321,156 @@ static void test_receive_render_handler (
 	(void) http_response_render_json (
 		http_receive, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
 	);
+
+}
+
+static const char *framed_body = { "framed-body" };
+static const char *framed_raw_header = { "HTTP/1.1 200 OK\r\nX-Raw: incomplete\r\n" };
+static const char *framed_bytes_header = { "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n" };
+
+// GET /v2/framed/created, a body without its length ends when the connection is closed
+static void test_receive_framed_created_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	(void) http_response_create_and_send (
+		HTTP_STATUS_CREATED, framed_body, strlen (framed_body), http_receive
+	);
+
+}
+
+// GET /v2/framed/empty, a response without a body and without its length
+static void test_receive_framed_empty_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	(void) http_response_create_and_send (HTTP_STATUS_OK, NULL, 0, http_receive);
+
+}
+
+// GET /v2/framed/stream, the stream is ended by cerver after its handler
+static void test_receive_framed_stream_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+
+	if (!http_response_stream_begin (http_receive, response)) {
+		(void) http_response_stream_write (http_receive, framed_body, strlen (framed_body));
+
+		// the response has no end until its last chunk is sent
+		test_check_bool_eq (http_receive->framed, false, NULL);
+	}
+
+	http_response_return (response);
+
+}
+
+static void test_receive_framed_send_header (
+	const HttpReceive *http_receive, const char *header
+) {
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+	http_response_set_header (response, strdup (header), strlen (header));
+	(void) http_response_set_data_ref (response, framed_body, strlen (framed_body));
+	(void) http_response_send (response, http_receive);
+	http_response_return (response);
+
+}
+
+// GET /v2/framed/raw, a header that cerver can not complete is sent as it is
+static void test_receive_framed_raw_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	test_receive_framed_send_header (http_receive, framed_raw_header);
+
+}
+
+// GET /v2/framed/bytes, a complete header that was set as bytes, with the length of its body
+static void test_receive_framed_bytes_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	test_receive_framed_send_header (http_receive, framed_bytes_header);
+
+}
+
+// GET /v2/framed/silent, the handler does not answer, cerver does
+static void test_receive_framed_silent_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+	observed.n_handled += 1;
+
+}
+
+static unsigned int observed_custom_deleted = 0;
+static unsigned int observed_decoded_deleted = 0;
+
+static void test_receive_custom_data_delete (void *data) {
+
+	observed_custom_deleted += 1;
+
+	free (data);
+
+}
+
+static void test_receive_decoded_data_delete (void *data) {
+
+	observed_decoded_deleted += 1;
+
+	free (data);
+
+}
+
+// POST /v2/data, a request with data that is deleted when it ends
+static void test_receive_data_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	observed.n_handled += 1;
+
+	test_receive_observe_body (request);
+
+	// a request never has the data of the one that the connection had before
+	test_check_null_ptr (http_request_get_custom_data (request));
+	test_check_null_ptr (http_request_get_decoded_data (request));
+
+	HttpRequest *owner = (HttpRequest *) request;
+
+	http_request_set_custom_data (owner, strdup ("custom"));
+	http_request_set_delete_custom_data (owner, test_receive_custom_data_delete);
+
+	http_request_set_decoded_data (owner, strdup ("decoded"));
+	http_request_set_delete_decoded_data (owner, test_receive_decoded_data_delete);
+
+	(void) http_response_send (oki_doki, http_receive);
 
 }
 
@@ -575,6 +732,16 @@ static void test_receive_groups_create (HttpCerver *http_cerver) {
 	http_group_set_cors (cors, true);
 	test_check_ptr (http_group_get (cors, "resource", test_receive_echo_handler));
 
+	HttpGroup *framed = http_group_create (v2, "framed");
+	test_check_ptr (http_group_get (framed, "created", test_receive_framed_created_handler));
+	test_check_ptr (http_group_get (framed, "empty", test_receive_framed_empty_handler));
+	test_check_ptr (http_group_get (framed, "stream", test_receive_framed_stream_handler));
+	test_check_ptr (http_group_get (framed, "raw", test_receive_framed_raw_handler));
+	test_check_ptr (http_group_get (framed, "bytes", test_receive_framed_bytes_handler));
+	test_check_ptr (http_group_get (framed, "silent", test_receive_framed_silent_handler));
+
+	test_check_ptr (http_group_post (v2, "data", test_receive_data_handler));
+
 	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, TEST_RECEIVE_ALLOWED_ORIGIN), 0, NULL);
 
 }
@@ -663,6 +830,35 @@ static void test_receive_feed_piece (
 
 }
 
+// the same receive that a worker thread prepares with its arena and its buffers,
+// or one that allocates its own memory
+static HttpReceive *test_receive_create (CerverReceive *cerver_receive) {
+
+	HttpReceive *http_receive = NULL;
+
+	if (receive_arena) {
+		const HttpReceiveResources resources = {
+			receive_arena,
+			receive_buffers[TEST_RECEIVE_URL_BUFFER],
+			receive_buffers[TEST_RECEIVE_FIELD_BUFFER],
+			receive_buffers[TEST_RECEIVE_VALUE_BUFFER]
+		};
+
+		test_check_unsigned_eq (http_receive_prepare (&receive_storage, cerver_receive, &resources), 0, NULL);
+
+		http_receive = &receive_storage;
+	}
+
+	else {
+		http_receive = http_receive_create (cerver_receive);
+	}
+
+	test_check_ptr (http_receive);
+
+	return http_receive;
+
+}
+
 static void test_receive_read_response (const int client_fd) {
 
 	ssize_t received = 0;
@@ -710,16 +906,7 @@ static void test_receive_feed (
 	cerver_receive.socket = connection->socket;
 	cerver_receive.connection = connection;
 
-	// the same receive that a worker thread creates in its arena
-	HttpReceive *http_receive = receive_arena ?
-		http_receive_create_arena (
-			&cerver_receive, receive_arena,
-			receive_buffers[TEST_RECEIVE_URL_BUFFER],
-			receive_buffers[TEST_RECEIVE_FIELD_BUFFER],
-			receive_buffers[TEST_RECEIVE_VALUE_BUFFER]
-		) : http_receive_create (&cerver_receive);
-
-	test_check_ptr (http_receive);
+	HttpReceive *http_receive = test_receive_create (&cerver_receive);
 
 	// an upgraded connection is read by its WebSocket, never by the parser again
 	size_t start = 0;
@@ -732,6 +919,7 @@ static void test_receive_feed (
 	result.status = http_receive->receive_status;
 	result.keep_alive_requested = http_receive->keep_alive_requested;
 	result.unparsed = http_receive->unparsed;
+	result.framed = http_receive->framed;
 	result.upgraded = http_receive->upgraded;
 	result.pending_size = http_receive->web_socket ? http_receive->web_socket->pending_size : 0;
 
@@ -2778,6 +2966,846 @@ static void test_receive_parser_header_limit (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region framed
+
+static void test_receive_framed_case (
+	Cerver *cerver, const char *name, const char *request,
+	const char *status, const bool framed
+) {
+
+	test_receive_whole_case (cerver, name, request);
+
+	test_receive_expect (test_receive_status_is (status));
+	test_receive_expect (result.framed == framed);
+
+}
+
+// the client finds the end of a response without the close of the connection
+// when it has its length, when its status has no body, when it answers a HEAD
+// or when its stream sent its last chunk: a connection can only be kept after one of those
+static void test_receive_framed (Cerver *cerver) {
+
+	test_receive_framed_case (
+		cerver, "framed: a compiled response of cerver",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n", "200", true
+	);
+
+	test_receive_framed_case (
+		cerver, "framed: a rendered body",
+		"GET /v2/render HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", true
+	);
+
+	test_receive_framed_case (
+		cerver, "framed: a json body sent from its header and its data",
+		"PATCH /v2/items/16 HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n", "200", true
+	);
+
+	test_receive_framed_case (
+		cerver, "framed: a static file",
+		"GET /index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", true
+	);
+
+	test_receive_framed_case (
+		cerver, "framed: the answer to a preflight has no body",
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\nAccess-Control-Request-Method: GET\r\n\r\n",
+		"204", true
+	);
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
+
+	test_receive_framed_case (
+		cerver, "framed: a redirect with an empty body",
+		"GET /v2/render/ HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "308", true
+	);
+
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
+
+	test_receive_framed_case (
+		cerver, "framed: the response that cerver sends for a handler that did not answer",
+		"GET /v2/framed/silent HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "500", true
+	);
+
+	test_receive_framed_case (
+		cerver, "framed: a request that the parser rejects",
+		"GET /v2/render HTTP/1.1\r\nBad Header\r\n\r\n", "400", true
+	);
+
+	test_receive_expect (result.status != HTTP_RECEIVE_STATUS_COMPLETED);
+
+	test_receive_framed_case (
+		cerver, "framed: a complete header that was set as bytes, with its length",
+		"GET /v2/framed/bytes HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", true
+	);
+
+	test_receive_expect (strstr (result.response, framed_body) != NULL);
+
+	// a stream whose handler did not end it is ended by cerver with its last chunk
+	test_receive_framed_case (
+		cerver, "framed: a chunked stream",
+		"GET /v2/framed/stream HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", true
+	);
+
+	test_receive_expect (strstr (result.response, "\r\n0\r\n\r\n") != NULL);
+
+	// the answer to a HEAD has no body, whatever its GET sends
+	test_receive_framed_case (
+		cerver, "framed: a HEAD of a body without its length",
+		"HEAD /v2/framed/created HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "201", true
+	);
+
+	test_receive_expect (strstr (result.response, framed_body) == NULL);
+
+	// the ones that only end when the connection is closed
+	test_receive_framed_case (
+		cerver, "not framed: a body without its length",
+		"GET /v2/framed/created HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "201", false
+	);
+
+	test_receive_expect (!test_receive_has_header ("Content-Length"));
+	test_receive_expect (strstr (result.response, framed_body) != NULL);
+
+	test_receive_framed_case (
+		cerver, "not framed: a response without a body and without its length",
+		"GET /v2/framed/empty HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", false
+	);
+
+	test_receive_framed_case (
+		cerver, "not framed: a stream to an HTTP/1.0 client",
+		"GET /v2/framed/stream HTTP/1.0\r\n\r\n", "200", false
+	);
+
+	test_receive_expect (!test_receive_has_header ("Transfer-Encoding"));
+
+	test_receive_framed_case (
+		cerver, "not framed: a header that cerver can not complete",
+		"GET /v2/framed/raw HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "200", false
+	);
+
+	// an upgrade is not a response that a request can follow
+	test_receive_whole_case (
+		cerver, "not framed: an upgrade",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("101"));
+	test_receive_expect (result.upgraded);
+	test_receive_expect (!result.framed);
+
+}
+
+#define TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE		(1 << 15)
+#define TEST_RECEIVE_PREFLIGHT_LONG_HEADERS		300
+#define TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS		(1 << 13)
+
+static void test_receive_preflight_headers_case (
+	Cerver *cerver, const char *name, const size_t headers_length
+) {
+
+	char *headers = (char *) malloc (headers_length + 1);
+	char *request = (char *) malloc (TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE);
+	test_check_ptr (headers);
+	test_check_ptr (request);
+
+	(void) memset (headers, 'h', headers_length);
+	headers[headers_length] = '\0';
+
+	const int request_length = snprintf (
+		request, TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE,
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\nAccess-Control-Request-Method: GET\r\n"
+		"Access-Control-Request-Headers: %s\r\n\r\n",
+		headers
+	);
+
+	test_check ((request_length > 0) && (request_length < TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE), NULL);
+
+	current_case = name;
+	test_receive_feed_whole (cerver, request, (size_t) request_length);
+
+	test_receive_expect (test_receive_status_is ("204"));
+
+	// the whole value is sent back in its header, and nothing else:
+	// the response is text until its end, and its header ends with its empty line
+	test_receive_expect (result.response_len == strlen (result.response));
+
+	const char *allowed = strstr (result.response, "\r\nAccess-Control-Allow-Headers: ");
+	test_receive_expect (allowed != NULL);
+
+	allowed += strlen ("\r\nAccess-Control-Allow-Headers: ");
+	test_receive_expect (!strncmp (allowed, headers, headers_length));
+	test_receive_expect (!strncmp (allowed + headers_length, "\r\n", strlen ("\r\n")));
+
+	test_receive_expect (
+		!strcmp (result.response + result.response_len - strlen ("\r\n\r\n"), "\r\n\r\n")
+	);
+
+	free (request);
+	free (headers);
+
+}
+
+// the headers that a preflight asks for are sent back complete, whatever their length:
+// a header of a response kept 256 bytes and its length was the one of the whole value,
+// so the bytes after it were sent to the client
+static void test_receive_preflight_long_headers (Cerver *cerver) {
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers longer than 256 bytes",
+		TEST_RECEIVE_PREFLIGHT_LONG_HEADERS
+	);
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers that are not kept inside a response",
+		TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS
+	);
+
+}
+
+#pragma endregion
+
+#pragma region reset
+
+// a connection that handles more than one request with the same receive
+typedef struct TestReceiveSession {
+
+	int fds[2];
+
+	Connection *connection;
+	CerverReceive cerver_receive;
+
+	HttpReceive *http_receive;
+
+	// the callback of the body of a request that has not started
+	llhttp_data_cb on_body;
+
+	// what a request that has not started uses of the arena that was lent
+	size_t arena_used;
+	size_t arena_allocations;
+
+} TestReceiveSession;
+
+static void test_receive_session_start (TestReceiveSession *session, Cerver *cerver) {
+
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, session->fds), 0, NULL);
+
+	session->connection = connection_create_empty ();
+	test_check_ptr (session->connection);
+	session->connection->socket->sock_fd = session->fds[TEST_RECEIVE_SERVER];
+	session->connection->active = true;
+
+	(void) memset (&session->cerver_receive, 0, sizeof (CerverReceive));
+	session->cerver_receive.cerver = cerver;
+	session->cerver_receive.socket = session->connection->socket;
+	session->cerver_receive.connection = session->connection;
+
+	session->http_receive = test_receive_create (&session->cerver_receive);
+
+	session->on_body = session->http_receive->settings.on_body;
+
+	session->arena_used = receive_arena ? receive_arena->used : 0;
+	session->arena_allocations = receive_arena ? receive_arena->n_allocations : 0;
+
+	// the connection is not closed after its response
+	session->http_receive->keep_alive = true;
+
+}
+
+// reads the response that is already in the socket, the connection is still open
+static void test_receive_session_read (const TestReceiveSession *session) {
+
+	ssize_t received = 0;
+	while (
+		(result.response_len < (TEST_RECEIVE_RESPONSE_SIZE - 1))
+		&& ((received = recv (
+			session->fds[TEST_RECEIVE_CLIENT],
+			result.response + result.response_len,
+			TEST_RECEIVE_RESPONSE_SIZE - 1 - result.response_len,
+			MSG_DONTWAIT
+		)) > 0)
+	) {
+		result.response_len += (size_t) received;
+	}
+
+	result.response[result.response_len] = '\0';
+
+}
+
+// feeds a request of the connection in two pieces and keeps what it left
+static void test_receive_session_request (
+	TestReceiveSession *session,
+	const char *request, const size_t request_len, const size_t cut
+) {
+
+	HttpReceive *http_receive = session->http_receive;
+
+	(void) memset (&observed, 0, sizeof (TestReceiveObserved));
+	(void) memset (&result, 0, sizeof (TestReceiveResult));
+
+	n_fed_requests += 1;
+
+	if (cut) test_receive_feed_piece (http_receive, request, cut);
+	if (request_len > cut) test_receive_feed_piece (http_receive, request + cut, request_len - cut);
+
+	result.status = http_receive->receive_status;
+	result.keep_alive_requested = http_receive->keep_alive_requested;
+	result.unparsed = http_receive->unparsed;
+	result.framed = http_receive->framed;
+
+	test_receive_session_read (session);
+
+}
+
+static void test_receive_session_end (TestReceiveSession *session) {
+
+	http_receive_delete (session->http_receive);
+	if (receive_arena) arena_reset (receive_arena);
+
+	connection_delete (session->connection);
+
+	(void) close (session->fds[TEST_RECEIVE_CLIENT]);
+
+}
+
+// what belongs to a request starts again, and what belongs to the connection is kept
+static void test_receive_reset_check (
+	const TestReceiveSession *session, const HttpReceive *before
+) {
+
+	const HttpReceive *http_receive = session->http_receive;
+
+	test_receive_expect (http_receive->receive_status == HTTP_RECEIVE_STATUS_NONE);
+	test_receive_expect (http_receive->stage == HTTP_STAGE_QUEUED);
+	test_receive_expect (!http_receive->keep_alive_requested);
+	test_receive_expect (http_receive->unparsed == 0);
+	test_receive_expect (http_receive->mpart_parser == NULL);
+	test_receive_expect (http_receive->type == HTTP_RECEIVE_TYPE_NONE);
+	test_receive_expect (http_receive->dispatch == HTTP_RECEIVE_DISPATCH_NONE);
+	test_receive_expect (http_receive->node == NULL);
+	test_receive_expect (http_receive->endpoint == NULL);
+	test_receive_expect (http_receive->route == NULL);
+	test_receive_expect (http_receive->served_file == NULL);
+	test_receive_expect (!http_receive->head);
+	test_receive_expect (http_receive->max_body_size == 0);
+	test_receive_expect (http_receive->status == HTTP_STATUS_NONE);
+	test_receive_expect (http_receive->sent == 0);
+	test_receive_expect (!http_receive->is_multi_part);
+	test_receive_expect (http_receive->upload_sequence == 0);
+	test_receive_expect (!http_receive->upload_directory_created);
+	test_receive_expect (http_receive->header_size == 0);
+	test_receive_expect (http_receive->n_headers == 0);
+	test_receive_expect (http_receive->body_size == 0);
+	test_receive_expect (http_receive->n_parts == 0);
+	test_receive_expect (!http_receive->responded);
+	test_receive_expect (!http_receive->framed);
+	test_receive_expect (http_receive->stream.state == HTTP_STREAM_STATE_NONE);
+	test_receive_expect (http_receive->received == 0);
+	test_receive_expect (http_receive->diagnostics.n_recvs == 0);
+	test_receive_expect (!http_receive->diagnostics.timed_out);
+	test_receive_expect (!http_receive->response_failed);
+	test_receive_expect (!http_receive->send_deadline_set);
+	test_receive_expect (http_receive->web_socket == NULL);
+	test_receive_expect (http_receive->start_time > 0);
+
+	// the parser is ready for a new request with the callbacks of a new one
+	test_receive_expect (llhttp_get_errno (&http_receive->parser) == HPE_OK);
+	test_receive_expect (http_receive->parser.data == http_receive);
+	test_receive_expect (http_receive->parser.settings == &http_receive->settings);
+	test_receive_expect (http_receive->settings.on_body == session->on_body);
+
+	// the request is a new one, without what the one before received
+	const HttpRequest *request = http_receive->request;
+	test_receive_expect (request != NULL);
+	test_receive_expect (request->url == NULL);
+	test_receive_expect (request->query == NULL);
+	test_receive_expect (request->body == NULL);
+	test_receive_expect (request->multi_parts == NULL);
+	test_receive_expect (request->custom_data == NULL);
+	test_receive_expect (request->decoded_data == NULL);
+	test_receive_expect (request->n_params == 0);
+	for (unsigned int idx = 0; idx < HTTP_HEADERS_SIZE; idx++) {
+		test_receive_expect (request->headers[idx] == NULL);
+	}
+
+	test_receive_expect (http_receive->file_stats != NULL);
+
+	// the arena only has the new request, the data of the one that ended was released
+	if (receive_arena) {
+		test_receive_expect (http_receive->arena == receive_arena);
+		test_receive_expect (receive_arena->used == session->arena_used);
+		test_receive_expect (receive_arena->n_allocations == session->arena_allocations);
+	}
+
+	// the connection
+	test_receive_expect (http_receive->cr == before->cr);
+	test_receive_expect (http_receive->http_cerver == before->http_cerver);
+	test_receive_expect (http_receive->handler == before->handler);
+	test_receive_expect (http_receive->keep_alive == before->keep_alive);
+	test_receive_expect (http_receive->arena == before->arena);
+	test_receive_expect (http_receive->borrowed_buffers == before->borrowed_buffers);
+	test_receive_expect (http_receive->sock_fd == before->sock_fd);
+	test_receive_expect (http_receive->client_state == before->client_state);
+	test_receive_expect (http_receive->upgraded == before->upgraded);
+
+	if (before->borrowed_buffers) {
+		test_receive_expect (http_receive->url_buffer == before->url_buffer);
+		test_receive_expect (http_receive->field_buffer == before->field_buffer);
+		test_receive_expect (http_receive->value_buffer == before->value_buffer);
+	}
+
+}
+
+static void test_receive_session_reset (TestReceiveSession *session) {
+
+	const HttpReceive before = *session->http_receive;
+
+	test_check_unsigned_eq (http_receive_reset (session->http_receive), 0, NULL);
+
+	test_receive_reset_check (session, &before);
+
+}
+
+static const char *reset_param_request = {
+	"POST /test/items/first-item/update?stale=query HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Content-Type: text/plain\r\n"
+	"Accept: text/stale\r\n"
+	"X-Custom: stale-custom\r\n"
+	"Content-Length: 10\r\n"
+	"\r\n"
+	"first-body"
+};
+
+static const char *reset_data_request = {
+	"POST /v2/data HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Content-Length: 4\r\n"
+	"\r\n"
+	"data"
+};
+
+static const char *reset_not_found_request = {
+	"GET /v2/items HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+};
+
+static const char *reset_bad_request = {
+	"GET /v2/render HTTP/1.1\r\nBad Header\r\n\r\n"
+};
+
+static const char *reset_incomplete_request = {
+	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 64\r\n\r\npartial"
+};
+
+// a connection that is kept does not say that it is closed
+static void test_receive_reset_check_kept (void) {
+
+	test_receive_expect (!test_receive_has_header ("Connection"));
+	test_receive_expect (test_receive_count_responses () == 1);
+
+}
+
+// the echo request after any other request of its connection:
+// it only has what it sent, and its response is the only one in the socket
+static void test_receive_reset_echo (TestReceiveSession *session, const size_t cut) {
+
+	test_receive_session_reset (session);
+
+	test_receive_session_request (session, echo_json_request, strlen (echo_json_request), cut);
+
+	test_receive_check_echo_json ();
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_COMPLETED);
+	test_receive_expect (result.framed);
+	test_receive_expect (observed.accept[0] == '\0');
+	test_receive_expect (observed.param[0] == '\0');
+	test_receive_expect (observed.n_files == 0);
+
+	test_receive_reset_check_kept ();
+
+}
+
+// the second request of a connection, cut at every byte
+static void test_receive_reset_every_split (Cerver *cerver) {
+
+	const size_t request_len = strlen (echo_json_request);
+
+	current_case = "reset: a second request cut at every byte";
+	current_mode = "split";
+
+	for (size_t cut = 0; cut <= request_len; cut++) {
+		current_offset = cut;
+
+		TestReceiveSession session;
+		test_receive_session_start (&session, cerver);
+
+		test_receive_session_request (&session, reset_param_request, strlen (reset_param_request), 0);
+
+		test_receive_expect (test_receive_status_is ("200"));
+		test_receive_expect (!strcmp (observed.param, "first-item"));
+		test_receive_expect (observed.body_len == strlen ("first-body"));
+		test_receive_reset_check_kept ();
+
+		test_receive_reset_echo (&session, cut);
+
+		test_receive_session_end (&session);
+	}
+
+	current_mode = "whole";
+	current_offset = 0;
+
+}
+
+// many requests of every kind with the same receive
+static void test_receive_reset_many (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	current_case = "reset: many requests in a connection";
+
+	observed_custom_deleted = 0;
+	observed_decoded_deleted = 0;
+
+	TestReceiveSession session;
+	test_receive_session_start (&session, cerver);
+
+	// the data that a request keeps is deleted when it ends, once
+	test_receive_session_request (&session, reset_data_request, strlen (reset_data_request), 0);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (observed_custom_deleted == 0);
+	test_receive_expect (observed_decoded_deleted == 0);
+
+	test_receive_session_reset (&session);
+	test_receive_expect (observed_custom_deleted == 1);
+	test_receive_expect (observed_decoded_deleted == 1);
+
+	test_receive_session_request (&session, reset_data_request, strlen (reset_data_request), 0);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	test_receive_reset_echo (&session, 0);
+	test_receive_expect (observed_custom_deleted == 2);
+	test_receive_expect (observed_decoded_deleted == 2);
+
+	// the uploads of each request have their own directory, and none is left
+	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+
+	char first[TEST_RECEIVE_PATH_SIZE] = { 0 };
+	char second[TEST_RECEIVE_PATH_SIZE] = { 0 };
+
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, multipart_request, strlen (multipart_request), 0);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_parts == 3);
+	test_receive_expect (observed.n_files == 2);
+	test_receive_expect (!strcmp (observed.files[0].content, "first-file-content"));
+	test_receive_copy_c_string (first, observed.files[0].saved_filename);
+	test_receive_reset_check_kept ();
+
+	test_receive_session_reset (&session);
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+	test_receive_session_request (&session, multipart_request, strlen (multipart_request), 0);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_parts == 3);
+	test_receive_expect (observed.n_files == 2);
+	test_receive_expect (!strcmp (observed.files[1].content, "second-file-content"));
+	test_receive_copy_c_string (second, observed.files[0].saved_filename);
+
+	test_receive_expect (first[0] != '\0');
+	test_receive_expect (strcmp (first, second) != 0);
+
+	// a body after an upload is not handled as its parts
+	test_receive_reset_echo (&session, 0);
+	test_receive_expect (test_receive_uploads_count () == 0);
+	test_receive_expect (observed.n_parts == 0);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+
+	// a request without a body after one with it, and a stream
+	test_receive_session_reset (&session);
+	test_receive_session_request (
+		&session, "GET /v2/render HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
+		strlen ("GET /v2/render HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"), 0
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (strstr (result.response, render_json_body) != NULL);
+	test_receive_expect (!observed.has_body);
+	test_receive_reset_check_kept ();
+
+	test_receive_session_reset (&session);
+	test_receive_session_request (
+		&session, "GET /v2/framed/stream HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
+		strlen ("GET /v2/framed/stream HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"), 0
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (result.framed);
+	test_receive_expect (strstr (result.response, "\r\n0\r\n\r\n") != NULL);
+
+	test_receive_reset_echo (&session, 0);
+
+	// a request that the parser rejected and one that did not match
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, reset_bad_request, strlen (reset_bad_request), 0);
+	test_receive_expect (test_receive_status_is ("400"));
+	test_receive_expect (result.status != HTTP_RECEIVE_STATUS_COMPLETED);
+
+	test_receive_reset_echo (&session, 0);
+
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, reset_not_found_request, strlen (reset_not_found_request), 0);
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_reset_echo (&session, 0);
+
+	// a request that was left in the middle of its body
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, reset_incomplete_request, strlen (reset_incomplete_request), 0);
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect (result.response_len == 0);
+	test_receive_expect (session.http_receive->body_size == strlen ("partial"));
+
+	test_receive_reset_echo (&session, 0);
+
+	// the last request also deletes its data, with the receive
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, reset_data_request, strlen (reset_data_request), 0);
+	test_receive_expect (test_receive_status_is ("200"));
+
+	test_receive_session_end (&session);
+
+	test_receive_expect (observed_custom_deleted == 3);
+	test_receive_expect (observed_decoded_deleted == 3);
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+}
+
+// the counters of a cerver that the end of a request can change
+typedef struct TestReceiveCounters {
+
+	size_t n_unhandled;
+	size_t n_incompleted;
+	size_t n_aborted;
+	size_t n_vanished;
+	size_t n_failed_responses;
+
+} TestReceiveCounters;
+
+static void test_receive_counters_take (
+	const HttpCerver *http_cerver, TestReceiveCounters *counters
+) {
+
+	counters->n_unhandled = http_cerver->n_unhandled_requests;
+	counters->n_incompleted = http_cerver->n_incompleted_requests;
+	counters->n_failed_responses = http_cerver->n_failed_responses;
+
+	counters->n_aborted = 0;
+	counters->n_vanished = 0;
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		counters->n_vanished += http_cerver->n_vanished_requests[stage];
+
+		for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
+			counters->n_aborted += http_cerver->n_aborted_requests[stage][reason];
+		}
+	}
+
+}
+
+// the request of the session is logged and counted, and only the expected counters change
+static void test_receive_access_check (
+	const TestReceiveSession *session, const TestReceiveCounters *expected_changes
+) {
+
+	const HttpCerver *http_cerver = session->http_receive->http_cerver;
+
+	TestReceiveCounters before;
+	test_receive_counters_take (http_cerver, &before);
+
+	http_access_request (session->http_receive);
+
+	TestReceiveCounters after;
+	test_receive_counters_take (http_cerver, &after);
+
+	test_receive_expect (after.n_unhandled == before.n_unhandled + expected_changes->n_unhandled);
+	test_receive_expect (after.n_incompleted == before.n_incompleted + expected_changes->n_incompleted);
+	test_receive_expect (after.n_aborted == before.n_aborted + expected_changes->n_aborted);
+	test_receive_expect (after.n_vanished == before.n_vanished + expected_changes->n_vanished);
+	test_receive_expect (after.n_failed_responses == before.n_failed_responses + expected_changes->n_failed_responses);
+
+}
+
+// feeds a request in a new connection that is left open, so its end can be accounted
+static void test_receive_access_feed (
+	TestReceiveSession *session, Cerver *cerver, const char *request
+) {
+
+	test_receive_session_start (session, cerver);
+	test_receive_session_request (session, request, strlen (request), 0);
+
+	// the bytes that the connection received for the request
+	session->http_receive->received = strlen (request);
+
+}
+
+// every request is logged and counted once when it ends, by what happened to it:
+// the stats of its endpoint, or the counter of the requests that had no route,
+// that could not be parsed, whose client left or that stopped arriving
+static void test_receive_access (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	TestReceiveSession session;
+	TestReceiveCounters changes;
+
+	// a request that its endpoint answered is counted in the stats of the endpoint
+	current_case = "access: a request answered by its endpoint";
+	test_receive_access_feed (&session, cerver, reset_data_request);
+	test_receive_expect (session.http_receive->receive_status == HTTP_RECEIVE_STATUS_COMPLETED);
+
+	const HttpEndpoint *endpoint = session.http_receive->endpoint;
+	test_receive_expect (endpoint != NULL);
+
+	HttpRouteStats stats_before;
+	http_route_stats_snapshot (endpoint->stats, &stats_before);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	test_receive_access_check (&session, &changes);
+
+	HttpRouteStats stats_after;
+	http_route_stats_snapshot (endpoint->stats, &stats_after);
+	test_receive_expect (stats_after.n_requests == stats_before.n_requests + 1);
+	test_receive_expect (stats_after.sum_request_sizes == stats_before.sum_request_sizes + strlen (reset_data_request));
+	test_receive_expect (stats_after.sum_response_sizes == stats_before.sum_response_sizes + session.http_receive->sent);
+	test_receive_expect (session.http_receive->sent == result.response_len);
+
+	// each request of a connection is counted with its own bytes and its own time
+	test_receive_session_reset (&session);
+	test_receive_session_request (&session, echo_json_request, strlen (echo_json_request), 0);
+	session.http_receive->received = strlen (echo_json_request);
+	test_receive_expect (session.http_receive->endpoint != endpoint);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	test_receive_access_check (&session, &changes);
+
+	http_route_stats_snapshot (endpoint->stats, &stats_after);
+	test_receive_expect (stats_after.n_requests == stats_before.n_requests + 1);
+
+	test_receive_session_end (&session);
+
+	// a file is only logged
+	current_case = "access: a static file";
+	test_receive_access_feed (&session, cerver, "GET /index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_expect (session.http_receive->type == HTTP_RECEIVE_TYPE_FILE);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+	// a request without a route
+	current_case = "access: a request without a route";
+	test_receive_access_feed (&session, cerver, reset_not_found_request);
+	test_receive_expect (session.http_receive->receive_status == HTTP_RECEIVE_STATUS_UNHANDLED);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	changes.n_unhandled = 1;
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+	// a request that was answered before its body is only logged
+	current_case = "access: a request that was rejected";
+	test_receive_access_feed (
+		&session, cerver,
+		"POST /test/private HTTP/1.1\r\nHost: localhost:8080\r\nAuthorization: Bearer wrong\r\nContent-Length: 0\r\n\r\n"
+	);
+
+	test_receive_expect (session.http_receive->receive_status == HTTP_RECEIVE_STATUS_REJECTED);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+	// a request that the parser could not parse
+	current_case = "access: a request that could not be parsed";
+	test_receive_access_feed (&session, cerver, reset_bad_request);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	changes.n_incompleted = 1;
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+	// a request whose client left before it was complete
+	current_case = "access: a request whose client left";
+	test_receive_access_feed (&session, cerver, reset_incomplete_request);
+	http_receive_client_left (session.http_receive, 0);
+	test_receive_expect (session.http_receive->receive_status == HTTP_RECEIVE_STATUS_CLOSED);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	changes.n_aborted = 1;
+	test_receive_access_check (&session, &changes);
+
+	const size_t aborted_in_body = http_cerver->n_aborted_requests[HTTP_STAGE_BODY][HTTP_ABORT_REASON_CLOSED];
+	test_receive_expect (aborted_in_body > 0);
+	test_receive_session_end (&session);
+
+	// a request that stopped arriving until its deadline
+	current_case = "access: a request that stopped arriving";
+	test_receive_access_feed (&session, cerver, reset_incomplete_request);
+	http_receive_handle_timeout (session.http_receive, true);
+	test_receive_expect (session.http_receive->receive_status == HTTP_RECEIVE_STATUS_TIMEOUT);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	changes.n_vanished = 1;
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+	// a request whose response failed was counted where its client left, it is not counted again
+	current_case = "access: a request whose response failed";
+	test_receive_access_feed (&session, cerver, reset_incomplete_request);
+
+	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
+	TestReceiveCounters before_failed;
+	test_receive_counters_take (http_cerver, &before_failed);
+
+	http_receive_response_failed (session.http_receive, EPIPE);
+	http_receive_client_left (session.http_receive, EPIPE);
+
+	TestReceiveCounters after_failed;
+	test_receive_counters_take (http_cerver, &after_failed);
+	test_receive_expect (after_failed.n_failed_responses == before_failed.n_failed_responses + 1);
+
+	test_receive_access_check (&session, &changes);
+	test_receive_session_end (&session);
+
+}
+
+// a receive is used by all the requests of its connection, with its own memory
+// and with the arena and the buffers that its owner lends to it
+static void test_receive_reset (Cerver *cerver) {
+
+	test_receive_reset_many (cerver);
+	test_receive_reset_every_split (cerver);
+	test_receive_access (cerver);
+
+	Arena *arena = receive_arena;
+	receive_arena = NULL;
+
+	test_receive_reset_many (cerver);
+	test_receive_reset_every_split (cerver);
+	test_receive_access (cerver);
+
+	receive_arena = arena;
+
+	// a receive that does not exist
+	test_check_unsigned_eq (http_receive_reset (NULL), 1, NULL);
+
+}
+
+#pragma endregion
+
 void http_tests_receive (void) {
 
 	(void) printf ("Testing HTTP receive...\n");
@@ -2817,6 +3845,10 @@ void http_tests_receive (void) {
 	test_receive_parser_upgrade (cerver);
 	test_receive_parser_keep_alive (cerver);
 	test_receive_parser_header_limit (cerver);
+
+	test_receive_framed (cerver);
+	test_receive_preflight_long_headers (cerver);
+	test_receive_reset (cerver);
 
 	(void) cerver_teardown (cerver);
 
