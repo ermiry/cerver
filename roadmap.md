@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70) |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10 |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1) |
 
 **Las citas `archivo:línea`:**
 
@@ -122,7 +122,7 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F2** | 2.1b-8 | llhttp 9.4.3: modo estricto, todos los métodos HTTP, lenient por cerver | F0 |
 | **F6a** | 2.1b-9 | WebSocket completo sobre hilos (RFC 6455 y permessage-deflate), el cliente, y el port de la 2.0b-66 que necesita | F2 |
 | **Merge** | 2.1b-10 | Un solo merge local de `http` desde el tag de la 2.0b-70 (trae de la 2.0b-66 a la 70: el port de la 1.8 y de la 1.8.1, la seguridad de JWT y JSON, los objetos calientes), y el diseño de F8 y F9 en este roadmap | 2.0b-70 publicada; 2.1b-9 en `nightly-beta` |
-| **F1** | 2.1b-11 | Preparación sin cambio de comportamiento | F2 + el merge |
+| **F1** | 2.1b-11 | Preparación: la lista de cabeceras y la respuesta estructurada, `Connection: close` por petición, `framed`, el receive fuera de la arena con `http_receive_reset`, el log y los stats por petición | F2 + el merge |
 | **F3** | 2.1b-12 | Event loop, cerrando por petición | F1 |
 | **F4** | 2.1b-13 | Keep-alive real | F3 |
 | **F5** | 2.1b-14 | Pools nombrados, health / ready, métricas | F4 |
@@ -174,21 +174,73 @@ petición en los nombres default de uploads.
 
 ### 4.1 F1 — Preparación (2.1b-11)
 
-No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» de lo que es «por petición».
+No cambia el modelo en THREADS (una petición por conexión, cerrada después de su respuesta). Separa lo que es «por
+conexión» de lo que es «por petición» y deja la respuesta descrita sin su protocolo. **Implementada.**
 
-- **`Connection: close` fuera de las cabeceras compiladas** de `response.c`. Se agrega en la parte por petición de
-  `http_response_send_message` cuando se va a cerrar, y en THREADS siempre. El 503 estático lo conserva.
-  `test/http/responses.c` se actualiza (el orden de la cabecera cambia).
-- **`HttpReceive.framed`:** si la respuesta va delimitada (Content-Length o chunked completo). Una respuesta cruda sin
-  `\r\n\r\n` (`send_raw`) o un stream de HTTP/1.0 no lo está.
-- **`http_receive_reset`,** que reinicia todo lo de una petición (lista en §4.4).
-- **`HttpReceive` independiente de `HandlerThreadContext`:** la arena y los buffers de tokens se inyectan.
-  `http_receive_create_arena` los recibe en lugar de tomarlos del hilo.
-- **El log y los stats por petición,** fuera de `cerver_receive_http`: `start_time` y las deadlines van por petición.
-- **La conexión web sin `ConnectionStats` / `PacketsPerType`:** ya embebidos y reciclados desde el port de la 1.8;
-  queda revisar lo que la conexión web todavía crea por petición.
-- **La respuesta estructurada:** la respuesta conserva su status y la lista de sus cabeceras, y se serializa por
-  protocolo al enviarse (HTTP/1.1 como hoy). Es el prerrequisito de HTTP/2 (§4.9.2).
+**La lista de cabeceras** (`http/headers.{h,c}`, `HttpHeaders`):
+
+- las cabeceras en el orden en que se agregaron; un nombre se puede repetir (`Set-Cookie`) y puede ser cualquier token,
+  no solo uno de los 63 tipos (un nombre conocido se guarda con su tipo, sin distinguir mayúsculas);
+- cada campo queda escrito como su línea `Nombre: valor\r\n` en un búfer: HTTP/1.1 lo envía tal cual, y un protocolo
+  que codifica sus cabeceras (HPACK) tiene el nombre y el valor de cada una sin volver a parsear;
+- 32 campos y 512 bytes dentro de la lista, y memoria propia hasta 256 campos y 16 KiB;
+- un valor con CR, LF o NUL y un nombre que no es token se rechazan (antes no se revisaban), y nada se corta a 256
+  bytes.
+
+**La respuesta estructurada** (`http/response.{h,c}`):
+
+- `HttpResponse` es su status y su lista de cabeceras; `header` / `res` son la caché de su forma en HTTP/1.1, que se
+  descarta cuando cambia una cabecera o el status;
+- **un solo serializador**, `http_response_compile_header ()`: la línea de status, `Server`, las cabeceras de la
+  respuesta, las del cerver que la respuesta no tenga (`http_cerver_add_responses_header ()`) y la línea vacía. Los
+  cinco formatos escritos a mano (el header simple, el de JSON, el de varias cabeceras, el 304 y los de
+  `render_text` / `render_json`) desaparecieron;
+- la API: `http_response_header_set / _add / _remove / _count / _get` por tipo y sus variantes `_by_name`; las
+  funciones anteriores (`http_response_add_header ()` y las demás) se conservan con su semántica (reemplazar la de su
+  tipo);
+- **el mensaje** que se envía (`HttpResponseMessage`) lleva el status, las cabeceras de la respuesta y las que cerver
+  agrega para la petición como otra lista, en la pila: HTTP/1.1 envía el header compilado, las líneas agregadas, la
+  línea vacía y el body en un `sendmsg`, sin asignaciones (GET 0, POST JSON 14);
+- **`Connection: close` salió de lo compilado:** se agrega con las cabeceras de la petición cuando la conexión se va a
+  cerrar (en THREADS, siempre) y la respuesta no trae su propia `Connection`. El 503 estático lo conserva; el 101 y el
+  `100 Continue` no lo llevan;
+- **lo que le queda a HTTP/2 (F9a):** el gzip y el 304 todavía filtran el header como bytes (quitan `Content-Length`,
+  dejan solo las cabeceras que un 304 conserva); sobre h2 esos dos filtros se hacen en la lista. Un header puesto como
+  bytes (`http_response_set_header ()`) solo existe en HTTP/1.1.
+
+**`HttpReceive.framed`:** la respuesta enviada tiene un final que el cliente encuentra sin el cierre de la conexión:
+lleva `Content-Length`, su status no tiene body (1xx, 204, 304), contesta un HEAD, es un stream chunked que envió su
+último chunk, o un archivo que se envió completo. No lo tienen un stream a un cliente HTTP/1.0, un body sin su
+longitud, un header que cerver no puede completar, el 101 ni una respuesta cuyo envío falló. En F1 nadie decide con
+él; es la condición de F4 (§4.4).
+
+**La recepción por petición** (`http/http.{h,c}`, `handler.{h,c}`):
+
+- **el receive ya no vive en la arena de su petición:** su dueño le da la memoria y le presta los recursos
+  (`HttpReceiveResources`: la arena y los búferes de tokens) con `http_receive_prepare ()`. En THREADS el dueño es el
+  hilo (`HandlerThreadContext.http_receive`, 0 asignaciones por conexión); en F3 será la conexión del loop.
+  `http_receive_create ()` sigue creando un receive con su propia memoria;
+- **`http_receive_reset ()`:** termina la petición (sus uploads, el lugar de su upgrade, el request con sus deleters,
+  el parser de sus partes), libera la arena, reinicia el parser (`llhttp_reset ()` y los callbacks que una petición
+  cambió) y todos los campos de una petición, y crea el request siguiente. Conserva lo de la conexión: su cerver, los
+  recursos, `keep_alive`, `upgraded` y el estado del cliente. En F1 nadie la llama en producción: la usa F4;
+- **por petición, dentro del receive:** el reloj (`start_time`), los bytes recibidos, los diagnósticos de `recv ()` y
+  las deadlines de cabeceras y de petición. El timeout de inactividad y el `SO_RCVTIMEO` aplicado son de la conexión;
+- **el log y los contadores** de una petición que termina están en `http/access.{h,c}` (`http_access_request ()`), y
+  `cerver_receive_http ()` es el ciclo de la conexión: prepara el receive, recibe, cierra la petición, entrega la
+  conexión a su WebSocket o la suelta.
+
+**Lo que una petición todavía asigna** (medido con valgrind, en régimen): nada en un GET, un JSON, un stream, un
+archivo, un POST de texto o un 404; 15 asignaciones con dos parámetros de query (la lista y sus pares) y 45 en un
+multipart con un campo y un archivo. Pasarlos a la arena cambia la API de `http_request_get_query_params ()` y de las
+partes: queda fuera de F1.
+
+**La validación:** `test/http/headers.c` (la lista), `test/http/responses.c` (la API, los envoltorios, los defaults, la
+caché), `test/http/features.c` (`Connection: close` exactamente una vez en cada tipo de respuesta, dos `Set-Cookie`
+en el cable y en orden), `test/http/receive.c` (`framed` por tipo de respuesta; muchas peticiones por un mismo
+receive con reset, con arena y sin ella, la segunda cortada en cada byte; el cierre de petición por cada estado; un
+preflight con cabeceras más largas que las que cabían en una respuesta) y el fuzzer `pipeline` (varias peticiones por
+conexión con reset).
 
 ### 4.2 F2 — llhttp (2.1b-8)
 
@@ -419,12 +471,12 @@ CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max)
 
 ### 4.4 F4 — Keep-alive real (2.1b-13)
 
-**`http_receive_reset`, entre peticiones de una conexión:**
+**`http_receive_reset ()`, entre peticiones de una conexión** (existe desde F1, §4.1; F4 es quien la llama):
 
 - reinicia `receive_status`, `type`, `dispatch`, `node`, `endpoint`, `route`, `served_file`, `head`,
   `max_body_size`, `status`, `sent`, `is_multi_part`, `header_size`, `n_headers`, `body_size`, `n_parts`,
-  `responded`, `framed` y `stream`;
-- `settings.on_body` vuelve a `http_receive_handle_body`;
+  `responded`, `framed`, `stream`, `stage`, el reloj, los bytes recibidos, los diagnósticos y las deadlines;
+- `settings.on_body` vuelve a `http_receive_handle_body` y el parser se reinicia con `llhttp_reset ()`;
 - libera `mpart_parser` y `file_stats`;
 - destruye el `HttpRequest`: los archivos, y los deleters de `decoded_data` / `custom_data`;
 - crea uno nuevo en la arena reiniciada.
@@ -892,7 +944,8 @@ Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
 - **El de `http`:** gcc con los 4 TYPEs, g++, unit con ASan + UBSan, TSan y valgrind, los pares de integración × 4
   variantes, el fuzz y `test/performance.sh`.
 - **El flaky hunter:** 200 repeticiones (`test/repeat.sh`) de las suites que tocan el loop, también en TSan.
-- **Fuzz:** ≥ 30 min por target (el de `http` es de 30 s), con un target nuevo de varias peticiones por conexión.
+- **Fuzz:** ≥ 30 min por target (el de `http` es de 30 s), con el target de varias peticiones por conexión
+  (`pipeline`, desde F1).
 - **Los pares web** en THREADS **y** en EVENTS (`test/web/*.c` toman el modelo de una variable de entorno). curl
   reutiliza la conexión cuando no hay close.
 - **`test/http/server.c`:** sus tests (408, slowloris, idle, slow body, request y send timeout, overload
