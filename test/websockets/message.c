@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdbool.h>
 
+#ifdef CERVER_ZLIB
+#include <zlib.h>
+#endif
+
 #include <cerver/types/types.h>
 
 #include <cerver/http/websockets/deflate.h>
@@ -346,6 +350,73 @@ static void test_message_failures (void) {
 
 }
 
+#ifdef CERVER_ZLIB
+
+// the output of the decompressor that the test gives to a connection
+#define MESSAGE_TEST_INFLATER_CHUNK_SIZE		(1 << 12)
+
+// "Hello" as the payload of a compressed message (RFC 7692 section 7.2.3.1)
+static const u8 message_test_compressed_hello[] = { 0xF2, 0x48, 0xCD, 0xC9, 0xC9, 0x07, 0x00 };
+
+// zlib has no more memory: the inflater got its state, it does not get its window
+static bool message_test_inflater_exhausted = false;
+
+static voidpf message_test_inflater_alloc (voidpf opaque, uInt items, uInt size) {
+
+	(void) opaque;
+
+	return message_test_inflater_exhausted ? Z_NULL : calloc (items, size);
+
+}
+
+static void message_test_inflater_free (voidpf opaque, voidpf address) {
+
+	(void) opaque;
+
+	free (address);
+
+}
+
+// a decompressor that fails for its memory is a failure of cerver, the connection ends with 1011:
+// only the bytes of the peer that are not a deflate stream are a 1007 (it was the code of both)
+static void message_test_inflater_without_memory (
+	const HttpWebSocketDeflateParameters *parameters, const HttpWebSocketDeflateOptions *options
+) {
+
+	HttpWebSocketDeflate *deflate = http_web_socket_deflate_create (HTTP_WEB_SOCKET_ROLE_SERVER, parameters, options);
+	test_check_ptr (deflate);
+
+	z_stream *stream = (z_stream *) calloc (1, sizeof (z_stream));
+	test_check_ptr (stream);
+	stream->zalloc = message_test_inflater_alloc;
+	stream->zfree = message_test_inflater_free;
+
+	message_test_inflater_exhausted = false;
+	test_check_int_eq (inflateInit2 (stream, -HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS), Z_OK, NULL);
+	message_test_inflater_exhausted = true;
+
+	// the connection finds its decompressor already created
+	deflate->decompressor = stream;
+	deflate->chunk = (u8 *) malloc (MESSAGE_TEST_INFLATER_CHUNK_SIZE);
+	test_check_ptr (deflate->chunk);
+	deflate->chunk_size = MESSAGE_TEST_INFLATER_CHUNK_SIZE;
+
+	u8 buffer[1 << 8];
+	const size_t size = message_test_frame (
+		buffer, 0, true, true, HTTP_WEB_SOCKET_OPCODE_TEXT,
+		message_test_compressed_hello, sizeof (message_test_compressed_hello)
+	);
+
+	message_test_failure ("a decompressor without memory", buffer, size, deflate, 1011);
+
+	http_web_socket_deflate_delete (deflate);
+
+	message_test_inflater_exhausted = false;
+
+}
+
+#endif
+
 // the receiver of a connection with permessage-deflate rejects the reserved bit in the wrong frames
 static void test_message_compressed_failures (void) {
 
@@ -375,6 +446,10 @@ static void test_message_compressed_failures (void) {
 	message_test_failure ("a stream that is not deflate", buffer, size, deflate, 1007);
 
 	http_web_socket_deflate_delete (deflate);
+
+	#ifdef CERVER_ZLIB
+	message_test_inflater_without_memory (&parameters, &options);
+	#endif
 
 }
 
