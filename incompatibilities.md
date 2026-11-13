@@ -3,6 +3,117 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-13 (from 2.1b-12)
+
+The rest of the fixes of the review of the 2.1b-10, with the ones of the 2.0b-72 applied by hand, and the changes
+of the WebSocket API that the review asked for before the event loop.
+
+**The requests (the 2.0b-72 and the parser):**
+
+- The default request timeout is `HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT` = 300 secs, it was 0 (no timeout): a request
+  whose body takes longer is answered with 408. `http_cerver_set_request_timeout (http_cerver, 0)` keeps the
+  behavior of before
+- A header that is not one of the HTTP headers map (a custom header) fits up to the limit of
+  `http_cerver_set_max_custom_header_size ()` (new), by default `HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE`
+  (8192 bytes): the limit was 512 bytes without a setting. `HTTP_CUSTOM_HEADER_VALUE_SIZE` was removed
+- The trailers of a chunked body and the extensions of its chunks count for `max_header_size`, and each trailer
+  for `max_headers`: a request that exceeds them is answered with 431 (they had no limit)
+- The spaces and tabs after the value of a header are not part of the value, they were kept
+- A target in absolute form (`GET http://host/path?query HTTP/1.1`) is routed by its path, and the fragment of a
+  target is not part of its path nor of its query: both went to the catch all handler
+- `Range: bytes=-N` is the range of the last N bytes of the file: `http_request_get_bytes_range ()` returns `true`
+  with the new `HTTP_RANGE_TYPE_SUFFIX` (4), `start` 0 and the number of bytes in `end`, and
+  `http_response_handle_video ()` sends them (the 2.1b-12 ignored the header)
+- Only `HTTP/1.0` and `HTTP/1.1` are served. A request line of another protocol that the parser takes (`RTSP/1.0`,
+  `ICE/1.0`) is answered with 400, and another version of HTTP (`HTTP/0.9`, `HTTP/2.0`, the preface of HTTP/2
+  included, that was a 400) with the new 505: they reached the handlers as if they were HTTP/1.1.
+  `HTTP_PARSER_LENIENT_VERSION` still serves any version of HTTP
+- A request whose `Transfer-Encoding` does not end with `chunked` is always a 400, also with
+  `HTTP_PARSER_LENIENT_TRANSFER_ENCODING` and `HTTP_PARSER_LENIENT_CHUNKED_LENGTH`: with them it was read until its
+  client closed and never answered
+- A NUL in the value of a header is a 400 also with `HTTP_PARSER_LENIENT_HEADERS`: it was kept, and the value ended
+  in it for whoever compared it (the origins whitelist)
+- `HttpCerver` (ABI): new `max_custom_header_size` after `max_file_size`. `HttpReceive` (ABI): new
+  `protocol_length` and `protocol_other` after `unparsed`
+
+**The WebSocket protocol:**
+
+- A frame whose length is not the shortest encoding of its value (5 bytes in the 16 bits form) fails its connection
+  with 1002 (RFC 6455 section 5.2), it was accepted
+- A `Sec-WebSocket-Key` that is not the only base64 form of its 16 bytes is a 400
+- A compressed message that ends inside a deflate block fails with 1007: it was delivered as it was and the next
+  message failed. A block with BFINAL does not end a message, other blocks can follow it and the context goes on
+  after it (the example of RFC 7692 section 7.2.3.4 was a 1007)
+- An empty compressed message after another message is the `0x00` of RFC 7692 section 7.2.3.6, it was a frame
+  without payload that the peer could not inflate. A message of more than `HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX` bytes
+  is sent without compression (it was cut to its 32 bits)
+- `http_web_socket_deflate_decompress ()` returns `HTTP_WEB_SOCKET_INFLATE_INVALID` (1), `_STOPPED` (2) and the
+  new `_FAILED` (3) when the decompressor failed: its connection ends with 1011, it ended with 1007
+- `http_web_socket_parser_execute ()` ends a frame whose last bytes stopped the parser in its next call, also
+  without bytes: the end waited for the bytes of the next frame
+- An upgrade whose accept can not be computed is a 500, it was a 101 with an empty accept
+
+**The WebSocket connections and the client:**
+
+- A message that the connection does not take because it already sent its close returns 1 without `on_error` and
+  without aborting the connection (the 2.1b-12 did it for the pieces of a stream)
+- A send of a connection that was kept after its cerver ended returns 1 (it read the timeout of the cerver)
+- After its close frame, a connection that did not get the close of its peer ends its writes and reads what the peer
+  still sends for up to 256 ms and 64 KiB before it closes its socket, so the peer gets the close frame and not a reset
+- The bytes that a connection counts are the ones of its messages, without compression and without the headers of
+  their frames, like the ones of its cerver (they were the bytes of its socket)
+- `http_web_socket_client_delete ()` called by a method of its client only closes it, and
+  `http_web_socket_client_wait ()` returns at once there: they joined their own thread and released the client
+  that it was using. A client is deleted from another thread
+- A client that is deleted or closed while it connects or waits for its handshake ends at once, it waited for their
+  timeouts. A `connect ()` or a `recv ()` that a signal interrupts goes on
+- The wait before a reconnection never passes its maximum (its jitter was added above it) nor wraps after many
+  failures, and a connection that ends before it lasted `reconnect_max` milliseconds counts as a failure: a server
+  that accepts and closes was reconnected without a wait
+- `http_web_socket_client_set_url ()` that returns 1 leaves the url that the client had (it kept a part of the new
+  one). `http_web_socket_client_close ()` with a code or a reason that can not be sent returns 1 and does not stop
+  the reconnections. `http_web_socket_client_add_header ()` rejects a name that is not a token, a value with a line
+  end and the headers of the handshake
+- `http_web_socket_client_connect ()` whose connection opened and could not get its thread reports it with
+  `on_error` (`HTTP_WEB_SOCKET_ERROR_MEMORY`) and `on_close`, and it is not one of the connections of the client.
+  The first frames of the server that do not fit in memory fail the attempt, they were lost
+
+**The WebSocket API:**
+
+- The timeouts in milliseconds say it in their names:
+  `http_endpoint_set_web_socket_ping_milliseconds ()`, `_close_timeout_milliseconds ()` and
+  `_send_timeout_milliseconds ()`, the same three of `http_group_set_web_socket_*`,
+  `http_cerver_set_web_socket_broadcast_timeout_milliseconds ()`,
+  `http_web_socket_client_set_ping_milliseconds ()`, `_close_timeout_milliseconds ()`,
+  `_send_timeout_milliseconds ()`, `_timeouts_milliseconds ()` and `_reconnect_milliseconds ()`. The names without
+  the suffix were removed
+- `HttpWebSocket`, `HttpWebSocketClient`, the registry of an HTTP cerver (`struct _HttpWebSocketRegistry`), the
+  handshake of an upgrade (`struct HttpWebSocketHandshake`) and `HttpWebSocketClientResponse` are opaque: their
+  definitions and the methods that only cerver calls (also `http_web_socket_client_response_parse ()`, `_check ()`
+  and `_backoff_delay ()`) are in `src/cerver/http/websockets/internal.h`, that is not installed. Code that read
+  their fields uses the getters; the counters of the registry are read with the new
+  `http_cerver_web_socket_get_stats ()` and `http_web_socket_get_stats ()` (`HttpWebSocketStats`)
+- `HttpWebSocketUpgrade` (ABI): new `headers` at its end, for the new `http_web_socket_upgrade_add_header ()`, that
+  adds a header to the 101 (a name can be repeated; the headers of the handshake are of cerver). An upgrade that is
+  initialized by position needs its new field
+- New `http_web_socket_get_query ()`: the query of the request of the upgrade
+- The methods of a connection are serialized by connection, the thread that runs them is not part of the API
+  (`websockets/settings.h`): code that keeps something of a connection in the variables of a thread breaks with the
+  event loop
+
+**Building and testing:**
+
+- The library and its tests are compiled with `-I src` for the internal header
+- `NATIVE=1` builds the benchmarks with `-march=native` only (`-mavx2` did not compile in aarch64);
+  `benchmarks/bin/http-parser` and `benchmarks/bin/frames` exit with 1 when what they measure failed
+- `build.yml` builds g++, clang, valgrind and the sanitizers with `ZLIB=1` (gcc without it), and the benchmarks
+  with the three compilers. The tests multiply their short timeouts by `TEST_TIME_SCALE` (4 with a sanitizer and
+  under the `RUNNER` of `test/run.sh`)
+- The input of the `frame` fuzzer has a second byte (the compression that was negotiated), a corpus of the versions
+  before is read with other settings. `test/autobahn/check.py` fails a report that does not have its 517 cases
+- `test/performance.sh` counts the allocations of 1024 requests and of the WebSocket messages without rounding them,
+  and fails when its server or its load fail; the long fuzzing of `scheduled.yml` is a job for each target
+
 ## 2.1b-12 (from 2.1b-11)
 
 The first fixes of the review of the 2.1b-10, with the ones of the 2.0b-71 applied by hand.
