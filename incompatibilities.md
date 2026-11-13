@@ -3,6 +3,18 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-10 (from 2.1b-9)
+
+The merge of the 2.0b-66 to the 2.0b-70 of `http`: their entries below apply to code built with a 2.1b-9, except
+the sends with a deadline of the 2.0b-66, that the 2.1b-9 already had. HTTP and WebSocket do not change in the wire.
+
+- The wire of the protocol of cerver changes with the portable header of the 2.0b-66: a 2.1b-10 does not talk with a
+  2.1b-9 through TCP or UDP packets, its clients, services and balancers are updated together
+- The internal methods of the JSON (`utf8_*`, `hashtable_*`, `jsonp_*`) are not exported since the 2.0b-67: a text
+  of a WebSocket message is validated with `http_web_socket_text_check ()`, not with `utf8_check_string ()`
+- The JWT keys are loaded when the cerver starts (2.0b-67): a WebSocket endpoint with bearer authentication stops the
+  cerver when its key does not match the algorithm, like any other endpoint
+
 ## 2.1b-9 (from 2.1b-8)
 
 WebSocket (RFC 6455 and permessage-deflate, RFC 7692) on the threads model: each connection runs in its own thread
