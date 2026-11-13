@@ -101,7 +101,7 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	CFLAGS += -std=c++11
 else
 	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
@@ -178,7 +178,7 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	EXAFLAGS += -std=c++11
 else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
@@ -211,7 +211,7 @@ ifeq ($(DEBUG), 1)
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	EXAPPFGS += -std=c++11
 else
 	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
@@ -323,7 +323,7 @@ ifeq ($(DEBUG), 1)
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	TESTAPPFGS += -std=c++11
 else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
