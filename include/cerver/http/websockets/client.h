@@ -48,103 +48,10 @@
 extern "C" {
 #endif
 
-#pragma region response
-
-// what the client takes from the response of the server
-typedef struct HttpWebSocketClientResponse {
-
-	int status;
-
-	// the response was parsed until its empty line
-	bool complete;
-
-	// a header was repeated, too long or the response was not valid HTTP
-	bool invalid;
-
-	char upgrade[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char connection[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char accept[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char protocol[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char extensions[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-
-	bool has_protocol;
-	bool has_extensions;
-
-	// the bytes of the response until its empty line, the frames of the server can follow them
-	size_t size;
-
-} HttpWebSocketClientResponse;
-
-// parses the response of a handshake, it can be called again with more bytes
-// returns 0 when it is complete, 1 when it needs more bytes, 2 when it is not valid
-CERVER_PUBLIC u8 http_web_socket_client_response_parse (
-	const char *data, const size_t size,
-	HttpWebSocketClientResponse *response
-);
-
-// the checks of RFC 6455 section 4.1 and of the extensions that were offered:
-// a 101, the tokens, the accept of the key, a protocol that was offered and permessage-deflate
-// protocol (optional) is set to the one of the server, compression to the parameters of the extension
-// returns true when the connection can start
-CERVER_PUBLIC bool http_web_socket_client_response_check (
-	const HttpWebSocketClientResponse *response, const char *key,
-	char * const *protocols, const unsigned int n_protocols,
-	const HttpWebSocketDeflateOptions *options,
-	const char **protocol, bool *compression, HttpWebSocketDeflateParameters *parameters
-);
-
-#pragma endregion
-
 #pragma region client
 
-struct _HttpWebSocketClient {
-
-	char host[HTTP_WEB_SOCKET_CLIENT_HOST_SIZE];
-	u16 port;
-	char path[HTTP_WEB_SOCKET_CLIENT_PATH_SIZE];
-
-	// the extra headers of the request, "Name: value"
-	DoubleList *headers;
-
-	// the methods, the limits and the timeouts of the connection,
-	// the protocols and the compression that are offered
-	HttpWebSocketSettings settings;
-
-	unsigned int connect_timeout;
-	unsigned int handshake_timeout;
-
-	bool reconnect;
-	unsigned int reconnect_min;
-	unsigned int reconnect_max;
-
-	pthread_mutex_t mutex;
-
-	// the connection of now, NULL between connections
-	HttpWebSocket *web_socket;
-
-	// wakes up the wait between reconnections (an eventfd)
-	int wake_fd;
-
-	// http_web_socket_client_close () or delete (), there are no more reconnections
-	bool stopping;
-
-	pthread_t thread;
-	bool thread_started;
-
-	// the connections that were opened
-	unsigned int n_connections;
-
-	// the attempts that failed in a row
-	unsigned int n_failures;
-
-	// the address of the last connection
-	char ip[NETWORK_ADDRESS_STRING_SIZE];
-
-	// the data of the application, every connection of the client has it since it is created
-	void *data;
-
-};
-
+// a WebSocket client: its url, its settings and the connection that it has now
+// its fields are not part of the API, the methods of this header are the way to a client
 typedef struct _HttpWebSocketClient HttpWebSocketClient;
 
 CERVER_EXPORT HttpWebSocketClient *http_web_socket_client_create (void);

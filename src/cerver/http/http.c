@@ -58,6 +58,7 @@
 
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/handshake.h"
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/websocket.h"
 

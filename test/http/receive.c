@@ -29,6 +29,7 @@
 #include <cerver/http/route.h>
 #include <cerver/http/tree.h>
 
+#include <cerver/http/websockets/internal.h>
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 

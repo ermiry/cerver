@@ -157,8 +157,8 @@ ifeq ($(TYPE), test)
 	endif
 endif
 
-INC         := -I $(INCDIR) -I /usr/local/include
-INCDEP      := -I $(INCDIR)
+INC         := -I $(INCDIR) -I $(SRCDIR) -I /usr/local/include
+INCDEP      := -I $(INCDIR) -I $(SRCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
@@ -352,7 +352,7 @@ ifeq ($(TYPE), test)
 	endif
 endif
 
-TESTINC		:= -I $(INCDIR) -I ./$(TESTDIR)
+TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT) -not -path '$(TESTDIR)/fuzz/*')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
@@ -630,7 +630,7 @@ FUZZRECOVER		:= -fno-sanitize-recover=undefined
 FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS) $(FUZZRECOVER)
 FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS) $(FUZZRECOVER)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
-FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
+FUZZINC			:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
 ifeq ($(ZLIB), 1)
 	FUZZLIBFLAGS += -D CERVER_ZLIB

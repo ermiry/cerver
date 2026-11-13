@@ -50,77 +50,8 @@ typedef enum HttpWebSocketRejection {
 
 CERVER_PUBLIC const char *http_web_socket_rejection_to_string (const HttpWebSocketRejection rejection);
 
-// the WebSocket connections of an HTTP cerver, and their stats
-typedef struct _HttpWebSocketRegistry {
-
-	pthread_mutex_t mutex;
-
-	HttpWebSocket *first;
-
-	// the connections that are registered
-	unsigned int count;
-
-	// the connections plus the upgrades that have a place
-	unsigned int reserved;
-
-	unsigned int max_connections;
-
-	unsigned int broadcast_timeout;
-
-	// the cerver is going away, no more connections are accepted
-	bool stopping;
-
-	u64 next_id;
-
-	// stats, read and written atomically
-	u64 n_opened;
-	u64 n_closed;
-	u64 n_rejected[HTTP_WEB_SOCKET_REJECTIONS];
-	u64 n_messages_received;
-	u64 n_messages_sent;
-	u64 n_bytes_received;
-	u64 n_bytes_sent;
-	u64 n_slow;
-	u64 n_errors;
-	u64 n_closes[HTTP_WEB_SOCKET_CLOSE_CODES_SIZE];
-	u64 n_closes_other;
-
-} HttpWebSocketRegistry;
-
-CERVER_HIDDEN HttpWebSocketRegistry *http_web_socket_registry_create (void);
-
-CERVER_HIDDEN void http_web_socket_registry_delete (HttpWebSocketRegistry *registry);
-
-// takes a place for an upgrade, false when the cerver has its most connections or it is stopping
-CERVER_HIDDEN bool http_web_socket_registry_reserve (HttpWebSocketRegistry *registry);
-
-// gives back the place of an upgrade that did not start
-CERVER_HIDDEN void http_web_socket_registry_unreserve (HttpWebSocketRegistry *registry);
-
-// adds a connection with its place already taken, and sets its id
-// returns 0 on success, 1 if the cerver is stopping
-CERVER_HIDDEN u8 http_web_socket_registry_add (
-	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
-);
-
-// removes the connection, and gives back its place
-CERVER_HIDDEN void http_web_socket_registry_remove (
-	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
-);
-
-// closes every connection with 1001, and accepts no more
-CERVER_HIDDEN void http_web_socket_registry_go_away (HttpWebSocketRegistry *registry);
-
-// ends every connection now
-CERVER_HIDDEN void http_web_socket_registry_abort (HttpWebSocketRegistry *registry);
-
-CERVER_HIDDEN void http_web_socket_registry_count_rejection (
-	HttpWebSocketRegistry *registry, const HttpWebSocketRejection rejection
-);
-
-CERVER_HIDDEN void http_web_socket_registry_count_close (
-	HttpWebSocketRegistry *registry, const u16 code
-);
+// the WebSocket connections of an HTTP cerver (HttpCerver.web_sockets) are a struct _HttpWebSocketRegistry
+// that only cerver knows: its limit, its rooms and its stats are reached with the methods of this header
 
 #pragma region public
 
@@ -131,13 +62,58 @@ CERVER_EXPORT void http_cerver_set_web_socket_max_connections (
 
 // sets the milliseconds that a broadcast waits for each connection,
 // HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT by default
-CERVER_EXPORT void http_cerver_set_web_socket_broadcast_timeout (
+CERVER_EXPORT void http_cerver_set_web_socket_broadcast_timeout_milliseconds (
 	struct _HttpCerver *http_cerver, const unsigned int broadcast_timeout
 );
 
 // the WebSocket connections that are open, of a room or of every one with room NULL
 CERVER_EXPORT unsigned int http_cerver_web_socket_count (
 	struct _HttpCerver *http_cerver, const char *room
+);
+
+// a copy of the counters of the WebSocket connections of an HTTP cerver, the ones of its metrics
+typedef struct HttpWebSocketStats {
+
+	// the connections that are open
+	u64 n_connections;
+
+	// the connections that were opened and the ones that ended
+	u64 n_opened;
+	u64 n_closed;
+
+	// the upgrades that were rejected, by their HttpWebSocketRejection
+	u64 n_rejected[HTTP_WEB_SOCKET_REJECTIONS];
+
+	// the data messages, and their bytes without compression
+	u64 n_messages_received;
+	u64 n_messages_sent;
+	u64 n_bytes_received;
+	u64 n_bytes_sent;
+
+	// the connections that failed because a send did not end in time
+	u64 n_slow;
+
+	// the connections that ended with an error
+	u64 n_errors;
+
+	// the connections that ended with each close code from HTTP_WEB_SOCKET_CLOSE_CODES_FIRST
+	// (1006 without a close), and with any other one
+	u64 n_closes[HTTP_WEB_SOCKET_CLOSE_CODES_SIZE];
+	u64 n_closes_other;
+
+} HttpWebSocketStats;
+
+// copies the stats of the WebSocket connections of the HTTP cerver
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_web_socket_get_stats (
+	const struct _HttpCerver *http_cerver, HttpWebSocketStats *stats
+);
+
+// copies the stats of one connection, of the server or of a client:
+// its messages and its bytes, the other values are the ones of a cerver and stay in zero
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_web_socket_get_stats (
+	const HttpWebSocket *web_socket, HttpWebSocketStats *stats
 );
 
 // adds the connection to a room, a connection is in HTTP_WEB_SOCKET_MAX_ROOMS rooms or less

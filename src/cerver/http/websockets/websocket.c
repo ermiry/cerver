@@ -30,6 +30,7 @@
 
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/message.h"
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/settings.h"
@@ -490,10 +491,6 @@ static u8 http_web_socket_write_frame (
 				web_socket->socket, parts, size ? HTTP_WEB_SOCKET_FRAME_PARTS : 1, 0, deadline, NULL, NULL
 			);
 		}
-
-		if (!retval) {
-			__atomic_add_fetch (&web_socket->n_bytes_sent, size, __ATOMIC_SEQ_CST);
-		}
 	}
 
 	return retval;
@@ -552,6 +549,7 @@ static bool http_web_socket_can_send_data (const HttpWebSocket *web_socket) {
 static void http_web_socket_message_sent (HttpWebSocket *web_socket, const size_t size) {
 
 	__atomic_add_fetch (&web_socket->n_messages_sent, 1, __ATOMIC_SEQ_CST);
+	__atomic_add_fetch (&web_socket->n_bytes_sent, size, __ATOMIC_SEQ_CST);
 
 	if (web_socket->http_cerver) {
 		HttpWebSocketRegistry *registry = web_socket->http_cerver->web_sockets;
@@ -890,6 +888,7 @@ static void http_web_socket_fragment_received (
 ) {
 
 	if (last) __atomic_add_fetch (&web_socket->n_messages_received, 1, __ATOMIC_SEQ_CST);
+	__atomic_add_fetch (&web_socket->n_bytes_received, size, __ATOMIC_SEQ_CST);
 
 	if (web_socket->http_cerver) {
 		HttpWebSocketRegistry *registry = web_socket->http_cerver->web_sockets;
@@ -1076,7 +1075,6 @@ static bool http_web_socket_receive (HttpWebSocket *web_socket) {
 	);
 
 	if (received > 0) {
-		__atomic_add_fetch (&web_socket->n_bytes_received, (u64) received, __ATOMIC_SEQ_CST);
 		http_web_socket_alive (web_socket);
 		finished = http_web_socket_receive_bytes (web_socket, web_socket->buffer, (size_t) received);
 	}

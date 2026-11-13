@@ -548,29 +548,25 @@ static void http_cerver_admin_handler_web_socket_stats (
 	const HttpCerver *http_cerver, json_t *json
 ) {
 
-	HttpWebSocketRegistry *registry = http_cerver->web_sockets;
-	if (registry) {
+	HttpWebSocketStats stats;
+	if (!http_cerver_web_socket_get_stats (http_cerver, &stats)) {
 		json_t *web_sockets = json_object ();
 
-		(void) pthread_mutex_lock (&registry->mutex);
-		const u64 connections = registry->count;
-		(void) pthread_mutex_unlock (&registry->mutex);
-
-		http_cerver_admin_web_socket_value (web_sockets, "connections", connections);
-		http_cerver_admin_web_socket_value (web_sockets, "n_opened", CERVER_STATS_GET (registry->n_opened));
-		http_cerver_admin_web_socket_value (web_sockets, "n_closed", CERVER_STATS_GET (registry->n_closed));
-		http_cerver_admin_web_socket_value (web_sockets, "n_messages_received", CERVER_STATS_GET (registry->n_messages_received));
-		http_cerver_admin_web_socket_value (web_sockets, "n_messages_sent", CERVER_STATS_GET (registry->n_messages_sent));
-		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_received", CERVER_STATS_GET (registry->n_bytes_received));
-		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_sent", CERVER_STATS_GET (registry->n_bytes_sent));
-		http_cerver_admin_web_socket_value (web_sockets, "n_failed_sends", CERVER_STATS_GET (registry->n_slow));
-		http_cerver_admin_web_socket_value (web_sockets, "n_errors", CERVER_STATS_GET (registry->n_errors));
+		http_cerver_admin_web_socket_value (web_sockets, "connections", stats.n_connections);
+		http_cerver_admin_web_socket_value (web_sockets, "n_opened", stats.n_opened);
+		http_cerver_admin_web_socket_value (web_sockets, "n_closed", stats.n_closed);
+		http_cerver_admin_web_socket_value (web_sockets, "n_messages_received", stats.n_messages_received);
+		http_cerver_admin_web_socket_value (web_sockets, "n_messages_sent", stats.n_messages_sent);
+		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_received", stats.n_bytes_received);
+		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_sent", stats.n_bytes_sent);
+		http_cerver_admin_web_socket_value (web_sockets, "n_failed_sends", stats.n_slow);
+		http_cerver_admin_web_socket_value (web_sockets, "n_errors", stats.n_errors);
 
 		json_t *rejected = json_object ();
 		for (unsigned int rejection = 0; rejection < HTTP_WEB_SOCKET_REJECTIONS; rejection++) {
 			http_cerver_admin_web_socket_value (
 				rejected, http_web_socket_rejection_to_string ((HttpWebSocketRejection) rejection),
-				CERVER_STATS_GET (registry->n_rejected[rejection])
+				stats.n_rejected[rejection]
 			);
 		}
 
