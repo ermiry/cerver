@@ -73,6 +73,10 @@ extern void raw_send (const int fd, const void *data, const size_t size);
 // returns the status of the response, 0 if it did not arrive
 extern int raw_upgrade (const int fd, const char *path, const char *headers, char *response);
 
+// sends any request, like an upgrade that is not valid, and reads its response until its empty line
+// returns the status of the response, 0 if it did not arrive
+extern int raw_request (const int fd, const char *request, const size_t length, char *response);
+
 // connects and upgrades, the connection must be accepted
 extern int raw_open (const u16 port, const char *path, const char *headers);
 
