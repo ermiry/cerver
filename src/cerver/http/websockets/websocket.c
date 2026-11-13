@@ -14,10 +14,10 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-#include <openssl/rand.h>
-
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
+
+#include "cerver/crypto/random.h"
 
 #include "cerver/cerver.h"
 #include "cerver/connection.h"
@@ -419,7 +419,7 @@ void http_web_socket_go_away (HttpWebSocket *web_socket) {
 static void http_web_socket_next_mask (HttpWebSocket *web_socket, u8 *mask) {
 
 	if ((web_socket->masks_position + HTTP_WEB_SOCKET_MASK_SIZE) > HTTP_WEB_SOCKET_MASKS_SIZE) {
-		if (RAND_bytes (web_socket->masks, HTTP_WEB_SOCKET_MASKS_SIZE) != 1) {
+		if (!cerver_crypto_random_bytes (web_socket->masks, HTTP_WEB_SOCKET_MASKS_SIZE)) {
 			// the masks only protect the proxies of the path, never the content
 			for (size_t i = 0; i < HTTP_WEB_SOCKET_MASKS_SIZE; i++) {
 				web_socket->masks[i] = (u8) (rand () & HTTP_WEB_SOCKET_BYTE_BITS);

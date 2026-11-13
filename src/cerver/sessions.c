@@ -2,11 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <errno.h>
-#include <sys/random.h>
-#include <sys/types.h>
-
 #include "cerver/types/types.h"
+
+#include "cerver/crypto/random.h"
 
 #include "cerver/auth.h"
 #include "cerver/client.h"
@@ -37,21 +35,6 @@ void session_data_delete (void *ptr) {
 
 }
 
-// fills the buffer with random bytes of the kernel, retrying an interrupted call
-// returns true on success
-static bool session_random_bytes (u8 *buffer, const size_t size) {
-
-	size_t filled = 0;
-	while (filled < size) {
-		const ssize_t got = getrandom (buffer + filled, size - filled, 0);
-		if (got > 0) filled += (size_t) got;
-		else if ((got < 0) && (errno != EINTR)) break;
-	}
-
-	return (filled == size);
-
-}
-
 // creates a session id of SESSION_ID_RANDOM_BYTES random bytes of the kernel,
 // as SESSION_ID_LENGTH hex characters, that can not be guessed from the time
 // returns a string allocated with malloc (), NULL on error
@@ -61,7 +44,7 @@ void *session_default_generate_id (const void *session_data) {
 
 	if (session_data) {
 		u8 random_bytes[SESSION_ID_RANDOM_BYTES] = { 0 };
-		if (session_random_bytes (random_bytes, SESSION_ID_RANDOM_BYTES)) {
+		if (cerver_crypto_random_bytes (random_bytes, SESSION_ID_RANDOM_BYTES)) {
 			retval = (char *) malloc (SESSION_ID_LENGTH + 1);
 			if (retval) sha256_hash_to_string (retval, random_bytes);
 		}

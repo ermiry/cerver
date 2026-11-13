@@ -3,19 +3,16 @@
 #include <string.h>
 #include <strings.h>
 
-#include <openssl/evp.h>
-#include <openssl/rand.h>
-
 #include "cerver/types/types.h"
+
+#include "cerver/crypto/hash.h"
+#include "cerver/crypto/random.h"
 
 #include "cerver/utils/base64.h"
 
 #include "cerver/http/websockets/handshake.h"
 
 #define HTTP_WEB_SOCKET_GUID_LENGTH					(sizeof (HTTP_WEB_SOCKET_GUID) - 1)
-
-// the bytes of a SHA-1
-#define HTTP_WEB_SOCKET_SHA1_SIZE					20
 
 // a key ends with two '=' because 16 bytes are not a multiple of 3
 #define HTTP_WEB_SOCKET_KEY_DATA_LENGTH				22
@@ -74,7 +71,7 @@ bool http_web_socket_key_generate (char *key) {
 	bool generated = false;
 
 	u8 bytes[HTTP_WEB_SOCKET_KEY_BYTES];
-	if (key && (RAND_bytes (bytes, HTTP_WEB_SOCKET_KEY_BYTES) == 1)) {
+	if (key && cerver_crypto_random_bytes (bytes, HTTP_WEB_SOCKET_KEY_BYTES)) {
 		char encoded[base64_encode_len (HTTP_WEB_SOCKET_KEY_BYTES)];
 		const size_t length = base64_encode (encoded, (const char *) bytes, HTTP_WEB_SOCKET_KEY_BYTES);
 		if (length == HTTP_WEB_SOCKET_KEY_LENGTH) {
@@ -99,14 +96,10 @@ bool http_web_socket_accept_compute (
 		(void) memcpy (input, key, HTTP_WEB_SOCKET_KEY_LENGTH);
 		(void) memcpy (input + HTTP_WEB_SOCKET_KEY_LENGTH, HTTP_WEB_SOCKET_GUID, HTTP_WEB_SOCKET_GUID_LENGTH);
 
-		unsigned char hash[HTTP_WEB_SOCKET_SHA1_SIZE];
-		unsigned int hash_length = 0;
-		if (
-			EVP_Digest (input, sizeof (input), hash, &hash_length, EVP_sha1 (), NULL)
-			&& (hash_length == HTTP_WEB_SOCKET_SHA1_SIZE)
-		) {
-			char encoded[base64_encode_len (HTTP_WEB_SOCKET_SHA1_SIZE)];
-			const size_t encoded_length = base64_encode (encoded, (const char *) hash, HTTP_WEB_SOCKET_SHA1_SIZE);
+		u8 hash[CERVER_CRYPTO_SHA1_SIZE];
+		if (cerver_crypto_sha1 (input, sizeof (input), hash)) {
+			char encoded[base64_encode_len (CERVER_CRYPTO_SHA1_SIZE)];
+			const size_t encoded_length = base64_encode (encoded, (const char *) hash, CERVER_CRYPTO_SHA1_SIZE);
 			if (encoded_length == HTTP_WEB_SOCKET_ACCEPT_LENGTH) {
 				(void) memcpy (accept, encoded, HTTP_WEB_SOCKET_ACCEPT_LENGTH);
 				accept[HTTP_WEB_SOCKET_ACCEPT_LENGTH] = '\0';
