@@ -22,6 +22,7 @@
 #include <cerver/http/http.h>
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/multipart.h>
+#include <cerver/http/recycle.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/route.h>
@@ -67,6 +68,8 @@
 #define TEST_RECEIVE_PUBLIC_FILE			TEST_RECEIVE_STATIC_PATH "/index.html"
 #define TEST_RECEIVE_PUBLIC_DIRECTORY		TEST_RECEIVE_STATIC_PATH "/folder.d"
 #define TEST_RECEIVE_SECRET_FILE			TEST_RECEIVE_ROOT_PATH "/secret.txt"
+#define TEST_RECEIVE_PRIVATE_PATH			TEST_RECEIVE_ROOT_PATH "/private"
+#define TEST_RECEIVE_PRIVATE_FILE			TEST_RECEIVE_PRIVATE_PATH "/report.txt"
 
 #define TEST_RECEIVE_DIRECTORY_MODE			0755
 
@@ -87,6 +90,7 @@ static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL, NULL, NULL };
 
 static const char *public_file_content = { "<html>public</html>" };
 static const char *secret_file_content = { "secret-content" };
+static const char *private_file_content = { "private-report" };
 
 static const char *valid_authorization = { "Bearer test-token" };
 
@@ -416,6 +420,8 @@ static unsigned int test_receive_authentication_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
+	(void) http_receive;
+
 	observed.n_authentications += 1;
 	observed.body_at_authentication = (request->body != NULL) || (request->multi_parts != NULL);
 
@@ -429,6 +435,8 @@ static unsigned int test_receive_authentication_handler (
 static unsigned int test_receive_body_authentication_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
+
+	(void) http_receive;
 
 	observed.n_authentications += 1;
 	observed.body_at_authentication = (request->multi_parts != NULL);
@@ -446,6 +454,8 @@ static const char *numbered_filename_suffix = { "fixed-1.jpg" };
 static void test_receive_fixed_filename_generator (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
+
+	(void) http_receive;
 
 	http_multi_part_set_generated_filename (
 		http_request_get_current_mpart (request), "%s", fixed_generated_filename
@@ -473,9 +483,11 @@ static void test_receive_files_create (void) {
 	(void) mkdir (TEST_RECEIVE_UPLOADS_PATH, TEST_RECEIVE_DIRECTORY_MODE);
 	(void) mkdir (TEST_RECEIVE_STATIC_PATH, TEST_RECEIVE_DIRECTORY_MODE);
 	(void) mkdir (TEST_RECEIVE_PUBLIC_DIRECTORY, TEST_RECEIVE_DIRECTORY_MODE);
+	(void) mkdir (TEST_RECEIVE_PRIVATE_PATH, TEST_RECEIVE_DIRECTORY_MODE);
 
 	test_receive_write_file (TEST_RECEIVE_PUBLIC_FILE, public_file_content);
 	test_receive_write_file (TEST_RECEIVE_SECRET_FILE, secret_file_content);
+	test_receive_write_file (TEST_RECEIVE_PRIVATE_FILE, private_file_content);
 
 }
 
@@ -483,6 +495,8 @@ static void test_receive_files_delete (void) {
 
 	(void) remove (TEST_RECEIVE_PUBLIC_FILE);
 	(void) remove (TEST_RECEIVE_SECRET_FILE);
+	(void) remove (TEST_RECEIVE_PRIVATE_FILE);
+	(void) rmdir (TEST_RECEIVE_PRIVATE_PATH);
 	(void) rmdir (TEST_RECEIVE_PUBLIC_DIRECTORY);
 	(void) rmdir (TEST_RECEIVE_STATIC_PATH);
 	(void) rmdir (TEST_RECEIVE_UPLOADS_PATH);
@@ -877,6 +891,17 @@ static const char *echo_json_request = {
 	"{\"name\": \"cerver\", \"values\": [1, 2, 3]}"
 };
 
+// a body is reserved once from its Content-Length (and its '\0'),
+// in the smallest of the buffers that the threads reuse that fits it
+static size_t test_receive_body_capacity (const size_t length) {
+
+	size_t capacity = (size_t) 1 << HTTP_RECYCLE_BUFFER_MIN_EXPONENT;
+	while (capacity < (length + 1)) capacity <<= 1;
+
+	return capacity;
+
+}
+
 static void test_receive_check_echo_json (void) {
 
 	test_receive_expect (test_receive_status_is ("200"));
@@ -885,7 +910,7 @@ static void test_receive_check_echo_json (void) {
 	test_receive_expect (observed.body_len == strlen (echo_json_body));
 	test_receive_expect (!strcmp (observed.body, echo_json_body));
 	// reserved once from its Content-Length, whatever the pieces it arrived in
-	test_receive_expect (observed.body_capacity == (strlen (echo_json_body) + 1));
+	test_receive_expect (observed.body_capacity == test_receive_body_capacity (strlen (echo_json_body)));
 	test_receive_expect (!strcmp (observed.content_type, "application/json"));
 	test_receive_expect (!strcmp (observed.custom, "custom-value"));
 	test_receive_expect (!strcmp (observed.query, "key=value%20x&other=1"));
@@ -912,7 +937,7 @@ static void test_receive_check_binary (void) {
 	test_receive_expect (!strcmp (observed.param, "abc123"));
 	test_receive_expect (observed.body_len == sizeof (binary_body));
 	test_receive_expect (!memcmp (observed.body, binary_body, sizeof (binary_body)));
-	test_receive_expect (observed.body_capacity == (sizeof (binary_body) + 1));
+	test_receive_expect (observed.body_capacity == test_receive_body_capacity (sizeof (binary_body)));
 
 }
 
@@ -1554,6 +1579,8 @@ static void test_receive_counting_dirname_generator (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
+	(void) http_receive;
+
 	n_generated_dirnames += 1;
 
 	http_request_set_dirname (request, "%s", TEST_RECEIVE_DIRNAME);
@@ -1678,17 +1705,18 @@ static void test_receive_attribute_without_value (Cerver *cerver) {
 
 }
 
-#define TEST_RECEIVE_BEARER_REQUEST_SIZE	(1 << 12)
+// a request with a bearer of up to HTTP_JWT_BEARER_SIZE
+#define TEST_RECEIVE_BEARER_REQUEST_SIZE	(1 << 14)
 #define TEST_RECEIVE_JWT_EXPIRED_SECONDS	3600
 #define TEST_RECEIVE_JWT_VALID_SECONDS		3600
 
-static const char *bearer_keys_request_format = {
-	"POST /bearer HTTP/1.1\r\n"
-	"Host: localhost:8080\r\n"
-	"%s"
-	"Content-Length: 0\r\n"
+// a literal, so the compiler checks its arguments
+#define TEST_RECEIVE_BEARER_KEYS_REQUEST_FORMAT		\
+	"POST /bearer HTTP/1.1\r\n"						\
+	"Host: localhost:8080\r\n"						\
+	"%s"											\
+	"Content-Length: 0\r\n"							\
 	"\r\n"
-};
 
 static Cerver *test_receive_bearer_cerver_create (void) {
 
@@ -1723,7 +1751,7 @@ static void test_receive_bearer_token (
 	test_check_ptr (http_jwt);
 
 	http_cerver_auth_jwt_add_value (http_jwt, "id", "receive-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int) expires);
+	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) expires);
 
 	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 
@@ -1743,7 +1771,7 @@ static void test_receive_bearer_case (
 	}
 
 	char request[TEST_RECEIVE_BEARER_REQUEST_SIZE];
-	(void) snprintf (request, TEST_RECEIVE_BEARER_REQUEST_SIZE, bearer_keys_request_format, header);
+	(void) snprintf (request, TEST_RECEIVE_BEARER_REQUEST_SIZE, TEST_RECEIVE_BEARER_KEYS_REQUEST_FORMAT, header);
 
 	test_receive_whole_case (cerver, name, request);
 
@@ -1776,6 +1804,122 @@ static void test_receive_bearer_keys (void) {
 	test_receive_bearer_case (cerver, "a bearer with a bad signature", tampered, "401");
 	test_receive_bearer_case (cerver, "a bearer that is not a jwt", "Bearer not-a-jwt", "401");
 	test_receive_bearer_case (cerver, "a request without a bearer", NULL, "401");
+
+	(void) cerver_teardown (cerver);
+
+}
+
+// a literal, so the compiler checks its arguments
+#define TEST_RECEIVE_STATIC_REQUEST_FORMAT		\
+	"GET %s HTTP/1.1\r\n"						\
+	"Host: localhost:8080\r\n"					\
+	"%s"										\
+	"\r\n"
+
+static const char *private_file_url = { "/report.txt" };
+static const char *public_file_url = { "/index.html" };
+static const char *missing_file_url = { "/missing.txt" };
+
+static void test_receive_static_case (
+	Cerver *cerver, const char *name, const char *url,
+	const char *authorization, const char *status
+) {
+
+	char header[HTTP_JWT_BEARER_SIZE + TEST_RECEIVE_PATH_SIZE] = { 0 };
+	if (authorization) {
+		(void) snprintf (header, sizeof (header), "Authorization: %s\r\n", authorization);
+	}
+
+	char request[TEST_RECEIVE_BEARER_REQUEST_SIZE];
+	(void) snprintf (request, TEST_RECEIVE_BEARER_REQUEST_SIZE, TEST_RECEIVE_STATIC_REQUEST_FORMAT, url, header);
+
+	test_receive_whole_case (cerver, name, request);
+
+	test_receive_expect (test_receive_status_is (status));
+
+	// the file of a rejected request is never sent
+	if (strcmp (status, "200")) {
+		test_receive_expect (strstr (result.response, private_file_content) == NULL);
+	}
+
+}
+
+// a public static path and a private one, with its authentication
+static Cerver *test_receive_static_cerver_create (
+	const HttpRouteAuthType auth_type, HttpStaticPath **private_path
+) {
+
+	Cerver *cerver = cerver_create (
+		CERVER_TYPE_WEB, "test-receive-static", 8080, PROTOCOL_TCP, false, 2
+	);
+
+	test_check_ptr (cerver);
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_check_ptr (http_cerver_static_path_add (http_cerver, TEST_RECEIVE_STATIC_PATH));
+
+	*private_path = http_cerver_static_path_add (http_cerver, TEST_RECEIVE_PRIVATE_PATH);
+	test_check_ptr (*private_path);
+	http_static_path_set_auth (*private_path, auth_type);
+
+	return cerver;
+
+}
+
+// the files of a static path with a custom authentication
+static void test_receive_static_custom_authentication (void) {
+
+	HttpStaticPath *private_path = NULL;
+	Cerver *cerver = test_receive_static_cerver_create (HTTP_ROUTE_AUTH_TYPE_CUSTOM, &private_path);
+
+	http_static_path_set_authentication_handler (private_path, test_receive_authentication_handler);
+	test_check_unsigned_eq (http_cerver_init ((HttpCerver *) cerver->cerver_data), 0, NULL);
+
+	test_receive_static_case (cerver, "a private file without authentication", private_file_url, NULL, "401");
+	test_receive_static_case (cerver, "a private file with a bad authentication", private_file_url, "Bearer bad-token", "401");
+
+	test_receive_static_case (cerver, "a private file with its authentication", private_file_url, valid_authorization, "200");
+	test_receive_expect (strstr (result.response, private_file_content) != NULL);
+
+	test_receive_static_case (cerver, "a public file next to a private path", public_file_url, NULL, "200");
+	test_receive_expect (strstr (result.response, public_file_content) != NULL);
+
+	// a missing file is answered like a protected one, its existence is not told
+	test_receive_static_case (cerver, "a missing file without authentication", missing_file_url, NULL, "401");
+	test_receive_static_case (cerver, "a missing file with authentication", missing_file_url, valid_authorization, "200");
+	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
+
+	(void) cerver_teardown (cerver);
+
+}
+
+// the files of a static path with the bearer JWT of the cerver
+static void test_receive_static_bearer_authentication (void) {
+
+	HttpStaticPath *private_path = NULL;
+	Cerver *cerver = test_receive_static_cerver_create (HTTP_ROUTE_AUTH_TYPE_BEARER, &private_path);
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+
+	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+
+	const time_t now = time (NULL);
+
+	char valid[HTTP_JWT_BEARER_SIZE];
+	test_receive_bearer_token (http_cerver, now + TEST_RECEIVE_JWT_VALID_SECONDS, valid);
+
+	char expired[HTTP_JWT_BEARER_SIZE];
+	test_receive_bearer_token (http_cerver, now - TEST_RECEIVE_JWT_EXPIRED_SECONDS, expired);
+
+	test_receive_static_case (cerver, "a private file without a bearer", private_file_url, NULL, "401");
+	test_receive_static_case (cerver, "a private file with an expired bearer", private_file_url, expired, "401");
+
+	test_receive_static_case (cerver, "a private file with a valid bearer", private_file_url, valid, "200");
+	test_receive_expect (strstr (result.response, private_file_content) != NULL);
 
 	(void) cerver_teardown (cerver);
 
@@ -2677,6 +2821,9 @@ void http_tests_receive (void) {
 	(void) cerver_teardown (cerver);
 
 	test_receive_bearer_keys ();
+
+	test_receive_static_custom_authentication ();
+	test_receive_static_bearer_authentication ();
 
 	test_receive_arena_delete ();
 	test_receive_files_delete ();

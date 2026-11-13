@@ -19,11 +19,14 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/serializer.h"
 
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
 #include "cerver/game/game.h"
+
+#include "cerver/utils/histogram.h"
 
 #define CERVER_DEFAULT_ALIAS						"my-cerver"
 
@@ -67,6 +70,10 @@
 
 #define CERVER_DEFAULT_POLL_FDS						128
 #define CERVER_DEFAULT_POLL_TIMEOUT					2000
+#define CERVER_DEFAULT_POLL_MAX_CONNECTIONS			0
+
+// the main poll has the socket of the cerver and at least one connection
+#define CERVER_POLL_MIN_FDS							2
 
 #define CERVER_DEFAULT_MAX_INACTIVE_TIME			60
 #define CERVER_DEFAULT_CHECK_INACTIVE_INTERVAL		30
@@ -90,7 +97,10 @@
 #define CERVER_DEFAULT_CHECK_PACKETS				false
 
 #define CERVER_DEFAULT_UPDATE_TICKS					30
-#define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
+#define CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS		1
+
+// SO_RCVTIMEO in secs of a connection that is handled in its own thread
+#define CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT		5
 
 #ifdef __cplusplus
 extern "C" {
@@ -291,7 +301,7 @@ typedef struct CerverStats {
 	u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
 	u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
 	u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
-	u64 total_rejected_connections;                 // connections rejected because the thpool was full or the cerver was draining
+	u64 total_rejected_connections;                 // connections rejected because the thpool was full, the cerver was draining or its poll had its max
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -306,6 +316,44 @@ CERVER_EXPORT void cerver_stats_set_threshold_time (
 // prints the cerver stats
 CERVER_EXPORT void cerver_stats_print (
 	struct _Cerver *cerver, bool received, bool sent
+);
+
+// the request types below it have their own stats in each packet type,
+// the bigger ones share the last entry
+#define CERVER_REQUEST_STATS_SIZE					32
+#define CERVER_REQUEST_STATS_ENTRIES				(CERVER_REQUEST_STATS_SIZE + 1)
+
+// PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR and PACKET_TYPE_CUSTOM have request stats and handlers
+#define CERVER_REQUEST_PACKET_TYPES					3
+
+// the request types below it can have their own handler
+#define CERVER_REQUEST_HANDLERS_MAX					1024
+
+// the packets of a request type that the handlers of the cerver handled
+typedef struct RequestStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} RequestStats;
+
+// copies the stats of a request type of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR or PACKET_TYPE_CUSTOM,
+// a request type of CERVER_REQUEST_STATS_SIZE or bigger gets the stats that they share
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_get_request_stats (
+	const struct _Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	RequestStats *stats
+);
+
+// prints the stats of the request types that have packets
+CERVER_EXPORT void cerver_request_stats_print (const struct _Cerver *cerver);
+
+// adds a packet that a handler of the cerver handled to the stats of its request type
+CERVER_PRIVATE void cerver_request_stats_add (
+	struct _Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	const u64 size, const u64 microseconds
 );
 
 #pragma endregion
@@ -331,7 +379,7 @@ struct _Cerver {
 	bool ipv6_only;
 
 	// read and written with __atomic, use cerver_is_running ()
-	bool isRunning;                     // the server is recieving and/or sending packetss
+	bool running;                       // the server is receiving and/or sending packets
 	// read and written with __atomic, a stop requested before cerver_start () cancels it
 	bool stop_requested;
 	bool blocking;                     // sokcet fd is blocking?
@@ -394,7 +442,8 @@ struct _Cerver {
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
-	u16 current_n_fds;                  // n of active fds in the pollfd array
+	u32 current_n_fds;                  // n of active fds in the pollfd array
+	u32 poll_max_connections;           // the connections that the poll handles, 0 is no limit
 	u32 poll_timeout;
 	pthread_mutex_t *poll_lock;
 
@@ -403,6 +452,10 @@ struct _Cerver {
 	struct _Packet *auth_packet;        // requests client authentication
 	u8 max_auth_tries;                  // client's chances of auth before being dropped
 	delegate authenticate;              // authentication function
+
+	// the schema of the credentials, the authenticate method gets the decoded object,
+	// NULL to take the bytes of the credentials as they come
+	const SerializerSchema *auth_schema;
 
 	AVLTree *on_hold_connections;       // hold on the connections until they authenticate
 	Htab *on_hold_connection_sock_fd_map;
@@ -444,6 +497,11 @@ struct _Cerver {
 	// DoubleList *handlers;
 	struct _Handler **handlers;
 	unsigned int n_handlers;
+
+	// [packet type][request type], from cerver_set_request_handler ()
+	struct _Handler **request_handlers[CERVER_REQUEST_PACKET_TYPES];
+	u32 request_handlers_size[CERVER_REQUEST_PACKET_TYPES];
+
 	unsigned int num_handlers_alive;       // handlers currently alive
 	unsigned int num_handlers_working;     // handlers currently working
 	pthread_mutex_t *handlers_lock;
@@ -475,6 +533,9 @@ struct _Cerver {
 
 	CerverInfo *info;
 	CerverStats *stats;
+
+	// [packet type][request type], see cerver_get_request_stats ()
+	RequestStats (*request_stats)[CERVER_REQUEST_STATS_ENTRIES];
 
 	// reference to the parent load balancer
 	struct _Balancer *balancer;
@@ -549,12 +610,13 @@ CERVER_EXPORT void cerver_set_cerver_data (
 	Cerver *cerver, void *data, Action delete_data
 );
 
-// sets the cerver's thpool number of threads
-// this will enable the cerver's ability to handle received packets using multiple threads
-// usefull if you want the best concurrency and effiency
-// but we aware that you need to make your structures and data thread safe, as they might be accessed
-// from multiple threads at the same time
-// by default, all received packets will be handle only in one thread
+// sets the number of threads of the cerver's thpool,
+// that only a cerver with CERVER_HANDLER_TYPE_THREADS creates:
+// each connection takes a thread of the thpool while it is connected,
+// so it handles at most this number of connections at the same time,
+// and the others wait in the listen backlog (CERVER_OVERLOAD_POLICY_WAIT) or are rejected
+// with the other handler types, the thpool is not created
+// the data of the handlers must be thread safe, as it is accessed from many threads
 CERVER_EXPORT void cerver_set_thpool_n_threads (
 	Cerver *cerver, u16 n_threads
 );
@@ -619,9 +681,13 @@ CERVER_EXPORT void cerver_set_inactive_clients (
 	u32 max_inactive_time, u32 check_inactive_interval
 );
 
-// sets the cerver handler type
-// the default type is to handle connections using the poll () which requires only one thread
-// if threads type is selected, a new thread will be created for each new connection
+// sets how the cerver handles its TCP connections, the default type is CERVER_HANDLER_TYPE_NONE
+// CERVER_HANDLER_TYPE_POLL accepts, receives and runs the direct handlers in a single thread with poll (),
+// and the accepted sockets block with CERVER_DEFAULT_SEND_TIMEOUT, so a client that does not read,
+// or a slow direct handler, delays every connection; handlers with their own queues avoid it
+// CERVER_HANDLER_TYPE_THREADS receives each connection in its own thread,
+// a thread of the thpool or a detachable one (cerver_set_handle_detachable_threads ())
+// a UDP cerver ignores the handler type: a single thread receives every datagram (udp.h)
 CERVER_EXPORT void cerver_set_handler_type (
 	Cerver *cerver, CerverHandlerType handler_type
 );
@@ -637,6 +703,14 @@ CERVER_EXPORT void cerver_set_handle_detachable_threads (
 // sets the cerver poll timeout in ms
 CERVER_EXPORT void cerver_set_poll_time_out (
 	Cerver *cerver, const u32 poll_timeout
+);
+
+// sets, before the cerver starts, the initial size of the main poll array (CERVER_DEFAULT_POLL_FDS),
+// that grows when it is full, and the max connections that it handles, 0 (the default) is no limit,
+// a new connection beyond the max is closed and counted in total_rejected_connections
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_set_poll_fds (
+	Cerver *cerver, const u32 initial, const u32 max_connections
 );
 
 // enables cerver's built in authentication methods
@@ -661,9 +735,24 @@ CERVER_EXPORT void cerver_set_auth_method (
 	Cerver *cerver, delegate authenticate
 );
 
+// sets the schema of the credentials of the clients,
+// the credentials are decoded and validated with it before the authenticate method gets them,
+// and its auth data is the object; a packet that is not an object of the schema fails the auth
+// the fields of the schema can not take memory from an arena
+CERVER_EXPORT void cerver_set_auth_schema (
+	Cerver *cerver, const SerializerSchema *schema
+);
+
 // sets the cerver on poll timeout in ms
 CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
 	Cerver *cerver, u32 on_hold_poll_timeout
+);
+
+// sets, before the cerver starts, the connections that the on hold poll handles at the same time
+// (CERVER_DEFAULT_ON_HOLD_POLL_FDS), a new connection when it is full is closed
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_set_on_hold_poll_fds (
+	Cerver *cerver, const u32 max_connections
 );
 
 // sets the secs that a new connection has to authenticate,
@@ -699,7 +788,7 @@ CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
 // you can pass your own session generator method that must take a SessionData as the argument
 // and must return a char * representing the session id (token) for the client
 // allocated with malloc (), cerver copies it and releases it with free ()
-// or use the default one
+// or pass NULL to use the default one, 32 random bytes of the kernel in hex characters
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_sessions (
 	Cerver *cerver, void *(*session_id_generator) (const void *)
@@ -751,10 +840,29 @@ CERVER_EXPORT void cerver_set_custom_handler_delete (
 	Cerver *cerver, bool delete_packet
 );
 
-// enables the ability of the cerver to have multiple app handlers
-// returns 0 on success, 1 on error
+// enables the ability of the cerver to have multiple app handlers,
+// the PACKET_TYPE_APP packets go to the one of the handler_id of their header
+// returns 0 on success, 1 on error, like 0 handlers or a second call
 CERVER_EXPORT int cerver_set_multiple_handlers (
 	Cerver *cerver, unsigned int n_handlers
+);
+
+// sets, before the cerver starts, the handler of the packets of a request type
+// of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR or PACKET_TYPE_CUSTOM, below CERVER_REQUEST_HANDLERS_MAX;
+// the packets of the request types without one go to the handler of their packet type,
+// and they are released like the ones of that handler
+// the cerver deletes the handler in its teardown
+// returns 0 on success, 1 on error or if the request type already has a handler
+CERVER_EXPORT u8 cerver_set_request_handler (
+	Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	struct _Handler *handler
+);
+
+// returns the handler of the request type of a packet type, NULL if it does not have one
+CERVER_PRIVATE struct _Handler *cerver_get_request_handler (
+	const Cerver *cerver,
+	const PacketType packet_type, const u32 request_type
 );
 
 // set whether to check or not incoming packets
@@ -807,9 +915,10 @@ CERVER_EXPORT u8 cerver_set_admin_enable (Cerver *cerver);
 // prints info about current handlers
 CERVER_EXPORT void cerver_handlers_print_info (Cerver *cerver);
 
-// adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
-// returns 0 on success, 1 on error
+// adds a new handler, created with handler_create_with_id (), to the cerver handlers array,
+// after cerver_set_multiple_handlers (); the cerver owns it from then on
+// returns 0 on success, 1 on error, like an id that is not below n_handlers
+// or that already has a handler, and then the handler still belongs to the caller
 CERVER_EXPORT u8 cerver_handlers_add (
 	Cerver *cerver, struct _Handler *handler
 );
@@ -932,30 +1041,34 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                128
-#define S_CERVER_WELCOME_LENGTH             512
+#define CERVER_SUMMARY_NAME_SIZE			128
+#define CERVER_SUMMARY_WELCOME_SIZE			512
 
-// serialized cerver structure
-typedef struct SCerver {
+// the bytes of the map, the version, the keys, the lengths and the values that are not texts
+#define CERVER_SUMMARY_ENCODING_OVERHEAD	64
 
-	CerverType type;
+// the biggest encoded cerver summary
+#define CERVER_SUMMARY_MAX_ENCODED_SIZE		\
+	(CERVER_SUMMARY_NAME_SIZE + CERVER_SUMMARY_WELCOME_SIZE + CERVER_SUMMARY_ENCODING_OVERHEAD)
 
-	char name[S_CERVER_NAME_LENGTH];
-	char welcome[S_CERVER_WELCOME_LENGTH];
+#define CERVER_SUMMARY_VERSION				1
 
-	bool use_ipv6;
-	Protocol protocol;
-	u16 port;
+// the info of a cerver that it sends to its clients
+#define CERVER_SUMMARY_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)								\
+	ENUM(T, 1, type, SERIALIZER_REQUIRED, CERVER_TYPE_NONE, CERVER_TYPE_NONE, CERVER_TYPE_BALANCER)		\
+	STRING(T, 2, TEXT, name, CERVER_SUMMARY_NAME_SIZE, SERIALIZER_REQUIRED)								\
+	STRING(T, 3, TEXT, welcome, CERVER_SUMMARY_WELCOME_SIZE, SERIALIZER_OPTIONAL)							\
+	SCALAR(T, 4, BOOL, use_ipv6, SERIALIZER_OPTIONAL, false)												\
+	ENUM(T, 5, protocol, SERIALIZER_OPTIONAL, PROTOCOL_TCP, PROTOCOL_TCP, PROTOCOL_UDP)					\
+	SCALAR(T, 6, U16, port, SERIALIZER_OPTIONAL, 0)														\
+	SCALAR(T, 7, BOOL, auth_required, SERIALIZER_OPTIONAL, false)											\
+	SCALAR(T, 8, BOOL, uses_sessions, SERIALIZER_OPTIONAL, false)
 
-	bool auth_required;
-	bool uses_sessions;
+SERIALIZER_DECLARE (CerverSummary, cerver_summary, CERVER_SUMMARY_FIELDS)
 
-} SCerver;
-
-// the scerver comes from the network: its strings may not be NUL terminated
-// and its flags may have any value, so they are read up to their sizes and as bytes
+// the summary comes from the network already validated by its schema
 CERVER_PRIVATE CerverReport *cerver_deserialize (
-	const SCerver *scerver
+	const CerverSummary *summary
 );
 
 // creates a cerver info packet ready to be sent

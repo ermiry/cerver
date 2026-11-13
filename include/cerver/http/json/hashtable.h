@@ -5,8 +5,8 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#ifndef _CERVER_JSON_HASHTABLE_H_
-#define _CERVER_JSON_HASHTABLE_H_
+#ifndef _CERVER_HTTP_JSON_HASHTABLE_H_
+#define _CERVER_HTTP_JSON_HASHTABLE_H_
 
 #include <stdlib.h>
 
@@ -70,7 +70,7 @@ typedef struct hashtable_t hashtable_t;
  *
  * Returns 0 on success, -1 on error (out of memory).
  */
-CERVER_PUBLIC int hashtable_init (
+CERVER_HIDDEN int hashtable_init (
 	hashtable_t *hashtable
 ) CERVER_ATTRS ((warn_unused_result));
 
@@ -81,7 +81,7 @@ CERVER_PUBLIC int hashtable_init (
  *
  * Destroys a statically allocated hashtable object.
  */
-CERVER_PUBLIC void hashtable_close (hashtable_t *hashtable);
+CERVER_HIDDEN void hashtable_close (hashtable_t *hashtable);
 
 /**
  * hashtable_set - Add/modify value in hashtable
@@ -98,7 +98,7 @@ CERVER_PUBLIC void hashtable_close (hashtable_t *hashtable);
  *
  * Returns 0 on success, -1 on failure (out of memory).
  */
-CERVER_PUBLIC int hashtable_set (
+CERVER_HIDDEN int hashtable_set (
 	hashtable_t *hashtable, const char *key, struct json_t *value
 );
 
@@ -110,7 +110,7 @@ CERVER_PUBLIC int hashtable_set (
  *
  * Returns value if it is found, or NULL otherwise.
  */
-CERVER_PUBLIC void *hashtable_get (
+CERVER_HIDDEN void *hashtable_get (
 	hashtable_t *hashtable, const char *key
 );
 
@@ -122,7 +122,7 @@ CERVER_PUBLIC void *hashtable_get (
  *
  * Returns 0 on success, or -1 if the key was not found.
  */
-CERVER_PUBLIC int hashtable_del (
+CERVER_HIDDEN int hashtable_del (
 	hashtable_t *hashtable, const char *key
 );
 
@@ -133,7 +133,7 @@ CERVER_PUBLIC int hashtable_del (
  *
  * Removes all items from the hashtable.
  */
-CERVER_PUBLIC void hashtable_clear (hashtable_t *hashtable);
+CERVER_HIDDEN void hashtable_clear (hashtable_t *hashtable);
 
 /**
  * hashtable_iter - Iterate over hashtable
@@ -150,7 +150,7 @@ CERVER_PUBLIC void hashtable_clear (hashtable_t *hashtable);
  * hashtable_iter_next() may be called on an iterator, and after that
  * the key/value pair pointed by the old iterator may be deleted.
  */
-CERVER_PUBLIC void *hashtable_iter (hashtable_t *hashtable);
+CERVER_HIDDEN void *hashtable_iter (hashtable_t *hashtable);
 
 /**
  * hashtable_iter_at - Return an iterator at a specific key
@@ -161,7 +161,7 @@ CERVER_PUBLIC void *hashtable_iter (hashtable_t *hashtable);
  * Like hashtable_iter() but returns an iterator pointing to a
  * specific key.
  */
-CERVER_PUBLIC void *hashtable_iter_at (
+CERVER_HIDDEN void *hashtable_iter_at (
 	hashtable_t *hashtable, const char *key
 );
 
@@ -174,7 +174,7 @@ CERVER_PUBLIC void *hashtable_iter_at (
  * Returns a new iterator pointing to the next element in the
  * hashtable or NULL if the whole hastable has been iterated over.
  */
-CERVER_PUBLIC void *hashtable_iter_next (
+CERVER_HIDDEN void *hashtable_iter_next (
 	hashtable_t *hashtable, void *iter
 );
 
@@ -183,14 +183,14 @@ CERVER_PUBLIC void *hashtable_iter_next (
  *
  * @iter: The iterator
  */
-CERVER_PUBLIC void *hashtable_iter_key (void *iter);
+CERVER_HIDDEN void *hashtable_iter_key (void *iter);
 
 /**
  * hashtable_iter_value - Retrieve the value pointed by an iterator
  *
  * @iter: The iterator
  */
-CERVER_PUBLIC void *hashtable_iter_value (void *iter);
+CERVER_HIDDEN void *hashtable_iter_value (void *iter);
 
 /**
  * hashtable_iter_set - Set the value pointed by an iterator
@@ -198,7 +198,7 @@ CERVER_PUBLIC void *hashtable_iter_value (void *iter);
  * @iter: The iterator
  * @value: The value to set
  */
-CERVER_PUBLIC void hashtable_iter_set (
+CERVER_HIDDEN void hashtable_iter_set (
 	void *iter, struct json_t *value
 );
 

@@ -31,7 +31,7 @@ static void end (int dummy) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand ((unsigned int) time (NULL));
 

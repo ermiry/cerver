@@ -334,7 +334,7 @@ CERVER_EXPORT const char *http_request_get_dirname (
 // sets the HTTP request's multi-part files directory
 CERVER_PUBLIC void http_request_set_dirname (
 	const HttpRequest *http_request, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // gets the HTTP request's body values
 CERVER_EXPORT const DoubleList *http_request_get_body_values (

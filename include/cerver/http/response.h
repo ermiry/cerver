@@ -19,6 +19,10 @@
 
 #define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
 
+// the header of a response is written inside it when it fits,
+// the main header with the type and the length of its body take less than 2^8
+#define HTTP_RESPONSE_HEADER_BUFFER_SIZE		(1 << 8)
+
 // cerver always closes the connection after sending a response,
 // so every response must say so (RFC 9112 9.6),
 // otherwise a client (like nginx) may reuse the connection
@@ -87,12 +91,19 @@ struct _HttpResponse {
 	void *header;
 	size_t header_len;
 
+	// where the header is written when it fits, header points to it,
+	// so a response without custom headers does not allocate it
+	char header_buffer[HTTP_RESPONSE_HEADER_BUFFER_SIZE];
+
 	void *data;
 	size_t data_len;
 	bool data_ref;
 
 	void *res;
 	size_t res_len;
+
+	// the next response of the list of released ones that are reused
+	struct _HttpResponse *recycle_next;
 
 };
 
@@ -137,7 +148,7 @@ CERVER_EXPORT u8 http_response_add_header (
 CERVER_EXPORT u8 http_response_add_custom_header (
 	HttpResponse *response,
 	const http_header type, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 // adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
@@ -340,7 +351,7 @@ CERVER_EXPORT u8 http_response_send_file_generate (
 	const struct _HttpReceive *http_receive,
 	const http_status status,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 #pragma endregion
 
@@ -380,7 +391,7 @@ CERVER_EXPORT u8 http_response_handle_video (
 CERVER_EXPORT u8 http_response_handle_video_generate (
 	const struct _HttpReceive *http_receive,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 #pragma endregion
 

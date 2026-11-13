@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See thirdparty.md for details.
+ */
+
 #ifndef _CERVER_HTTP_JSON_VALUE_H_
 #define _CERVER_HTTP_JSON_VALUE_H_
 
@@ -162,7 +169,7 @@ CERVER_PUBLIC int json_array_extend (
 );
 
 CERVER_PUBLIC int json_array_set (
-	json_t *array, size_t ind, json_t *value
+	json_t *array, size_t index, json_t *value
 );
 
 CERVER_PUBLIC int json_array_append (
@@ -170,7 +177,7 @@ CERVER_PUBLIC int json_array_append (
 );
 
 CERVER_PUBLIC int json_array_insert (
-	json_t *array, size_t ind, json_t *value
+	json_t *array, size_t index, json_t *value
 );
 
 CERVER_PUBLIC const char *json_string_value (const json_t *string);
@@ -188,7 +195,7 @@ CERVER_PUBLIC int json_string_set (
 );
 
 CERVER_PUBLIC int json_string_setn (
-	json_t *string, const char *value, size_t len
+	json_t *string, const char *value, size_t length
 );
 
 CERVER_PUBLIC int json_string_set_nocheck (
@@ -196,7 +203,7 @@ CERVER_PUBLIC int json_string_set_nocheck (
 );
 
 CERVER_PUBLIC int json_string_setn_nocheck (
-	json_t *string, const char *value, size_t len
+	json_t *string, const char *value, size_t length
 );
 
 CERVER_PUBLIC int json_integer_set (
@@ -216,7 +223,7 @@ CERVER_PUBLIC json_t *json_string (
 );
 
 CERVER_PUBLIC json_t *json_stringn (
-	const char *value, size_t len
+	const char *value, size_t length
 );
 
 CERVER_PUBLIC json_t *json_string_nocheck (
@@ -224,7 +231,7 @@ CERVER_PUBLIC json_t *json_string_nocheck (
 );
 
 CERVER_PUBLIC json_t *json_stringn_nocheck (
-	const char *value, size_t len
+	const char *value, size_t length
 );
 
 CERVER_PUBLIC json_t *json_integer (json_int_t value);

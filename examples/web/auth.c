@@ -54,6 +54,8 @@ void test_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Test route works!"
 	);
@@ -73,6 +75,8 @@ void auth_token_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Token auth route works!"
 	);
@@ -91,6 +95,8 @@ void auth_custom_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Custom auth route works!"
@@ -114,6 +120,8 @@ static unsigned int custom_authentication_handler (
 	const HttpRequest *request
 ) {
 
+	(void) http_receive;
+
 	unsigned int retval = 1;
 
 	http_request_multi_parts_print (request);
@@ -133,7 +141,7 @@ static unsigned int custom_authentication_handler (
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
@@ -206,14 +214,12 @@ int main (int argc, char **argv) {
 				auth_cerver->info->name
 			);
 
-			cerver_delete (auth_cerver);
+			(void) cerver_teardown (auth_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (auth_cerver);
 	}
 
 	cerver_end ();

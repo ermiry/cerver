@@ -99,7 +99,8 @@
 #define DISCONNECT_GONE_WAIT				1000
 
 #define DISCONNECT_RESPONSE_SIZE			(1 << 12)
-#define DISCONNECT_REQUEST_SIZE				(1 << 13)
+// a request with a bearer of up to HTTP_JWT_BEARER_SIZE
+#define DISCONNECT_REQUEST_SIZE				(1 << 14)
 #define DISCONNECT_PATH_SIZE				(1 << 10)
 
 // the large responses do not fit in the socket buffers,
@@ -528,7 +529,7 @@ static void disconnect_model_bearer (DisconnectModel *model, HttpCerver *http_ce
 	test_check_ptr (http_jwt);
 
 	http_cerver_auth_jwt_add_value (http_jwt, "id", "disconnect-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
+	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
 
 	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 

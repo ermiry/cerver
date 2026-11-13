@@ -10,7 +10,7 @@
 
 static const char *client_name = { "test-client" };
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT ping...\n");
 

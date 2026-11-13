@@ -16,14 +16,17 @@ PAIRS=(
 	cerver/ping
 	cerver/packets
 	cerver/requests
+	cerver/schemas
 	cerver/auth
 	cerver/sessions
 	cerver/threads
 	cerver/queue
 	cerver/udp
+	cerver/game
 	handler
 	balancer/round_robin
 	balancer/handler_id
+	balancer/custom
 	balancer/reconnect
 	balancer/large
 	balancer/unavailable
@@ -44,6 +47,18 @@ PAIRS=(
 	web/websocket
 )
 
+EXAMPLE_PAIRS=(
+	examples/start
+	examples/welcome
+	examples/test
+	examples/handlers
+	examples/requests
+	examples/threads
+	examples/game
+)
+
+EXAMPLES_ADDRESS=127.0.0.1
+
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
 
 TAG=test
@@ -60,6 +75,7 @@ IMAGE=${IMAGE:-ermiry/cerver:$TAG}
 
 if [ $# -gt 0 ]; then
 	PAIRS=("$@")
+	EXAMPLE_PAIRS=()
 fi
 
 if [ "$BUILD" -ne 0 ]; then
@@ -113,7 +129,12 @@ fi
 FAILED=()
 RUNS=0
 for address in "${ADDRESSES[@]}"; do
-	for pair in "${PAIRS[@]}"; do
+	ADDRESS_PAIRS=("${PAIRS[@]}")
+	if [ "$address" = "$EXAMPLES_ADDRESS" ]; then
+		ADDRESS_PAIRS+=("${EXAMPLE_PAIRS[@]}")
+	fi
+
+	for pair in "${ADDRESS_PAIRS[@]}"; do
 		echo "Integration test $pair in $address..."
 		RUNS=$(( RUNS + 1 ))
 		if ! $DOCKER run "${RUN_FLAGS[@]}" \

@@ -51,6 +51,8 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	if (http_response_send_file (
 		http_receive, HTTP_STATUS_OK, "./examples/web/public/video.html"
 	)) {
@@ -67,6 +69,8 @@ void video_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	// http_request_headers_print (request);
 
 	http_response_handle_video (http_receive, "./data/videos/redis.webm");
@@ -77,7 +81,7 @@ void video_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
@@ -137,14 +141,12 @@ int main (int argc, char **argv) {
 				videos_service->info->name
 			);
 
-			cerver_delete (videos_service);
+			(void) cerver_teardown (videos_service);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (videos_service);
 	}
 
 	cerver_end ();

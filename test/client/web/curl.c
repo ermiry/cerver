@@ -80,8 +80,8 @@ CurlResult curl_perform_request (
 
 	else if ((long) expected_status != http_code) {
 		cerver_log_error (
-			"curl_perform_request () expected status %d but got %ld instead!",
-			expected_status, http_code
+			"curl_perform_request () expected status %u but got %ld instead!",
+			(unsigned int) expected_status, http_code
 		);
 
 		result = CURL_RESULT_BAD_STATUS;

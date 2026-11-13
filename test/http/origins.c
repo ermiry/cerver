@@ -21,6 +21,8 @@ static u8 test_create_response (
 	HttpCerver *http_cerver, const char *domain
 ) {
 
+	(void) http_cerver;
+
 	u8 retval = 1;
 
 	HttpResponse *response = http_response_create (

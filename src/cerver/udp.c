@@ -38,7 +38,7 @@ static const size_t CERVER_UDP_MAP_SIZE = 64;
 static const i32 CERVER_UDP_PEER_SOCK_FD = -1;
 
 // the answer to a failed authentication, to limit the answers to a peer that is not proven
-static const size_t CERVER_UDP_AUTH_FAILED_SIZE = sizeof (PacketHeader) + sizeof (SError);
+static const size_t CERVER_UDP_AUTH_FAILED_SIZE = PACKET_HEADER_SIZE + ERROR_MESSAGE_MAX_ENCODED_SIZE;
 
 #define CERVER_UDP_PEER_KEY_FORMAT		"%s:%u"
 
@@ -58,15 +58,17 @@ UdpDatagram udp_datagram_check (
 
 	UdpDatagram kind = UDP_DATAGRAM_INVALID;
 
-	if (datagram && (size >= sizeof (PacketHeader))) {
-		(void) memcpy (header, datagram, sizeof (PacketHeader));
-
-		const bool valid_size = (header->packet_size >= sizeof (PacketHeader))
-			&& (header->packet_size <= max_packet_size)
-			&& (header->packet_size <= size);
+	// a header with another format, unknown flags or reserved bytes is invalid
+	if (
+		datagram && (size >= PACKET_HEADER_SIZE)
+		&& (packet_header_decode ((const u8 *) datagram, header) == PACKET_HEADER_RESULT_NONE)
+	) {
+		const bool valid_size = (header->packet_size >= PACKET_HEADER_SIZE)
+			&& (header->packet_size <= (u64) max_packet_size)
+			&& (header->packet_size <= (u64) size);
 
 		if (valid_size) {
-			const size_t trailing = size - header->packet_size;
+			const size_t trailing = size - (size_t) header->packet_size;
 
 			if (!trailing) kind = UDP_DATAGRAM_PLAIN;
 			else if (trailing == CONNECTION_DATAGRAM_TOKEN_SIZE) kind = UDP_DATAGRAM_TOKEN;
@@ -98,15 +100,15 @@ Packet *udp_datagram_packet_create (
 	const char *datagram, const PacketHeader *header
 ) {
 
-	Packet *packet = packet_create_with_data (header->packet_size - sizeof (PacketHeader));
+	Packet *packet = packet_create_with_data ((size_t) header->packet_size - PACKET_HEADER_SIZE);
 	if (packet) {
 		(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 		packet->packet_type = header->packet_type;
 		packet->req_type = header->request_type;
-		packet->packet_size = header->packet_size;
+		packet->packet_size = (size_t) header->packet_size;
 
 		if (packet->data_size) {
-			(void) memcpy (packet->data, datagram + sizeof (PacketHeader), packet->data_size);
+			(void) memcpy (packet->data, datagram + PACKET_HEADER_SIZE, packet->data_size);
 		}
 	}
 
@@ -317,7 +319,7 @@ static u8 udp_peer_insert (Cerver *cerver, UdpPeer *peer) {
 
 	if (!htab_insert (cerver->udp->addresses, peer->key, key_size, peer, sizeof (UdpPeer))) {
 		if (!dlist_insert_at_end (cerver->udp->peers, peer)) {
-			(void) __atomic_add_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELAXED);
+			(void) __atomic_add_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELEASE);
 
 			retval = 0;
 		}
@@ -361,9 +363,11 @@ static void udp_peer_remove (
 			);
 		}
 
-		(void) __atomic_sub_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELAXED);
-
+		// the stats change before the count is released,
+		// so a thread that sees the new count also sees the new stats
 		udp_peer_remove_stats (cerver, peer);
+
+		(void) __atomic_sub_fetch (&cerver->udp_peers_count, 1, __ATOMIC_RELEASE);
 
 		if ((event != CERVER_EVENT_NONE) && peer->client) {
 			cerver_event_trigger (event, cerver, peer->client, peer->connection);
@@ -613,12 +617,14 @@ static u8 udp_peer_migrate (
 // the session token when the cerver uses sessions, followed by the datagram token
 static void udp_auth_success_send (Cerver *cerver, const UdpPeer *peer) {
 
-	const size_t session_size = cerver->use_sessions ? sizeof (SToken) : 0;
+	u8 data[SESSION_TOKEN_MAX_ENCODED_SIZE + CONNECTION_DATAGRAM_TOKEN_SIZE] = { 0 };
 
-	char data[sizeof (SToken) + CONNECTION_DATAGRAM_TOKEN_SIZE] = { 0 };
+	size_t session_size = 0;
+	if (cerver->use_sessions) {
+		char session_id[TOKEN_SIZE] = { 0 };
+		(void) client_get_session_id (peer->client, session_id, TOKEN_SIZE);
 
-	if (session_size) {
-		(void) client_get_session_id (peer->client, data, TOKEN_SIZE);
+		if (session_token_encode (session_id, data, &session_size)) session_size = 0;
 	}
 
 	(void) memcpy (data + session_size, peer->connection->datagram_token, CONNECTION_DATAGRAM_TOKEN_SIZE);
@@ -795,8 +801,10 @@ static void udp_auth (Cerver *cerver, UdpPeer *peer, Packet *packet) {
 // the auth packets of a pending peer, an admin can not authenticate with UDP
 static void udp_auth_packet (Cerver *cerver, UdpPeer *peer, Packet *packet) {
 
-	const bool valid = (packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_AUTH)
-		&& cerver->authenticate;
+	const bool valid = (
+		(packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_AUTH)
+		|| (packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_TOKEN)
+	) && cerver->authenticate;
 
 	if (valid) udp_auth (cerver, peer, packet);
 	else udp_peer_bad (cerver, peer);
@@ -825,7 +833,7 @@ static void udp_info_answer (Cerver *cerver, UdpPeer *peer, const PacketHeader *
 // a test packet goes back to the peer, to one that is not proven only up to the bytes that it sent
 static void udp_test_answer (UdpPeer *peer, Packet *packet) {
 
-	if (udp_peer_answer_allowed (peer, sizeof (PacketHeader))) {
+	if (udp_peer_answer_allowed (peer, PACKET_HEADER_SIZE)) {
 		cerver_test_packet_handler (packet);
 	}
 
@@ -965,8 +973,8 @@ static bool udp_auth_repeat_allowed (
 	const Cerver *cerver, const PacketHeader *header, const size_t size
 ) {
 
-	const size_t session_size = cerver->use_sessions ? sizeof (SToken) : 0;
-	const size_t success_size = sizeof (PacketHeader) + session_size + CONNECTION_DATAGRAM_TOKEN_SIZE;
+	const size_t session_size = cerver->use_sessions ? SESSION_TOKEN_MAX_ENCODED_SIZE : 0;
+	const size_t success_size = PACKET_HEADER_SIZE + session_size + CONNECTION_DATAGRAM_TOKEN_SIZE;
 
 	return (header->packet_type == PACKET_TYPE_AUTH)
 		&& ((size * CERVER_UDP_AMPLIFICATION_FACTOR) >= success_size);
@@ -1259,10 +1267,11 @@ void cerver_set_udp_max_peers (Cerver *cerver, const u32 max_peers) {
 
 }
 
-// returns the number of peers of an UDP cerver, the pending ones too
+// returns the number of peers of an UDP cerver, the pending ones too,
+// a removed peer is already out of the stats of the cerver when it is not counted
 size_t cerver_udp_peers_count (const Cerver *cerver) {
 
-	return cerver ? (size_t) __atomic_load_n (&cerver->udp_peers_count, __ATOMIC_RELAXED) : 0;
+	return cerver ? (size_t) __atomic_load_n (&cerver->udp_peers_count, __ATOMIC_ACQUIRE) : 0;
 
 }
 

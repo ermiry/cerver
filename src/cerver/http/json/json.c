@@ -8,12 +8,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdint.h>
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "cerver/config.h"
@@ -30,9 +34,70 @@
 
 #pragma region memory
 
+// the bytes that a parse can allocate for each byte that it reads, 0 has no limit,
+// a body of [{}, {}, ...] takes about 60 bytes of objects for each one of its bytes
+static size_t json_parser_memory_factor = JSON_PARSER_DEFAULT_MEMORY_FACTOR;
+
+// the parse of this thread: the bytes that it can still allocate,
+// and if it ran out of them, so its error says why
+static __thread bool json_parse_limited = false;
+static __thread bool json_parse_exhausted = false;
+static __thread size_t json_parse_budget = 0;
+
+void json_set_parser_memory_factor (size_t factor) {
+
+	__atomic_store_n (&json_parser_memory_factor, factor, __ATOMIC_RELAXED);
+
+}
+
+static void json_parse_budget_start (void) {
+
+	json_parse_limited = (__atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED) > 0);
+	json_parse_exhausted = false;
+	json_parse_budget = JSON_PARSER_MEMORY_MINIMUM;
+
+}
+
+static void json_parse_budget_end (void) {
+
+	json_parse_limited = false;
+	json_parse_budget = 0;
+
+}
+
+// every byte that the parse reads lets it allocate the factor more,
+// so the memory of a document is bounded by its size
+static void json_parse_budget_add (void) {
+
+	if (json_parse_limited) {
+		json_parse_budget += __atomic_load_n (&json_parser_memory_factor, __ATOMIC_RELAXED);
+	}
+
+}
+
+// returns false if the parse has no room for the allocation
+static bool json_parse_budget_take (size_t size) {
+
+	bool taken = true;
+
+	if (json_parse_limited) {
+		if (size > json_parse_budget) {
+			json_parse_exhausted = true;
+			taken = false;
+		}
+
+		else {
+			json_parse_budget -= size;
+		}
+	}
+
+	return taken;
+
+}
+
 void *jsonp_malloc (size_t size) {
 
-	return size ? malloc (size): NULL;
+	return (size && json_parse_budget_take (size)) ? malloc (size) : NULL;
 
 }
 
@@ -64,6 +129,14 @@ char *jsonp_strndup (const char *str, size_t len) {
 
 #pragma region error
 
+// the position of an error is an int in json_error_t,
+// a document of more than INT_MAX bytes keeps the largest one
+static int json_error_position (const size_t position) {
+
+	return (position > (size_t) INT_MAX) ? INT_MAX : (int) position;
+
+}
+
 CERVER_INLINE enum json_error_code json_error_code (
 	const json_error_t *e
 ) {
@@ -93,8 +166,10 @@ void jsonp_error_set_source (
 	json_error_t *error, const char *source
 ) {
 
+	// a long source is cut, the error never had a source without its end
 	if (error && source) {
 		(void) strncpy (error->source, source, JSON_ERROR_SOURCE_LENGTH - 1);
+		error->source[JSON_ERROR_SOURCE_LENGTH - 1] = '\0';
 	}
 
 }
@@ -115,7 +190,7 @@ void jsonp_error_vset (
 
 	error->line = line;
 	error->column = column;
-	error->position = (int)position;
+	error->position = json_error_position (position);
 
 	(void) vsnprintf (error->text, JSON_ERROR_TEXT_LENGTH - 1, msg, ap);
 	error->text[JSON_ERROR_TEXT_LENGTH - 2] = '\0';
@@ -261,75 +336,68 @@ static char strbuffer_pop (strbuffer_t *strbuff) {
 
 #pragma region strconv
 
-#if JSON_HAVE_LOCALECONV
-#include <locale.h>
+// the numbers of json always have a dot, whatever the locale of the process is:
+// they are read and written with a "C" locale that is created once,
+// localeconv () was not thread safe and a decimal point of two bytes
+// ended the process in an assert ()
+static locale_t json_numbers_locale = (locale_t) 0;
+static pthread_once_t json_numbers_locale_once = PTHREAD_ONCE_INIT;
 
-/*
-  - This code assumes that the decimal separator is exactly one
-	character.
+static void json_numbers_locale_create (void) {
 
-  - If setlocale() is called by another thread between the call to
-	localeconv() and the call to sprintf() or strtod(), the result may
-	be wrong. setlocale() is not thread-safe and should not be used
-	this way. Multi-threaded programs should use uselocale() instead.
-*/
-
-static void to_locale (strbuffer_t *strbuffer) {
-
-	const char *point;
-	char *pos;
-
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (strbuffer->value, '.');
-	if (pos)
-		*pos = *point;
+	json_numbers_locale = newlocale (LC_NUMERIC_MASK, "C", (locale_t) 0);
 
 }
 
-static void from_locale (char *buffer) {
+static locale_t json_numbers_locale_get (void) {
 
-	const char *point;
-	char *pos;
+	(void) pthread_once (&json_numbers_locale_once, json_numbers_locale_create);
 
-	point = localeconv ()->decimal_point;
-	if (*point == '.') {
-		/* No conversion needed */
-		return;
-	}
-
-	pos = strchr (buffer, *point);
-	if (pos)
-		*pos = '.';
+	return json_numbers_locale;
 
 }
 
-#endif
+// the lexer only gives numbers, a number that is not read whole is an error,
+// an underflow gives zero or a subnormal value that is valid,
+// only an overflow (an infinite value) is an error
+static int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 
-int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale)
+		return -1;
 
-	double value = 0;
 	char *end = NULL;
 
-	#if JSON_HAVE_LOCALECONV
-	to_locale (strbuffer);
-	#endif
-
 	errno = 0;
-	value = strtod (strbuffer->value, &end);
-	assert (end == strbuffer->value + strbuffer->length);
+	const double value = strtod_l (strbuffer->value, &end, locale);
 
-	if (errno == ERANGE) {
-		/* Overflow or Underflow */
+	if (end != (strbuffer->value + strbuffer->length))
 		return -1;
-	}
+
+	if ((errno == ERANGE) && isinf (value))
+		return -1;
 
 	*out = value;
 	return 0;
+
+}
+
+// NaN and the infinite values are not json
+static int jsonp_dtostr_format (
+	char *buffer, size_t size, double value, int precision
+) {
+
+	const locale_t locale = json_numbers_locale_get ();
+	if (!locale || !isfinite (value))
+		return -1;
+
+	const locale_t previous = uselocale (locale);
+
+	const int ret = snprintf (buffer, size, "%.*g", precision, value);
+
+	(void) uselocale (previous);
+
+	return ret;
 
 }
 
@@ -342,19 +410,15 @@ int jsonp_dtostr (
 	size_t length = 0;
 
 	if (precision == 0)
-		precision = 17;
+		precision = JSON_REAL_DEFAULT_PRECISION;
 
-	ret = snprintf (buffer, size, "%.*g", precision, value);
+	ret = jsonp_dtostr_format (buffer, size, value, precision);
 	if (ret < 0)
 		return -1;
 
 	length = (size_t)ret;
 	if (length >= size)
 		return -1;
-
-	#if JSON_HAVE_LOCALECONV
-	from_locale (buffer);
-	#endif
 
 	/* Make sure there's a dot or 'e' in the output. Otherwise
 	   a real is converted to an integer when decoding */
@@ -448,11 +512,11 @@ static int dump_to_fd (
 	const char *buffer, size_t size, void *data
 ) {
 
-	#ifdef HAVE_UNISTD_H
+	// HAVE_UNISTD_H of upstream was never defined, so the dumps to a fd always failed
 	int *dest = (int *)data;
 	if (write (*dest, buffer, size) == (ssize_t)size)
 		return 0;
-	#endif
+
 	return -1;
 
 }
@@ -613,7 +677,9 @@ static int do_dump (
 
 	flags &= ~JSON_EMBED;
 
-	if (!json)
+	// a tree built in code can be deeper than what the parser accepts,
+	// its dump would end the stack of the thread
+	if (!json || (depth > JSON_DUMP_MAX_DEPTH))
 		return -1;
 
 	switch (json_typeof (json)) {
@@ -707,7 +773,7 @@ static int do_dump (
 			void *iter;
 			const char *separator;
 			int separator_length;
-			char loop_key[LOOP_KEY_LEN];
+			char loop_key[JSON_LOOP_KEY_LENGTH];
 
 			if (flags & JSON_COMPACT) {
 				separator = ":";
@@ -966,9 +1032,9 @@ typedef struct {
 
 #define stream_to_lex(stream) container_of (stream, lex_t, stream)
 
-/*** error reporting ***/
+// the errors of a parse
 
-static void error_set (
+CERVER_PRINTF_FORMAT (4, 5) static void error_set (
 	json_error_t *error, const lex_t *lex, enum json_error_code code,
 	const char *msg, ...
 ) {
@@ -1031,7 +1097,7 @@ static void error_set (
 	jsonp_error_set (error, line, col, pos, code, "%s", result);
 }
 
-/*** lexical analyzer ***/
+// the lexer
 
 static void stream_init (
 	stream_t *stream, get_func get, void *data
@@ -1049,66 +1115,98 @@ static void stream_init (
 
 }
 
+// the first byte of a character that takes more than one byte in UTF-8
+#define STREAM_MULTI_BYTE_FIRST			0x80
+#define STREAM_MULTI_BYTE_LAST			0xFF
+
+// the stream can not be read after a byte that is not UTF-8
+static int stream_decode_failed (
+	stream_t *stream, json_error_t *error, const int c
+) {
+
+	stream->state = STREAM_STATE_ERROR;
+
+	error_set (
+		error, stream_to_lex (stream), json_error_invalid_utf8,
+		"unable to decode byte 0x%x", (unsigned int) c
+	);
+
+	return STREAM_STATE_ERROR;
+
+}
+
+// reads the rest of a character of many bytes into the buffer
+// returns true if it is valid UTF-8
+static bool stream_read_multi_byte (stream_t *stream, const int c) {
+
+	const size_t count = utf8_check_first ((char) c);
+	if (!count) return false;
+
+	assert (count >= 2);
+
+	for (size_t index = 1; index < count; index++) {
+		stream->buffer[index] = (char) stream->get (stream->data);
+	}
+
+	if (!utf8_check_full (stream->buffer, count, NULL)) return false;
+
+	stream->buffer[count] = '\0';
+
+	return true;
+
+}
+
+// the line and the column of the character that was read
+static void stream_advance (stream_t *stream, const int c) {
+
+	stream->position += 1;
+
+	if (c == '\n') {
+		stream->line += 1;
+		stream->last_column = stream->column;
+		stream->column = 0;
+	}
+
+	// the column of Unicode characters, only the first byte of each one counts
+	else if (utf8_check_first ((char) c)) {
+		stream->column += 1;
+	}
+
+}
+
 static int stream_get (
 	stream_t *stream, json_error_t *error
 ) {
 
-	int c = 0;
-
-	if (stream->state != STREAM_STATE_OK)
-		return stream->state;
+	if (stream->state != STREAM_STATE_OK) return stream->state;
 
 	if (!stream->buffer[stream->buffer_pos]) {
-		c = stream->get (stream->data);
+		const int c = stream->get (stream->data);
 		if (c == EOF) {
 			stream->state = STREAM_STATE_EOF;
 			return STREAM_STATE_EOF;
 		}
 
-		stream->buffer[0] = c;
+		json_parse_budget_add ();
+
+		stream->buffer[0] = (char) c;
 		stream->buffer_pos = 0;
 
-		if (0x80 <= c && c <= 0xFF) {
-			/* multi-byte UTF-8 sequence */
-			size_t i, count;
+		if ((STREAM_MULTI_BYTE_FIRST <= c) && (c <= STREAM_MULTI_BYTE_LAST)) {
+			if (!stream_read_multi_byte (stream, c)) return stream_decode_failed (stream, error, c);
+		}
 
-			count = utf8_check_first (c);
-			if (!count)
-				goto out;
-
-			assert (count >= 2);
-
-			for (i = 1; i < count; i++)
-				stream->buffer[i] = stream->get (stream->data);
-
-			if (!utf8_check_full (stream->buffer, count, NULL))
-				goto out;
-
-			stream->buffer[count] = '\0';
-		} else
+		else {
 			stream->buffer[1] = '\0';
+		}
 	}
 
-	c = stream->buffer[stream->buffer_pos++];
+	const int c = stream->buffer[stream->buffer_pos++];
 
-	stream->position++;
-	if (c == '\n') {
-		stream->line++;
-		stream->last_column = stream->column;
-		stream->column = 0;
-	} else if (utf8_check_first (c)) {
-		/* track the Unicode character column, so increment only if
-		   this is the first character of a UTF-8 sequence */
-		stream->column++;
-	}
+	stream_advance (stream, c);
 
 	return c;
 
-out:
-	stream->state = STREAM_STATE_ERROR;
-	// error_set(error, stream_to_lex(stream), json_error_invalid_utf8,
-	//           "unable to decode byte 0x%x", c);
-	return STREAM_STATE_ERROR;
 }
 
 static void stream_unget (stream_t *stream, int c) {
@@ -1216,277 +1314,426 @@ static int32_t decode_unicode_escape (const char *str) {
 
 }
 
-static void lex_scan_string (lex_t *lex, json_error_t *error) {
+// the hex digits of a \uXXXX escape
+#define LEX_UNICODE_ESCAPE_DIGITS		4
 
-	int c;
-	const char *p;
-	char *t;
-	int i;
+// the 'u' and the hex digits of a \uXXXX escape
+#define LEX_UNICODE_ESCAPE_LENGTH		(1 + LEX_UNICODE_ESCAPE_DIGITS)
+
+// the last byte that is a control character in a string
+#define LEX_CONTROL_CHARACTER_LAST		0x1F
+
+// the halves of a character beyond the basic plane in UTF-16 (RFC 8259 §7)
+#define LEX_HIGH_SURROGATE_FIRST		0xD800
+#define LEX_HIGH_SURROGATE_LAST			0xDBFF
+#define LEX_LOW_SURROGATE_FIRST			0xDC00
+#define LEX_LOW_SURROGATE_LAST			0xDFFF
+#define LEX_SURROGATE_SHIFT				10
+#define LEX_SURROGATE_BASE				0x10000
+
+// a control character inside a string is an error
+static bool lex_scan_string_control (lex_t *lex, const int c, json_error_t *error) {
+
+	lex_unget_unsave (lex, c);
+
+	if (c == '\n') {
+		error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
+	}
+
+	else {
+		error_set (error, lex, json_error_invalid_syntax, "control character 0x%x", (unsigned int) c);
+	}
+
+	return false;
+
+}
+
+static bool lex_is_short_escape (const int c) {
+
+	return (c == '"') || (c == '\\') || (c == '/') || (c == 'b')
+		|| (c == 'f') || (c == 'n') || (c == 'r') || (c == 't');
+
+}
+
+// an escape after its '\\': \uXXXX or one of the short ones
+// returns true if it is valid, with the character after it in c
+static bool lex_scan_string_escape (lex_t *lex, int *c, json_error_t *error) {
+
+	*c = lex_get_save (lex, error);
+
+	if (*c == 'u') {
+		*c = lex_get_save (lex, error);
+		for (unsigned int digit = 0; digit < LEX_UNICODE_ESCAPE_DIGITS; digit++) {
+			if (!l_isxdigit (*c)) {
+				error_set (error, lex, json_error_invalid_syntax, "invalid escape");
+				return false;
+			}
+
+			*c = lex_get_save (lex, error);
+		}
+	}
+
+	else if (lex_is_short_escape (*c)) {
+		*c = lex_get_save (lex, error);
+	}
+
+	else {
+		error_set (error, lex, json_error_invalid_syntax, "invalid escape");
+		return false;
+	}
+
+	return true;
+
+}
+
+// reads the string up to its closing quote into the saved text
+// returns true if it is a valid string
+static bool lex_scan_string_read (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get_save (lex, error);
+
+	while (c != '"') {
+		if (c == STREAM_STATE_ERROR) return false;
+
+		if (c == STREAM_STATE_EOF) {
+			error_set (error, lex, json_error_premature_end_of_input, "premature end of input");
+			return false;
+		}
+
+		if ((0 <= c) && (c <= LEX_CONTROL_CHARACTER_LAST)) return lex_scan_string_control (lex, c, error);
+
+		if (c == '\\') {
+			if (!lex_scan_string_escape (lex, &c, error)) return false;
+		}
+
+		else {
+			c = lex_get_save (lex, error);
+		}
+	}
+
+	return true;
+
+}
+
+// an escape whose 4 characters are not hex digits, from its '\\'
+static bool lex_unicode_escape_invalid (lex_t *lex, json_error_t *error, const char *escape) {
+
+	error_set (error, lex, json_error_invalid_syntax, "invalid Unicode escape '%.6s'", escape);
+
+	return false;
+
+}
+
+// a surrogate without its other half
+static bool lex_unicode_value_invalid (lex_t *lex, json_error_t *error, const int32_t value) {
+
+	error_set (error, lex, json_error_invalid_syntax, "invalid Unicode '\\u%04X'", (unsigned int) value);
+
+	return false;
+
+}
+
+// a high surrogate followed by a value that is not a low one
+static bool lex_unicode_pair_invalid (
+	lex_t *lex, json_error_t *error, const int32_t first, const int32_t second
+) {
+
+	error_set (
+		error, lex, json_error_invalid_syntax,
+		"invalid Unicode '\\u%04X\\u%04X'", (unsigned int) first, (unsigned int) second
+	);
+
+	return false;
+
+}
+
+// the code point of a \uXXXX escape that p points to, with the 'u',
+// or of two that form a surrogate pair, p is moved after them
+// returns true if the code point is valid
+static bool lex_decode_unicode (
+	lex_t *lex, json_error_t *error, const char **p, int32_t *code_point
+) {
+
+	int32_t value = decode_unicode_escape (*p);
+	if (value < 0) return lex_unicode_escape_invalid (lex, error, *p - 1);
+
+	*p += LEX_UNICODE_ESCAPE_LENGTH;
+
+	if ((LEX_LOW_SURROGATE_FIRST <= value) && (value <= LEX_LOW_SURROGATE_LAST)) {
+		return lex_unicode_value_invalid (lex, error, value);
+	}
+
+	if ((LEX_HIGH_SURROGATE_FIRST <= value) && (value <= LEX_HIGH_SURROGATE_LAST)) {
+		// a high surrogate must be followed by a low one
+		if (((*p)[0] != '\\') || ((*p)[1] != 'u')) return lex_unicode_value_invalid (lex, error, value);
+
+		*p += 1;
+
+		const int32_t second = decode_unicode_escape (*p);
+		if (second < 0) return lex_unicode_escape_invalid (lex, error, *p - 1);
+
+		*p += LEX_UNICODE_ESCAPE_LENGTH;
+
+		if ((second < LEX_LOW_SURROGATE_FIRST) || (second > LEX_LOW_SURROGATE_LAST)) {
+			return lex_unicode_pair_invalid (lex, error, value, second);
+		}
+
+		value = ((value - LEX_HIGH_SURROGATE_FIRST) << LEX_SURROGATE_SHIFT)
+			+ (second - LEX_LOW_SURROGATE_FIRST) + LEX_SURROGATE_BASE;
+	}
+
+	*code_point = value;
+
+	return true;
+
+}
+
+// the byte of a short escape after its '\\'
+static char lex_short_escape_value (const char escape) {
+
+	char value = escape;
+
+	switch (escape) {
+		case 'b': value = '\b'; break;
+		case 'f': value = '\f'; break;
+		case 'n': value = '\n'; break;
+		case 'r': value = '\r'; break;
+		case 't': value = '\t'; break;
+
+		// '"', '\\' and '/' are themselves
+		default: break;
+	}
+
+	return value;
+
+}
+
+// the value of the saved string with its escapes decoded,
+// it is never longer than its source: a short escape (2 bytes) gives 1 byte,
+// a \uXXXX (6 bytes) at most 3, and a surrogate pair (12 bytes) 4
+// returns true on success
+static bool lex_scan_string_decode (lex_t *lex, json_error_t *error) {
+
+	char *value = (char *) jsonp_malloc (lex->saved_text.length + 1);
+	if (!value) return false;
+
+	lex->value.string.val = value;
+
+	// after the opening quote
+	const char *p = strbuffer_value (&lex->saved_text) + 1;
+
+	while (*p != '"') {
+		if (*p != '\\') {
+			*(value++) = *(p++);
+		}
+
+		else if (*(++p) == 'u') {
+			int32_t code_point = 0;
+			if (!lex_decode_unicode (lex, error, &p, &code_point)) return false;
+
+			size_t length = 0;
+			if (utf8_encode (code_point, value, &length)) assert (0);
+			value += length;
+		}
+
+		else {
+			*(value++) = lex_short_escape_value (*(p++));
+		}
+	}
+
+	*value = '\0';
+	lex->value.string.len = (size_t) (value - lex->value.string.val);
+
+	return true;
+
+}
+
+static void lex_scan_string (lex_t *lex, json_error_t *error) {
 
 	lex->value.string.val = NULL;
 	lex->token = TOKEN_INVALID;
 
-	c = lex_get_save (lex, error);
-
-	while (c != '"') {
-		if (c == STREAM_STATE_ERROR)
-			goto out;
-
-		else if (c == STREAM_STATE_EOF) {
-			error_set (error, lex, json_error_premature_end_of_input,
-					  "premature end of input");
-			goto out;
-		}
-
-		else if (0 <= c && c <= 0x1F) {
-			/* control character */
-			lex_unget_unsave (lex, c);
-			if (c == '\n')
-				error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
-			else
-				error_set (error, lex, json_error_invalid_syntax, "control character 0x%x",
-						  c);
-			goto out;
-		}
-
-		else if (c == '\\') {
-			c = lex_get_save (lex, error);
-			if (c == 'u') {
-				c = lex_get_save (lex, error);
-				for (i = 0; i < 4; i++) {
-					if (!l_isxdigit (c)) {
-						error_set (error, lex, json_error_invalid_syntax,
-								  "invalid escape");
-						goto out;
-					}
-					c = lex_get_save (lex, error);
-				}
-			} else if (c == '"' || c == '\\' || c == '/' || c == 'b' || c == 'f' ||
-					   c == 'n' || c == 'r' || c == 't')
-				c = lex_get_save (lex, error);
-			else {
-				error_set (error, lex, json_error_invalid_syntax, "invalid escape");
-				goto out;
-			}
-		} else
-			c = lex_get_save (lex, error);
+	if (lex_scan_string_read (lex, error) && lex_scan_string_decode (lex, error)) {
+		lex->token = TOKEN_STRING;
 	}
 
-	/* the actual value is at most of the same length as the source
-	   string, because:
-		 - shortcut escapes (e.g. "\t") (length 2) are converted to 1 byte
-		 - a single \uXXXX escape (length 6) is converted to at most 3 bytes
-		 - two \uXXXX escapes (length 12) forming an UTF-16 surrogate pair
-		   are converted to 4 bytes
-	*/
-	t = (char *) jsonp_malloc (lex->saved_text.length + 1);
-	if (!t) {
-		/* this is not very nice, since TOKEN_INVALID is returned */
-		goto out;
+	else {
+		lex_free_string (lex);
 	}
-	lex->value.string.val = t;
-
-	/* + 1 to skip the " */
-	p = strbuffer_value (&lex->saved_text) + 1;
-
-	while (*p != '"') {
-		if (*p == '\\') {
-			p++;
-			if (*p == 'u') {
-				size_t length;
-				int32_t value;
-
-				value = decode_unicode_escape (p);
-				if (value < 0) {
-					error_set (error, lex, json_error_invalid_syntax,
-							  "invalid Unicode escape '%.6s'", p - 1);
-					goto out;
-				}
-				p += 5;
-
-				if (0xD800 <= value && value <= 0xDBFF) {
-					/* surrogate pair */
-					if (*p == '\\' && *(p + 1) == 'u') {
-						int32_t value2 = decode_unicode_escape (++p);
-						if (value2 < 0) {
-							error_set (error, lex, json_error_invalid_syntax,
-									  "invalid Unicode escape '%.6s'", p - 1);
-							goto out;
-						}
-						p += 5;
-
-						if (0xDC00 <= value2 && value2 <= 0xDFFF) {
-							/* valid second surrogate */
-							value =
-								((value - 0xD800) << 10) + (value2 - 0xDC00) + 0x10000;
-						} else {
-							/* invalid second surrogate */
-							error_set (error, lex, json_error_invalid_syntax,
-									  "invalid Unicode '\\u%04X\\u%04X'", value, value2);
-							goto out;
-						}
-					} else {
-						/* no second surrogate */
-						error_set (error, lex, json_error_invalid_syntax,
-								  "invalid Unicode '\\u%04X'", value);
-						goto out;
-					}
-				} else if (0xDC00 <= value && value <= 0xDFFF) {
-					error_set (error, lex, json_error_invalid_syntax,
-							  "invalid Unicode '\\u%04X'", value);
-					goto out;
-				}
-
-				if (utf8_encode (value, t, &length))
-					assert (0);
-				t += length;
-			} else {
-				switch (*p) {
-					case '"':
-					case '\\':
-					case '/':
-						*t = *p;
-						break;
-					case 'b':
-						*t = '\b';
-						break;
-					case 'f':
-						*t = '\f';
-						break;
-					case 'n':
-						*t = '\n';
-						break;
-					case 'r':
-						*t = '\r';
-						break;
-					case 't':
-						*t = '\t';
-						break;
-					default:
-						assert (0);
-				}
-				t++;
-				p++;
-			}
-		} else
-			*(t++) = *(p++);
-	}
-	*t = '\0';
-	lex->value.string.len = t - lex->value.string.val;
-	lex->token = TOKEN_STRING;
-	return;
-
-out:
-	lex_free_string (lex);
 
 }
 
-#ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
-#if JSON_INTEGER_IS_LONG_LONG
-#ifdef _MSC_VER /* Microsoft Visual Studio */
-#define json_strtoint _strtoi64
-#else
+// the integers of the json are long long
 #define json_strtoint strtoll
-#endif
-#else
-#define json_strtoint strtol
-#endif
-#endif
 
-static int lex_scan_number (
-	lex_t *lex, int c, json_error_t *error
-) {
+// the base of the integers of the json text
+#define LEX_INTEGER_BASE				10
 
-	const char *saved_text;
-	char *end;
-	double doubleval;
+// a part of a number that is not valid, never a byte nor a state of the stream
+#define LEX_NUMBER_INVALID				-3
 
-	lex->token = TOKEN_INVALID;
+// reads digits while they come, returns the first character that is not one
+static int lex_scan_digits (lex_t *lex, json_error_t *error) {
 
-	if (c == '-')
+	int c = 0;
+
+	do {
 		c = lex_get_save (lex, error);
+	} while (l_isdigit (c));
+
+	return c;
+
+}
+
+// an integer that fits in a json_int_t
+// returns 0 on success, -1 on error
+static int lex_scan_integer (lex_t *lex, int c, json_error_t *error) {
+
+	lex_unget_unsave (lex, c);
+
+	const char *saved_text = strbuffer_value (&lex->saved_text);
+
+	char *end = NULL;
+	errno = 0;
+	const json_int_t integer = json_strtoint (saved_text, &end, LEX_INTEGER_BASE);
+	if (errno == ERANGE) {
+		if (integer < 0) {
+			error_set (error, lex, json_error_numeric_overflow, "too big negative integer");
+		}
+
+		else {
+			error_set (error, lex, json_error_numeric_overflow, "too big integer");
+		}
+
+		return -1;
+	}
+
+	assert (end == saved_text + lex->saved_text.length);
+
+	lex->token = TOKEN_INTEGER;
+	lex->value.integer = integer;
+
+	return 0;
+
+}
+
+// the digits after the dot of a real
+// returns the character after them, or LEX_NUMBER_INVALID if there are none
+static int lex_scan_fraction (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get (lex, error);
+	if (!l_isdigit (c)) {
+		lex_unget (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
+
+	lex_save (lex, c);
+
+	return lex_scan_digits (lex, error);
+
+}
+
+// the exponent of a real, with its sign and its digits
+// returns the character after them, or LEX_NUMBER_INVALID if there are no digits
+static int lex_scan_exponent (lex_t *lex, json_error_t *error) {
+
+	int c = lex_get_save (lex, error);
+	if ((c == '+') || (c == '-')) c = lex_get_save (lex, error);
+
+	if (!l_isdigit (c)) {
+		lex_unget_unsave (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
+
+	return lex_scan_digits (lex, error);
+
+}
+
+// the integer part of a number: a single 0 or digits that do not start with 0
+// returns the character after it, or LEX_NUMBER_INVALID if it is not valid
+static int lex_scan_integer_part (lex_t *lex, int c, json_error_t *error) {
 
 	if (c == '0') {
 		c = lex_get_save (lex, error);
 		if (l_isdigit (c)) {
 			lex_unget_unsave (lex, c);
-			goto out;
+			return LEX_NUMBER_INVALID;
 		}
-	} else if (l_isdigit (c)) {
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
-	} else {
-		lex_unget_unsave (lex, c);
-		goto out;
 	}
 
-	if (!(lex->flags & JSON_DECODE_INT_AS_REAL) && c != '.' && c != 'E' && c != 'e') {
-		json_int_t intval;
+	else if (l_isdigit (c)) {
+		c = lex_scan_digits (lex, error);
+	}
 
+	else {
 		lex_unget_unsave (lex, c);
+		return LEX_NUMBER_INVALID;
+	}
 
-		saved_text = strbuffer_value (&lex->saved_text);
+	return c;
 
-		errno = 0;
-		intval = json_strtoint (saved_text, &end, 10);
-		if (errno == ERANGE) {
-			if (intval < 0)
-				error_set (error, lex, json_error_numeric_overflow,
-						  "too big negative integer");
-			else
-				error_set (error, lex, json_error_numeric_overflow, "too big integer");
-			goto out;
-		}
+}
 
-		assert (end == saved_text + lex->saved_text.length);
+static int lex_scan_number (
+	lex_t *lex, int c, json_error_t *error
+) {
 
-		lex->token = TOKEN_INTEGER;
-		lex->value.integer = intval;
-		return 0;
+	lex->token = TOKEN_INVALID;
+
+	if (c == '-') c = lex_get_save (lex, error);
+
+	c = lex_scan_integer_part (lex, c, error);
+	if (c == LEX_NUMBER_INVALID) return -1;
+
+	if (!(lex->flags & JSON_DECODE_INT_AS_REAL) && (c != '.') && (c != 'E') && (c != 'e')) {
+		return lex_scan_integer (lex, c, error);
 	}
 
 	if (c == '.') {
-		c = lex_get (lex, error);
-		if (!l_isdigit (c)) {
-			lex_unget (lex, c);
-			goto out;
-		}
-		lex_save (lex, c);
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
+		c = lex_scan_fraction (lex, error);
+		if (c == LEX_NUMBER_INVALID) return -1;
 	}
 
-	if (c == 'E' || c == 'e') {
-		c = lex_get_save (lex, error);
-		if (c == '+' || c == '-')
-			c = lex_get_save (lex, error);
-
-		if (!l_isdigit (c)) {
-			lex_unget_unsave (lex, c);
-			goto out;
-		}
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isdigit (c));
+	if ((c == 'E') || (c == 'e')) {
+		c = lex_scan_exponent (lex, error);
+		if (c == LEX_NUMBER_INVALID) return -1;
 	}
 
 	lex_unget_unsave (lex, c);
 
-	if (jsonp_strtod (&lex->saved_text, &doubleval)) {
+	double real = 0;
+	if (jsonp_strtod (&lex->saved_text, &real)) {
 		error_set (error, lex, json_error_numeric_overflow, "real number overflow");
-		goto out;
+		return -1;
 	}
 
 	lex->token = TOKEN_REAL;
-	lex->value.real = doubleval;
+	lex->value.real = real;
+
 	return 0;
 
-out:
-	return -1;
+}
+
+#define LEX_WORD_TRUE					"true"
+#define LEX_WORD_FALSE					"false"
+#define LEX_WORD_NULL					"null"
+
+// the whole word is read, so its error is clearer
+static void lex_scan_word (lex_t *lex, json_error_t *error) {
+
+	int c = 0;
+	do {
+		c = lex_get_save (lex, error);
+	} while (l_isalpha (c));
+
+	lex_unget_unsave (lex, c);
+
+	const char *saved_text = strbuffer_value (&lex->saved_text);
+
+	if (!strcmp (saved_text, LEX_WORD_TRUE)) lex->token = TOKEN_TRUE;
+	else if (!strcmp (saved_text, LEX_WORD_FALSE)) lex->token = TOKEN_FALSE;
+	else if (!strcmp (saved_text, LEX_WORD_NULL)) lex->token = TOKEN_NULL;
+	else lex->token = TOKEN_INVALID;
 
 }
 
@@ -1507,12 +1754,12 @@ static int lex_scan (
 
 	if (c == STREAM_STATE_EOF) {
 		lex->token = TOKEN_EOF;
-		goto out;
+		return lex->token;
 	}
 
 	if (c == STREAM_STATE_ERROR) {
 		lex->token = TOKEN_INVALID;
-		goto out;
+		return lex->token;
 	}
 
 	lex_save (lex, c);
@@ -1523,40 +1770,21 @@ static int lex_scan (
 	else if (c == '"')
 		lex_scan_string (lex, error);
 
-	else if (l_isdigit (c) || c == '-') {
-		if (lex_scan_number (lex, c, error))
-			goto out;
+	// a number that fails keeps its invalid token
+	else if (l_isdigit (c) || (c == '-')) {
+		(void) lex_scan_number (lex, c, error);
 	}
 
 	else if (l_isalpha (c)) {
-		/* eat up the whole identifier for clearer error messages */
-		const char *saved_text;
-
-		do
-			c = lex_get_save (lex, error);
-		while (l_isalpha (c));
-		lex_unget_unsave (lex, c);
-
-		saved_text = strbuffer_value (&lex->saved_text);
-
-		if (strcmp (saved_text, "true") == 0)
-			lex->token = TOKEN_TRUE;
-		else if (strcmp (saved_text, "false") == 0)
-			lex->token = TOKEN_FALSE;
-		else if (strcmp (saved_text, "null") == 0)
-			lex->token = TOKEN_NULL;
-		else
-			lex->token = TOKEN_INVALID;
+		lex_scan_word (lex, error);
 	}
 
+	// the rest of the UTF-8 sequence is saved, so its error is valid UTF-8
 	else {
-		/* save the rest of the input UTF-8 sequence to get an error
-		   message of valid UTF-8 */
 		lex_save_cached (lex);
 		lex->token = TOKEN_INVALID;
 	}
 
-out:
 	return lex->token;
 
 }
@@ -1600,90 +1828,106 @@ static void lex_close (lex_t *lex) {
 
 }
 
-/*** parser ***/
+// the parser
 
 static json_t *parse_value (
 	lex_t *lex, size_t flags, json_error_t *error
 );
+
+// the key of a member: a string without NUL bytes that is not repeated if they are rejected
+// returns the key, released with jsonp_free (), or NULL on error
+static char *parse_object_key (
+	lex_t *lex, size_t flags, json_error_t *error, const json_t *object
+) {
+
+	if (lex->token != TOKEN_STRING) {
+		error_set (error, lex, json_error_invalid_syntax, "string or '}' expected");
+		return NULL;
+	}
+
+	size_t length = 0;
+	char *key = lex_steal_string (lex, &length);
+	if (!key) return NULL;
+
+	if (memchr (key, '\0', length)) {
+		error_set (error, lex, json_error_null_byte_in_key, "NUL byte in object key not supported");
+	}
+
+	else if ((flags & JSON_REJECT_DUPLICATES) && json_object_get (object, key)) {
+		error_set (error, lex, json_error_duplicate_key, "duplicate object key");
+	}
+
+	else {
+		return key;
+	}
+
+	jsonp_free (key);
+
+	return NULL;
+
+}
+
+// a "key": value of the object
+// returns true if it was parsed and set
+static bool parse_object_member (
+	lex_t *lex, size_t flags, json_error_t *error, json_t *object
+) {
+
+	char *key = parse_object_key (lex, flags, error, object);
+	if (!key) return false;
+
+	bool parsed = false;
+
+	lex_scan (lex, error);
+	if (lex->token != ':') {
+		error_set (error, lex, json_error_invalid_syntax, "':' expected");
+	}
+
+	else {
+		lex_scan (lex, error);
+
+		json_t *value = parse_value (lex, flags, error);
+		parsed = value && !json_object_set_new_nocheck (object, key, value);
+	}
+
+	jsonp_free (key);
+
+	return parsed;
+
+}
 
 static json_t *parse_object (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
 	json_t *object = json_object ();
-	if (!object)
-		return NULL;
+	if (!object) return NULL;
 
 	lex_scan (lex, error);
-	if (lex->token == '}')
-		return object;
+	if (lex->token == '}') return object;
 
-	while (1) {
-		char *key;
-		size_t len;
-		json_t *value;
-
-		if (lex->token != TOKEN_STRING) {
-			error_set (error, lex, json_error_invalid_syntax, "string or '}' expected");
-			goto error;
-		}
-
-		key = lex_steal_string (lex, &len);
-		if (!key)
-			return NULL;
-		if (memchr (key, '\0', len)) {
-			jsonp_free (key);
-			error_set (error, lex, json_error_null_byte_in_key,
-					  "NUL byte in object key not supported");
-			goto error;
-		}
-
-		if (flags & JSON_REJECT_DUPLICATES) {
-			if (json_object_get (object, key)) {
-				jsonp_free (key);
-				error_set (error, lex, json_error_duplicate_key, "duplicate object key");
-				goto error;
-			}
-		}
+	bool parsed = true;
+	while (parsed) {
+		parsed = parse_object_member (lex, flags, error, object);
+		if (!parsed) break;
 
 		lex_scan (lex, error);
-		if (lex->token != ':') {
-			jsonp_free (key);
-			error_set (error, lex, json_error_invalid_syntax, "':' expected");
-			goto error;
-		}
-
-		lex_scan (lex, error);
-		value = parse_value (lex, flags, error);
-		if (!value) {
-			jsonp_free (key);
-			goto error;
-		}
-
-		if (json_object_set_new_nocheck (object, key, value)) {
-			jsonp_free (key);
-			goto error;
-		}
-
-		jsonp_free (key);
-
-		lex_scan (lex, error);
-		if (lex->token != ',')
-			break;
+		if (lex->token != ',') break;
 
 		lex_scan (lex, error);
 	}
 
-	if (lex->token != '}') {
+	if (parsed && (lex->token != '}')) {
 		error_set (error, lex, json_error_invalid_syntax, "'}' expected");
-		goto error;
+		parsed = false;
+	}
+
+	if (!parsed) {
+		json_decref (object);
+		object = NULL;
 	}
 
 	return object;
-
-error:
-	json_decref (object);
-	return NULL;
 
 }
 
@@ -1692,39 +1936,36 @@ static json_t *parse_array (
 ) {
 
 	json_t *array = json_array ();
-	if (!array)
-		return NULL;
+	if (!array) return NULL;
 
 	lex_scan (lex, error);
-	if (lex->token == ']')
-		return array;
+	if (lex->token == ']') return array;
 
+	bool parsed = true;
 	while (lex->token) {
-		json_t *elem = parse_value (lex, flags, error);
-		if (!elem)
-			goto error;
+		json_t *element = parse_value (lex, flags, error);
 
-		if (json_array_append_new (array, elem)) {
-			goto error;
-		}
+		// the array releases the element when it fails to append it
+		parsed = element && !json_array_append_new (array, element);
+		if (!parsed) break;
 
 		lex_scan (lex, error);
-		if (lex->token != ',')
-			break;
+		if (lex->token != ',') break;
 
 		lex_scan (lex, error);
 	}
 
-	if (lex->token != ']') {
+	if (parsed && (lex->token != ']')) {
 		error_set (error, lex, json_error_invalid_syntax, "']' expected");
-		goto error;
+		parsed = false;
+	}
+
+	if (!parsed) {
+		json_decref (array);
+		array = NULL;
 	}
 
 	return array;
-
-error:
-	json_decref (array);
-	return NULL;
 
 }
 
@@ -1806,7 +2047,21 @@ static json_t *parse_value (
 
 }
 
-static json_t *parse_json (
+// a parse that ran out of its memory says why, whatever error its parser saw after that
+static void parse_json_exhausted (lex_t *lex, json_error_t *error) {
+
+	if (json_parse_exhausted) {
+		if (error) error->text[0] = '\0';
+
+		error_set (
+			error, lex, json_error_out_of_memory,
+			"the json needs more memory than its size allows"
+		);
+	}
+
+}
+
+static json_t *parse_json_value (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
@@ -1838,8 +2093,24 @@ static json_t *parse_json (
 
 	if (error) {
 		/* Save the position even though there was no error */
-		error->position = (int)lex->stream.position;
+		error->position = json_error_position (lex->stream.position);
 	}
+
+	return result;
+
+}
+
+// the memory of the values is limited by the size of the document
+static json_t *parse_json (
+	lex_t *lex, size_t flags, json_error_t *error
+) {
+
+	json_parse_budget_start ();
+
+	json_t *result = parse_json_value (lex, flags, error);
+	if (!result) parse_json_exhausted (lex, error);
+
+	json_parse_budget_end ();
 
 	return result;
 
@@ -1944,6 +2215,12 @@ json_t *json_loadb (
 
 }
 
+static int file_get_func (void *data) {
+
+	return fgetc ((FILE *) data);
+
+}
+
 json_t *json_loadf (
 	FILE *input, size_t flags, json_error_t *error
 ) {
@@ -1964,7 +2241,7 @@ json_t *json_loadf (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)fgetc, flags, input))
+	if (lex_init (&lex, file_get_func, flags, input))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -1974,10 +2251,10 @@ json_t *json_loadf (
 
 }
 
-static int fd_get_func (int *fd) {
+static int fd_get_func (void *data) {
 
 	uint8_t c = 0;
-	if (read (*fd, &c, 1) == 1)
+	if (read (*(int *) data, &c, 1) == 1)
 		return (int) c;
 	
 	return EOF;
@@ -1988,16 +2265,11 @@ json_t *json_loadfd (
 	int input, size_t flags, json_error_t *error
 ) {
 
-	lex_t lex = { 0 };
+	lex_t lex = CERVER_ZERO_INITIALIZER;
 	const char *source;
 	json_t *result;
 
-	#ifdef HAVE_UNISTD_H
-	if (input == STDIN_FILENO)
-		source = "<stdin>";
-	else
-	#endif
-		source = "<stream>";
+	source = (input == STDIN_FILENO) ? "<stdin>" : "<stream>";
 
 	jsonp_error_init (error, source);
 
@@ -2006,7 +2278,7 @@ json_t *json_loadfd (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)fd_get_func, flags, &input))
+	if (lex_init (&lex, fd_get_func, flags, &input))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -2079,7 +2351,7 @@ json_t *json_load_callback (
 	json_error_t *error
 ) {
 
-	lex_t lex = { 0 };
+	lex_t lex = CERVER_ZERO_INITIALIZER;
 	json_t *result = NULL;
 
 	callback_data_t stream_data;
@@ -2095,7 +2367,7 @@ json_t *json_load_callback (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)callback_get, flags, &stream_data))
+	if (lex_init (&lex, callback_get, flags, &stream_data))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -2211,7 +2483,7 @@ static void prev_token (scanner_t *s) {
 
 }
 
-static void set_error (
+CERVER_PRINTF_FORMAT (4, 5) static void set_error (
 	scanner_t *s, const char *source, enum json_error_code code,
 	const char *fmt, ...
 ) {
@@ -2331,73 +2603,120 @@ static char *read_string (
 
 }
 
+// the format of an optional value, that can be NULL
+#define PACK_OPTIONAL_VALUE				'*'
+
+// the token that follows the value, without moving the scanner
+static char pack_peek_next (scanner_t *s) {
+
+	next_token (s);
+	const char next = token (s);
+	prev_token (s);
+
+	return next;
+
+}
+
+// a format that ends before its object or array, it can not be recovered from
+static bool pack_check_format_end (scanner_t *s) {
+
+	if (!token (s)) {
+		set_error (s, "<format>", json_error_invalid_format, "Unexpected end of format string");
+		return false;
+	}
+
+	return true;
+
+}
+
+// a "key": value of the object, the errors of the arguments are kept in the scanner
+// returns false on an error of the format, that ends the object
+static bool pack_object_member (scanner_t *s, va_list *ap, json_t *object) {
+
+	if (!pack_check_format_end (s)) return false;
+
+	if (token (s) != 's') {
+		set_error (s, "<format>", json_error_invalid_format, "Expected format 's', got '%c'", token (s));
+		return false;
+	}
+
+	size_t length = 0;
+	int ours = 0;
+	char *key = read_string (s, ap, "object key", &length, &ours, 0);
+
+	next_token (s);
+
+	const char value_format = pack_peek_next (s);
+
+	json_t *value = pack (s, ap);
+	if (!value) {
+		if (value_format != PACK_OPTIONAL_VALUE) {
+			set_error (s, "<args>", json_error_null_value, "NULL object value");
+			s->has_error = 1;
+		}
+	}
+
+	else if (s->has_error) {
+		json_decref (value);
+	}
+
+	else if (json_object_set_new_nocheck (object, key, value)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Unable to add key \"%s\"", key);
+		s->has_error = 1;
+	}
+
+	if (ours) jsonp_free (key);
+
+	next_token (s);
+
+	return true;
+
+}
+
 static json_t *pack_object (scanner_t *s, va_list *ap) {
 
 	json_t *object = json_object ();
 	next_token (s);
 
-	while (token (s) != '}') {
-		char *key;
-		size_t len;
-		int ours;
-		json_t *value;
-		char valueOptional;
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			goto error;
-		}
-
-		if (token (s) != 's') {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token (s));
-			goto error;
-		}
-
-		key = read_string (s, ap, "object key", &len, &ours, 0);
-
-		next_token (s);
-
-		next_token (s);
-		valueOptional = token (s);
-		prev_token (s);
-
-		value = pack (s, ap);
-		if (!value) {
-			if (ours)
-				jsonp_free (key);
-
-			if (valueOptional != '*') {
-				set_error (s, "<args>", json_error_null_value, "NULL object value");
-				s->has_error = 1;
-			}
-
-			next_token (s);
-			continue;
-		}
-
-		if (s->has_error)
-			json_decref (value);
-
-		if (!s->has_error && json_object_set_new_nocheck (object, key, value)) {
-			set_error (s, "<internal>", json_error_out_of_memory,
-					  "Unable to add key \"%s\"", key);
-			s->has_error = 1;
-		}
-
-		if (ours)
-			jsonp_free (key);
-
-		next_token (s);
+	bool packed = true;
+	while (packed && (token (s) != '}')) {
+		packed = pack_object_member (s, ap, object);
 	}
 
-	if (!s->has_error)
-		return object;
+	if (!packed || s->has_error) {
+		json_decref (object);
+		object = NULL;
+	}
 
-error:
-	json_decref (object);
-	return NULL;
+	return object;
+
+}
+
+// a value of the array, the errors of the arguments are kept in the scanner
+// returns false on an error of the format, that ends the array
+static bool pack_array_element (scanner_t *s, va_list *ap, json_t *array) {
+
+	if (!pack_check_format_end (s)) return false;
+
+	const char value_format = pack_peek_next (s);
+
+	json_t *value = pack (s, ap);
+	if (!value) {
+		if (value_format != PACK_OPTIONAL_VALUE) s->has_error = 1;
+	}
+
+	else if (s->has_error) {
+		json_decref (value);
+	}
+
+	else if (json_array_append_new (array, value)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Unable to append to array");
+		s->has_error = 1;
+	}
+
+	next_token (s);
+
+	return true;
 
 }
 
@@ -2406,49 +2725,17 @@ static json_t *pack_array (scanner_t *s, va_list *ap) {
 	json_t *array = json_array ();
 	next_token (s);
 
-	while (token (s) != ']') {
-		json_t *value;
-		char valueOptional;
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			/* Format string errors are unrecoverable. */
-			goto error;
-		}
-
-		next_token (s);
-		valueOptional = token (s);
-		prev_token (s);
-
-		value = pack (s, ap);
-		if (!value) {
-			if (valueOptional != '*') {
-				s->has_error = 1;
-			}
-
-			next_token (s);
-			continue;
-		}
-
-		if (s->has_error)
-			json_decref (value);
-
-		if (!s->has_error && json_array_append_new (array, value)) {
-			set_error (s, "<internal>", json_error_out_of_memory,
-					  "Unable to append to array");
-			s->has_error = 1;
-		}
-
-		next_token (s);
+	bool packed = true;
+	while (packed && (token (s) != ']')) {
+		packed = pack_array_element (s, ap, array);
 	}
 
-	if (!s->has_error)
-		return array;
+	if (!packed || s->has_error) {
+		json_decref (array);
+		array = NULL;
+	}
 
-error:
-	json_decref (array);
-	return NULL;
+	return array;
 
 }
 
@@ -2599,137 +2886,201 @@ static json_t *pack (scanner_t *s, va_list *ap) {
 
 static int unpack (scanner_t *s, json_t *root, va_list *ap);
 
+// how an object format ends: '!' every key must be unpacked, '*' some can be left
+#define UNPACK_STRICT_NONE				0
+#define UNPACK_STRICT_ALL				1
+#define UNPACK_STRICT_SOME				-1
+
+#define UNPACK_STRICT_ALL_FORMAT		'!'
+#define UNPACK_STRICT_SOME_FORMAT		'*'
+#define UNPACK_OPTIONAL_FORMAT			'?'
+
+#define UNPACK_KEYS_SEPARATOR			", "
+
+// what an object of the format keeps while its members are unpacked:
+// a set (a hashtable) of the keys that were unpacked, because the same key can be unpacked many times
+typedef struct UnpackObject {
+
+	hashtable_t keys;
+	int strict;
+	bool got_optional;
+
+} UnpackObject;
+
+// the value of the key, NULL when the object is skipped or an optional key is missing
+// returns 0 on success, -1 if a key that is not optional is missing
+static int unpack_object_value (
+	scanner_t *s, json_t *root, const char *key, const bool optional, json_t **value
+) {
+
+	*value = root ? json_object_get (root, key) : NULL;
+
+	if (root && !*value && !optional) {
+		set_error (s, "<validation>", json_error_item_not_found, "Object item not found: %s", key);
+		return -1;
+	}
+
+	return 0;
+
+}
+
+// a "key": value of the format, the key is the next argument
+// returns 0 on success, -1 on error
+static int unpack_object_member (
+	scanner_t *s, json_t *root, va_list *ap, UnpackObject *unpacked
+) {
+
+	if (token (s) != 's') {
+		set_error (s, "<format>", json_error_invalid_format, "Expected format 's', got '%c'", token (s));
+		return -1;
+	}
+
+	const char *key = va_arg (*ap, const char *);
+	if (!key) {
+		set_error (s, "<args>", json_error_null_value, "NULL object key");
+		return -1;
+	}
+
+	next_token (s);
+
+	bool optional = false;
+	if (token (s) == UNPACK_OPTIONAL_FORMAT) {
+		optional = true;
+		unpacked->got_optional = true;
+		next_token (s);
+	}
+
+	json_t *value = NULL;
+	if (unpack_object_value (s, root, key, optional, &value)) return -1;
+
+	if (unpack (s, value, ap)) return -1;
+
+	(void) hashtable_set (&unpacked->keys, key, json_null ());
+
+	next_token (s);
+
+	return 0;
+
+}
+
+// the members of the format up to its '}'
+// returns 0 on success, -1 on error
+static int unpack_object_members (
+	scanner_t *s, json_t *root, va_list *ap, UnpackObject *unpacked
+) {
+
+	next_token (s);
+
+	while (token (s) != '}') {
+		if (unpacked->strict != UNPACK_STRICT_NONE) {
+			set_error (
+				s, "<format>", json_error_invalid_format,
+				"Expected '}' after '%c', got '%c'",
+				(unpacked->strict == UNPACK_STRICT_ALL) ? UNPACK_STRICT_ALL_FORMAT : UNPACK_STRICT_SOME_FORMAT,
+				token (s)
+			);
+
+			return -1;
+		}
+
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format, "Unexpected end of format string");
+			return -1;
+		}
+
+		if ((token (s) == UNPACK_STRICT_ALL_FORMAT) || (token (s) == UNPACK_STRICT_SOME_FORMAT)) {
+			unpacked->strict = (token (s) == UNPACK_STRICT_ALL_FORMAT) ? UNPACK_STRICT_ALL : UNPACK_STRICT_SOME;
+			next_token (s);
+		}
+
+		else if (unpack_object_member (s, root, ap, unpacked)) {
+			return -1;
+		}
+	}
+
+	return 0;
+
+}
+
+// adds a key that was left to the list of the error message,
+// keys_result is 1 before the list is created, 0 while it is fine, -1 on error
+static int unpack_object_left_key (strbuffer_t *left_keys, int keys_result, const char *key) {
+
+	if (keys_result == 1) {
+		keys_result = strbuffer_init (left_keys);
+	}
+
+	else if (!keys_result) {
+		keys_result = strbuffer_append_bytes (left_keys, UNPACK_KEYS_SEPARATOR, strlen (UNPACK_KEYS_SEPARATOR));
+	}
+
+	if (!keys_result) keys_result = strbuffer_append_bytes (left_keys, key, strlen (key));
+
+	return keys_result;
+
+}
+
+// with '!' or JSON_STRICT, every key of the object that is not optional must have been unpacked
+// returns 0 on success, -1 if keys were left
+static int unpack_object_check_left (scanner_t *s, json_t *root, UnpackObject *unpacked) {
+
+	if (!unpacked->got_optional && (json_object_size (root) == unpacked->keys.size)) return 0;
+
+	int keys_result = 1;
+	strbuffer_t left_keys;
+	long left = 0;
+
+	const char *key = NULL;
+	json_t *value = NULL;
+	json_object_foreach (root, key, value) {
+		if (!hashtable_get (&unpacked->keys, key)) {
+			left += 1;
+			keys_result = unpack_object_left_key (&left_keys, keys_result, key);
+		}
+	}
+
+	if (!left) return 0;
+
+	set_error (
+		s, "<validation>", json_error_end_of_input_expected,
+		"%li object item(s) left unpacked: %s", left,
+		keys_result ? "<unknown>" : strbuffer_value (&left_keys)
+	);
+
+	strbuffer_close (&left_keys);
+
+	return -1;
+
+}
+
 static int unpack_object (scanner_t *s, json_t *root, va_list *ap) {
 
-	int ret = -1;
-	int strict = 0;
-	int gotopt = 0;
+	UnpackObject unpacked = CERVER_ZERO_INITIALIZER;
+	unpacked.strict = UNPACK_STRICT_NONE;
+	unpacked.got_optional = false;
 
-	/* Use a set (emulated by a hashtable) to check that all object
-	   keys are accessed. Checking that the correct number of keys
-	   were accessed is not enough, as the same key can be unpacked
-	   multiple times.
-	*/
-	hashtable_t key_set;
-
-	if (hashtable_init (&key_set)) {
+	if (hashtable_init (&unpacked.keys)) {
 		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		return -1;
 	}
 
+	int retval = -1;
+
 	if (root && !json_is_object (root)) {
-		set_error (s, "<validation>", json_error_wrong_type, "Expected object, got %s",
-				  type_name (root));
-		goto out;
-	}
-	next_token (s);
-
-	while (token (s) != '}') {
-		const char *key;
-		json_t *value;
-		int opt = 0;
-
-		if (strict != 0) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected '}' after '%c', got '%c'", (strict == 1 ? '!' : '*'),
-					  token (s));
-			goto out;
-		}
-
-		if (!token (s)) {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Unexpected end of format string");
-			goto out;
-		}
-
-		if (token (s) == '!' || token (s) == '*') {
-			strict = (token (s) == '!' ? 1 : -1);
-			next_token (s);
-			continue;
-		}
-
-		if (token (s) != 's') {
-			set_error (s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token (s));
-			goto out;
-		}
-
-		key = va_arg (*ap, const char *);
-		if (!key) {
-			set_error (s, "<args>", json_error_null_value, "NULL object key");
-			goto out;
-		}
-
-		next_token (s);
-
-		if (token (s) == '?') {
-			opt = gotopt = 1;
-			next_token (s);
-		}
-
-		if (!root) {
-			/* skipping */
-			value = NULL;
-		} else {
-			value = json_object_get (root, key);
-			if (!value && !opt) {
-				set_error (s, "<validation>", json_error_item_not_found,
-						  "Object item not found: %s", key);
-				goto out;
-			}
-		}
-
-		if (unpack (s, value, ap))
-			goto out;
-
-		hashtable_set (&key_set, key, json_null ());
-		next_token (s);
+		set_error (s, "<validation>", json_error_wrong_type, "Expected object, got %s", type_name (root));
 	}
 
-	if (strict == 0 && (s->flags & JSON_STRICT))
-		strict = 1;
+	else if (!unpack_object_members (s, root, ap, &unpacked)) {
+		if ((unpacked.strict == UNPACK_STRICT_NONE) && (s->flags & JSON_STRICT)) unpacked.strict = UNPACK_STRICT_ALL;
 
-	if (root && strict == 1) {
-		/* We need to check that all non optional items have been parsed */
-		const char *key;
-		/* keys_res is 1 for uninitialized, 0 for success, -1 for error. */
-		int keys_res = 1;
-		strbuffer_t unrecognized_keys;
-		json_t *value;
-		long unpacked = 0;
-
-		if (gotopt || json_object_size (root) != key_set.size) {
-			json_object_foreach (root, key, value) {
-				if (!hashtable_get (&key_set, key)) {
-					unpacked++;
-
-					/* Save unrecognized keys for the error message */
-					if (keys_res == 1) {
-						keys_res = strbuffer_init (&unrecognized_keys);
-					} else if (!keys_res) {
-						keys_res = strbuffer_append_bytes (&unrecognized_keys, ", ", 2);
-					}
-
-					if (!keys_res)
-						keys_res =
-							strbuffer_append_bytes (&unrecognized_keys, key, strlen (key));
-				}
-			}
-		}
-		if (unpacked) {
-			set_error (s, "<validation>", json_error_end_of_input_expected,
-					  "%li object item(s) left unpacked: %s", unpacked,
-					  keys_res ? "<unknown>" : strbuffer_value (&unrecognized_keys));
-			strbuffer_close (&unrecognized_keys);
-			goto out;
-		}
+		retval = (root && (unpacked.strict == UNPACK_STRICT_ALL)) ?
+			unpack_object_check_left (s, root, &unpacked) : 0;
 	}
 
-	ret = 0;
+	hashtable_close (&unpacked.keys);
 
-out:
-	hashtable_close (&key_set);
-	return ret;
+	return retval;
+
 }
 
 static int unpack_array (scanner_t *s, json_t *root, va_list *ap) {
@@ -2856,6 +3207,13 @@ static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 				return -1;
 			}
 
+			// an integer that does not fit in an int is an error, it was cut before
+			if (root && ((json_integer_value (root) > INT_MAX) || (json_integer_value (root) < INT_MIN))) {
+				set_error (s, "<validation>", json_error_numeric_overflow,
+						  "Integer %" JSON_INTEGER_FORMAT " does not fit in an int", json_integer_value (root));
+				return -1;
+			}
+
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
 				int *target = va_arg (*ap, int *);
 				if (root)
@@ -2959,7 +3317,7 @@ json_t *json_vpack_ex (
 	const char *fmt, va_list ap
 ) {
 
-	scanner_t s = { 0 };
+	scanner_t s = CERVER_ZERO_INITIALIZER;
 	va_list ap_copy;
 	json_t *value = NULL;
 
@@ -3026,7 +3384,7 @@ int json_vunpack_ex (
 	const char *fmt, va_list ap
 ) {
 
-	scanner_t s = { 0 };
+	scanner_t s = CERVER_ZERO_INITIALIZER;
 	va_list ap_copy;
 
 	if (!root) {
@@ -3105,10 +3463,19 @@ static void print_json_indent (int indent) {
 
 }
 
-static const char *json_plural (int count) {
-	
+// the values of an array and the root have no key
+#define JSON_PRINT_NO_KEY			"(value)"
+
+static const char *json_plural (size_t count) {
+
 	return count == 1 ? "" : "s";
-	
+
+}
+
+static const char *json_print_key (const char *key) {
+
+	return key ? key : JSON_PRINT_NO_KEY;
+
 }
 
 static void print_json_object (
@@ -3120,7 +3487,7 @@ static void print_json_object (
 	const char *key = NULL;
 	json_t *value = NULL;
 	size_t size = json_object_size (element);
-	(void) printf ("JSON Object of %lu pair %s:\n", size, json_plural (size));
+	(void) printf ("JSON Object of %zu pair%s:\n", size, json_plural (size));
 	json_object_foreach (element, key, value) {
 		print_json_indent (indent + 2);
 		print_json_aux (value, indent + 2, key);
@@ -3135,7 +3502,7 @@ static void print_json_array (
 	print_json_indent (indent);
 
 	size_t size = json_array_size (element);
-	(void) printf ("JSON Array of %lu element%s:\n", size, json_plural (size));
+	(void) printf ("JSON Array of %zu element%s:\n", size, json_plural (size));
 	for (size_t i = 0; i < size; i++) {
 		print_json_aux (json_array_get (element, i), indent + 2, key);
 	}
@@ -3147,7 +3514,7 @@ static void print_json_string (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[String] %s: \"%s\"\n", key, json_string_value (element));
+	(void) printf ("[String] %s: \"%s\"\n", json_print_key (key), json_string_value (element));
 
 }
 
@@ -3158,7 +3525,7 @@ static void print_json_integer (
 	print_json_indent (indent);
 	(void) printf (
 		"[Integer] %s: \"%" JSON_INTEGER_FORMAT "\"\n",
-		key, json_integer_value (element)
+		json_print_key (key), json_integer_value (element)
 	);
 
 }
@@ -3168,7 +3535,7 @@ static void print_json_real (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("[Real] %s: %f\n", key, json_real_value (element));
+	(void) printf ("[Real] %s: %f\n", json_print_key (key), json_real_value (element));
 
 }
 
@@ -3177,7 +3544,7 @@ static void print_json_true (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: True\n", key);
+	(void) printf ("%s: True\n", json_print_key (key));
 
 }
 
@@ -3186,7 +3553,7 @@ static void print_json_false (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: False\n", key);
+	(void) printf ("%s: False\n", json_print_key (key));
 
 }
 
@@ -3195,7 +3562,7 @@ static void print_json_null (
 ) {
 
 	print_json_indent (indent);
-	(void) printf ("%s: NULL\n", key);
+	(void) printf ("%s: NULL\n", json_print_key (key));
 
 }
 
@@ -3215,7 +3582,7 @@ static void print_json_aux (
 
 		default: {
 			(void) fprintf (
-				stderr, "unrecognized JSON type %u\n", json_typeof (element)
+				stderr, "unrecognized JSON type %u\n", (unsigned int) json_typeof (element)
 			);
 		} break;
 	}
@@ -3223,9 +3590,9 @@ static void print_json_aux (
 }
 
 void json_print (json_t *root) {
-	
-	print_json_aux (root, 0, NULL);
-	
+
+	if (root) print_json_aux (root, 0, NULL);
+
 }
 
 #pragma endregion

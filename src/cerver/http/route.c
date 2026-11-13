@@ -262,19 +262,25 @@ void http_route_stats_snapshot (
 
 }
 
+void http_route_file_stats_init (HttpRouteFileStats *route_file_stats) {
+
+	(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
+
+	route_file_stats->first = true;
+
+	route_file_stats->min_n_files = SIZE_MAX;
+
+	route_file_stats->min_file_size = SIZE_MAX;
+
+	route_file_stats->mutex = NULL;
+
+}
+
 HttpRouteFileStats *http_route_file_stats_new (void) {
 
 	HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) malloc (sizeof (HttpRouteFileStats));
 	if (route_file_stats) {
-		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
-
-		route_file_stats->first = true;
-
-		route_file_stats->min_n_files = SIZE_MAX;
-
-		route_file_stats->min_file_size = SIZE_MAX;
-
-		route_file_stats->mutex = NULL;
+		http_route_file_stats_init (route_file_stats);
 	}
 
 	return route_file_stats;
@@ -677,7 +683,7 @@ void http_route_print (const HttpRoute *route) {
 		cerver_log_msg ("\tAuth: %s", http_route_auth_type_to_string (route->auth_type));
 
 		if (route->children->size) {
-			cerver_log_msg ("\tChildren (%ld):", route->children->size);
+			cerver_log_msg ("\tChildren (%zu):", route->children->size);
 			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
 				http_route_print_child ((HttpRoute *) le->data);
 			}

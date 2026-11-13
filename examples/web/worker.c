@@ -75,6 +75,8 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_key_value_send (
 		http_receive, HTTP_STATUS_OK,
 		"oki", "doki"
@@ -124,6 +126,8 @@ void worker_start_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	if (!worker_resume (worker)) {
 		(void) http_response_json_key_value_send (
 			http_receive, HTTP_STATUS_OK,
@@ -147,6 +151,8 @@ void worker_stop_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	if (!worker_stop (worker)) {
 		(void) http_response_json_key_value_send (
 			http_receive, HTTP_STATUS_OK,
@@ -168,7 +174,7 @@ void worker_stop_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
@@ -243,14 +249,12 @@ int main (int argc, char **argv) {
 				web_cerver->info->name
 			);
 
-			cerver_delete (web_cerver);
+			(void) cerver_teardown (web_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (web_cerver);
 	}
 
 	cerver_end ();

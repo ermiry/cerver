@@ -78,6 +78,81 @@ static void utils_tests_base64_decode (void) {
 
 }
 
+// the inputs of every length up to this size are encoded and decoded back
+#define BASE64URL_TEST_MAX_LENGTH		(1 << 7)
+#define BASE64URL_TEST_BUFFER_SIZE		(1 << 9)
+
+// the vectors of RFC 4648 §10 without padding, and the two characters of the url alphabet
+static void utils_tests_base64url_vectors (void) {
+
+	static const char *inputs[] = { "", "f", "fo", "foo", "foob", "fooba", "foobar" };
+	static const char *outputs[] = { "", "Zg", "Zm8", "Zm9v", "Zm9vYg", "Zm9vYmE", "Zm9vYmFy" };
+
+	char encoded[BASE64URL_TEST_BUFFER_SIZE] = { 0 };
+	for (size_t i = 0; i < (sizeof (inputs) / sizeof (inputs[0])); i++) {
+		const size_t length = strlen (inputs[i]);
+		test_check_unsigned_eq (
+			base64url_encode (encoded, (const unsigned char *) inputs[i], length),
+			strlen (outputs[i]), NULL
+		);
+
+		test_check_str_eq (encoded, outputs[i], NULL);
+		test_check_unsigned_eq (base64url_encode_length (length), strlen (outputs[i]), NULL);
+	}
+
+	// 0xfb 0xff are "+/8" in base64 and "-_8" in base64url
+	const unsigned char url_bytes[] = { 0xfb, 0xff };
+	(void) base64url_encode (encoded, url_bytes, sizeof (url_bytes));
+	test_check_str_eq (encoded, "-_8", NULL);
+
+}
+
+static void utils_tests_base64url_round_trip (void) {
+
+	unsigned char input[BASE64URL_TEST_MAX_LENGTH] = { 0 };
+	char encoded[BASE64URL_TEST_BUFFER_SIZE] = { 0 };
+	unsigned char decoded[BASE64URL_TEST_BUFFER_SIZE] = { 0 };
+
+	for (size_t length = 0; length < BASE64URL_TEST_MAX_LENGTH; length++) {
+		for (size_t i = 0; i < length; i++) input[i] = (unsigned char) ((i * 37 + length) & 0xFF);
+
+		const size_t encoded_length = base64url_encode (encoded, input, length);
+
+		size_t decoded_length = 0;
+		test_check_unsigned_eq (base64url_decode (decoded, &decoded_length, encoded, encoded_length), 0, NULL);
+		test_check_unsigned_eq (decoded_length, length, NULL);
+		test_check (!memcmp (decoded, input, length), "base64url did not decode its own encoding");
+		test_check (decoded_length <= base64url_decode_length (encoded_length), NULL);
+	}
+
+}
+
+// every token has a single valid form
+static void utils_tests_base64url_canonical (void) {
+
+	static const char *invalid[] = {
+		"Zm9v+", "Zm9v/", "Zg==", "Zg=", "Zm9", "Z", "Zm9vY", "Zh", "Zm9vYh", "Zm 9v", "Zm9v\n"
+	};
+
+	unsigned char decoded[BASE64URL_TEST_BUFFER_SIZE] = { 0 };
+	size_t decoded_length = 0;
+
+	// "Zm9", "Zh" and "Zm9vYh" have the unused bits of their last character set:
+	// "Zm8", "Zg" and "Zm9vYg" are the valid forms of the same bytes
+	for (size_t i = 0; i < (sizeof (invalid) / sizeof (invalid[0])); i++) {
+		const char *encoded = invalid[i];
+		test_check_unsigned_eq (base64url_decode (decoded, &decoded_length, encoded, strlen (encoded)), 1, encoded);
+		test_check_unsigned_eq (decoded_length, 0, NULL);
+	}
+
+	test_check_unsigned_eq (base64url_decode (decoded, &decoded_length, "Zm8", 3), 0, NULL);
+	test_check_unsigned_eq (decoded_length, 2, NULL);
+
+	test_check_unsigned_eq (base64url_decode (NULL, &decoded_length, "Zg", 2), 1, NULL);
+	test_check_unsigned_eq (base64url_decode (decoded, NULL, "Zg", 2), 1, NULL);
+
+}
+
 void utils_tests_base64 (void) {
 
 	(void) printf ("Testing UTILS base64...\n");
@@ -85,6 +160,12 @@ void utils_tests_base64 (void) {
 	utils_tests_base64_encode ();
 
 	utils_tests_base64_decode ();
+
+	utils_tests_base64url_vectors ();
+
+	utils_tests_base64url_round_trip ();
+
+	utils_tests_base64url_canonical ();
 
 	(void) printf ("Done!\n");
 

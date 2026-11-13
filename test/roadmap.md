@@ -475,6 +475,50 @@ Los tests de la librería no compilan contra la 2.0b-64 (la API es nueva), así 
 El mutante del `100 Continue` es equivalente: si no se puede mandar, el `recv` siguiente encuentra el EOF o el reset
 en la misma etapa. El arreglo es defensivo.
 
+### 2.0b-67, la seguridad de JWT y JSON
+
+Lo que se puede hacer con la API de la 2.0b-66 se vio fallar contra ella (`checks.c` del contexto de la sesión, con
+ASan y TSan); lo demás usa la API nueva (`jwt/key.h`, los setters, `base64url_*`).
+
+| Test | Qué fija | Contra la 2.0b-66 |
+|---|---|---|
+| `test/http/tokens.c` `tokens_encode_empty` | Un token sin valores no desborda el buffer del encode | ASan: stack-buffer-overflow |
+| `tokens_hmac_signature` | Una firma cambiada, cortada, más larga o vacía se rechaza | — (la comparación ahora es en tiempo constante) |
+| `tokens_algorithm` | HS256 con el PEM público como secreto se rechaza (con la llave y con la API vieja), `none` y los nombres en otras mayúsculas también | `jwt_str_alg ("hs256")` era HS256 |
+| `tokens_parts` | Base64url canónico, tres partes, objetos sin llaves repetidas | el `=`, `{"alg":"HS256","alg":"none"}` y `[]` se aceptaban |
+| `tokens_keys`, `tokens_ecdsa` | El tipo, la curva y la fuerza de cada llave; ES256 con su curva y S bajo | — (API nueva) |
+| `tokens_cerver_keys` | Una llave que no corresponde detiene el cerver; `NONE` no se acepta | el setter aceptaba `NONE` |
+| `tokens_cerver_claims` | `exp` / `nbf` con leeway y que fallan cerrados, `exp` requerido, `iss`, `aud` (texto o arreglo), el tamaño máximo | — (API nueva) |
+| `tokens_cerver_bearer` | La API de `auth.c`: prefijos inválidos, sin llave, el JSON con escape, `exp` de 64 bits | ASan: lectura fuera del string con `"abc"` |
+| `test/jwt/test_certs.c` | Cada ES con su curva; firmar o verificar con otra curva falla | upstream firmaba ES256 / ES512 con P-384 |
+| `test/utils/base64.c` (base64url) | Los vectores del RFC 4648, el round trip de 0 a 127 bytes, los bits sobrantes y los caracteres inválidos | — (API nueva) |
+| `test/http/responses.c` (json) | Escape, los reales con su forma corta, la respuesta dueña de su cuerpo | JSON inválido; heap-use-after-free; `data_ref` en `true` |
+| `test/json/safety.c` | El presupuesto de memoria, underflow / overflow, locale, `i` fuera de rango, la profundidad del dump, el `source` del error, el UTF-8 inválido, `json_print (NULL)` | se aceptaba `[{},{}...]` de 1 MB, `1e-400` fallaba, `4294967297` se cortaba, el dump profundo reventaba la pila |
+| `json_tests_seed` (primero del binario) | Ocho hilos crean los primeros objetos del proceso | TSan: data race en `hashtable_seed` (3 de 3) |
+| `test/json/test_dump.c` `dumpfd` | `json_dumpfd ()` funciona | nunca se compilaba (`HAVE_UNISTD_H`) y siempre fallaba |
+| `test/fuzz/jwt.c`, `test/fuzz/json.c` | Los modos raw / HS256 con round trip / ES256 / bearer de `auth.c`; los flags de carga, `dumpb` y pack / unpack | — |
+
+### 2.0b-68, los objetos calientes de HTTP
+
+El reciclado no corrige un bug: cada test se validó con un mutante (`scratchpad/mutants/` de la sesión), y los
+umbrales de asignaciones contra la 2.0b-67.
+
+| Test | Qué fija | Cómo se vio fallar |
+|---|---|---|
+| `test/http/recycle.c` `buffer_classes` | Cada tamaño toma la clase potencia de 2 más chica que lo contiene (de 2^8 a 2^16), uno más grande su tamaño exacto | Mutante: `size` en lugar de `size - 1` en la clase (2^9 daba 2^10); el de `<` en lugar de `<=` es equivalente |
+| `buffer_reused`, `buffer_inexact` | Un búfer de una clase se reusa; uno cuya capacidad no es una clase se libera | Mutante: guardar el búfer inexacto en la clase de abajo (valgrind: escritura inválida al llenar la clase con uno de 200 bytes) |
+| `response_reused` | Una respuesta reciclada no tiene las cabeceras, la cabecera ni el cuerpo de la anterior | Mutante: el `reset` sin limpiar la tabla de cabeceras |
+| `response_header_buffer` | La cabecera de JSON va en el `header_buffer`; una que no cabe se aloca y se libera | Mutante: `http_response_header_is_allocated ()` que nunca libera (valgrind, ASan) |
+| `threads` | Cuatro hilos toman y devuelven respuestas y búferes a la vez y terminan con ellos en su caché | TSan, ASan |
+| `test/http/receive.c` (capacidad del body) | El body se reserva una vez desde su `Content-Length`, en la clase que lo contiene | — (ajustado al tamaño de la clase) |
+| `test/performance.sh` | GET 0 y POST JSON 14 asignaciones por petición | La 2.0b-67 da 1 y 19 |
+
+### 2.0b-69, el estilo de JWT y JSON
+
+Sin tests nuevos: el estilo no cambia el comportamiento. Lo validan los tests de `test/jwt/`, `test/json/` y
+`test/http/` (los tokens, las respuestas), el fuzz de `json` y `jwt` a 300 s, los símbolos exportados iguales a los
+de la 2.0b-68 y `internal.o` con el mismo código.
+
 ### Pendiente
 
 - **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `scheduled.yml`.

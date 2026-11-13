@@ -7,148 +7,211 @@
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
+#include <cerver/handler.h>
+#include <cerver/packets.h>
 
 #include <cerver/game/game.h>
 #include <cerver/game/gametype.h>
+#include <cerver/game/lobby.h>
+#include <cerver/game/player.h>
 
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
+#define GAME_EXAMPLE_PORT				7000
+#define GAME_EXAMPLE_CONNECTION_QUEUE	2
+#define GAME_EXAMPLE_BUFFER_SIZE		4096
+#define GAME_EXAMPLE_POLL_TIMEOUT		2000
+
+#define GAME_EXAMPLE_TYPE				"arcade"
+#define GAME_EXAMPLE_MAX_PLAYERS		4
+#define GAME_EXAMPLE_PLAYER_TIMEOUT		60
+#define GAME_EXAMPLE_FPS				10
+
 static Cerver *my_cerver = NULL;
 
-// correctly closes any on-going server and process when quitting the appplication
-static void my_game_end (int dummy) {
-	
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		printf ("\nGame Stats:\n");
-		game_cerver_stats_print (my_cerver);
-		cerver_teardown (my_cerver);
-	}
+// the signals only stop the cerver, it is released when cerver_start () returns
+static void end (int dummy) {
 
-	cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
 
 }
 
-static int my_game_init (void) {
+static void finish (void) {
 
-	// method where you will init global values for your game / app
-	// like connecting to a database or loading some resources
+	cerver_stats_print (my_cerver, true, true);
+	cerver_log_msg ("\nGame Stats:\n");
+	game_cerver_stats_print (my_cerver);
 
-	return 0;
-
-}
-
-static void my_game_packet_handler (void *data) {
-
-	// method to handle PACKET_TYPE_APP type packets that are specific for your application 
+	(void) cerver_teardown (my_cerver);
 
 }
 
-static void *arcade_game_start (void *data) {
+// the app packets of the clients that are not playing
+static void my_game_packet_handler (void *packet_ptr) {
 
-	// method to start the arcade game
-	// here you can init some data or load additional resources
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	cerver_log_debug ("Got an app packet from client %lu", packet->client->id);
+
+}
+
+// the app packets of the players while their lobby runs
+static void arcade_lobby_packet_handler (void *packet_ptr) {
+
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	cerver_log_debug (
+		"Got a game packet from client %lu in lobby %s",
+		packet->client->id, packet->lobby->id->str
+	);
+
+}
+
+// called every frame while the lobby runs
+static void arcade_lobby_update (void *cerver_lobby_ptr) {
+
+	(void) cerver_lobby_ptr;
+
+}
+
+// prepares the data of the game before it starts, the owner requests it
+static void arcade_game_init (void *lobby_player_ptr) {
+
+	const LobbyPlayer *lobby_player = (const LobbyPlayer *) lobby_player_ptr;
+
+	cerver_log_debug ("Initializing the game of lobby %s", lobby_player->lobby->id->str);
+
+}
+
+static void *arcade_game_start (void *lobby_ptr) {
+
+	Lobby *lobby = (Lobby *) lobby_ptr;
+
+	lobby_set_packet_handler (lobby, arcade_lobby_packet_handler);
+	lobby_set_update (lobby, arcade_lobby_update);
+
+	cerver_log_success ("The game of lobby %s has started!", lobby->id->str);
 
 	return NULL;
 
 }
 
-static void *arcade_game_end (void *data) {
+static void *arcade_game_end (void *lobby_ptr) {
 
-	// method to end the arcade game
-	// here you can destroy all the data that you created for the game
+	const Lobby *lobby = (const Lobby *) lobby_ptr;
+
+	cerver_log_msg ("The game of lobby %s has ended", lobby->id->str);
 
 	return NULL;
 
 }
 
-static void arcade_game_join (void *data) {
+// this method gets executed every time a new player joins the lobby
+static void arcade_game_join (void *lobby_player_ptr) {
 
-	// this method gets executed every time a new player joins the lobby
-	// here you can create a new player for example
+	const LobbyPlayer *lobby_player = (const LobbyPlayer *) lobby_player_ptr;
+
+	cerver_log_msg (
+		"Client %lu joined lobby %s",
+		lobby_player->player->client->id, lobby_player->lobby->id->str
+	);
+
+}
+
+static void arcade_game_leave (void *lobby_player_ptr) {
+
+	const LobbyPlayer *lobby_player = (const LobbyPlayer *) lobby_player_ptr;
+
+	cerver_log_msg (
+		"Client %lu left lobby %s",
+		lobby_player->player->client->id, lobby_player->lobby->id->str
+	);
+
+}
+
+static void arcade_game_type_register (Cerver *cerver) {
+
+	GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
+
+	GameType *arcade_game_type = game_type_create (
+		GAME_EXAMPLE_TYPE, NULL, NULL,
+		arcade_game_start, arcade_game_end
+	);
+
+	(void) game_type_add_lobby_config (arcade_game_type, true, NULL, GAME_EXAMPLE_MAX_PLAYERS);
+	game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
+	game_type_set_on_lobby_leave (arcade_game_type, arcade_game_leave);
+	game_type_set_init (arcade_game_type, arcade_game_init);
+	game_type_set_player_timeout (arcade_game_type, GAME_EXAMPLE_PLAYER_TIMEOUT);
+	game_type_set_fps (arcade_game_type, GAME_EXAMPLE_FPS);
+
+	(void) game_type_register (game_cerver->game_types, arcade_game_type);
 
 }
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, my_game_end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Simple Game Cerver Example");
-	printf ("\n");
+	cerver_log_line_break ();
 
-	if (!my_game_init ()) {
-		my_cerver = cerver_create (
-			CERVER_TYPE_GAME,
-			"game-cerver",
-			7000,
-			PROTOCOL_TCP,
-			false,
-			2
-		);
+	my_cerver = cerver_create (
+		CERVER_TYPE_GAME,
+		"game-cerver",
+		GAME_EXAMPLE_PORT,
+		PROTOCOL_TCP,
+		false,
+		GAME_EXAMPLE_CONNECTION_QUEUE
+	);
 
-		if (my_cerver) {
-			cerver_set_welcome_msg (my_cerver, "Welcome - Simple Game Cerver Example");
+	if (my_cerver) {
+		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Game Cerver Example");
 
-			/*** cerver configuration ***/
-			cerver_set_receive_buffer_size (my_cerver, 4096);
-			cerver_set_thpool_n_threads (my_cerver, 4);
+		/*** cerver configuration ***/
+		cerver_set_receive_buffer_size (my_cerver, GAME_EXAMPLE_BUFFER_SIZE);
 
-			cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
-			cerver_set_poll_time_out (my_cerver, 2000);
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, GAME_EXAMPLE_POLL_TIMEOUT);
 
-			Handler *app_handler = handler_create (my_game_packet_handler);
-			// 27/05/2020 - needed for this example!
-			handler_set_direct_handle (app_handler, true);
-			cerver_set_app_handlers (my_cerver, app_handler, NULL);
+		Handler *app_handler = handler_create (my_game_packet_handler);
+		handler_set_direct_handle (app_handler, true);
+		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
-			/*** game configuration ***/
-			GameCerver *game_cerver = (GameCerver *) my_cerver->cerver_data;
+		/*** game configuration ***/
+		arcade_game_type_register (my_cerver);
 
-			// register the arcade game type
-			GameType *arcade_game_type = game_type_create ("arcade", NULL, NULL, 
-				arcade_game_start, arcade_game_end);
-			game_type_add_lobby_config (arcade_game_type, true, NULL, 4);
-			game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
-			game_type_register (game_cerver->game_types, arcade_game_type);
+		app_cerver_events_register (my_cerver);
 
-			if (cerver_start (my_cerver)) {
-				char *s = c_string_create ("Failed to start %s!",
-					my_cerver->info->name);
-				if (s) {
-					cerver_log_error (s);
-					free (s);
-				}
-
-				cerver_delete (my_cerver);
-			}
+		if (!cerver_start (my_cerver)) {
+			finish ();
 		}
 
 		else {
-			cerver_log_error ("Failed to create cerver!");
+			cerver_log_error ("Failed to start %s!", my_cerver->info->name);
 
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
-
-		my_game_end (0);
 	}
 
 	else {
-		cerver_log (
-			LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			"Failed to init my game!"
-		);
+		cerver_log_error ("Failed to create cerver!");
 	}
 
 	cerver_end ();

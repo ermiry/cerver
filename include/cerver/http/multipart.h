@@ -158,7 +158,7 @@ CERVER_PUBLIC const int http_multi_part_get_generated_filename_len (
 // sets the HTTP request's multi-part generated filename
 CERVER_PUBLIC void http_multi_part_set_generated_filename (
 	const MultiPart *multi_part, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // returns the multi-part's number of reads value
 // the amount of loops it took to read the file
@@ -211,7 +211,7 @@ CERVER_PUBLIC unsigned int http_multi_part_move_file (
 // but with the ability to generate dest on the fly
 CERVER_PUBLIC unsigned int http_multi_part_move_file_generate_destination (
 	MultiPart *mpart, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 CERVER_PUBLIC void http_multi_part_headers_print (
 	const MultiPart *mpart

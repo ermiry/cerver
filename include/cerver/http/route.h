@@ -154,6 +154,11 @@ struct _HttpRouteFileStats {
 
 typedef struct _HttpRouteFileStats HttpRouteFileStats;
 
+// sets the values of stats without requests, without a mutex
+CERVER_PRIVATE void http_route_file_stats_init (
+	HttpRouteFileStats *route_file_stats
+);
+
 CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_new (void);
 
 CERVER_PRIVATE void http_route_file_stats_delete (

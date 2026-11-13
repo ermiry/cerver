@@ -52,6 +52,8 @@ static void main_render_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	if (http_response_send_file (
 		http_receive, HTTP_STATUS_OK, "./public/index.html"
 	)) {
@@ -69,6 +71,8 @@ static void text_render_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	const char *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
@@ -85,6 +89,8 @@ static void json_render_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
@@ -98,7 +104,7 @@ static void json_render_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
@@ -156,14 +162,12 @@ int main (int argc, char **argv) {
 				web_cerver->info->name
 			);
 
-			cerver_delete (web_cerver);
+			(void) cerver_teardown (web_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (web_cerver);
 	}
 
 	cerver_end ();

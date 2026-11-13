@@ -5,9 +5,13 @@
 
 #include "cerver/types/types.h"
 
+#include "cerver/game/game.h"
+#include "cerver/game/lobby.h"
+#include "cerver/game/player.h"
 #include "cerver/game/score.h"
 
 #include "cerver/collections/avl.h"
+#include "cerver/collections/dlist.h"
 #include "cerver/collections/htab.h"
 
 // a score manager for any game: player name -> (score type -> value)
@@ -50,6 +54,8 @@ static i32 *game_score_value (const ScoreBoard *sb, const char *playerName, cons
 // adds a score type with 0 to the scores of a player
 static void game_score_value_add (Htab *scores, const char *scoreType) {
 
+	if (!scores) return;
+
 	i32 *value = (i32 *) calloc (1, sizeof (i32));
 	if (value && htab_insert (scores, scoreType, game_score_key_size (scoreType), value, sizeof (i32))) {
 		free (value);
@@ -85,14 +91,14 @@ ScoreBoard *game_score_new (void) {
 
 	ScoreBoard *sb = (ScoreBoard *) calloc (1, sizeof (ScoreBoard));
 	if (sb) {
-		sb->scores = htab_create (DEFAULT_SCORE_SIZE, NULL, game_score_player_delete);
+		sb->scores = htab_create (SCORE_DEFAULT_SIZE, NULL, game_score_player_delete);
 	}
 
 	return sb;
 
 }
 
-ScoreBoard *game_score_create (u8 playersNum, u8 scoresNum, ...) {
+ScoreBoard *game_score_create (unsigned int playersNum, unsigned int scoresNum, ...) {
 
 	ScoreBoard *sb = (ScoreBoard *) calloc (1, sizeof (ScoreBoard));
 	if (sb) {
@@ -102,7 +108,7 @@ ScoreBoard *game_score_create (u8 playersNum, u8 scoresNum, ...) {
 		va_list valist;
 		va_start (valist, scoresNum);
 
-		for (int i = 0; i < scoresNum; i++) {
+		for (unsigned int i = 0; i < scoresNum; i++) {
 			sb->scoreTypes[i] = strdup (va_arg (valist, char *));
 		}
 
@@ -152,17 +158,18 @@ void game_score_add_scoreType (ScoreBoard *sb, char *newScore) {
 
 }
 
-// FIXME: how do we get the player name?? the server is not interested in knowing a playe's name
-// inside his player structure, it is the admin reponsability to determine how to get
-// the player's name
-void game_score_add_lobby_players (ScoreBoard *sb, AVLNode *playerNode) {
+// adds the players of the lobby by their ids, the players without an id are skipped
+void game_score_add_lobby_players (ScoreBoard *sb, const Lobby *lobby) {
 
-	if (sb && playerNode) {
-		game_score_add_lobby_players (sb, playerNode->right);
+	if (sb && lobby) {
+		game_cerver_lock (lobby->cerver);
 
-		// if (playerNode->id) game_score_add_player (sb, ((Player *) playerNode->id));
+		for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {
+			const Player *player = (const Player *) le->data;
+			if (player->id) (void) game_score_add_player (sb, player->id->str);
+		}
 
-		game_score_add_lobby_players (sb, playerNode->left);
+		game_cerver_unlock (lobby->cerver);
 	}
 
 }

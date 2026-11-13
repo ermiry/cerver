@@ -121,7 +121,8 @@ CERVER_EXPORT void cerver_set_udp_max_peers (
 	struct _Cerver *cerver, const u32 max_peers
 );
 
-// returns the number of peers of an UDP cerver, the pending ones too
+// returns the number of peers of an UDP cerver, the pending ones too,
+// a removed peer is already out of the stats of the cerver when it is not counted
 CERVER_EXPORT size_t cerver_udp_peers_count (const struct _Cerver *cerver);
 
 // reads the header of a datagram that has a single packet,
@@ -142,7 +143,9 @@ CERVER_PRIVATE Packet *udp_datagram_packet_create (
 	const char *datagram, const PacketHeader *header
 );
 
-// receives the datagrams of the cerver until it is stopped
+// receives the datagrams of the cerver until it is stopped,
+// in a single thread whatever the handler type of the cerver (cerver_set_handler_type ()),
+// the handlers with their own queues take the packets out of it; an UDP cerver does not take admins
 // returns 0 when the cerver was stopped, 1 on error
 CERVER_PRIVATE u8 cerver_udp_start (struct _Cerver *cerver);
 

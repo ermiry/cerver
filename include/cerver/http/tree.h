@@ -561,12 +561,12 @@ CERVER_PRIVATE void http_tree_delete (void *tree_ptr);
 // keeps the error of a registration, the first one is the one that is reported
 CERVER_PRIVATE void http_tree_error (
 	HttpTree *tree, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // a warning of the first routes API, it is logged but it is not an error
 CERVER_PRIVATE void http_tree_warning (
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (1, 2);
 
 // checks the syntax of a path relative to a group
 // returns 0 if it is valid, 1 if it is not (the reason is written in error)

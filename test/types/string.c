@@ -242,7 +242,7 @@ static void test_str_replace (void) {
 	const unsigned int old = 22;
 	const char *result = { "I am Erick Salas and I am 22 years old!" };
 
-	String *str = str_create (name);
+	String *str = str_create ("%s", name);
 	test_check_ptr (str);
 	test_check_unsigned_eq (str->max_len, 0, NULL);
 	test_check_unsigned_eq (str->len, strlen (name), NULL);
@@ -265,7 +265,7 @@ static void test_str_replace_with (void) {
 	const char *name = "Erick Salas";
 	const char *result = { "I am Erick Salas and I am 22 years old!" };
 
-	String *str = str_create (name);
+	String *str = str_create ("%s", name);
 	test_check_ptr (str);
 	test_check_unsigned_eq (str->max_len, 0, NULL);
 	test_check_unsigned_eq (str->len, strlen (name), NULL);
@@ -289,7 +289,7 @@ static void test_str_n_replace_with (void) {
 	const char *replace = { "I am Erick Salas and I am 22 years old!" };
 	const char *result = { "I am Erick Salas" };
 
-	String *str = str_create (name);
+	String *str = str_create ("%s", name);
 	test_check_ptr (str);
 	test_check_unsigned_eq (str->max_len, 0, NULL);
 	test_check_unsigned_eq (str->len, strlen (name), NULL);

@@ -30,12 +30,12 @@ static unsigned int auth_request_custom_success (char *data_buffer) {
 
 	unsigned int retval = 1;
 
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	CURL *curl = curl_easy_init ();
 	if (curl) {
 		// POST /auth/custom
-		(void) snprintf (actual_address, 128, "%s/auth/custom", address);
+		(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/auth/custom", address);
 		retval = curl_post_form_value (
 			curl, actual_address,
 			HTTP_STATUS_OK,
@@ -54,12 +54,12 @@ static unsigned int auth_request_custom_bad (char *data_buffer) {
 
 	unsigned int retval = 1;
 
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	CURL *curl = curl_easy_init ();
 	if (curl) {
 		// POST /auth/custom
-		(void) snprintf (actual_address, 128, "%s/auth/custom", address);
+		(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/auth/custom", address);
 		retval = curl_post_form_value (
 			curl, actual_address,
 			HTTP_STATUS_UNAUTHORIZED,
@@ -81,10 +81,10 @@ static unsigned int auth_request_all_actual (
 	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	// GET /test
-	(void) snprintf (actual_address, 128, "%s/test", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/test", address);
 	errors |= curl_simple_handle_data (
 		curl, address,
 		HTTP_STATUS_OK,
@@ -92,7 +92,7 @@ static unsigned int auth_request_all_actual (
 	);
 
 	// GET /auth/token
-	(void) snprintf (actual_address, 128, "%s/auth/token", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/auth/token", address);
 	errors |= curl_simple_with_auth (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -137,7 +137,7 @@ static unsigned int auth_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

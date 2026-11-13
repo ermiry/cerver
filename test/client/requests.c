@@ -56,7 +56,7 @@ static void send_request (
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT requests...\n");
 

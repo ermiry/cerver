@@ -101,6 +101,15 @@
 // the responses are counted by their status code, from 100 to 599
 #define HTTP_CERVER_RESPONSES_STATUS_SIZE			600
 
+// the longest bearer token that is decoded, 0 has no limit
+#define HTTP_CERVER_DEFAULT_JWT_MAX_SIZE			(1 << 13)
+
+// a token without "exp" is accepted unless the cerver requires it
+#define HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION	false
+
+// the seconds of clock skew accepted in "exp" and "nbf"
+#define HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS		0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -118,6 +127,7 @@ struct _HttpWebSocketRegistry;
 struct HttpWebSocketHandshake;
 
 struct jwt;
+struct JwtKey;
 
 #pragma region parser
 
@@ -313,10 +323,16 @@ struct _HttpCerver {
 	jwt_alg_t jwt_alg;
 
 	String *jwt_opt_key_name;		// jwt private key filename
-	String *jwt_private_key;		// jwt actual private key
+	struct JwtKey *jwt_private_key;	// signs the tokens, loaded when the cerver starts
 
 	String *jwt_opt_pub_key_name;	// jwt public key filename
-	String *jwt_public_key;			// jwt actual public key
+	struct JwtKey *jwt_public_key;	// verifies the tokens, loaded when the cerver starts
+
+	size_t jwt_max_size;			// the longest token that is decoded, 0 has no limit
+	bool jwt_require_expiration;	// a token without "exp" is rejected
+	unsigned int jwt_leeway_seconds;// clock skew accepted in "exp" and "nbf"
+	String *jwt_issuer;				// the "iss" that a token must have, if it is set
+	String *jwt_audience;			// the "aud" that a token must have, if it is set
 
 	u8 n_origins;
 	HttpOrigin origins_whitelist[HTTP_ORIGINS_SIZE];
@@ -467,11 +483,37 @@ typedef struct HttpStaticPath {
 
 	HttpRouteAuthType auth_type;
 
+	// the data of a bearer JWT, for the request of a file
+	void *(*decode_data)(void *);
+	void (*delete_decoded_data)(void *);
+
+	// the method of HTTP_ROUTE_AUTH_TYPE_CUSTOM
+	HttpAuthenticationHandler authentication_handler;
+
 } HttpStaticPath;
 
-// sets authentication requirenments for a whole static path
+// sets the authentication of the files of a whole static path,
+// a request is authenticated with the static path that has its file,
+// or with the first one that has authentication when none has it,
+// so a file that does not exist is answered like a protected one
+// a request that fails it is answered with 401, before its file is looked for
 CERVER_EXPORT void http_static_path_set_auth (
 	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+);
+
+// sets the method that decodes the data of the bearer JWT of a static path
+// (HTTP_ROUTE_AUTH_TYPE_BEARER), and the one that deletes it after the request
+CERVER_EXPORT void http_static_path_set_decode_data (
+	HttpStaticPath *static_path,
+	void *(*decode_data)(void *),
+	void (*delete_decoded_data)(void *)
+);
+
+// sets the method that authenticates the requests of a static path
+// with HTTP_ROUTE_AUTH_TYPE_CUSTOM, it returns 0 on success and 1 on error
+CERVER_EXPORT void http_static_path_set_authentication_handler (
+	HttpStaticPath *static_path,
+	HttpAuthenticationHandler authentication_handler
 );
 
 // adds a new static path where static files can be served upon request
@@ -618,7 +660,7 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // a custom path on the fly using variable arguments
 CERVER_EXPORT void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // sets the mode_t to be used when creating uploads files
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE

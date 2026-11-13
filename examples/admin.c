@@ -14,6 +14,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0
@@ -201,6 +203,8 @@ static void *on_hold_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -218,6 +222,8 @@ static void *on_hold_disconnected (void *event_data_ptr) {
 			"An on hold connection disconnected in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -235,6 +241,8 @@ static void *on_hold_drop (void *event_data_ptr) {
 			"An on hold connection was dropped in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -253,6 +261,8 @@ static void *on_admin_failed_auth (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -267,11 +277,13 @@ static void *on_admin_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
-			"Admin with client %ld authenticated connection with sock fd %d to cerver %s!\n",
+			"Admin with client %lu authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -286,11 +298,13 @@ static void *on_admin_new_connection (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
-			"Admin with client %ld new connection with sock fd %d to cerver %s!\n",
+			"Admin with client %lu new connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -308,6 +322,8 @@ static void *on_admin_close_connection (void *event_data_ptr) {
 			"An admin closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -325,6 +341,8 @@ static void *on_admin_disconnected (void *event_data_ptr) {
 			"An admin disconnected from cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -342,6 +360,8 @@ static void *on_admin_dropped (void *event_data_ptr) {
 			"An admin was dropped from cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -357,12 +377,16 @@ static void *on_admin_dropped (void *event_data_ptr) {
 
 void admin_update_thread (void *data) {
 
+	(void) data;
+
 	cerver_log_msg ("Updating multiple times x second!\n");
 
 }
 
 void admin_update_internal_thread (void *data) {
-	
+
+	(void) data;
+
 	cerver_log_msg ("Updating every second!\n");
 
 }
@@ -493,6 +517,8 @@ int main (void) {
 			false, false
 		);
 
+		app_cerver_events_register (my_cerver);
+
 		if (!cerver_start (my_cerver)) {
 			finish ();
 		}
@@ -503,14 +529,12 @@ int main (void) {
 				my_cerver->info->name
 			);
 
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (my_cerver);
 	}
 
 	cerver_end ();

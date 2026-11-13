@@ -71,6 +71,8 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Test route works!"
 	);
@@ -113,7 +115,7 @@ void jobs_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
@@ -175,14 +177,12 @@ int main (int argc, char **argv) {
 				web_cerver->info->name
 			);
 
-			cerver_delete (web_cerver);
+			(void) cerver_teardown (web_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (web_cerver);
 	}
 
 	cerver_end ();

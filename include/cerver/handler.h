@@ -17,6 +17,8 @@
 
 #include "cerver/game/lobby.h"
 
+#include "cerver/utils/histogram.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,6 +55,14 @@ typedef struct HandlerData {
 
 } HandlerData;
 
+// the packets that a handler handled, added from the threads that run it
+typedef struct HandlerStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} HandlerStats;
+
 struct _Handler {
 
 	HandlerType type;
@@ -75,7 +85,8 @@ struct _Handler {
 	void *(*data_create) (void *args);
 	void *data_create_args;
 
-	// called at the end of the handler to delete the handler's data
+	// deletes the handler's data once, when its thread ends,
+	// or when the handler is deleted if it never had a thread
 	// if no method is set, it won't be deleted
 	Action data_delete;
 
@@ -87,7 +98,7 @@ struct _Handler {
 	// this option is set to false as default
 	// pros - inmediate handle with no delays
 	//      - handler method can be called from multiple threads
-	// neutral - data create and delete will be executed every time
+	// neutral - the handler method gets the Packet, without the handler's data
 	// cons - calling thread will be busy until handler method is done
 	bool direct_handle;
 
@@ -97,6 +108,8 @@ struct _Handler {
 
 	struct _Cerver *cerver;     // the cerver this handler belongs to
 	struct _Client *client;     // the client this handler belongs to
+
+	HandlerStats stats;
 
 };
 
@@ -120,20 +133,23 @@ CERVER_EXPORT Handler *handler_create_with_id (
 );
 
 // sets the handler's data directly
-// this data will be passed to the handler method
-// using a HandlerData structure
+// a handler with a queue passes it to the handler method
+// in a HandlerData structure, a direct handler only gets the Packet
 CERVER_EXPORT void handler_set_data (
 	Handler *handler, void *data
 );
 
-// set a method to create the handler's data before it starts handling any packet
-// this data will be passed to the handler method using a HandlerData structure
+// set a method to create the handler's data in its thread, before it handles any packet,
+// it is passed to the handler method in a HandlerData structure
+// a direct handler does not have a thread, so it is never called
 CERVER_EXPORT void handler_set_data_create (
 	Handler *handler,
 	void *(*data_create) (void *args), void *data_create_args
 );
 
-// set the method to be used to delete the handler's data
+// set the method to be used to delete the handler's data,
+// it is called once, when the thread of the handler ends,
+// or when the handler is deleted if it never had a thread
 CERVER_EXPORT void handler_set_data_delete (
 	Handler *handler, Action data_delete
 );
@@ -142,11 +158,19 @@ CERVER_EXPORT void handler_set_data_delete (
 // the packet directly in the same thread
 // pros     - inmediate handle with no delays
 //          - handler method can be called from multiple threads
-// neutral  - data create and delete will be executed every time
+// neutral  - the handler method gets the Packet, without the handler's data
 // cons     - calling thread will be busy until handler method is done
 CERVER_EXPORT void handler_set_direct_handle (
 	Handler *handler, bool direct_handle
 );
+
+// copies the stats of the packets that the handler handled
+CERVER_EXPORT void handler_get_stats (
+	const Handler *handler, HandlerStats *stats
+);
+
+// prints the stats of the handler with the cerver log
+CERVER_EXPORT void handler_stats_print (const Handler *handler);
 
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods
@@ -246,9 +270,6 @@ CERVER_PRIVATE HandlerThreadContext *handler_context_get (const size_t buffer_si
 
 #pragma region receive
 
-// the default timeout when handling a connection in dedicated thread
-#define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
-
 // the deleted receives that are kept to be reused
 #define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
@@ -304,7 +325,16 @@ CERVER_PRIVATE void cerver_receive_internal (
 
 #pragma region register
 
+// a new connection that no handler could take is taken out of the cerver with its new client,
+// the client is unregistered while it still has the connection, so its sock fd leaves the maps,
+// and the connection is left for its caller to drop
+CERVER_PRIVATE void cerver_new_connection_release (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
 // select how client connection will be handled based on cerver's handler type
+// returns 0 on success, 1 on error
 CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
 	struct _Cerver *cerver,
 	struct _Client *client, struct _Connection *connection

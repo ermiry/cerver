@@ -42,7 +42,7 @@ static void __teardown_jwt (void) {
 #define __VAL_EQ(__v, __e) do {									\
 	unsigned int __r = jwt_validate (jwt, __v);					\
 	test_check_int_eq (__r, __e, NULL);							\
-	test_check_int_eq (__e, jwt_valid_get_status (__v), NULL);	\
+	test_check_int_eq (jwt_valid_get_status (__v), __e, NULL);	\
 } while (0);
 
 static void test_jwt_validate_errno (void) {
@@ -60,14 +60,14 @@ static void test_jwt_validate_errno (void) {
 	/* Validate fails with NULL jwt */
 	ret = jwt_validate (NULL, jwt_valid);
 	test_check_int_eq (ret, JWT_VALIDATION_ERROR, NULL);
-	test_check_int_eq (JWT_VALIDATION_ERROR, jwt_valid_get_status (jwt_valid), NULL);
+	test_check_int_eq (jwt_valid_get_status (jwt_valid), JWT_VALIDATION_ERROR, NULL);
 
 	/* Validate fails with NULL jwt_valid */
 	ret = jwt_validate (jwt, NULL);
 	test_check_int_eq (ret, JWT_VALIDATION_ERROR, NULL);
 
 	/* Get status fails with NULL jwt_valid */
-	test_check_int_eq (JWT_VALIDATION_ERROR, jwt_valid_get_status (NULL), NULL);
+	test_check_int_eq (jwt_valid_get_status (NULL), JWT_VALIDATION_ERROR, NULL);
 
 	jwt_valid_free (jwt_valid);
 	__teardown_jwt ();
@@ -96,7 +96,7 @@ static void test_jwt_valid_algorithm (void) {
 	test_check (jwt_valid != NULL, NULL);
 
 	/* Starts with invalid */
-	test_check_int_eq (JWT_VALIDATION_ERROR, jwt_valid_get_status (jwt_valid), NULL);
+	test_check_int_eq (jwt_valid_get_status (jwt_valid), JWT_VALIDATION_ERROR, NULL);
 
 	__VAL_EQ (jwt_valid, JWT_VALIDATION_ALG_MISMATCH);
 

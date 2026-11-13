@@ -1,0 +1,1 @@
+4["nul \u0000 inside", {"string": "x", "integer": 7}, [1, "two", false]]

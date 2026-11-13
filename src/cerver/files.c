@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -184,7 +185,7 @@ void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	)
@@ -252,7 +253,7 @@ ssize_t file_cerver_send_file (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (
@@ -310,18 +311,18 @@ static u8 file_cerver_receive (
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		cerver_log_msg ("Files requests:                %ld", file_cerver->stats->n_files_requests);
-		cerver_log_msg ("Success requests:              %ld", file_cerver->stats->n_success_files_requests);
-		cerver_log_msg ("Bad requests:                  %ld", file_cerver->stats->n_bad_files_requests);
-		cerver_log_msg ("Files sent:                    %ld", file_cerver->stats->n_files_sent);
-		cerver_log_msg ("Failed files sent:             %ld", file_cerver->stats->n_bad_files_sent);
-		cerver_log_msg ("Files bytes sent:              %ld\n", file_cerver->stats->n_bytes_sent);
+		cerver_log_msg ("Files requests:                %lu", file_cerver->stats->n_files_requests);
+		cerver_log_msg ("Success requests:              %lu", file_cerver->stats->n_success_files_requests);
+		cerver_log_msg ("Bad requests:                  %lu", file_cerver->stats->n_bad_files_requests);
+		cerver_log_msg ("Files sent:                    %lu", file_cerver->stats->n_files_sent);
+		cerver_log_msg ("Failed files sent:             %lu", file_cerver->stats->n_bad_files_sent);
+		cerver_log_msg ("Files bytes sent:              %lu\n", file_cerver->stats->n_bytes_sent);
 
-		cerver_log_msg ("Files upload requests:         %ld", file_cerver->stats->n_files_upload_requests);
-		cerver_log_msg ("Success uploads:               %ld", file_cerver->stats->n_success_files_uploaded);
-		cerver_log_msg ("Bad uploads:                   %ld", file_cerver->stats->n_bad_files_upload_requests);
-		cerver_log_msg ("Bad files received:            %ld", file_cerver->stats->n_bad_files_received);
-		cerver_log_msg ("Files bytes received:          %ld\n", file_cerver->stats->n_bytes_received);
+		cerver_log_msg ("Files upload requests:         %lu", file_cerver->stats->n_files_upload_requests);
+		cerver_log_msg ("Success uploads:               %lu", file_cerver->stats->n_success_files_uploaded);
+		cerver_log_msg ("Bad uploads:                   %lu", file_cerver->stats->n_bad_files_upload_requests);
+		cerver_log_msg ("Bad files received:            %lu", file_cerver->stats->n_bad_files_received);
+		cerver_log_msg ("Files bytes received:          %lu\n", file_cerver->stats->n_bytes_received);
 	}
 
 }
@@ -391,7 +392,7 @@ unsigned int files_create_dir (
 	unsigned int retval = 1;
 
 	if (dir_path) {
-		struct stat st = { 0 };
+		struct stat st = CERVER_ZERO_INITIALIZER;
 		int ret = stat (dir_path, &st);
 		switch (ret) {
 			case -1: {
@@ -419,7 +420,46 @@ unsigned int files_create_dir (
 
 }
 
-// recursively creates all directories in dir path
+// a directory that exists is a success, even when another thread or process
+// creates it between the stat () and the mkdir ()
+// returns 0 on success, 1 on error
+static unsigned int files_create_recursive_dir_single (
+	const char *dir_path, mode_t mode
+) {
+
+	struct stat sb = CERVER_ZERO_INITIALIZER;
+
+	if (!stat (dir_path, &sb)) return S_ISDIR (sb.st_mode) ? 0 : 1;
+
+	if (!mkdir (dir_path, mode)) return 0;
+
+	return ((errno == EEXIST) && !stat (dir_path, &sb) && S_ISDIR (sb.st_mode)) ? 0 : 1;
+
+}
+
+// creates each directory of the path that does not exist yet,
+// stops in the first one that can not be created
+// returns 0 on success, 1 on error
+static unsigned int files_create_recursive_dir_path (
+	char *path, mode_t mode
+) {
+
+	unsigned int retval = 0;
+
+	for (char *p = path + 1; !retval && *p; p++) {
+		if (*p == '/') {
+			*p = '\0';
+			retval = files_create_recursive_dir_single (path, mode);
+			*p = '/';
+		}
+	}
+
+	return retval ? retval : files_create_recursive_dir_single (path, mode);
+
+}
+
+// recursively creates all directories in dir path,
+// a path that already is a directory is a success
 // returns 0 on success, 1 on error
 unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
@@ -427,55 +467,25 @@ unsigned int files_create_recursive_dir (
 
 	unsigned int retval = 1;
 
-	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
-	char *p = NULL;
-	struct stat sb = { 0 };
+	char path[DIRNAME_DEFAULT_SIZE] = { 0 };
+	const size_t len = dir_path ? strlen (dir_path) : 0;
 
-	// check if the path already exists
-	if (stat (dir_path, &sb)) {
-		size_t len = strlen (dir_path);
-		(void) strncpy (tmp, dir_path, DIRNAME_DEFAULT_SIZE - 1);
+	// an empty path or one that does not fit is never truncated
+	if (len && (len < DIRNAME_DEFAULT_SIZE)) {
+		(void) memcpy (path, dir_path, len);
 
-		// remove trailing slash
-		if (tmp[len - 1] == '/') {
-			tmp[len - 1] = '\0';
-		}
+		// the trailing slash, except the one of the root
+		if ((len > 1) && (path[len - 1] == '/')) path[len - 1] = '\0';
 
-		// recursive mkdir
-		for (p = tmp + 1; *p; p++) {
-			if (*p == '/') {
-				*p = 0;
-
-				if (stat (tmp, &sb)) {
-					// create directory
-					if (mkdir (tmp, mode)) {
-						break;
-					}
-				}
-
-				else if (!S_ISDIR (sb.st_mode)) {
-					// not a directory
-					break;
-				}
-
-				*p = '/';
-			}
-		}
-
-		// create final dir
-		if (stat (tmp, &sb)) {
-			// create directory
-			if (!mkdir (tmp, mode)) {
-				retval = 0;
-			}
-		}
+		retval = files_create_recursive_dir_path (path, mode);
 	}
 
 	#ifdef FILES_DEBUG
-	else {
+	if (retval) {
 		cerver_log (
 			LOG_TYPE_WARNING, LOG_TYPE_FILE,
-			"files_create_recursive_dir () - dir %s exists!", dir_path
+			"files_create_recursive_dir () - failed to create %s",
+			dir_path ? dir_path : "(null)"
 		);
 	}
 	#endif
@@ -484,25 +494,301 @@ unsigned int files_create_recursive_dir (
 
 }
 
-// moves one file from one location to another
-// returns 0 on success
+// the bytes that copy_file_range () copies in each call
+#define FILES_COPY_RANGE_SIZE			(1 << 20)
+
+// the buffer of a copy with read () and write ()
+#define FILES_COPY_BUFFER_SIZE			8192
+
+#define FILES_PERMISSIONS_MASK			07777
+
+// the directories that nftw () keeps open
+#define FILES_REMOVE_OPEN_DIRECTORIES	16
+
+// writes the path of an entry of a directory in path
+// returns 0 on success, 1 if it does not fit
+static unsigned int files_join_path (
+	char path[FILES_MOVE_SIZE], const char *directory, const char *name
+) {
+
+	const int length = snprintf (path, FILES_MOVE_SIZE, "%s/%s", directory, name);
+
+	return ((length > 0) && (length < FILES_MOVE_SIZE)) ? 0 : 1;
+
+}
+
+// writes every byte of the buffer
+// returns 0 on success, 1 on error
+static unsigned int files_write_all (
+	const int destination_fd, const char *buffer, const size_t size
+) {
+
+	unsigned int errors = 0;
+
+	size_t written = 0;
+	while ((written < size) && !errors) {
+		const ssize_t result = write (destination_fd, buffer + written, size - written);
+		if (result > 0) written += (size_t) result;
+		else if ((result == 0) || (errno != EINTR)) errors = 1;
+	}
+
+	return errors;
+
+}
+
+// copies until the end of the source with read () and write (), from their offsets
+// returns 0 on success, 1 on error
+static unsigned int files_copy_read_write (const int source_fd, const int destination_fd) {
+
+	unsigned int errors = 0;
+
+	char buffer[FILES_COPY_BUFFER_SIZE];
+
+	bool done = false;
+	while (!done && !errors) {
+		const ssize_t read_bytes = read (source_fd, buffer, FILES_COPY_BUFFER_SIZE);
+		if (read_bytes > 0) errors = files_write_all (destination_fd, buffer, (size_t) read_bytes);
+		else if (read_bytes == 0) done = true;
+		else if (errno != EINTR) errors = 1;
+	}
+
+	return errors;
+
+}
+
+// copies with copy_file_range () inside the kernel, the file systems that can not use it,
+// and a source that changed size, continue with read () and write () from the offsets
+// returns 0 on success, 1 on error
+static unsigned int files_copy_contents (
+	const int source_fd, const int destination_fd, const off_t size
+) {
+
+	off_t remaining = size;
+
+	ssize_t copied = 1;
+	while ((remaining > 0) && (copied > 0)) {
+		const size_t range = (remaining < FILES_COPY_RANGE_SIZE) ? (size_t) remaining : FILES_COPY_RANGE_SIZE;
+
+		copied = copy_file_range (source_fd, NULL, destination_fd, NULL, range, 0);
+		if (copied > 0) remaining -= copied;
+	}
+
+	return files_copy_read_write (source_fd, destination_fd);
+
+}
+
+// copies a regular file with its permissions, replacing the destination if it exists
+// returns 0 on success, 1 on error
+unsigned int files_copy (
+	const char *source, const char *destination
+) {
+
+	unsigned int errors = 1;
+
+	const int source_fd = (source && destination) ? open (source, O_RDONLY | O_CLOEXEC) : -1;
+	if (source_fd > -1) {
+		struct stat st;
+		if (!fstat (source_fd, &st) && S_ISREG (st.st_mode)) {
+			const mode_t mode = st.st_mode & FILES_PERMISSIONS_MASK;
+
+			const int destination_fd = open (destination, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+			if (destination_fd > -1) {
+				errors = files_copy_contents (source_fd, destination_fd, st.st_size);
+				errors |= (fchmod (destination_fd, mode) ? 1 : 0);
+				errors |= (close (destination_fd) ? 1 : 0);
+
+				if (errors) (void) unlink (destination);
+			}
+		}
+
+		(void) close (source_fd);
+	}
+
+	return errors;
+
+}
+
+// copies the link itself, a destination that exists and is not a directory is replaced
+// returns 0 on success, 1 on error
+static unsigned int files_copy_link (const char *source, const char *destination) {
+
+	unsigned int errors = 1;
+
+	char target[FILES_MOVE_SIZE];
+	const ssize_t length = readlink (source, target, FILES_MOVE_SIZE - 1);
+	if (length >= 0) {
+		target[length] = '\0';
+
+		struct stat st;
+		if (!lstat (destination, &st) && !S_ISDIR (st.st_mode)) {
+			(void) unlink (destination);
+		}
+
+		errors = symlink (target, destination) ? 1 : 0;
+	}
+
+	return errors;
+
+}
+
+// returns true if path is the directory or is inside it,
+// a directory that is copied inside itself never ends
+static bool files_path_inside (const char *path, const char *directory) {
+
+	const size_t length = strlen (directory);
+
+	return !strncmp (path, directory, length) && ((path[length] == '\0') || (path[length] == '/'));
+
+}
+
+// creates the destination, or uses it if it is a directory, and copies each entry of the source
+// returns 0 on success, 1 on error
+static unsigned int files_copy_directory (
+	const char *source, const char *destination, const mode_t mode
+) {
+
+	unsigned int errors = 1;
+
+	// mkdir () applies the umask, so the permissions are set again
+	struct stat st;
+	const bool created = !mkdir (destination, mode & FILES_PERMISSIONS_MASK)
+		&& !chmod (destination, mode & FILES_PERMISSIONS_MASK);
+
+	const bool exists = !created && (errno == EEXIST) && !stat (destination, &st) && S_ISDIR (st.st_mode);
+
+	DIR *directory = (created || exists) ? opendir (source) : NULL;
+	if (directory) {
+		errors = 0;
+
+		char source_path[FILES_MOVE_SIZE];
+		char destination_path[FILES_MOVE_SIZE];
+
+		const struct dirent *entry = NULL;
+		while (!errors && (entry = readdir (directory))) {
+			if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
+				errors = files_join_path (source_path, source, entry->d_name)
+					|| files_join_path (destination_path, destination, entry->d_name)
+					|| files_copy_recursive (source_path, destination_path);
+			}
+		}
+
+		(void) closedir (directory);
+	}
+
+	return errors;
+
+}
+
+// copies a file, a symbolic link or a directory with everything in it
+// returns 0 on success, 1 on error
+unsigned int files_copy_recursive (
+	const char *source, const char *destination
+) {
+
+	unsigned int errors = 1;
+
+	struct stat st;
+	if (source && destination && !lstat (source, &st)) {
+		if (S_ISDIR (st.st_mode)) {
+			errors = files_path_inside (destination, source)
+				? 1 : files_copy_directory (source, destination, st.st_mode);
+		}
+
+		else if (S_ISLNK (st.st_mode)) {
+			errors = files_copy_link (source, destination);
+		}
+
+		else if (S_ISREG (st.st_mode)) {
+			errors = files_copy (source, destination);
+		}
+	}
+
+	return errors;
+
+}
+
+static int files_remove_entry (
+	const char *path, const struct stat *st, int flag, struct FTW *ftw
+) {
+
+	(void) st;
+	(void) flag;
+	(void) ftw;
+
+	return remove (path);
+
+}
+
+// removes a file, a symbolic link or a directory with everything in it
+// returns 0 on success, 1 on error
+unsigned int files_remove_recursive (const char *path) {
+
+	return (path && !nftw (path, files_remove_entry, FILES_REMOVE_OPEN_DIRECTORIES, FTW_DEPTH | FTW_PHYS)) ? 0 : 1;
+
+}
+
+// the destination is saved_path, or the name of the file inside it if it is a directory
+// returns 0 on success, 1 if the path does not fit
+static unsigned int files_move_destination (
+	const char *actual_path, const char *saved_path, char destination[FILES_MOVE_SIZE]
+) {
+
+	unsigned int errors = 0;
+
+	struct stat st;
+	if (!stat (saved_path, &st) && S_ISDIR (st.st_mode)) {
+		const char *name = strrchr (actual_path, '/');
+		errors = files_join_path (destination, saved_path, name ? (name + 1) : actual_path);
+	}
+
+	else {
+		const int length = snprintf (destination, FILES_MOVE_SIZE, "%s", saved_path);
+		errors = ((length >= 0) && (length < FILES_MOVE_SIZE)) ? 0 : 1;
+	}
+
+	return errors;
+
+}
+
+// rename () can not move between file systems, so the source is copied and then removed,
+// a copy that fails is removed
+// returns 0 on success, 1 on error
+static int files_move_between_file_systems (const char *actual_path, const char *destination) {
+
+	int retval = 1;
+
+	if (!files_copy_recursive (actual_path, destination)) {
+		retval = (int) files_remove_recursive (actual_path);
+	}
+
+	else {
+		(void) files_remove_recursive (destination);
+	}
+
+	return retval;
+
+}
+
+// moves a file or a directory to saved_path, or inside it if it is a directory that exists
+// returns 0 on success, 1 on error
 int file_move_to (
 	const char *actual_path, const char *saved_path
 ) {
 
-	char move_command[FILES_MOVE_SIZE] = { 0 };
+	int retval = 1;
 
-	(void) snprintf (
-		move_command, FILES_MOVE_SIZE - 1,
-		"mv \"%s\" \"%s\"",
-		actual_path, saved_path
-	);
+	char destination[FILES_MOVE_SIZE];
+	if (actual_path && saved_path && !files_move_destination (actual_path, saved_path, destination)) {
+		if (!rename (actual_path, destination)) {
+			retval = 0;
+		}
 
-	#ifdef FILES_DEBUG
-	(void) printf ("COMMAND: %s\n", move_command);
-	#endif
+		else if (errno == EXDEV) {
+			retval = files_move_between_file_systems (actual_path, destination);
+		}
+	}
 
-	return system (move_command);
+	return retval;
 
 }
 
@@ -650,7 +936,7 @@ bool file_exists (const char *filename) {
 	bool retval = false;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			retval = true;
 		}
@@ -751,14 +1037,15 @@ char *file_read (const char *filename, size_t *file_size) {
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
-			*file_size = (size_t) filestatus.st_size;
-
 			size_t n_read = 0;
 			file_contents = file_read_internal (
 				filename, (size_t) filestatus.st_size, &n_read
 			);
+
+			// the bytes that were read, the file can change after the stat ()
+			if (file_size) *file_size = n_read;
 		}
 	}
 
@@ -774,7 +1061,7 @@ char *file_n_read (
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			size_t file_size = (size_t) filestatus.st_size;
 
@@ -1011,6 +1298,8 @@ bool files_image_extension_is_png (const char *filename) {
 static const char *FILE_HEADER_CURRENT_DIRECTORY = ".";
 static const char *FILE_HEADER_PARENT_DIRECTORY = "..";
 
+SERIALIZER_DEFINE (FileHeader, file_header, FILE_HEADER_VERSION, FILE_HEADER_FIELDS)
+
 // a FileHeader that comes from a packet is used only if its filename is NUL terminated,
 // not empty, a single name (without '/') and different from "." and "..",
 // so it can not read past the header or reach a file outside of the configured paths
@@ -1034,21 +1323,48 @@ bool file_header_is_valid (const FileHeader *file_header) {
 
 }
 
-// copies the FileHeader at the start of the data of a packet and validates it
-// returns true if the data has a valid header
+// decodes the FileHeader of a packet and validates it
+// returns true if the packet has a valid header
 bool file_header_get (
-	const void *data, const size_t data_size, FileHeader *file_header
+	const Packet *packet, FileHeader *file_header
 ) {
 
 	bool valid = false;
 
-	if (data && file_header && (data_size >= sizeof (FileHeader))) {
-		(void) memcpy (file_header, data, sizeof (FileHeader));
-
-		valid = file_header_is_valid (file_header);
+	if (packet && file_header) {
+		FileHeader decoded;
+		if (packet_get_object (packet, &file_header_schema, NULL, &decoded) == SERIALIZER_RESULT_NONE) {
+			valid = file_header_is_valid (&decoded);
+			if (valid) (void) memcpy (file_header, &decoded, sizeof (FileHeader));
+		}
 	}
 
 	return valid;
+
+}
+
+// creates a request packet ready to be sent with the FileHeader of the file
+// returns NULL on error
+Packet *file_header_packet_create (
+	const u32 request_type, const char *filename, const u64 len
+) {
+
+	Packet *packet = NULL;
+
+	if (filename && (strlen (filename) < FILENAME_DEFAULT_SIZE)) {
+		FileHeader file_header;
+		serializer_object_init (&file_header_schema, &file_header);
+
+		(void) strncpy (file_header.filename, filename, FILENAME_DEFAULT_SIZE - 1);
+		file_header.len = len;
+
+		packet = packet_create_serialized (
+			PACKET_TYPE_REQUEST, request_type,
+			&file_header_schema, &file_header
+		);
+	}
+
+	return packet;
 
 }
 
@@ -1061,28 +1377,11 @@ static u8 file_send_header (
 
 	u8 retval = 1;
 
-	Packet *packet = packet_new ();
+	Packet *packet = file_header_packet_create (
+		REQUEST_PACKET_TYPE_SEND_FILE, filename, (u64) filelen
+	);
+
 	if (packet) {
-		size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
-
-		// zeroed, the whole buffer is sent
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_REQUEST;
-		header->packet_size = packet_len;
-
-		header->request_type = REQUEST_PACKET_TYPE_SEND_FILE;
-		header->version = packet_version_local ();
-
-		end += sizeof (PacketHeader);
-
-		FileHeader *file_header = (FileHeader *) end;
-		(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
-		file_header->len = filelen;
-
 		packet_set_network_values (packet, cerver, client, connection, NULL);
 
 		retval = packet_send_unsafe (packet, 0, NULL, false);
@@ -1180,7 +1479,7 @@ ssize_t file_send (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (
@@ -1449,7 +1748,7 @@ u8 file_receive_actual (
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
 			cerver_log_debug (
-				"\nfilelen: %ld - file data len %ld = %ld\n\n",
+				"\nfilelen: %lu - file data len %zu = %zu\n\n",
 				file_header->len, file_data_len, real_filelen
 			);
 			#endif

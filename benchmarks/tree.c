@@ -35,9 +35,17 @@ static const char tree_bench_old_param = '*';
 #pragma region allocations
 
 // every allocation of the process is counted, the ones inside libcerver too
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern void *__libc_malloc (size_t size);
 extern void *__libc_calloc (size_t count, size_t size);
 extern void *__libc_realloc (void *ptr, size_t size);
+
+#ifdef __cplusplus
+}
+#endif
 
 static size_t tree_bench_allocations = 0;
 

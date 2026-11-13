@@ -75,6 +75,10 @@
 #define PEERS_SHORT_DATAGRAM_SIZE		4
 #define PEERS_WRONG_SIZE_OFFSET			8
 
+// a welcome that makes the info bigger than the amplification of a request with only its header
+#define PEERS_LONG_WELCOME_SIZE			CERVER_SUMMARY_WELCOME_SIZE
+#define PEERS_LONG_WELCOME_FILL			'w'
+
 #define PEERS_EVENTS					(CERVER_EVENT_UNKNOWN + 1)
 
 typedef struct PeersCerver {
@@ -100,7 +104,7 @@ typedef struct PeersSocket {
 	u8 token[CONNECTION_DATAGRAM_TOKEN_SIZE];
 	bool has_token;
 
-	SToken session;
+	SessionToken session;
 
 } PeersSocket;
 
@@ -445,15 +449,11 @@ static void peers_socket_send_raw (const PeersSocket *peers, const void *datagra
 
 }
 
-// the packet followed by the token when one is given
-static void peers_socket_send (
-	const PeersSocket *peers,
-	const PacketType packet_type, const u32 request_type,
-	const void *data, const size_t data_size,
-	const u8 *token
+// the generated packet followed by the token when one is given, the packet is released
+static void peers_socket_send_packet (
+	const PeersSocket *peers, Packet *packet, const u8 *token
 ) {
 
-	Packet *packet = packet_generate_request (packet_type, request_type, data, data_size);
 	test_check_ptr (packet);
 
 	const size_t token_size = token ? CONNECTION_DATAGRAM_TOKEN_SIZE : 0;
@@ -469,6 +469,20 @@ static void peers_socket_send (
 
 	free (datagram);
 	packet_delete (packet);
+
+}
+
+// the packet followed by the token when one is given
+static void peers_socket_send (
+	const PeersSocket *peers,
+	const PacketType packet_type, const u32 request_type,
+	const void *data, const size_t data_size,
+	const u8 *token
+) {
+
+	peers_socket_send_packet (
+		peers, packet_generate_request (packet_type, request_type, data, data_size), token
+	);
 
 }
 
@@ -492,8 +506,10 @@ static ssize_t peers_socket_receive_packet (
 
 	while (!found && ((received = peers_socket_receive (peers, buffer, size)) >= 0)) {
 		PacketHeader header;
-		if ((size_t) received >= sizeof (PacketHeader)) {
-			(void) memcpy (&header, buffer, sizeof (PacketHeader));
+		if (
+			((size_t) received >= PACKET_HEADER_SIZE)
+			&& (packet_header_decode ((const u8 *) buffer, &header) == PACKET_HEADER_RESULT_NONE)
+		) {
 			found = (header.packet_type == packet_type) && (header.request_type == request_type);
 		}
 	}
@@ -524,15 +540,21 @@ static void peers_socket_read_success (PeersSocket *peers, const bool sessions) 
 		peers, buffer, sizeof (buffer), PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_SUCCESS
 	);
 
-	const size_t session_size = sessions ? sizeof (SToken) : 0;
-	test_check_int_eq (
-		(int) received,
-		(int) (sizeof (PacketHeader) + session_size + CONNECTION_DATAGRAM_TOKEN_SIZE),
-		"the peer did not get its success"
-	);
+	const size_t minimum = PACKET_HEADER_SIZE + CONNECTION_DATAGRAM_TOKEN_SIZE;
+	test_check (received >= (ssize_t) minimum, "the peer did not get its success");
 
-	const char *data = buffer + sizeof (PacketHeader);
-	if (sessions) (void) memcpy (&peers->session, data, sizeof (SToken));
+	// the encoded session token is between the header and the datagram token
+	const size_t session_size = (size_t) received - minimum;
+	const bool has_session = (session_size > 0);
+	test_check_bool_eq (has_session, sessions, "the success does not match the sessions of the cerver");
+
+	const char *data = buffer + PACKET_HEADER_SIZE;
+	if (sessions) {
+		test_check_unsigned_eq (
+			serializer_decode (&session_token_schema, data, session_size, NULL, &peers->session),
+			SERIALIZER_RESULT_NONE, NULL
+		);
+	}
 
 	(void) memcpy (peers->token, data + session_size, CONNECTION_DATAGRAM_TOKEN_SIZE);
 	peers->has_token = true;
@@ -560,9 +582,9 @@ static bool peers_socket_echo (const PeersSocket *peers, const u8 *token) {
 		peers, buffer, sizeof (buffer), PACKET_TYPE_APP, PEERS_REQUEST_ECHO
 	);
 
-	const size_t expected = sizeof (PacketHeader) + (token ? CONNECTION_DATAGRAM_TOKEN_SIZE : 0);
+	const size_t expected = PACKET_HEADER_SIZE + (token ? CONNECTION_DATAGRAM_TOKEN_SIZE : 0);
 	return (received == (ssize_t) expected)
-		&& (!token || !memcmp (buffer + sizeof (PacketHeader), token, CONNECTION_DATAGRAM_TOKEN_SIZE));
+		&& (!token || !memcmp (buffer + PACKET_HEADER_SIZE, token, CONNECTION_DATAGRAM_TOKEN_SIZE));
 
 }
 
@@ -621,7 +643,7 @@ static void test_peers_biggest_packet (void) {
 
 	PeersClient client = peers_client_connect (PEERS_IPV4_LOOPBACK, port, NULL);
 
-	const size_t data_size = MAX_UDP_PACKET_SIZE - sizeof (PacketHeader);
+	const size_t data_size = MAX_UDP_PACKET_SIZE - PACKET_HEADER_SIZE;
 	char *data = (char *) calloc (data_size + 1, sizeof (char));
 	test_check_ptr (data);
 
@@ -656,20 +678,24 @@ static void test_peers_invalid_datagrams (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	// shorter than a header, empty, and a header with another size
 	const char short_datagram[PEERS_SHORT_DATAGRAM_SIZE] = { 0 };
 	peers_socket_send_raw (&raw, short_datagram, sizeof (short_datagram));
 	peers_socket_send_raw (&raw, short_datagram, 0);
 
+	u8 encoded[PACKET_HEADER_SIZE];
+
 	Packet *packet = packet_create_request (PACKET_TYPE_APP, PEERS_REQUEST_ECHO);
-	packet->header.packet_size = sizeof (PacketHeader) + PEERS_WRONG_SIZE_OFFSET;
-	peers_socket_send_raw (&raw, &packet->header, sizeof (PacketHeader));
+	packet->header.packet_size = PACKET_HEADER_SIZE + PEERS_WRONG_SIZE_OFFSET;
+	packet_header_encode (&packet->header, encoded);
+	peers_socket_send_raw (&raw, encoded, PACKET_HEADER_SIZE);
 
 	// a datagram with a bigger packet than the cerver takes
 	packet->header.packet_size = MAX_UDP_PACKET_SIZE + 1;
-	peers_socket_send_raw (&raw, &packet->header, sizeof (PacketHeader));
+	packet_header_encode (&packet->header, encoded);
+	peers_socket_send_raw (&raw, encoded, PACKET_HEADER_SIZE);
 	packet_delete (packet);
 
 	test_check (
@@ -696,7 +722,7 @@ static void test_peers_bad_packets (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 1), 1, NULL);
@@ -726,7 +752,7 @@ static void test_peers_request (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_REQUEST, REQUEST_PACKET_TYPE_GET_FILE, NULL, 0, NULL);
 	peers_socket_send (&raw, PACKET_TYPE_GAME, GAME_PACKET_TYPE_LOBBY_JOIN, NULL, 0, NULL);
@@ -756,7 +782,7 @@ static void test_peers_timeout (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 
 	test_check_unsigned_eq (peers_wait_count (cerver, 1), 1, NULL);
@@ -813,7 +839,7 @@ static void test_peers_disconnect (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 1), 1, NULL);
 
@@ -862,7 +888,7 @@ static void test_peers_queued_handler (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	for (unsigned int i = 0; i < PEERS_QUEUED_PACKETS; i++) {
 		peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	}
@@ -932,7 +958,7 @@ static void test_peers_auth_failed (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_auth_cerver_create (port, PEERS_AUTH_SINGLE_TRY));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send_credentials (&raw, PEERS_BAD_PASSWORD);
 
 	char buffer[MAX_UDP_PACKET_SIZE];
@@ -943,7 +969,7 @@ static void test_peers_auth_failed (void) {
 
 	test_check_unsigned_eq (peers_event_count (CERVER_EVENT_CLIENT_FAILED_AUTH), 1, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 0), 0, "the peer was not removed");
-	test_check_unsigned_eq (CERVER_STATS_GET (peers.cerver->stats->current_n_hold_connections), 0, NULL);
+	test_check_unsigned_eq (peers_wait_stat (&peers.cerver->stats->current_n_hold_connections, 0), 0, NULL);
 
 	peers_socket_close (&raw);
 
@@ -966,7 +992,7 @@ static void test_peers_pending (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_APP, PEERS_REQUEST_ECHO, NULL, 0, NULL);
 	test_check_unsigned_eq (
@@ -1013,7 +1039,7 @@ static void test_peers_token (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_auth_cerver_create (port, PEERS_AUTH_MAX_TRIES));
 
-	PeersSocket raw =peers_socket_authenticate (port, false);
+	PeersSocket raw = peers_socket_authenticate (port, false);
 
 	test_check (peers_socket_echo (&raw, raw.token), "the token was not accepted");
 
@@ -1086,7 +1112,11 @@ static void test_peers_sessions (void) {
 	test_check (first.session.token[0] != '\0', "the success does not have the session token");
 
 	PeersSocket second = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
-	peers_socket_send (&second, PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_CLIENT_AUTH, &first.session, sizeof (SToken), NULL);
+	peers_socket_send_packet (
+		&second,
+		packet_create_serialized (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_CLIENT_TOKEN, &session_token_schema, &first.session),
+		NULL
+	);
 	peers_socket_read_success (&second, true);
 
 	// the success is sent before the events are triggered
@@ -1123,14 +1153,22 @@ static void test_peers_sessions (void) {
 
 }
 
-// an unproven address only gets the cerver info when it sent enough bytes for it
+// an unproven address only gets the cerver info when it sent enough bytes for it,
+// the welcome makes the info bigger than the answer that a request with only its header can get
 static void test_peers_amplification (void) {
 
 	peers_counters_reset ();
 
+	char welcome[PEERS_LONG_WELCOME_SIZE];
+	(void) memset (welcome, PEERS_LONG_WELCOME_FILL, PEERS_LONG_WELCOME_SIZE - 1);
+	welcome[PEERS_LONG_WELCOME_SIZE - 1] = '\0';
+
 	const u16 port = peers_port++;
+	Cerver *cerver = peers_cerver_create (port);
+	test_check_unsigned_eq (cerver_set_welcome_msg (cerver, welcome), 0, NULL);
+
 	PeersCerver peers;
-	peers_cerver_start (&peers, peers_cerver_create (port));
+	peers_cerver_start (&peers, cerver);
 
 	char buffer[MAX_UDP_PACKET_SIZE];
 
@@ -1141,10 +1179,9 @@ static void test_peers_amplification (void) {
 		"a small request got the cerver info"
 	);
 
-	SCerver padding;
-	(void) memset (&padding, 0, sizeof (SCerver));
+	u8 padding[CERVER_SUMMARY_MAX_ENCODED_SIZE] = { 0 };
 	PeersSocket padded = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
-	peers_socket_send (&padded, PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, &padding, sizeof (SCerver), NULL);
+	peers_socket_send (&padded, PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, padding, CERVER_SUMMARY_MAX_ENCODED_SIZE, NULL);
 	test_check (
 		peers_socket_receive_packet (&padded, buffer, sizeof (buffer), PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO) > 0,
 		"the padded request did not get the cerver info"
