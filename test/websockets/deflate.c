@@ -1,3 +1,5 @@
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -257,10 +259,12 @@ static void test_deflate_examples (void) {
 	test_check_unsigned_eq (sink.size, 5, NULL);
 	test_check (!memcmp (output, "Hello", 5), "the first Hello is wrong");
 
-	// the second message uses the window of the first
+	// the second message uses the window of the first, the output does not have the first one anymore
 	static const u8 second[] = { 0xf2, 0x00, 0x11, 0x00, 0x00 };
+	(void) memset (output, 0, sizeof (output));
 	sink.size = 0;
 	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, second, sizeof (second), true, deflate_test_sink, &sink), 0, NULL);
+	test_check_unsigned_eq (sink.size, 5, NULL);
 	test_check (!memcmp (output, "Hello", 5), "the second Hello is wrong");
 
 	// an empty message is a single 0x00
@@ -281,6 +285,55 @@ static void test_deflate_examples (void) {
 	http_web_socket_deflate_delete (client);
 	http_web_socket_deflate_delete (server);
 	http_web_socket_deflate_delete (alone);
+
+}
+
+#define DEFLATE_TEST_EMPTY_MESSAGES		4
+
+// an empty message is a single 0x00 also after other messages of the same context
+// (RFC 7692 section 7.2.3.6): the compressor gives nothing for a flush without new input,
+// so it went out as a payload of 0 bytes, that the peer can not inflate
+static void test_deflate_empty_messages (void) {
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	HttpWebSocketDeflate *server = deflate_test_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters);
+	HttpWebSocketDeflate *client = deflate_test_create (HTTP_WEB_SOCKET_ROLE_CLIENT, &parameters);
+
+	u8 output[1 << 6];
+	DeflateTestSink sink = { output, 0 };
+
+	const u8 *compressed = NULL;
+	size_t compressed_size = 0;
+
+	// Hello, two empty messages and Hello again, each one inflated by the peer
+	static const char *messages[DEFLATE_TEST_EMPTY_MESSAGES] = { "Hello", "", "", "Hello" };
+	for (unsigned int i = 0; i < DEFLATE_TEST_EMPTY_MESSAGES; i++) {
+		const size_t size = strlen (messages[i]);
+
+		test_check_unsigned_eq (
+			http_web_socket_deflate_compress (server, size ? messages[i] : NULL, size, true, &compressed, &compressed_size), 0, NULL
+		);
+
+		if (!size) {
+			test_check_unsigned_eq (compressed_size, 1, NULL);
+			test_check_unsigned_eq (compressed[0], 0, NULL);
+		}
+
+		sink.size = 0;
+		test_check_unsigned_eq (
+			http_web_socket_deflate_decompress (client, compressed, compressed_size, true, deflate_test_sink, &sink), 0, NULL
+		);
+
+		test_check_unsigned_eq (sink.size, size, NULL);
+		test_check (!memcmp (output, messages[i], size), "the message is not the one that was compressed");
+	}
+
+	http_web_socket_deflate_delete (client);
+	http_web_socket_deflate_delete (server);
 
 }
 
@@ -488,12 +541,125 @@ static void test_deflate_final_block (void) {
 		test_check (!memcmp (output, "Final", 5), "the final block is wrong");
 	}
 
-	// nothing can follow the last block of a message
+	// a block with BFINAL ends the stream of zlib, not the message: other blocks can follow it
 	DeflateTestSink sink = { output, 0 };
 	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, compressed, compressed_size, false, deflate_test_sink, &sink), 0, NULL);
-	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, compressed, compressed_size, true, deflate_test_sink, &sink), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, compressed, compressed_size, true, deflate_test_sink, &sink), 0, NULL);
+	test_check_unsigned_eq (sink.size, 10, NULL);
+	test_check (!memcmp (output, "FinalFinal", 10), "the final blocks are wrong");
+
+	// the example of RFC 7692 section 7.2.3.4: Hello in a block with BFINAL and then the 0x00
+	// of an empty block without its tail, it was rejected because something followed the last block
+	static const u8 hello[] = { 0xf3, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x00, 0x00 };
+	sink.size = 0;
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, hello, sizeof (hello), true, deflate_test_sink, &sink), 0, NULL);
+	test_check_unsigned_eq (sink.size, 5, NULL);
+	test_check (!memcmp (output, "Hello", 5), "the Hello of the example is wrong");
+
+	// the context goes on after the last block: the second message of section 7.2.3.2
+	// is only a reference to the Hello that the window has
+	static const u8 second[] = { 0xf2, 0x00, 0x11, 0x00, 0x00 };
+	(void) memset (output, 0, sizeof (output));
+	sink.size = 0;
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, second, sizeof (second), true, deflate_test_sink, &sink), 0, NULL);
+	test_check_unsigned_eq (sink.size, 5, NULL);
+	test_check (!memcmp (output, "Hello", 5), "the Hello with the window is wrong");
 
 	http_web_socket_deflate_delete (client);
+
+}
+
+// a message that ends in the middle of a block is not complete: it was given as it was,
+// and the message after it failed because the inflater was still inside that block
+static void test_deflate_truncated (void) {
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	u8 output[1 << 6];
+	DeflateTestSink sink = { output, 0 };
+
+	// a compressed message without a payload, an empty one is a 0x00
+	HttpWebSocketDeflate *client = deflate_test_create (HTTP_WEB_SOCKET_ROLE_CLIENT, &parameters);
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, NULL, 0, true, deflate_test_sink, &sink), 1, NULL);
+	http_web_socket_deflate_delete (client);
+
+	// Hello without its last byte
+	static const u8 cut[] = { 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07 };
+	client = deflate_test_create (HTTP_WEB_SOCKET_ROLE_CLIENT, &parameters);
+	sink.size = 0;
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (client, cut, sizeof (cut), true, deflate_test_sink, &sink), 1, NULL);
+	http_web_socket_deflate_delete (client);
+
+	// the frames of a connection: a compressed text without payload is a 1007 and no message,
+	// it was an empty text and the 1007 was for the valid message after it
+	HttpWebSocketDeflate *server = deflate_test_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters);
+
+	u8 frame[HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE];
+	const size_t size = http_web_socket_frame_header (frame, true, true, HTTP_WEB_SOCKET_OPCODE_TEXT, 0, deflate_test_mask);
+
+	unsigned int n_messages = 0;
+	HttpWebSocketReceiver receiver;
+	http_web_socket_receiver_init (
+		&receiver, HTTP_WEB_SOCKET_ROLE_SERVER, DEFLATE_TEST_BOMB_LIMIT, DEFLATE_TEST_BOMB_LIMIT,
+		server, &deflate_test_handlers, &n_messages
+	);
+
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, frame, size, NULL), HTTP_WEB_SOCKET_RECEIVE_FAILED, NULL);
+	test_check_unsigned_eq (receiver.close_code, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD, NULL);
+	test_check_unsigned_eq (n_messages, 0, NULL);
+
+	http_web_socket_receiver_end (&receiver);
+	http_web_socket_deflate_delete (server);
+
+}
+
+// what is not in the bytes of the peer: without its decompressor a message fails with 1011 and not
+// with the 1007 of a payload that is not valid, and a size that zlib does not take in a call
+// was cut to its 32 bits and reported as a success
+static void test_deflate_failures (void) {
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	u8 output[1 << 6];
+	DeflateTestSink sink = { output, 0 };
+
+	static const u8 hello[] = { 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x00 };
+	test_check_unsigned_eq (
+		http_web_socket_deflate_decompress (NULL, hello, sizeof (hello), true, deflate_test_sink, &sink),
+		HTTP_WEB_SOCKET_INFLATE_FAILED, NULL
+	);
+
+	HttpWebSocketDeflate *server = deflate_test_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters);
+
+	const u8 *compressed = NULL;
+	size_t compressed_size = 0;
+
+	#if SIZE_MAX > UINT_MAX
+	test_check_unsigned_eq (
+		http_web_socket_deflate_compress (server, hello, HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX + 1, true, &compressed, &compressed_size), 1, NULL
+	);
+
+	test_check_unsigned_eq (
+		http_web_socket_deflate_decompress (server, hello, HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX + 1, true, deflate_test_sink, &sink),
+		HTTP_WEB_SOCKET_INFLATE_FAILED, NULL
+	);
+	#endif
+
+	// nothing of them was taken
+	test_check_unsigned_eq (http_web_socket_deflate_compress (server, "Hello", 5, true, &compressed, &compressed_size), 0, NULL);
+	test_check_unsigned_eq (compressed_size, sizeof (hello), NULL);
+	test_check (!memcmp (compressed, hello, sizeof (hello)), "the Hello of the compressor is wrong");
+
+	test_check_unsigned_eq (http_web_socket_deflate_decompress (server, hello, sizeof (hello), true, deflate_test_sink, &sink), 0, NULL);
+	test_check_unsigned_eq (sink.size, 5, NULL);
+
+	http_web_socket_deflate_delete (server);
 
 }
 
@@ -510,10 +676,13 @@ void web_socket_tests_deflate (void) {
 
 		#ifdef CERVER_ZLIB
 		test_run (test_deflate_examples);
+		test_run (test_deflate_empty_messages);
 		test_run (test_deflate_round_trip);
 		test_run (test_deflate_stream);
 		test_run (test_deflate_bomb);
 		test_run (test_deflate_final_block);
+		test_run (test_deflate_truncated);
+		test_run (test_deflate_failures);
 		#endif
 	}
 

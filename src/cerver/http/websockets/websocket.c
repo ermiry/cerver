@@ -30,6 +30,7 @@
 
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/message.h"
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/settings.h"
@@ -56,6 +57,11 @@
 
 // the value that wakes up the thread of a connection
 #define HTTP_WEB_SOCKET_WAKE_VALUE				1
+
+// what is read and discarded of a peer that did not answer the close of cerver, before the socket is closed
+#define HTTP_WEB_SOCKET_DRAIN_SIZE				(1 << 16)
+#define HTTP_WEB_SOCKET_DRAIN_BUFFER_SIZE		(1 << 12)
+#define HTTP_WEB_SOCKET_DRAIN_MILLISECONDS		(1 << 8)
 
 #define HTTP_WEB_SOCKET_IP_FORMAT				"%s"
 
@@ -110,6 +116,16 @@ void http_web_socket_opened (HttpWebSocket *web_socket) {
 
 }
 
+void http_web_socket_closed (HttpWebSocket *web_socket) {
+
+	if (web_socket) {
+		(void) pthread_mutex_lock (&web_socket->send_mutex);
+		http_web_socket_set_state (web_socket, HTTP_WEB_SOCKET_STATE_CLOSED);
+		(void) pthread_mutex_unlock (&web_socket->send_mutex);
+	}
+
+}
+
 HttpWebSocketRole http_web_socket_get_role (const HttpWebSocket *web_socket) {
 
 	return web_socket ? web_socket->role : HTTP_WEB_SOCKET_ROLE_SERVER;
@@ -125,6 +141,12 @@ const char *http_web_socket_get_ip (const HttpWebSocket *web_socket) {
 const String *http_web_socket_get_path (const HttpWebSocket *web_socket) {
 
 	return web_socket ? web_socket->path : NULL;
+
+}
+
+const String *http_web_socket_get_query (const HttpWebSocket *web_socket) {
+
+	return web_socket ? web_socket->query : NULL;
 
 }
 
@@ -245,6 +267,7 @@ static void http_web_socket_delete (HttpWebSocket *web_socket) {
 	free (web_socket->protocol);
 
 	str_delete (web_socket->path);
+	str_delete (web_socket->query);
 
 	if (web_socket->data && web_socket->delete_data) web_socket->delete_data (web_socket->data);
 
@@ -490,10 +513,6 @@ static u8 http_web_socket_write_frame (
 				web_socket->socket, parts, size ? HTTP_WEB_SOCKET_FRAME_PARTS : 1, 0, deadline, NULL, NULL
 			);
 		}
-
-		if (!retval) {
-			__atomic_add_fetch (&web_socket->n_bytes_sent, size, __ATOMIC_SEQ_CST);
-		}
 	}
 
 	return retval;
@@ -552,6 +571,7 @@ static bool http_web_socket_can_send_data (const HttpWebSocket *web_socket) {
 static void http_web_socket_message_sent (HttpWebSocket *web_socket, const size_t size) {
 
 	__atomic_add_fetch (&web_socket->n_messages_sent, 1, __ATOMIC_SEQ_CST);
+	__atomic_add_fetch (&web_socket->n_bytes_sent, size, __ATOMIC_SEQ_CST);
 
 	if (web_socket->http_cerver) {
 		HttpWebSocketRegistry *registry = web_socket->http_cerver->web_sockets;
@@ -563,10 +583,12 @@ static void http_web_socket_message_sent (HttpWebSocket *web_socket, const size_
 
 // the payload of a whole message, compressed when it is large enough
 // the message mutex must be held
+// a connection that sent its close while the message waited does not take it:
+// refused is set, that is an error of the send and not a failure of the connection
 static u8 http_web_socket_send_message_frame (
 	HttpWebSocket *web_socket,
 	const HttpWebSocketOpcode type, const void *data, const size_t size,
-	const struct timespec *deadline
+	const struct timespec *deadline, bool *refused
 ) {
 
 	u8 retval = 0;
@@ -575,7 +597,10 @@ static u8 http_web_socket_send_message_frame (
 	size_t payload_size = size;
 	bool compressed = false;
 
-	if (web_socket->deflate && (size >= web_socket->deflate->min_size)) {
+	if (
+		web_socket->deflate && (size >= web_socket->deflate->min_size)
+		&& (size <= HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX)
+	) {
 		retval = http_web_socket_deflate_compress (web_socket->deflate, data, size, true, &payload, &payload_size);
 		compressed = true;
 	}
@@ -583,8 +608,10 @@ static u8 http_web_socket_send_message_frame (
 	if (!retval) {
 		(void) pthread_mutex_lock (&web_socket->send_mutex);
 
-		retval = http_web_socket_can_send_data (web_socket) ?
-			http_web_socket_write_frame (web_socket, true, compressed, (u8) type, payload, payload_size, deadline) : 1;
+		*refused = !http_web_socket_can_send_data (web_socket);
+
+		retval = *refused ? 1 :
+			http_web_socket_write_frame (web_socket, true, compressed, (u8) type, payload, payload_size, deadline);
 
 		(void) pthread_mutex_unlock (&web_socket->send_mutex);
 	}
@@ -610,16 +637,21 @@ u8 http_web_socket_send_timeout (
 	if (web_socket && http_web_socket_is_data_type (type) && (data || !size)) {
 		(void) pthread_mutex_lock (&web_socket->message_mutex);
 
+		// the state is checked before anything of the cerver is used:
+		// a connection that is kept after its cerver was released only returns its error
 		if (http_web_socket_can_send_data (web_socket)) {
 			// the time of the send starts when the message can be written:
 			// a deadline from before the wait for other messages could be already over
 			struct timespec deadline;
-			socket_deadline_create_milliseconds (&deadline, timeout);
+			socket_deadline_create_milliseconds (
+				&deadline, timeout ? timeout : http_web_socket_send_milliseconds (web_socket)
+			);
 
-			retval = http_web_socket_send_message_frame (web_socket, type, data, size, &deadline);
+			bool refused = false;
+			retval = http_web_socket_send_message_frame (web_socket, type, data, size, &deadline, &refused);
 
-			if (retval) http_web_socket_fail (web_socket, HTTP_WEB_SOCKET_ERROR_SEND);
-			else http_web_socket_message_sent (web_socket, size);
+			if (!retval) http_web_socket_message_sent (web_socket, size);
+			else if (!refused) http_web_socket_fail (web_socket, HTTP_WEB_SOCKET_ERROR_SEND);
 		}
 
 		(void) pthread_mutex_unlock (&web_socket->message_mutex);
@@ -634,9 +666,9 @@ u8 http_web_socket_send (
 	const HttpWebSocketOpcode type, const void *data, const size_t size
 ) {
 
-	return web_socket ? http_web_socket_send_timeout (
-		web_socket, type, data, size, http_web_socket_send_milliseconds (web_socket)
-	) : 1;
+	return http_web_socket_send_timeout (
+		web_socket, type, data, size, HTTP_WEB_SOCKET_SEND_TIMEOUT_CONNECTION
+	);
 
 }
 
@@ -810,8 +842,10 @@ static u8 http_web_socket_send_close_frame (
 	(void) pthread_mutex_lock (&web_socket->send_mutex);
 
 	if (!http_web_socket_close_was_sent (web_socket)) {
-		__atomic_store_n (&web_socket->close_sent, true, __ATOMIC_SEQ_CST);
+		// the deadline is written once, before the flag that says it can be read:
+		// the thread of the connection reads both without the send mutex
 		socket_deadline_create_milliseconds (&web_socket->close_deadline, web_socket->settings.close_timeout);
+		__atomic_store_n (&web_socket->close_sent, true, __ATOMIC_SEQ_CST);
 
 		if (http_web_socket_get_state (web_socket) == HTTP_WEB_SOCKET_STATE_OPEN) {
 			http_web_socket_set_state (web_socket, HTTP_WEB_SOCKET_STATE_CLOSING);
@@ -830,6 +864,16 @@ static u8 http_web_socket_send_close_frame (
 
 }
 
+bool http_web_socket_close_is_valid (const u16 code, const char *reason) {
+
+	const size_t length = reason ? strlen (reason) : 0;
+
+	return http_web_socket_close_code_is_valid (code)
+		&& (length <= HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE)
+		&& http_web_socket_text_check (reason, length);
+
+}
+
 u8 http_web_socket_close (
 	HttpWebSocket *web_socket, const u16 code, const char *reason
 ) {
@@ -837,12 +881,7 @@ u8 http_web_socket_close (
 	u8 retval = 1;
 
 	const size_t length = reason ? strlen (reason) : 0;
-	if (
-		web_socket
-		&& http_web_socket_close_code_is_valid (code)
-		&& (length <= HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE)
-		&& http_web_socket_text_check (reason, length)
-	) {
+	if (web_socket && http_web_socket_close_is_valid (code, reason)) {
 		const HttpWebSocketState state = http_web_socket_get_state (web_socket);
 		if ((state == HTTP_WEB_SOCKET_STATE_OPEN) || (state == HTTP_WEB_SOCKET_STATE_CLOSING)) {
 			(void) http_web_socket_send_close_frame (web_socket, code, reason, length);
@@ -890,6 +929,7 @@ static void http_web_socket_fragment_received (
 ) {
 
 	if (last) __atomic_add_fetch (&web_socket->n_messages_received, 1, __ATOMIC_SEQ_CST);
+	__atomic_add_fetch (&web_socket->n_bytes_received, size, __ATOMIC_SEQ_CST);
 
 	if (web_socket->http_cerver) {
 		HttpWebSocketRegistry *registry = web_socket->http_cerver->web_sockets;
@@ -1076,7 +1116,6 @@ static bool http_web_socket_receive (HttpWebSocket *web_socket) {
 	);
 
 	if (received > 0) {
-		__atomic_add_fetch (&web_socket->n_bytes_received, (u64) received, __ATOMIC_SEQ_CST);
 		http_web_socket_alive (web_socket);
 		finished = http_web_socket_receive_bytes (web_socket, web_socket->buffer, (size_t) received);
 	}
@@ -1104,15 +1143,30 @@ static bool http_web_socket_receive (HttpWebSocket *web_socket) {
 
 #pragma region thread
 
+// the deadline of the closing handshake, when the close frame was sent
+// the send mutex is not taken: the thread of the connection keeps reading
+// while another thread waits in a send, so two sides that write at once do not block each other
+// returns true when the close was sent
+static bool http_web_socket_close_deadline_get (
+	const HttpWebSocket *web_socket, struct timespec *close_deadline
+) {
+
+	const bool close_sent = http_web_socket_close_was_sent (web_socket);
+
+	// the deadline was written before the flag
+	if (close_sent) *close_deadline = web_socket->close_deadline;
+
+	return close_sent;
+
+}
+
 // the milliseconds until the next timer of the connection, HTTP_WEB_SOCKET_POLL_FOREVER without one
 static int http_web_socket_next_timeout (HttpWebSocket *web_socket) {
 
 	int timeout = HTTP_WEB_SOCKET_POLL_FOREVER;
 
-	(void) pthread_mutex_lock (&web_socket->send_mutex);
-	const bool close_sent = web_socket->close_sent;
-	const struct timespec close_deadline = web_socket->close_deadline;
-	(void) pthread_mutex_unlock (&web_socket->send_mutex);
+	struct timespec close_deadline = { 0, 0 };
+	const bool close_sent = http_web_socket_close_deadline_get (web_socket, &close_deadline);
 
 	if (close_sent) {
 		timeout = socket_deadline_remaining (&close_deadline);
@@ -1133,10 +1187,8 @@ static bool http_web_socket_timers (HttpWebSocket *web_socket) {
 
 	bool finished = false;
 
-	(void) pthread_mutex_lock (&web_socket->send_mutex);
-	const bool close_sent = web_socket->close_sent;
-	const struct timespec close_deadline = web_socket->close_deadline;
-	(void) pthread_mutex_unlock (&web_socket->send_mutex);
+	struct timespec close_deadline = { 0, 0 };
+	const bool close_sent = http_web_socket_close_deadline_get (web_socket, &close_deadline);
 
 	if (close_sent) {
 		if (!socket_deadline_remaining (&close_deadline)) {
@@ -1224,8 +1276,56 @@ static bool http_web_socket_step (HttpWebSocket *web_socket) {
 
 }
 
+// reads and discards what the peer sends, up to HTTP_WEB_SOCKET_DRAIN_SIZE bytes,
+// until it ends its side or HTTP_WEB_SOCKET_DRAIN_MILLISECONDS pass
+static void http_web_socket_drain (const int sock_fd) {
+
+	u8 buffer[HTTP_WEB_SOCKET_DRAIN_BUFFER_SIZE];
+
+	struct timespec deadline;
+	socket_deadline_create_milliseconds (&deadline, HTTP_WEB_SOCKET_DRAIN_MILLISECONDS);
+
+	size_t drained = 0;
+	bool ended = false;
+	while (!ended && (drained < HTTP_WEB_SOCKET_DRAIN_SIZE)) {
+		struct pollfd fd = { sock_fd, POLLIN, 0 };
+		const int remaining = socket_deadline_remaining (&deadline);
+
+		ended = !remaining || (poll (&fd, 1, remaining) <= 0);
+		if (!ended) {
+			const ssize_t received = recv (sock_fd, buffer, HTTP_WEB_SOCKET_DRAIN_BUFFER_SIZE, MSG_DONTWAIT);
+
+			if (received > 0) drained += (size_t) received;
+			else ended = true;
+		}
+	}
+
+}
+
+// ends the side of cerver of the TCP connection, so a send that is waiting ends now
+// when cerver sent its close and the peer did not answer it, the peer can still be sending
+// (a message that was too large keeps arriving after its close): that is read and discarded for a moment,
+// because a close () with unread data answers with a RST that can destroy the close frame of cerver
+static void http_web_socket_end_writes (HttpWebSocket *web_socket) {
+
+	const int sock_fd = web_socket->socket->sock_fd;
+	if (sock_fd >= 0) {
+		(void) shutdown (sock_fd, SHUT_WR);
+
+		if (
+			http_web_socket_close_was_sent (web_socket)
+			&& !web_socket->close_received && !http_web_socket_is_aborted (web_socket)
+		) {
+			http_web_socket_drain (sock_fd);
+		}
+	}
+
+}
+
 // the connection ended, its methods run for the last time
 static void http_web_socket_finish (HttpWebSocket *web_socket) {
+
+	http_web_socket_end_writes (web_socket);
 
 	// a send that is waiting ends now, and no other one can start
 	(void) socket_shutdown (web_socket->socket);
@@ -1364,6 +1464,10 @@ static void http_web_socket_adopt (
 
 	if (request && request->url) web_socket->path = str_new (request->url->str);
 
+	if (request && request->query && request->query->len) {
+		web_socket->query = str_new (request->query->str);
+	}
+
 	const char *ip = (request && request->client_ip[0]) ? request->client_ip : web_socket->connection->ip;
 	(void) snprintf (web_socket->ip, CONNECTION_IP_SIZE, HTTP_WEB_SOCKET_IP_FORMAT, ip);
 
@@ -1405,6 +1509,24 @@ static HttpWebSocket *http_web_socket_server_create (
 
 }
 
+// the connection did not get its thread or its place in the registry, its socket goes back to its owner:
+// it is closed with the send mutex first, so a send of another thread that found it in the registry
+// ends before the socket is given back and no other one starts
+static void http_web_socket_start_failed (HttpWebSocket *web_socket) {
+
+	(void) pthread_mutex_lock (&web_socket->send_mutex);
+
+	http_web_socket_set_state (web_socket, HTTP_WEB_SOCKET_STATE_CLOSED);
+
+	web_socket->connection = NULL;
+	web_socket->socket = NULL;
+
+	(void) pthread_mutex_unlock (&web_socket->send_mutex);
+
+	http_web_socket_release (web_socket);
+
+}
+
 bool http_web_socket_start (CerverReceive *cr, HttpReceive *http_receive) {
 
 	bool started = false;
@@ -1436,11 +1558,7 @@ bool http_web_socket_start (CerverReceive *cr, HttpReceive *http_receive) {
 				http_web_socket_registry_unreserve (registry);
 			}
 
-			if (!started) {
-				web_socket->connection = NULL;
-				web_socket->socket = NULL;
-				http_web_socket_release (web_socket);
-			}
+			if (!started) http_web_socket_start_failed (web_socket);
 		}
 	}
 

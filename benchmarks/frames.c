@@ -33,6 +33,11 @@ static const u8 frames_mask[HTTP_WEB_SOCKET_MASK_SIZE] = { 0x37, 0xFA, 0x21, 0x3
 
 static u64 frames_messages = 0;
 
+// the payload that every message of a round has, and the messages that were not it
+static const u8 *frames_expected = NULL;
+static size_t frames_expected_size = 0;
+static u64 frames_wrong = 0;
+
 static double frames_now (void) {
 
 	struct timespec now = { 0, 0 };
@@ -46,10 +51,11 @@ static int frames_on_message (void *data, HttpWebSocketOpcode type, const u8 *pa
 
 	(void) data;
 	(void) type;
-	(void) payload;
-	(void) size;
 
 	frames_messages += 1;
+
+	// the receiver unmasked the payload that was sent
+	if ((size != frames_expected_size) || memcmp (payload, frames_expected, size)) frames_wrong += 1;
 
 	return 0;
 
@@ -59,11 +65,9 @@ static const HttpWebSocketReceiverHandlers frames_handlers = {
 	frames_on_message, NULL, NULL, NULL, NULL
 };
 
-// a round of masked text frames of the payload size
-static size_t frames_round (u8 *round, const size_t payload_size) {
-
-	u8 *payload = (u8 *) malloc (payload_size);
-	for (size_t i = 0; i < payload_size; i++) payload[i] = (u8) ('a' + (i % 26));
+// a round of masked text frames of the payload, that is the one that every message must have
+// returns the bytes of the round, and sets its frames
+static size_t frames_round (u8 *round, const u8 *payload, const size_t payload_size, u64 *frames) {
 
 	size_t size = 0;
 	while ((size + payload_size + HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE) <= FRAMES_ROUND_SIZE) {
@@ -74,38 +78,54 @@ static size_t frames_round (u8 *round, const size_t payload_size) {
 		(void) memcpy (round + size + header, payload, payload_size);
 		http_web_socket_mask (round + size + header, payload_size, frames_mask, 0);
 		size += header + payload_size;
-	}
 
-	free (payload);
+		*frames += 1;
+	}
 
 	return size;
 
 }
 
 // the receiver unmasks in place, so each round is parsed from a fresh copy
-static void frames_receiver (const char *name, const size_t payload_size, const size_t megabytes) {
+// returns 0 when the receiver gave every message of every round as it was sent, 1 if it did not:
+// its result and its messages were ignored, a receiver that failed in its first frame was the fastest one
+static int frames_receiver (const char *name, const size_t payload_size, const size_t megabytes) {
 
 	u8 *round = (u8 *) malloc (FRAMES_ROUND_SIZE);
 	u8 *copy = (u8 *) malloc (FRAMES_ROUND_SIZE);
-	const size_t round_size = frames_round (round, payload_size);
+
+	u8 *payload = (u8 *) malloc (payload_size);
+	for (size_t i = 0; i < payload_size; i++) payload[i] = (u8) ('a' + (i % 26));
+
+	u64 round_frames = 0;
+	const size_t round_size = frames_round (round, payload, payload_size, &round_frames);
 
 	HttpWebSocketReceiver receiver;
 	http_web_socket_receiver_init (
 		&receiver, HTTP_WEB_SOCKET_ROLE_SERVER, payload_size, payload_size, NULL, &frames_handlers, NULL
 	);
 
+	frames_expected = payload;
+	frames_expected_size = payload_size;
 	frames_messages = 0;
+	frames_wrong = 0;
+
 	size_t parsed = 0;
+	u64 rounds = 0;
+	u64 stopped = 0;
 	double elapsed = 0;
 	const size_t total = megabytes * (size_t) FRAMES_BYTES_PER_MEGABYTE;
 	while (parsed < total) {
 		(void) memcpy (copy, round, round_size);
 
 		const double start = frames_now ();
-		(void) http_web_socket_receiver_execute (&receiver, copy, round_size, NULL);
+		const HttpWebSocketReceiveResult result = http_web_socket_receiver_execute (&receiver, copy, round_size, NULL);
 		elapsed += frames_now () - start;
 
+		if (result != HTTP_WEB_SOCKET_RECEIVE_CONTINUE) stopped += 1;
+
 		parsed += round_size;
+		rounds += 1;
 	}
 
 	(void) printf (
@@ -113,9 +133,21 @@ static void frames_receiver (const char *name, const size_t payload_size, const 
 		name, ((double) parsed / FRAMES_BYTES_PER_MEGABYTE) / elapsed, (double) frames_messages / elapsed
 	);
 
+	const bool whole = !stopped && !frames_wrong && (frames_messages == (rounds * round_frames));
+	if (!whole) {
+		(void) fprintf (
+			stderr, "%s: %llu messages of %llu, %llu wrong, %llu rounds stopped\n", name,
+			(unsigned long long) frames_messages, (unsigned long long) (rounds * round_frames),
+			(unsigned long long) frames_wrong, (unsigned long long) stopped
+		);
+	}
+
 	http_web_socket_receiver_end (&receiver);
 	free (round);
 	free (copy);
+	free (payload);
+
+	return whole ? 0 : 1;
 
 }
 
@@ -164,11 +196,11 @@ int main (int argc, char **argv) {
 	const size_t megabytes = (argc > FRAMES_ARGUMENT_MEGABYTES) ?
 		(size_t) atoi (argv[FRAMES_ARGUMENT_MEGABYTES]) : FRAMES_DEFAULT_MEGABYTES;
 
-	frames_receiver ("small frames (64 bytes)", FRAMES_SMALL_PAYLOAD, megabytes);
-	frames_receiver ("large frames (64 KiB)", FRAMES_LARGE_PAYLOAD, megabytes);
+	int failed = frames_receiver ("small frames (64 bytes)", FRAMES_SMALL_PAYLOAD, megabytes);
+	failed |= frames_receiver ("large frames (64 KiB)", FRAMES_LARGE_PAYLOAD, megabytes);
 	frames_mask_alone (megabytes);
 	frames_text_alone (megabytes);
 
-	return 0;
+	return failed;
 
 }

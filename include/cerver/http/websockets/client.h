@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 #include <pthread.h>
 
@@ -48,108 +49,17 @@
 extern "C" {
 #endif
 
-#pragma region response
-
-// what the client takes from the response of the server
-typedef struct HttpWebSocketClientResponse {
-
-	int status;
-
-	// the response was parsed until its empty line
-	bool complete;
-
-	// a header was repeated, too long or the response was not valid HTTP
-	bool invalid;
-
-	char upgrade[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char connection[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char accept[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char protocol[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-	char extensions[HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE];
-
-	bool has_protocol;
-	bool has_extensions;
-
-	// the bytes of the response until its empty line, the frames of the server can follow them
-	size_t size;
-
-} HttpWebSocketClientResponse;
-
-// parses the response of a handshake, it can be called again with more bytes
-// returns 0 when it is complete, 1 when it needs more bytes, 2 when it is not valid
-CERVER_PUBLIC u8 http_web_socket_client_response_parse (
-	const char *data, const size_t size,
-	HttpWebSocketClientResponse *response
-);
-
-// the checks of RFC 6455 section 4.1 and of the extensions that were offered:
-// a 101, the tokens, the accept of the key, a protocol that was offered and permessage-deflate
-// protocol (optional) is set to the one of the server, compression to the parameters of the extension
-// returns true when the connection can start
-CERVER_PUBLIC bool http_web_socket_client_response_check (
-	const HttpWebSocketClientResponse *response, const char *key,
-	char * const *protocols, const unsigned int n_protocols,
-	const HttpWebSocketDeflateOptions *options,
-	const char **protocol, bool *compression, HttpWebSocketDeflateParameters *parameters
-);
-
-#pragma endregion
-
 #pragma region client
 
-struct _HttpWebSocketClient {
-
-	char host[HTTP_WEB_SOCKET_CLIENT_HOST_SIZE];
-	u16 port;
-	char path[HTTP_WEB_SOCKET_CLIENT_PATH_SIZE];
-
-	// the extra headers of the request, "Name: value"
-	DoubleList *headers;
-
-	// the methods, the limits and the timeouts of the connection,
-	// the protocols and the compression that are offered
-	HttpWebSocketSettings settings;
-
-	unsigned int connect_timeout;
-	unsigned int handshake_timeout;
-
-	bool reconnect;
-	unsigned int reconnect_min;
-	unsigned int reconnect_max;
-
-	pthread_mutex_t mutex;
-
-	// the connection of now, NULL between connections
-	HttpWebSocket *web_socket;
-
-	// wakes up the wait between reconnections (an eventfd)
-	int wake_fd;
-
-	// http_web_socket_client_close () or delete (), there are no more reconnections
-	bool stopping;
-
-	pthread_t thread;
-	bool thread_started;
-
-	// the connections that were opened
-	unsigned int n_connections;
-
-	// the attempts that failed in a row
-	unsigned int n_failures;
-
-	// the address of the last connection
-	char ip[NETWORK_ADDRESS_STRING_SIZE];
-
-	// the data of the application, every connection of the client has it since it is created
-	void *data;
-
-};
-
+// a WebSocket client: its url, its settings and the connection that it has now
+// its fields are not part of the API, the methods of this header are the way to a client
 typedef struct _HttpWebSocketClient HttpWebSocketClient;
 
 CERVER_EXPORT HttpWebSocketClient *http_web_socket_client_create (void);
 
 // closes the connection with 1000, waits for its thread and releases the client
+// it is the last call of a client, from a thread that is not running one of its methods:
+// a method (on_open, on_message, on_close, on_error) that deletes its client only closes it
 CERVER_EXPORT void http_web_socket_client_delete (HttpWebSocketClient *client);
 
 // ws://host[:port][/path][?query], the host can be an IPv6 in brackets
@@ -193,33 +103,36 @@ CERVER_EXPORT void http_web_socket_client_set_max_message (
 	HttpWebSocketClient *client, const size_t max_message
 );
 
-CERVER_EXPORT void http_web_socket_client_set_ping (
+CERVER_EXPORT void http_web_socket_client_set_ping_milliseconds (
 	HttpWebSocketClient *client, const unsigned int ping_interval, const unsigned int pong_timeout
 );
 
-CERVER_EXPORT void http_web_socket_client_set_close_timeout (
+CERVER_EXPORT void http_web_socket_client_set_close_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int close_timeout
 );
 
-CERVER_EXPORT void http_web_socket_client_set_send_timeout (
+CERVER_EXPORT void http_web_socket_client_set_send_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int send_timeout
 );
 
 // the milliseconds of the connect () of each address and of the handshake, 0 keeps the defaults
-CERVER_EXPORT void http_web_socket_client_set_timeouts (
+CERVER_EXPORT void http_web_socket_client_set_timeouts_milliseconds (
 	HttpWebSocketClient *client, const unsigned int connect_timeout, const unsigned int handshake_timeout
 );
 
 // reconnects when the connection ends without http_web_socket_client_close (),
-// waiting from min to max milliseconds (doubled after each failure, with jitter)
-CERVER_EXPORT void http_web_socket_client_set_reconnect (
+// waiting from min to max milliseconds (doubled after each failure, with jitter, never above max)
+// a connection that ends before it lasted max milliseconds counts as a failure,
+// so a server that accepts and closes is not reconnected without a wait
+CERVER_EXPORT void http_web_socket_client_set_reconnect_milliseconds (
 	HttpWebSocketClient *client, const bool reconnect,
 	const unsigned int min, const unsigned int max
 );
 
 // connects in the current thread and returns after the handshake,
 // the connection runs in its own thread, where every method is called
-// returns 0 on success, 1 on error (on_error and on_close were called)
+// returns 0 on success, 1 on error (on_error and on_close were called, also when
+// the connection opened and its thread could not be created)
 CERVER_EXPORT u8 http_web_socket_client_connect (HttpWebSocketClient *client);
 
 // connects in the thread of the connection, the methods report the result
@@ -251,6 +164,7 @@ CERVER_EXPORT u8 http_web_socket_client_close (
 );
 
 // waits until the thread of the client ends, after a close or without reconnections
+// a method of the client does not wait: it runs in that thread
 CERVER_EXPORT void http_web_socket_client_wait (HttpWebSocketClient *client);
 
 // the connections that were opened

@@ -13,6 +13,7 @@
 #include "cerver/http/tree.h"
 
 #include "cerver/http/websockets/frame.h"
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/websocket.h"
 
@@ -231,7 +232,7 @@ void http_cerver_set_web_socket_max_connections (
 
 }
 
-void http_cerver_set_web_socket_broadcast_timeout (
+void http_cerver_set_web_socket_broadcast_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int broadcast_timeout
 ) {
 
@@ -289,6 +290,77 @@ unsigned int http_cerver_web_socket_count (
 	}
 
 	return count;
+
+}
+
+// the counters of the registry are read one by one, like its metrics
+static void http_web_socket_registry_stats (
+	HttpWebSocketRegistry *registry, HttpWebSocketStats *stats
+) {
+
+	(void) pthread_mutex_lock (&registry->mutex);
+	stats->n_connections = registry->count;
+	(void) pthread_mutex_unlock (&registry->mutex);
+
+	stats->n_opened = CERVER_STATS_GET (registry->n_opened);
+	stats->n_closed = CERVER_STATS_GET (registry->n_closed);
+
+	for (unsigned int i = 0; i < HTTP_WEB_SOCKET_REJECTIONS; i++) {
+		stats->n_rejected[i] = CERVER_STATS_GET (registry->n_rejected[i]);
+	}
+
+	stats->n_messages_received = CERVER_STATS_GET (registry->n_messages_received);
+	stats->n_messages_sent = CERVER_STATS_GET (registry->n_messages_sent);
+	stats->n_bytes_received = CERVER_STATS_GET (registry->n_bytes_received);
+	stats->n_bytes_sent = CERVER_STATS_GET (registry->n_bytes_sent);
+
+	stats->n_slow = CERVER_STATS_GET (registry->n_slow);
+	stats->n_errors = CERVER_STATS_GET (registry->n_errors);
+
+	for (unsigned int i = 0; i < HTTP_WEB_SOCKET_CLOSE_CODES_SIZE; i++) {
+		stats->n_closes[i] = CERVER_STATS_GET (registry->n_closes[i]);
+	}
+
+	stats->n_closes_other = CERVER_STATS_GET (registry->n_closes_other);
+
+}
+
+u8 http_cerver_web_socket_get_stats (
+	const HttpCerver *http_cerver, HttpWebSocketStats *stats
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && http_cerver->web_sockets && stats) {
+		(void) memset (stats, 0, sizeof (HttpWebSocketStats));
+
+		http_web_socket_registry_stats (http_cerver->web_sockets, stats);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+u8 http_web_socket_get_stats (
+	const HttpWebSocket *web_socket, HttpWebSocketStats *stats
+) {
+
+	u8 retval = 1;
+
+	if (web_socket && stats) {
+		(void) memset (stats, 0, sizeof (HttpWebSocketStats));
+
+		stats->n_messages_received = __atomic_load_n (&web_socket->n_messages_received, __ATOMIC_SEQ_CST);
+		stats->n_messages_sent = __atomic_load_n (&web_socket->n_messages_sent, __ATOMIC_SEQ_CST);
+		stats->n_bytes_received = __atomic_load_n (&web_socket->n_bytes_received, __ATOMIC_SEQ_CST);
+		stats->n_bytes_sent = __atomic_load_n (&web_socket->n_bytes_sent, __ATOMIC_SEQ_CST);
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 

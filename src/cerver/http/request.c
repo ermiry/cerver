@@ -585,9 +585,52 @@ static bool http_request_bytes_range_position (
 
 }
 
+// the range that starts at a position, with or without its last one
+static void http_request_bytes_range_from (
+	BytesRange *bytes_range, const long start, const char *last
+) {
+
+	bytes_range->start = start;
+
+	// bytes=0-99
+	long end = 0;
+	if (http_request_bytes_range_position (last, &end)) {
+		bytes_range->type = HTTP_RANGE_TYPE_FULL;
+		bytes_range->end = end;
+	}
+
+	// bytes=0-
+	else {
+		bytes_range->type = start ? HTTP_RANGE_TYPE_FIRST : HTTP_RANGE_TYPE_EMPTY;
+	}
+
+}
+
+// the range of the last bytes of the file, their number is the end of the range
+// and its start is known with the size of the file; no bytes are not a range
+// returns true when the value is a range
+static bool http_request_bytes_range_suffix (
+	BytesRange *bytes_range, const char *length
+) {
+
+	bool result = false;
+
+	long suffix = 0;
+	if (http_request_bytes_range_position (length, &suffix) && (suffix > 0)) {
+		bytes_range->type = HTTP_RANGE_TYPE_SUFFIX;
+		bytes_range->start = 0;
+		bytes_range->end = suffix;
+
+		result = true;
+	}
+
+	return result;
+
+}
+
 // bytes=0-
 // bytes=4194304-8388608
-// only a range that starts at a position is one: the range of the last bytes (bytes=-500),
+// bytes=-500
 // another unit and a value without its numbers are ignored and the bytes range is not changed
 // returns true when the value is a range
 static bool http_request_get_bytes_range_internal (
@@ -601,22 +644,14 @@ static bool http_request_get_bytes_range_internal (
 		const char *separator = strchr (first, http_request_bytes_range_separator);
 
 		long start = 0;
-		long end = 0;
 		if (separator && http_request_bytes_range_position (first, &start)) {
-			bytes_range->start = start;
-
-			// bytes=0-99
-			if (http_request_bytes_range_position (separator + 1, &end)) {
-				bytes_range->type = HTTP_RANGE_TYPE_FULL;
-				bytes_range->end = end;
-			}
-
-			// bytes=0-
-			else {
-				bytes_range->type = start ? HTTP_RANGE_TYPE_FIRST : HTTP_RANGE_TYPE_EMPTY;
-			}
+			http_request_bytes_range_from (bytes_range, start, separator + 1);
 
 			result = true;
+		}
+
+		else if (separator == first) {
+			result = http_request_bytes_range_suffix (bytes_range, separator + 1);
 		}
 	}
 

@@ -37,6 +37,9 @@ typedef struct FrameTestParse {
 	// stops the parser at the end of each frame
 	bool stop_at_end;
 
+	// stops the parser after the header and after each piece of the payload
+	bool stop_at_data;
+
 } FrameTestParse;
 
 static int frame_test_on_begin (HttpWebSocketParser *parser, const HttpWebSocketFrame *frame) {
@@ -49,7 +52,7 @@ static int frame_test_on_begin (HttpWebSocketParser *parser, const HttpWebSocket
 	parse->payloads[parse->n_frames] = (u8 *) malloc (frame->length ? (size_t) frame->length : 1);
 	test_check_ptr (parse->payloads[parse->n_frames]);
 
-	return 0;
+	return parse->stop_at_data ? 1 : 0;
 
 }
 
@@ -66,7 +69,7 @@ static int frame_test_on_data (HttpWebSocketParser *parser, u8 *data, size_t siz
 	(void) memcpy (parse->payloads[current] + parse->payload_sizes[current], data, size);
 	parse->payload_sizes[current] += size;
 
-	return 0;
+	return parse->stop_at_data ? 1 : 0;
 
 }
 
@@ -347,6 +350,20 @@ static void test_frame_errors (void) {
 
 	frame_test_error (client, false, 4, (const u8 *) "\x82\x05Hello", 7, HTTP_WEB_SOCKET_FRAME_ERROR_TOO_BIG);
 
+	// a length with more bytes than it needs (RFC 6455 section 5.2), they were accepted
+	frame_test_error (client, false, 0, (const u8 *) "\x81\x7E\x00\x05Hello", 9, HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH);
+	frame_test_error (client, false, 0, (const u8 *) "\x81\x7E\x00\x7D", 4, HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH);
+	frame_test_error (client, false, 0, (const u8 *) "\x81\x7E\x00\x00", 4, HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH);
+	frame_test_error (
+		client, false, 0, (const u8 *) "\x82\x7F\x00\x00\x00\x00\x00\x00\x00\x05", 10,
+		HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH
+	);
+
+	frame_test_error (
+		client, false, 0, (const u8 *) "\x82\x7F\x00\x00\x00\x00\x00\x00\xFF\xFF", 10,
+		HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH
+	);
+
 	test_check_unsigned_eq (
 		http_web_socket_frame_error_close_code (HTTP_WEB_SOCKET_FRAME_ERROR_TOO_BIG), HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG, NULL
 	);
@@ -357,19 +374,34 @@ static void test_frame_errors (void) {
 
 }
 
-// a length with more bytes than it needs is accepted, cerver always sends the least
-static void test_frame_non_minimal (void) {
+// the first lengths of the 16 and of the 64 bits are the shortest encodings of their values
+static void test_frame_minimal (void) {
 
 	FrameTestParse parse;
 	(void) memset (&parse, 0, sizeof (FrameTestParse));
 
-	u8 bytes[] = { 0x81, 0x7E, 0x00, 0x05, 'H', 'e', 'l', 'l', 'o' };
-	frame_test_parse (HTTP_WEB_SOCKET_ROLE_CLIENT, bytes, sizeof (bytes), 0, &parse);
+	u8 *bytes = (u8 *) calloc (1, FRAME_TEST_BUFFER_SIZE);
+	test_check_ptr (bytes);
 
+	bytes[0] = 0x82;
+	bytes[1] = 0x7E;
+	bytes[2] = 0x00;
+	bytes[3] = 0x7E;
+	frame_test_parse (HTTP_WEB_SOCKET_ROLE_CLIENT, bytes, 4 + 126, 0, &parse);
 	test_check_unsigned_eq (parse.n_frames, 1, NULL);
-	test_check (!memcmp (parse.payloads[0], "Hello", 5), "the text is wrong");
-
+	test_check_unsigned_eq (parse.payload_sizes[0], 126, NULL);
 	frame_test_parse_end (&parse);
+
+	(void) memset (bytes, 0, FRAME_TEST_BUFFER_SIZE);
+	bytes[0] = 0x82;
+	bytes[1] = 0x7F;
+	bytes[7] = 0x01;
+	frame_test_parse (HTTP_WEB_SOCKET_ROLE_CLIENT, bytes, 10 + 65536, 0, &parse);
+	test_check_unsigned_eq (parse.n_frames, 1, NULL);
+	test_check_unsigned_eq (parse.payload_sizes[0], 65536, NULL);
+	frame_test_parse_end (&parse);
+
+	free (bytes);
 
 }
 
@@ -417,6 +449,44 @@ static void test_frame_stop (void) {
 
 }
 
+// a method that stops the parser with the last bytes of a payload: the frame ends in the next call,
+// that has no bytes to give, it waited for the bytes of the next frame
+static void test_frame_stop_at_data (void) {
+
+	u8 buffer[1 << 6];
+	size_t size = frame_test_build (buffer, true, false, HTTP_WEB_SOCKET_OPCODE_TEXT, (const u8 *) "one", 3, NULL);
+	const size_t empty = size;
+	size += frame_test_build (buffer + size, true, false, HTTP_WEB_SOCKET_OPCODE_TEXT, NULL, 0, NULL);
+
+	FrameTestParse parse;
+	(void) memset (&parse, 0, sizeof (FrameTestParse));
+	parse.stop_at_data = true;
+
+	HttpWebSocketParser parser;
+	http_web_socket_parser_init (&parser, HTTP_WEB_SOCKET_ROLE_CLIENT, 0, &frame_test_settings, &parse);
+
+	// the header, the payload and the end
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer, empty), 2, NULL);
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer + 2, empty - 2), 3, NULL);
+	test_check_unsigned_eq (parse.payload_sizes[0], 3, NULL);
+	test_check_unsigned_eq (parse.n_frames, 0, NULL);
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer + empty, 0), 0, NULL);
+	test_check_unsigned_eq (parse.n_frames, 1, NULL);
+
+	// a frame without payload whose begin stopped the parser ends the same way
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer + empty, size - empty), 2, NULL);
+	test_check_unsigned_eq (parse.n_frames, 1, NULL);
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer + size, 0), 0, NULL);
+	test_check_unsigned_eq (parse.n_frames, 2, NULL);
+
+	// and nothing ends twice
+	test_check_unsigned_eq (http_web_socket_parser_execute (&parser, buffer + size, 0), 0, NULL);
+	test_check_unsigned_eq (parse.n_frames, 2, NULL);
+
+	frame_test_parse_end (&parse);
+
+}
+
 static void test_frame_close_codes (void) {
 
 	static const u16 valid[] = { 1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 3000, 3999, 4000, 4999 };
@@ -444,9 +514,10 @@ void web_socket_tests_frame (void) {
 	test_run (test_frame_stream);
 	test_run (test_frame_every_byte);
 	test_run (test_frame_errors);
-	test_run (test_frame_non_minimal);
+	test_run (test_frame_minimal);
 	test_run (test_frame_mask);
 	test_run (test_frame_stop);
+	test_run (test_frame_stop_at_data);
 	test_run (test_frame_close_codes);
 
 	(void) printf ("Done!\n");

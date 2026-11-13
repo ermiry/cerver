@@ -1,0 +1,3 @@
+AGET /api/public HTTP/2.0
+Host: localhost
+

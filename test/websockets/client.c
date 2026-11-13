@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <errno.h>
+#include <limits.h>
 #include <poll.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -22,6 +23,7 @@
 #include <cerver/http/websockets/deflate.h>
 #include <cerver/http/websockets/frame.h>
 #include <cerver/http/websockets/handshake.h>
+#include <cerver/http/websockets/internal.h>
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
@@ -45,8 +47,8 @@
 #define CLIENT_TEST_RECONNECT_MIN			(1 << 5)
 #define CLIENT_TEST_RECONNECT_MAX			(1 << 7)
 
-// the short timeouts of the clients of the fake servers
-#define CLIENT_TEST_TIMEOUT					(1 << 10)
+// the short timeouts of the clients of the fake servers, with the scale of the run
+#define CLIENT_TEST_TIMEOUT					(test_milliseconds (1 << 10))
 
 #define CLIENT_TEST_SENDERS					8
 #define CLIENT_TEST_SENDER_MESSAGES			(1 << 6)
@@ -68,6 +70,10 @@ typedef struct ClientTestState {
 
 	unsigned int last_code;
 	unsigned int last_error;
+
+	// the client that its own on_close waits for and deletes, and the times that it did
+	HttpWebSocketClient *own_client;
+	unsigned int own_calls;
 
 	pthread_mutex_t mutex;
 	u8 message[CLIENT_TEST_MESSAGE_SIZE];
@@ -91,6 +97,9 @@ static void client_test_state_reset (void) {
 	__atomic_store_n (&state.going_away, 0, __ATOMIC_SEQ_CST);
 	__atomic_store_n (&state.last_code, 0, __ATOMIC_SEQ_CST);
 	__atomic_store_n (&state.last_error, 0, __ATOMIC_SEQ_CST);
+
+	__atomic_store_n (&state.own_client, NULL, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&state.own_calls, 0, __ATOMIC_SEQ_CST);
 
 }
 
@@ -133,6 +142,15 @@ static void client_test_on_close (
 	if (code == HTTP_WEB_SOCKET_CLOSE_GOING_AWAY) test_counter_add (&state.going_away);
 	test_counter_add (&state.closed);
 
+	// a method of the client that waits for it and deletes it, in the thread of the client
+	HttpWebSocketClient *own_client = __atomic_load_n (&state.own_client, __ATOMIC_SEQ_CST);
+	if (own_client) {
+		http_web_socket_client_wait (own_client);
+		http_web_socket_client_delete (own_client);
+
+		test_counter_add (&state.own_calls);
+	}
+
 }
 
 static void client_test_on_error (HttpWebSocket *web_socket, HttpWebSocketError error) {
@@ -161,6 +179,17 @@ static void client_test_server_message (
 
 static const HttpWebSocketHandlers client_test_server_handlers = {
 	NULL, NULL, client_test_server_message, NULL, NULL, NULL, NULL, NULL
+};
+
+// the server closes the connection that it just accepted
+static void client_test_server_leave (HttpWebSocket *web_socket) {
+
+	(void) http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+
+}
+
+static const HttpWebSocketHandlers client_test_leaving_handlers = {
+	NULL, client_test_server_leave, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static unsigned int client_test_authenticate (
@@ -227,6 +256,8 @@ static ClientTestServer *client_test_server_start (const u16 port) {
 	HttpEndpoint *compressed = http_group_web_socket_add (ws, "compressed", NULL);
 	http_endpoint_set_web_socket_compression (compressed, true);
 
+	test_check_ptr (http_group_web_socket_add (ws, "leaving", &client_test_leaving_handlers));
+
 	server->cerver = cerver;
 	test_check_int_eq (pthread_create (&server->thread, NULL, client_test_server_thread, server), 0, NULL);
 
@@ -269,7 +300,7 @@ static HttpWebSocketClient *client_test_create (const u16 port, const char *path
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, url), 0, NULL);
 
 	http_web_socket_client_set_handlers (client, &client_test_handlers);
-	http_web_socket_client_set_timeouts (client, CLIENT_TEST_TIMEOUT, CLIENT_TEST_TIMEOUT);
+	http_web_socket_client_set_timeouts_milliseconds (client, CLIENT_TEST_TIMEOUT, CLIENT_TEST_TIMEOUT);
 
 	return client;
 
@@ -293,6 +324,134 @@ static void client_test_expect_message (
 #pragma endregion
 
 #pragma region tests
+
+// the results of the parser of the response of a handshake: a response without its end
+// in the most bytes that are read was not valid, but its invalid said that it was
+static void test_client_responses (void) {
+
+	static const char *response = {
+		"HTTP/1.1 101 Switching Protocols\r\n"
+		"Upgrade: websocket\r\n"
+		"Connection: Upgrade\r\n"
+		"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+		"\r\n"
+	};
+
+	const size_t length = strlen (response);
+
+	HttpWebSocketClientResponse parsed;
+	for (size_t size = 0; size < length; size++) {
+		test_check_unsigned_eq (
+			http_web_socket_client_response_parse (response, size, &parsed),
+			HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL, NULL
+		);
+
+		test_check_false (parsed.invalid);
+		test_check_false (parsed.complete);
+	}
+
+	test_check_unsigned_eq (
+		http_web_socket_client_response_parse (response, length, &parsed),
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE, NULL
+	);
+
+	test_check_true (parsed.complete);
+	test_check_false (parsed.invalid);
+	test_check_int_eq (parsed.status, 101, NULL);
+	test_check_unsigned_eq (parsed.size, length, NULL);
+	test_check_str_eq (parsed.accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", NULL);
+
+	static const char *wrong = { "HTTP/1.1 101 Switching Protocols\r\nUpgrade websocket\r\n\r\n" };
+	test_check_unsigned_eq (
+		http_web_socket_client_response_parse (wrong, strlen (wrong), &parsed),
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID, NULL
+	);
+
+	test_check_true (parsed.invalid);
+
+	char *endless = (char *) malloc (HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE);
+	test_check_ptr (endless);
+	(void) memset (endless, 'a', HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE);
+	(void) memcpy (endless, response, length - 2);
+
+	test_check_unsigned_eq (
+		http_web_socket_client_response_parse (endless, HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE - 1, &parsed),
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL, NULL
+	);
+
+	test_check_false (parsed.invalid);
+
+	test_check_unsigned_eq (
+		http_web_socket_client_response_parse (endless, HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE, &parsed),
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID, NULL
+	);
+
+	test_check_true (parsed.invalid);
+
+	free (endless);
+
+	test_check_unsigned_eq (
+		http_web_socket_client_response_parse (NULL, 0, &parsed),
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID, NULL
+	);
+
+}
+
+#define CLIENT_TEST_BACKOFF_MIN				256
+#define CLIENT_TEST_BACKOFF_MAX				4096
+#define CLIENT_TEST_BACKOFF_FAILURES		64
+
+// the wait before a reconnection is doubled after each failure and it never passes its maximum:
+// its jitter was added above the maximum, the doubling wrapped to 0 after many failures
+// and a maximum above INT_MAX became a negative timeout, a wait without an end
+static void test_client_backoff (void) {
+
+	// without failures and without jitter it is the first wait
+	test_check_unsigned_eq (
+		http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, CLIENT_TEST_BACKOFF_MAX, 0, 0),
+		CLIENT_TEST_BACKOFF_MIN, NULL
+	);
+
+	// the jitter is less than a quarter of the wait
+	for (unsigned int random = 0; random < CLIENT_TEST_BACKOFF_MAX; random++) {
+		const unsigned int delay = http_web_socket_client_backoff_delay (
+			CLIENT_TEST_BACKOFF_MIN, CLIENT_TEST_BACKOFF_MAX, 0, random
+		);
+
+		test_check ((delay >= CLIENT_TEST_BACKOFF_MIN) && (delay < (CLIENT_TEST_BACKOFF_MIN + (CLIENT_TEST_BACKOFF_MIN / 4))), NULL);
+	}
+
+	// doubled after each failure, up to the maximum, with any jitter
+	test_check_unsigned_eq (http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, CLIENT_TEST_BACKOFF_MAX, 1, 0), 512, NULL);
+	test_check_unsigned_eq (http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, CLIENT_TEST_BACKOFF_MAX, 3, 0), 2048, NULL);
+
+	for (unsigned int failures = 4; failures < CLIENT_TEST_BACKOFF_FAILURES; failures++) {
+		test_check_unsigned_eq (
+			http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, CLIENT_TEST_BACKOFF_MAX, failures, UINT_MAX),
+			CLIENT_TEST_BACKOFF_MAX, NULL
+		);
+	}
+
+	// a maximum that a poll () does not take is the longest timeout of one
+	for (unsigned int failures = 0; failures < CLIENT_TEST_BACKOFF_FAILURES; failures++) {
+		const unsigned int delay = http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, UINT_MAX, failures, UINT_MAX);
+		test_check ((delay >= CLIENT_TEST_BACKOFF_MIN) && (delay <= (unsigned int) INT_MAX), NULL);
+	}
+
+	test_check_unsigned_eq (
+		http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MIN, UINT_MAX, CLIENT_TEST_BACKOFF_FAILURES, 0),
+		(unsigned int) INT_MAX, NULL
+	);
+
+	test_check_unsigned_eq (http_web_socket_client_backoff_delay (UINT_MAX, UINT_MAX, 0, UINT_MAX), (unsigned int) INT_MAX, NULL);
+
+	// a first wait above the maximum is the maximum
+	test_check_unsigned_eq (
+		http_web_socket_client_backoff_delay (CLIENT_TEST_BACKOFF_MAX, CLIENT_TEST_BACKOFF_MIN, 0, UINT_MAX),
+		CLIENT_TEST_BACKOFF_MIN, NULL
+	);
+
+}
 
 static void test_client_urls (void) {
 
@@ -333,6 +492,19 @@ static void test_client_urls (void) {
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host\r\n:80/chat"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host/chat\x7F"), 1, NULL);
 
+	// a url that is rejected does not change the client: its host and its port were already the new ones
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://kept.example:8081/kept?a=1"), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://other.example:9090/path#fragment"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://another.example:0"), 1, NULL);
+	test_check_str_eq (client->host, "kept.example", NULL);
+	test_check_unsigned_eq (client->port, 8081, NULL);
+	test_check_str_eq (client->path, "/kept?a=1", NULL);
+
+	// a close that can not be sent does not stop the client, it stopped its reconnections
+	test_check_unsigned_eq (http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NO_STATUS, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NORMAL, "\xC0\xAF"), 1, NULL);
+	test_check_false (__atomic_load_n (&client->stopping, __ATOMIC_SEQ_CST));
+
 	// the subprotocols are tokens, and a list that is rejected leaves none
 	const char *injected[] = { "chat", "chat\r\nInjected: yes" };
 	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, injected, 2), 1, NULL);
@@ -355,6 +527,19 @@ static void test_client_urls (void) {
 
 	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Bad", "a\r\nInjected: yes"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Authorization", "secret"), 0, NULL);
+
+	// the name of a header is a token, and the headers of the handshake are the ones of the client
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "", "value"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "a b", "value"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "name:", "value"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Host", "other.example"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "upgrade", "h2c"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Connection", "close"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Sec-WebSocket-Version", "8"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Sec-WebSocket-Protocol", "chat"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Sec-WebSocket-Extensions", "x"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_add_header (client, "X-Trace", "abc"), 0, NULL);
 
 	http_web_socket_client_delete (client);
 
@@ -479,13 +664,35 @@ typedef struct ClientTestSender {
 
 } ClientTestSender;
 
+// the bytes of the messages of the senders, with their end
+#define CLIENT_TEST_SENDER_TEXT_SIZE		(1 << 6)
+
+// the format of a message of a sender: its id, the number of the message and a filler that changes its size
+#define CLIENT_TEST_SENDER_FORMAT			"%u:%u:%.*s"
+#define CLIENT_TEST_SENDER_FILLER			"abcdefghijklmnopqrstuvwxyz"
+#define CLIENT_TEST_SENDER_FILLER_SIZE		(sizeof (CLIENT_TEST_SENDER_FILLER) - 1)
+
+// the message that each sender expects next, and the echoes that were not it
+static unsigned int client_test_sender_next[CLIENT_TEST_SENDERS];
+static unsigned int client_test_sender_mixed = 0;
+
+// writes the message of a sender, its size changes so a frame mixed with another one is noticed
+static int client_test_sender_text (char *text, const unsigned int id, const unsigned int message) {
+
+	return snprintf (
+		text, CLIENT_TEST_SENDER_TEXT_SIZE, CLIENT_TEST_SENDER_FORMAT,
+		id, message, (int) ((id + message) % CLIENT_TEST_SENDER_FILLER_SIZE), CLIENT_TEST_SENDER_FILLER
+	);
+
+}
+
 static void *client_test_sender (void *sender_ptr) {
 
 	const ClientTestSender *sender = (const ClientTestSender *) sender_ptr;
 
-	char text[1 << 6];
+	char text[CLIENT_TEST_SENDER_TEXT_SIZE];
 	for (unsigned int i = 0; i < CLIENT_TEST_SENDER_MESSAGES; i++) {
-		const int length = snprintf (text, sizeof (text), "%u:%u", sender->id, i);
+		const int length = client_test_sender_text (text, sender->id, i);
 		test_check_unsigned_eq (http_web_socket_client_send_text (sender->client, text, (size_t) length), 0, NULL);
 	}
 
@@ -493,13 +700,53 @@ static void *client_test_sender (void *sender_ptr) {
 
 }
 
-// many threads send with the same client, the masks of their frames never mix
+// an echo must be the next message of its sender, byte by byte: the masks of two frames that mix
+// or the bytes of two messages that cross give a text that is not it
+static void client_test_on_echo (
+	HttpWebSocket *web_socket, HttpWebSocketOpcode type, const void *data, size_t size
+) {
+
+	(void) web_socket;
+
+	char received[CLIENT_TEST_SENDER_TEXT_SIZE] = { 0 };
+	if (size < CLIENT_TEST_SENDER_TEXT_SIZE) (void) memcpy (received, data, size);
+
+	unsigned int id = CLIENT_TEST_SENDERS;
+	unsigned int message = 0;
+	bool expected = (type == HTTP_WEB_SOCKET_OPCODE_TEXT)
+		&& (sscanf (received, "%u:%u:", &id, &message) == 2) && (id < CLIENT_TEST_SENDERS);
+
+	if (expected) {
+		char text[CLIENT_TEST_SENDER_TEXT_SIZE];
+		const int length = client_test_sender_text (text, id, client_test_sender_next[id]);
+		expected = ((size_t) length == size) && !memcmp (text, received, size);
+	}
+
+	// the methods of a connection never run at the same time
+	if (expected) client_test_sender_next[id] += 1;
+	else test_counter_add (&client_test_sender_mixed);
+
+	test_counter_add (&state.messages);
+
+}
+
+static const HttpWebSocketHandlers client_test_echo_handlers = {
+	NULL, client_test_on_open, client_test_on_echo, NULL,
+	NULL, NULL, client_test_on_close, client_test_on_error
+};
+
+// many threads send with the same client, the masks of their frames never mix:
+// every echo is the next message of its sender (only their number was checked)
 static void test_client_concurrent (void) {
 
 	client_test_state_reset ();
 	ClientTestServer *server = client_test_server_start (client_test_port++);
 
+	(void) memset (client_test_sender_next, 0, sizeof (client_test_sender_next));
+	__atomic_store_n (&client_test_sender_mixed, 0, __ATOMIC_SEQ_CST);
+
 	HttpWebSocketClient *client = client_test_create (server->port, "/ws/echo");
+	http_web_socket_client_set_handlers (client, &client_test_echo_handlers);
 	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
 
 	pthread_t threads[CLIENT_TEST_SENDERS];
@@ -517,6 +764,13 @@ static void test_client_concurrent (void) {
 	test_check_unsigned_eq (__atomic_load_n (&state.errors, __ATOMIC_SEQ_CST), 0, NULL);
 
 	http_web_socket_client_delete (client);
+
+	// every message of every sender came back whole and in the order of its thread
+	test_check_unsigned_eq (__atomic_load_n (&client_test_sender_mixed, __ATOMIC_SEQ_CST), 0, NULL);
+	for (unsigned int i = 0; i < CLIENT_TEST_SENDERS; i++) {
+		test_check_unsigned_eq (client_test_sender_next[i], CLIENT_TEST_SENDER_MESSAGES, NULL);
+	}
+
 	client_test_server_stop (server);
 
 }
@@ -529,7 +783,7 @@ static void test_client_reconnect (void) {
 	ClientTestServer *server = client_test_server_start (port);
 
 	HttpWebSocketClient *client = client_test_create (port, "/ws/echo");
-	http_web_socket_client_set_reconnect (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
+	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
 	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
 
 	client_test_server_stop (server);
@@ -548,6 +802,139 @@ static void test_client_reconnect (void) {
 
 	http_web_socket_client_delete (client);
 	client_test_server_stop (server);
+
+}
+
+// milliseconds of a wait between reconnections that the test never lets end,
+// and the most secs that a delete during it can take
+#define CLIENT_TEST_LONG_BACKOFF			(1 << 15)
+#define CLIENT_TEST_STOP_SECONDS			4.0
+
+// the attempts of a client that a server rejects before the test stops it
+#define CLIENT_TEST_REJECTED_ATTEMPTS		3
+
+// how a client with reconnection ends, only the reconnection that works had a test:
+// its close stops the reconnections, a server that rejects its handshake is tried again
+// like one that is down, and its delete does not wait for the next attempt
+static void test_client_reconnect_ends (void) {
+
+	client_test_state_reset ();
+	const u16 port = client_test_port++;
+	ClientTestServer *server = client_test_server_start (port);
+
+	HttpWebSocketClient *client = client_test_create (port, "/ws/echo");
+	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
+	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
+
+	// the thread of the client ends with its connection, it does not open another one
+	test_check_unsigned_eq (http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL), 0, NULL);
+	http_web_socket_client_wait (client);
+
+	test_check_unsigned_eq (__atomic_load_n (&state.closed, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.opened, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.errors, __ATOMIC_SEQ_CST), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_client_get_connections (client), 1, NULL);
+
+	http_web_socket_client_delete (client);
+
+	// a 401 of the server: every attempt is a handshake error, and the delete ends them
+	client_test_state_reset ();
+	client = client_test_create (port, "/ws/auth");
+	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+
+	test_check (
+		test_wait_counter (&state.errors, CLIENT_TEST_REJECTED_ATTEMPTS, TEST_WAIT_SECONDS) >= CLIENT_TEST_REJECTED_ATTEMPTS,
+		"the client did not try again after its handshake was rejected"
+	);
+
+	test_check_unsigned_eq (__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_HANDSHAKE, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.opened, __ATOMIC_SEQ_CST), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_client_get_connections (client), 0, NULL);
+
+	http_web_socket_client_delete (client);
+	client_test_server_stop (server);
+
+	// nobody listens and the next attempt is far away: the delete wakes the wait up
+	client_test_state_reset ();
+	client = client_test_create (client_test_port++, "/");
+	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_LONG_BACKOFF, CLIENT_TEST_LONG_BACKOFF);
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+	test_check_unsigned_eq (test_wait_counter (&state.errors, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_CONNECT, NULL);
+
+	const double start = test_wait_now ();
+	http_web_socket_client_delete (client);
+	test_check ((test_wait_now () - start) < CLIENT_TEST_STOP_SECONDS, "the delete waited for the next attempt");
+
+	test_check_unsigned_eq (__atomic_load_n (&state.errors, __ATOMIC_SEQ_CST), 1, NULL);
+
+}
+
+// the connections that a server accepts and closes at once before the test stops the client,
+// and the milliseconds of the first wait between them
+#define CLIENT_TEST_UNSTABLE_CONNECTIONS	3
+#define CLIENT_TEST_UNSTABLE_RECONNECT_MIN	(1 << 3)
+
+// a server that accepts and closes at once: a connection that did not last the longest wait
+// between reconnections is another failure for the wait of the next attempt
+// (the failures were forgotten at every 101, so the client came back after the first wait forever)
+static void test_client_reconnect_unstable (void) {
+
+	client_test_state_reset ();
+	const u16 port = client_test_port++;
+	ClientTestServer *server = client_test_server_start (port);
+
+	HttpWebSocketClient *client = client_test_create (port, "/ws/leaving");
+	http_web_socket_client_set_reconnect_milliseconds (
+		client, true, CLIENT_TEST_UNSTABLE_RECONNECT_MIN, CLIENT_TEST_LONG_BACKOFF
+	);
+
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+
+	test_check (
+		test_wait_counter (&state.closed, CLIENT_TEST_UNSTABLE_CONNECTIONS, TEST_WAIT_SECONDS)
+			>= CLIENT_TEST_UNSTABLE_CONNECTIONS,
+		"the client did not come back to the server that closes its connections"
+	);
+
+	// the thread of the client ended, its failures are read without it
+	(void) http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+	http_web_socket_client_wait (client);
+
+	const unsigned int connections = http_web_socket_client_get_connections (client);
+	test_check (connections >= CLIENT_TEST_UNSTABLE_CONNECTIONS, "the connections of the client were not counted");
+	test_check (client->n_failures >= connections, "a connection that ended at once was not a failure");
+
+	http_web_socket_client_delete (client);
+	client_test_server_stop (server);
+
+}
+
+// a method of the client that waits for its client or deletes it runs in the thread of the client:
+// both are refused there, the client is still whole and it is deleted from another thread
+// (the wait joined its own thread and the delete released the client that its thread still used)
+static void test_client_own_thread (void) {
+
+	client_test_state_reset ();
+	const u16 port = client_test_port++;
+	ClientTestServer *server = client_test_server_start (port);
+
+	HttpWebSocketClient *client = client_test_create (port, "/ws/echo");
+	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
+
+	__atomic_store_n (&state.own_client, client, __ATOMIC_SEQ_CST);
+
+	client_test_server_stop (server);
+	test_check_unsigned_eq (test_wait_counter (&state.own_calls, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	__atomic_store_n (&state.own_client, NULL, __ATOMIC_SEQ_CST);
+
+	// the client was not released: it is used and deleted here
+	test_check_unsigned_eq (http_web_socket_client_get_connections (client), 1, NULL);
+	http_web_socket_client_wait (client);
+	http_web_socket_client_delete (client);
 
 }
 
@@ -584,9 +971,17 @@ typedef enum ClientTestFake {
 	CLIENT_TEST_FAKE_PENDING = 6,
 	CLIENT_TEST_FAKE_CLOSE = 7,
 	CLIENT_TEST_FAKE_SPLIT = 8,
-	CLIENT_TEST_FAKE_SILENT = 9
+	CLIENT_TEST_FAKE_SILENT = 9,
+
+	// a response whose headers never end
+	CLIENT_TEST_FAKE_ENDLESS = 10
 
 } ClientTestFake;
+
+// the bytes of the header without an end of the endless response, more than the client reads of a response
+#define CLIENT_TEST_ENDLESS_SIZE			(HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE << 1)
+
+static const char *client_test_endless_start = { "HTTP/1.1 101 Switching Protocols\r\nX-Endless: " };
 
 typedef struct ClientTestFakeServer {
 
@@ -597,6 +992,9 @@ typedef struct ClientTestFakeServer {
 
 	// the code of the close frame that the client sent
 	u16 client_close;
+
+	// the connections of the client that the server took
+	unsigned int accepted;
 
 } ClientTestFakeServer;
 
@@ -655,8 +1053,28 @@ static void client_test_fake_request (const int fd, char *accept) {
 
 }
 
+// the start of a response and a header that has more bytes than a client reads, without its end:
+// the client leaves when it has read them, so the sends can fail
+static void client_test_fake_endless (const int fd) {
+
+	char *value = (char *) malloc (CLIENT_TEST_ENDLESS_SIZE);
+	test_check_ptr (value);
+	(void) memset (value, 'e', CLIENT_TEST_ENDLESS_SIZE);
+
+	(void) send (fd, client_test_endless_start, strlen (client_test_endless_start), MSG_NOSIGNAL);
+	(void) send (fd, value, CLIENT_TEST_ENDLESS_SIZE, MSG_NOSIGNAL);
+
+	free (value);
+
+}
+
 // the response of each behavior, and what follows it
 static void client_test_fake_respond (ClientTestFakeServer *fake, const int fd, const char *accept) {
+
+	if (fake->behavior == CLIENT_TEST_FAKE_ENDLESS) {
+		client_test_fake_endless (fd);
+		return;
+	}
 
 	char response[RAW_RESPONSE_SIZE];
 	const char *upgrade = (fake->behavior == CLIENT_TEST_FAKE_NO_UPGRADE) ? "" : "Upgrade: websocket\r\n";
@@ -720,6 +1138,8 @@ static void *client_test_fake_thread (void *fake_ptr) {
 
 	const int fd = accept (fake->listener, NULL, NULL);
 	if (fd >= 0) {
+		test_counter_add (&fake->accepted);
+
 		if (fake->behavior != CLIENT_TEST_FAKE_SILENT) {
 			char accept_value[HTTP_WEB_SOCKET_ACCEPT_SIZE];
 			client_test_fake_request (fd, accept_value);
@@ -740,6 +1160,39 @@ static void *client_test_fake_thread (void *fake_ptr) {
 
 }
 
+// the timeouts of an attempt that is cancelled, and the most that its cancel can take
+#define CLIENT_TEST_CANCEL_TIMEOUT			(1 << 14)
+#define CLIENT_TEST_CANCEL_SECONDS			1.0
+
+// an attempt that waits for the answer of its server ends when the client is deleted:
+// the delete waited for the timeout of the handshake
+static void test_client_cancel (void) {
+
+	client_test_state_reset ();
+
+	ClientTestFakeServer fake;
+	(void) memset (&fake, 0, sizeof (ClientTestFakeServer));
+	fake.port = client_test_port++;
+	fake.behavior = CLIENT_TEST_FAKE_SILENT;
+	fake.listener = client_test_listen (fake.port);
+	test_check_int_eq (pthread_create (&fake.thread, NULL, client_test_fake_thread, &fake), 0, NULL);
+
+	HttpWebSocketClient *client = client_test_create (fake.port, "/fake");
+	http_web_socket_client_set_timeouts_milliseconds (client, CLIENT_TEST_CANCEL_TIMEOUT, CLIENT_TEST_CANCEL_TIMEOUT);
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+
+	// the server has the connection and it never answers the handshake
+	test_check_unsigned_eq (test_wait_counter (&fake.accepted, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	const double start = test_wait_now ();
+	http_web_socket_client_delete (client);
+	test_check ((test_wait_now () - start) < CLIENT_TEST_CANCEL_SECONDS, "the delete waited for the timeout of the handshake");
+
+	test_check_int_eq (pthread_join (fake.thread, NULL), 0, NULL);
+	(void) close (fake.listener);
+
+}
+
 // a client against a fake server, returns the result of its connect,
 // the client closes after its first message when the fake server never does
 static u8 client_test_fake (const ClientTestFake behavior, ClientTestFakeServer *fake) {
@@ -753,6 +1206,12 @@ static u8 client_test_fake (const ClientTestFake behavior, ClientTestFakeServer 
 	test_check_int_eq (pthread_create (&fake->thread, NULL, client_test_fake_thread, fake), 0, NULL);
 
 	HttpWebSocketClient *client = client_test_create (fake->port, "/fake");
+
+	// the endless response must be rejected long before the timeout of its handshake
+	if (behavior == CLIENT_TEST_FAKE_ENDLESS) {
+		http_web_socket_client_set_timeouts_milliseconds (client, CLIENT_TEST_CANCEL_TIMEOUT, CLIENT_TEST_CANCEL_TIMEOUT);
+	}
+
 	const u8 result = http_web_socket_client_connect (client);
 
 	if (!result && (behavior == CLIENT_TEST_FAKE_PENDING)) {
@@ -790,6 +1249,14 @@ static void test_client_fake_servers (void) {
 		test_check_unsigned_eq (__atomic_load_n (&state.closed, __ATOMIC_SEQ_CST), 1, NULL);
 	}
 
+	// a response without an end is rejected when the client has read the most bytes of one,
+	// it does not wait for the timeout of its handshake
+	const double start = test_wait_now ();
+	test_check_unsigned_eq (client_test_fake (CLIENT_TEST_FAKE_ENDLESS, &fake), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_HANDSHAKE, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.opened, __ATOMIC_SEQ_CST), 0, NULL);
+	test_check ((test_wait_now () - start) < CLIENT_TEST_STOP_SECONDS, "the client waited for the end of an endless response");
+
 	// a masked frame of the server fails the connection with 1002
 	test_check_unsigned_eq (client_test_fake (CLIENT_TEST_FAKE_MASKED, &fake), 0, NULL);
 	test_check_unsigned_eq (fake.client_close, 1002, NULL);
@@ -820,12 +1287,18 @@ void web_socket_tests_client (void) {
 
 	(void) alarm (CLIENT_TEST_ALARM);
 
+	test_run (test_client_responses);
+	test_run (test_client_backoff);
 	test_run (test_client_urls);
 	test_run (test_client_echo);
 	test_run (test_client_handshake);
 	test_run (test_client_concurrent);
 	test_run (test_client_reconnect);
+	test_run (test_client_reconnect_ends);
+	test_run (test_client_reconnect_unstable);
+	test_run (test_client_own_thread);
 	test_run (test_client_refused);
+	test_run (test_client_cancel);
 	test_run (test_client_fake_servers);
 
 	(void) alarm (0);

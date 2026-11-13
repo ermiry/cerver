@@ -104,7 +104,14 @@ int raw_upgrade (const int fd, const char *path, const char *headers, char *resp
 
 	char request[RAW_RESPONSE_SIZE];
 	const int length = snprintf (request, RAW_RESPONSE_SIZE, RAW_UPGRADE_FORMAT, path, headers ? headers : "");
-	raw_send (fd, request, (size_t) length);
+
+	return raw_request (fd, request, (size_t) length, response);
+
+}
+
+int raw_request (const int fd, const char *request, const size_t length, char *response) {
+
+	raw_send (fd, request, length);
 
 	// one byte at a time, so the frames after the response stay in the socket
 	size_t size = 0;

@@ -277,17 +277,17 @@ CERVER_EXPORT void http_endpoint_set_web_socket_origin_check (
 );
 
 // milliseconds without receiving anything before a ping (0 disables them), and to wait for its pong
-CERVER_EXPORT void http_endpoint_set_web_socket_ping (
+CERVER_EXPORT void http_endpoint_set_web_socket_ping_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
 );
 
 // milliseconds that the closing handshake waits for the peer
-CERVER_EXPORT void http_endpoint_set_web_socket_close_timeout (
+CERVER_EXPORT void http_endpoint_set_web_socket_close_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int close_timeout
 );
 
 // milliseconds of each send, 0 uses the send timeout of the HTTP cerver
-CERVER_EXPORT void http_endpoint_set_web_socket_send_timeout (
+CERVER_EXPORT void http_endpoint_set_web_socket_send_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int send_timeout
 );
 
@@ -455,15 +455,15 @@ CERVER_EXPORT void http_group_set_web_socket_origin_check (
 	HttpGroup *group, const bool origin_check
 );
 
-CERVER_EXPORT void http_group_set_web_socket_ping (
+CERVER_EXPORT void http_group_set_web_socket_ping_milliseconds (
 	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
 );
 
-CERVER_EXPORT void http_group_set_web_socket_close_timeout (
+CERVER_EXPORT void http_group_set_web_socket_close_timeout_milliseconds (
 	HttpGroup *group, const unsigned int close_timeout
 );
 
-CERVER_EXPORT void http_group_set_web_socket_send_timeout (
+CERVER_EXPORT void http_group_set_web_socket_send_timeout_milliseconds (
 	HttpGroup *group, const unsigned int send_timeout
 );
 

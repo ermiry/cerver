@@ -17,6 +17,7 @@
 #include "cerver/http/route.h"
 #include "cerver/http/tree.h"
 
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
 
 #define HTTP_METRICS_HEADER_FORMAT				"# HELP %s %s\n# TYPE %s %s\n"

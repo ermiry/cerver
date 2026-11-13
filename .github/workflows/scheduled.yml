@@ -98,6 +98,15 @@ jobs:
           BUILD: 0
         run: bash test/repeat.sh cerver/game 20
 
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repeat-artifacts-units-thread
+          path: ./repeat-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
   repeat:
     name: Cerver flaky hunter
     runs-on: ubuntu-latest
@@ -167,9 +176,23 @@ jobs:
           SANITIZER: thread
         run: bash test/repeat.sh test/bin/websockets 200
 
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repeat-artifacts
+          path: ./repeat-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
   fuzz:
-    name: Cerver long fuzzing
+    name: Cerver long fuzzing of ${{ matrix.target }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [request, lenient, pipeline, multipart, url, json, jwt, tree, receive, packet, client, file, datagram, address, serializer, game, frame, handshake]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -177,14 +200,15 @@ jobs:
       - name: Fuzzing
         env:
           SECONDS_PER_TARGET: 1800
-        run: bash test/fuzz.sh
+        run: bash test/fuzz.sh ${{ matrix.target }}
 
       - name: Upload crashes
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fuzz-artifacts
+          name: fuzz-artifacts-${{ matrix.target }}
           path: ./fuzz-artifacts/
+          if-no-files-found: ignore
           retention-days: 14
 
   performance:

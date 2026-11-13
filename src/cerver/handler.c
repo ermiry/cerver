@@ -41,6 +41,7 @@
 #include "cerver/http/access.h"
 #include "cerver/http/http.h"
 
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/websocket.h"
 
 #include "cerver/game/game.h"

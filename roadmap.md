@@ -8,7 +8,7 @@
 > | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1; los arreglos de la revisión, §4.12) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 (§4.12) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12) |
 
 **Las citas `archivo:línea`:**
 
@@ -973,22 +973,52 @@ El siguiente merge de `http` (al empezar F3) trae esos mismos cambios: en `reque
 - **El benchmark de mensajes** mide del primer mensaje al último eco, sin el tiempo de abrir y cerrar las
   conexiones, con un millón de mensajes y comprobando el eco entero; medía una corrida de ~20 ms.
 
-#### 2.1b-13 — planeado
+#### 2.1b-13 — implementado
 
-- **De la 2.0b-72:** los trailers y las extensiones de chunk contra los límites; los espacios finales del valor de
-  una cabecera; la cabecera repetida que recopia su valor; el target en forma absoluta; el límite configurable de
-  una cabecera que no es de las conocidas; el default de `request_timeout` en 300 s; el rango de los últimos bytes;
-  `performance.sh` que falla cuando el servidor o la carga fallan; los objetos de los tests con sus headers; el fuzz
-  largo en matriz.
-- **WebSocket en el servidor:** un envío que pierde la carrera con un close no es un fallo; la conexión que no
-  consigue su hilo; el cierre con `SHUT_WR` y un drenado acotado; el hilo que no lee mientras otro envía.
-- **El cliente:** borrar o esperar desde un callback; un intento que se puede cancelar; `EINTR`; el backoff.
-- **permessage-deflate:** el mensaje vacío, el bloque sin terminar, el ejemplo de RFC 7692 sección 7.2.3.4.
-- **El parser:** una respuesta para cada petición con los flags lenient; solo `HTTP/1.0` y `HTTP/1.1`.
-- **La API de WebSocket** (cada cambio en `incompatibilities.md`): los structs opacos, `HttpWebSocketStats`, el
-  sufijo `_milliseconds` en los timeouts, las cabeceras que `on_upgrade` agrega al 101.
-- **La deuda de F1:** el gzip y el 304 eligen sus cabeceras en la lista.
-- **Cobertura y CI:** lo que la revisión encontró sin test.
+- **De la 2.0b-72:** los trailers y las extensiones de chunk cuentan contra `max_header_size` y cada trailer contra
+  `max_headers`; los espacios finales del valor de una cabecera no son del valor; una cabecera repetida ya no
+  recopia su valor unido en cada repetición; un target en forma absoluta se rutea por su path y el fragmento no es
+  parte de la ruta; `http_cerver_set_max_custom_header_size ()` (8 KiB por default, eran 512 bytes fijos); el default
+  de `request_timeout` en 300 s; el rango de los últimos bytes (`HTTP_RANGE_TYPE_SUFFIX`); `performance.sh` falla
+  cuando el servidor o la carga fallan y cuenta sin redondear; los objetos de los tests, examples y benchmarks
+  dependen de sus headers; el fuzz largo es un job por target.
+- **El parser:** solo se sirven `HTTP/1.0` y `HTTP/1.1` (`on_protocol` y `on_version_complete`: 400 para RTSP e ICE,
+  505 para otra versión); un `Transfer-Encoding` que no termina en `chunked` y un NUL en el valor de una cabecera son
+  400 también con sus flags lenient (con ellos la petición no se contestaba nunca, y el valor se cortaba para quien
+  lo comparaba).
+- **permessage-deflate:** el mensaje vacío después de otro es un `0x00`; un mensaje que termina dentro de un bloque
+  se rechaza (después de la cola el inflater tiene que quedar entre dos bloques); un bloque con BFINAL no termina el
+  mensaje ni el contexto (`inflateResetKeep ()` conserva la ventana): el ejemplo de RFC 7692 sección 7.2.3.4; un
+  mensaje de más de `UINT_MAX` bytes va sin comprimir; un fallo del descompresor es un 1011.
+- **Los frames y el handshake:** una longitud que no es la codificación mínima falla con 1002; el fin de un frame
+  cuyo último pedazo detuvo al parser no espera los bytes del siguiente; la llave solo en su forma canónica; sin
+  accept no hay 101.
+- **WebSocket en el servidor:** un mensaje que pierde la carrera con un close no es un fallo; el timeout de un envío
+  se resuelve después de revisar el estado (una conexión retenida después de su cerver); la fecha límite del cierre
+  bajo su mutex; la conexión que no consigue su hilo se cierra bajo `send_mutex`; el cierre con `SHUT_WR` y un
+  drenado acotado.
+- **El cliente:** `delete` y `wait` desde un método del propio cliente ya no se cuelgan ni liberan lo que su hilo usa;
+  un intento se cancela (los `poll` del connect y del handshake vigilan el despertar) y sigue tras `EINTR`; el backoff
+  saturado y sin pasar su máximo; una conexión que no duró cuenta como fallo; una URL rechazada no cambia al cliente;
+  un close inválido no apaga la reconexión; las cabeceras del handshake no se pueden agregar otra vez; el connect
+  síncrono sin hilo y los primeros frames sin memoria se reportan.
+- **La API de WebSocket** (cada cambio en `incompatibilities.md`): los structs opacos
+  (`src/cerver/http/websockets/internal.h`, que no se instala), `HttpWebSocketStats` con
+  `http_cerver_web_socket_get_stats ()` y `http_web_socket_get_stats ()`, el sufijo `_milliseconds` en los 15 setters
+  de timeouts, `http_web_socket_upgrade_add_header ()` para las cabeceras del 101, `http_web_socket_get_query ()`, y
+  el contrato de los métodos de una conexión: serializados por conexión, sin hilo garantizado.
+- **La deuda de F1:** el gzip y el 304 eligen sus cabeceras en la lista de la respuesta (`HttpResponseFilter`); los
+  bytes de una cabecera solo se leen cuando se puso como bytes. Lo que HTTP/2 necesita para no depender de la forma
+  de HTTP/1.1.
+- **Cobertura y CI:** las decisiones de `on_upgrade` y los lugares que cada rechazo devuelve; la herencia de los
+  settings por grupo; `on_ping` y `on_pong`; las salas; el teardown con clientes que no contestan; la reconexión del
+  cliente; los payloads del test concurrente; el fuzzer `frame` con las configuraciones de deflate; el verificador de
+  autobahn con sus 517 casos; los benchmarks que comprueban lo que miden y se compilan en el CI; `ZLIB=1` en g++,
+  clang, valgrind y los sanitizers; los timeouts cortos escalados bajo valgrind y los sanitizers.
+
+**Queda para después** (anotado, no entra antes del loop): el backpressure de los envíos (con F6b); `on_fragment`
+que se detiene dentro de un mensaje comprimido; el búfer del mensaje que no se encoge; el cliente que ofrece
+`client_max_window_bits` y no acepta 8; los ids de las conexiones y su búsqueda; el rediseño de los streams.
 
 ## 5. Plan de tests y el gate de `nightly`
 

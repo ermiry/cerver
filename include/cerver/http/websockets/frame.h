@@ -227,6 +227,8 @@ CERVER_PUBLIC void http_web_socket_parser_init (
 // parses the bytes, the payloads are unmasked in place
 // returns the bytes that were parsed, fewer than size when a method stopped it
 // or when a frame was invalid (the state is HTTP_WEB_SOCKET_PARSER_STATE_FAILED and error is set)
+// a frame whose last bytes stopped the parser ends in the next call, that can have no bytes
+// a length that is not the shortest encoding of its value fails the frame (RFC 6455 section 5.2)
 CERVER_PUBLIC size_t http_web_socket_parser_execute (
 	HttpWebSocketParser *parser, u8 *data, const size_t size
 );

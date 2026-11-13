@@ -41,6 +41,7 @@
 #define HTTP_CERVER_DEFAULT_MAX_URL_SIZE			(1 << 13)
 #define HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE			(1 << 16)
 #define HTTP_CERVER_DEFAULT_MAX_HEADERS				(1 << 7)
+#define HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE	(1 << 13)
 #define HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS		(1 << 10)
 #define HTTP_CERVER_DEFAULT_MAX_FILE_SIZE			(1 << 29)
 
@@ -55,9 +56,10 @@
 #define HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT_MILLISECONDS	\
 	(HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
 
-// secs to receive a complete request, 0 disables the timeout,
-// so a body can take any time while it keeps making progress
-#define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT			0
+// secs to receive a complete request, a slower one is answered with 408:
+// a body that arrives a few bytes at a time can not keep its worker forever
+// 0 disables the timeout, so a body can take any time while it keeps making progress
+#define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT			300
 #define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS	\
 	(HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
 
@@ -80,6 +82,9 @@
 // joins the values of a repeated header (RFC 9110 section 5.3)
 #define HTTP_HEADER_VALUES_SEPARATOR				", "
 #define HTTP_HEADER_VALUES_SEPARATOR_LEN			2
+
+// the room of a joined header in the arena of its request, for each byte that it needs
+#define HTTP_HEADER_VALUES_GROWTH					2
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
@@ -395,6 +400,7 @@ struct _HttpCerver {
 	unsigned int max_headers;
 	unsigned int max_multipart_parts;
 	size_t max_file_size;
+	size_t max_custom_header_size;
 
 	size_t n_limited_requests;		// rejected because they exceeded a limit
 
@@ -765,6 +771,15 @@ CERVER_EXPORT void http_cerver_set_max_header_size (
 // the default value is HTTP_CERVER_DEFAULT_MAX_HEADERS, 0 disables the limit
 CERVER_EXPORT void http_cerver_set_max_headers (
 	HttpCerver *http_cerver, const unsigned int max_headers
+);
+
+// sets the max size in bytes of the value of a header that is not one of the HTTP headers map
+// (a custom header, like the ones of a trace or the ones that a proxy adds),
+// with the values of its repetitions joined; a bigger value is answered with 431
+// the default value is HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE, 0 disables the limit,
+// and the size of all the headers is still limited by http_cerver_set_max_header_size ()
+CERVER_EXPORT void http_cerver_set_max_custom_header_size (
+	HttpCerver *http_cerver, const size_t max_custom_header_size
 );
 
 // sets the max number of parts of a multi-part request
@@ -1209,6 +1224,11 @@ struct _HttpReceive {
 	// the bytes of the last buffer that were not parsed after the request was completed
 	// (a pipelined request)
 	size_t unparsed;
+
+	// the protocol of the request line arrives in pieces: the bytes of it that are the ones of HTTP,
+	// and whether it had any other one (llhttp also parses the request lines of RTSP and ICE)
+	size_t protocol_length;
+	bool protocol_other;
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;

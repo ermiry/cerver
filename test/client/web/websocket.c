@@ -150,6 +150,17 @@ static void websocket_echo (const bool compression) {
 	WebSocketPairClient *pair = (WebSocketPairClient *) calloc (1, sizeof (WebSocketPairClient));
 	test_check (websocket_connect (pair, "/ws/echo", compression, NULL), "the echo did not connect");
 
+	// the echo with the extension is only one when the extension was negotiated, also through a proxy:
+	// without this the two echoes of the pair could be the same one
+	HttpWebSocket *web_socket = http_web_socket_client_get_web_socket (pair->client);
+	test_check_ptr (web_socket);
+	test_check (
+		http_web_socket_is_compressed (web_socket) == (compression && http_web_socket_deflate_available ()),
+		"the compression of the connection is not the one that was asked"
+	);
+
+	http_web_socket_release (web_socket);
+
 	u8 *data = (u8 *) malloc (WEBSOCKET_MESSAGE_SIZE);
 	for (size_t i = 0; i < WEBSOCKET_MESSAGE_SIZE; i++) data[i] = (u8) ('a' + (i % 23));
 

@@ -55,7 +55,7 @@ static void autobahn_configure (HttpCerver *http_cerver) {
 	http_endpoint_set_web_socket_compression (echo, true);
 
 	// autobahn never answers pings of the server
-	http_endpoint_set_web_socket_ping (echo, 0, 0);
+	http_endpoint_set_web_socket_ping_milliseconds (echo, 0, 0);
 
 }
 

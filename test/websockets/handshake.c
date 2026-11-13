@@ -37,6 +37,15 @@ static void test_handshake_keys (void) {
 	test_check_true (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAA==", 24));
 	test_check_true (handshake_test_key ("+/+/+/+/+/+/+/+/+/+/+w==", 24));
 
+	// 16 bytes have only one form: the 4 bits of the last character that are not used are zero
+	test_check_true (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAQ==", 24));
+	test_check_true (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAg==", 24));
+	test_check_true (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAw==", 24));
+	test_check_false (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAB==", 24));
+	test_check_false (handshake_test_key ("AAAAAAAAAAAAAAAAAAAAAP==", 24));
+	test_check_false (handshake_test_key ("dGhlIHNhbXBsZSBub25jZR==", 24));
+	test_check_false (handshake_test_key ("+/+/+/+/+/+/+/+/+/+/+/==", 24));
+
 	test_check_false (handshake_test_key ("dGhlIHNhbXBsZSBub25jZQ=", 23));
 	test_check_false (handshake_test_key ("dGhlIHNhbXBsZSBub25jZQ===", 25));
 	test_check_false (handshake_test_key ("dGhlIHNhbXBsZSBub25jZQAA", 24));

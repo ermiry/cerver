@@ -29,6 +29,7 @@
 #include <cerver/http/route.h>
 #include <cerver/http/tree.h>
 
+#include <cerver/http/websockets/internal.h>
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
@@ -139,6 +140,13 @@ typedef struct TestReceiveObserved {
 	char accept[TEST_RECEIVE_VALUE_SIZE];
 	char custom[TEST_RECEIVE_VALUE_SIZE];
 
+	// the length of the Accept header and the bytes of the arena of the request that are used
+	size_t accept_len;
+	size_t arena_used;
+
+	// the length of the custom header, that can be longer than what is copied of it
+	size_t custom_len;
+
 	char query[TEST_RECEIVE_VALUE_SIZE];
 	char query_key[TEST_RECEIVE_VALUE_SIZE];
 	char query_other[TEST_RECEIVE_VALUE_SIZE];
@@ -245,6 +253,13 @@ static void test_receive_echo_handler (
 	test_receive_copy (observed.content_type, http_request_get_header (request, HTTP_HEADER_CONTENT_TYPE));
 	test_receive_copy (observed.accept, http_request_get_header (request, HTTP_HEADER_ACCEPT));
 	test_receive_copy_c_string (observed.custom, http_request_get_custom_header (request, "X-Custom"));
+
+	const char *custom = http_request_get_custom_header (request, "X-Custom");
+	observed.custom_len = custom ? strlen (custom) : 0;
+
+	const String *accept = http_request_get_header (request, HTTP_HEADER_ACCEPT);
+	observed.accept_len = accept ? accept->len : 0;
+	observed.arena_used = receive_arena ? receive_arena->used : 0;
 
 	test_receive_copy (observed.query, http_request_get_query (request));
 	test_receive_copy (
@@ -811,6 +826,7 @@ static void test_receive_limits_reset (HttpCerver *http_cerver) {
 	http_cerver_set_max_url_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_URL_SIZE);
 	http_cerver_set_max_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE);
 	http_cerver_set_max_headers (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADERS);
+	http_cerver_set_max_custom_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE);
 	http_cerver_set_max_multipart_parts (http_cerver, HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS);
 	http_cerver_set_max_file_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_FILE_SIZE);
 
@@ -1605,6 +1621,36 @@ static void test_receive_limits (Cerver *cerver) {
 		"413"
 	);
 
+	// the trailers of a chunked body are not kept, but they count for the limits of the headers:
+	// a body could be followed by trailers without an end
+	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	test_receive_limit_case (
+		cerver, "trailers size limit",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"4\r\ndata\r\n0\r\n"
+		"X-Trailer: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n\r\n",
+		"431"
+	);
+
+	http_cerver_set_max_headers (http_cerver, 1 << 1);
+	test_receive_limit_case (
+		cerver, "trailers count limit",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"4\r\ndata\r\n0\r\n"
+		"X-One: 1\r\nX-Two: 2\r\n\r\n",
+		"431"
+	);
+
+	// the extensions of the chunks are not used, but their bytes count for the size of the headers
+	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	test_receive_limit_case (
+		cerver, "chunk extensions size limit",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"4;extension=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\ndata\r\n"
+		"0\r\n\r\n",
+		"431"
+	);
+
 	http_cerver_set_max_multipart_parts (http_cerver, 1);
 	test_receive_limit_case (cerver, "multi-part parts limit", multipart_request, "413");
 
@@ -1613,21 +1659,76 @@ static void test_receive_limits (Cerver *cerver) {
 
 }
 
-static void test_receive_custom_header_too_large (Cerver *cerver) {
+#define TEST_RECEIVE_CUSTOM_REQUEST_SIZE		(1 << 15)
 
-	char request[TEST_RECEIVE_VALUE_SIZE] = { 0 };
-	char value[HTTP_CUSTOM_HEADER_VALUE_SIZE + 1] = { 0 };
-	(void) memset (value, 'v', HTTP_CUSTOM_HEADER_VALUE_SIZE);
+// a request with a custom header of a value of that size
+static void test_receive_custom_header_case (
+	Cerver *cerver, const char *name, const size_t value_size
+) {
+
+	char *request = (char *) calloc (TEST_RECEIVE_CUSTOM_REQUEST_SIZE, sizeof (char));
+	char *value = (char *) calloc (value_size + 1, sizeof (char));
+	test_check_ptr (request);
+	test_check_ptr (value);
+
+	(void) memset (value, 'v', value_size);
 
 	(void) snprintf (
-		request, TEST_RECEIVE_VALUE_SIZE,
+		request, TEST_RECEIVE_CUSTOM_REQUEST_SIZE,
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: %s\r\n\r\n", value
 	);
 
-	test_receive_whole_case (cerver, "custom header value that does not fit", request);
+	test_receive_whole_case (cerver, name, request);
+
+	free (value);
+	free (request);
+
+}
+
+// a header that is not one of the known ones fits up to the limit of the cerver,
+// by default HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE: the limit was 512 bytes without a setting,
+// so the headers of the traces and of the certificates of a proxy rejected their requests
+static void test_receive_custom_header_too_large (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_custom_header_case (
+		cerver, "custom header value below the default limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1));
+
+	test_receive_custom_header_case (
+		cerver, "custom header value that does not fit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE
+	);
 
 	test_receive_expect (test_receive_status_is ("431"));
 	test_receive_expect (observed.n_handled == 0);
+
+	// the limit of the cerver
+	http_cerver_set_max_custom_header_size (http_cerver, 1 << 4);
+	test_receive_custom_header_case (cerver, "custom header value above the limit that was set", 1 << 4);
+
+	test_receive_expect (test_receive_status_is ("431"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_custom_header_case (cerver, "custom header value below the limit that was set", (1 << 4) - 1);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.custom_len == ((1 << 4) - 1));
+
+	// without the limit, only the size of all the headers limits it
+	http_cerver_set_max_custom_header_size (http_cerver, 0);
+	test_receive_custom_header_case (
+		cerver, "custom header value without a limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1));
+
+	test_receive_limits_reset (http_cerver);
 
 }
 
@@ -2465,6 +2566,138 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 
 }
 
+#define TEST_RECEIVE_REPEATED_HEADERS			100
+#define TEST_RECEIVE_REPEATED_VALUE_SIZE		64
+#define TEST_RECEIVE_REPEATED_LINE_SIZE			128
+#define TEST_RECEIVE_REPEATED_REQUEST_SIZE		(1 << 14)
+
+// the most bytes of the arena for each byte of a header that is repeated
+#define TEST_RECEIVE_REPEATED_ARENA_FACTOR		4
+
+// the spaces and tabs after the value of a header are not part of it
+static void test_receive_header_values (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "header values with spaces after them",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Content-Type: application/json \t\r\n"
+		"Accept: text/plain  \r\n"
+		"X-Custom: custom  value \t \r\n"
+		"\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.content_type, "application/json"));
+	test_receive_expect (!strcmp (observed.accept, "text/plain"));
+	test_receive_expect (!strcmp (observed.custom, "custom  value"));
+
+	// a value of only spaces is an empty one
+	test_receive_whole_case (
+		cerver, "a header value of spaces",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nAccept: \t \r\nX-Custom:   \r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.accept, ""));
+	test_receive_expect (!strcmp (observed.custom, ""));
+
+}
+
+// a header that is repeated is joined in memory that grows by a factor:
+// the joined value was copied again for every repetition, so the arena of a request
+// used hundreds of times the bytes of its headers
+static void test_receive_repeated_header (Cerver *cerver) {
+
+	char *request = (char *) calloc (TEST_RECEIVE_REPEATED_REQUEST_SIZE, sizeof (char));
+	test_check_ptr (request);
+
+	char value[TEST_RECEIVE_REPEATED_VALUE_SIZE + 1] = { 0 };
+	(void) memset (value, 'a', TEST_RECEIVE_REPEATED_VALUE_SIZE);
+
+	size_t length = (size_t) snprintf (
+		request, TEST_RECEIVE_REPEATED_REQUEST_SIZE,
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+	);
+
+	for (unsigned int i = 0; i < TEST_RECEIVE_REPEATED_HEADERS; i++) {
+		length += (size_t) snprintf (
+			request + length, TEST_RECEIVE_REPEATED_LINE_SIZE, "Accept: %s\r\n", value
+		);
+	}
+
+	length += (size_t) snprintf (request + length, TEST_RECEIVE_REPEATED_LINE_SIZE, "\r\n");
+
+	current_case = "a header repeated many times";
+	test_receive_feed_whole (cerver, request, length);
+
+	test_receive_expect (test_receive_status_is ("200"));
+
+	// every value is in the header, with the separators between them
+	const size_t joined = (TEST_RECEIVE_REPEATED_HEADERS * TEST_RECEIVE_REPEATED_VALUE_SIZE)
+		+ ((TEST_RECEIVE_REPEATED_HEADERS - 1) * strlen (HTTP_HEADER_VALUES_SEPARATOR));
+
+	test_receive_expect (observed.accept_len == joined);
+
+	if (receive_arena) {
+		test_receive_expect (observed.arena_used < (length * TEST_RECEIVE_REPEATED_ARENA_FACTOR));
+	}
+
+	free (request);
+
+}
+
+// a target in absolute form is routed by its path, as a proxy sends it (RFC 9112 section 3.2.2),
+// and a fragment is not part of the path nor of the query: both went to the catch all
+static void test_receive_targets (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "a target in absolute form",
+		"POST http://localhost:8080/test/echo?key=value HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, "key=value"));
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+	test_receive_whole_case (
+		cerver, "a target in absolute form with another scheme",
+		"POST HTTPS://example.com/test/echo HTTP/1.1\r\nHost: example.com\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, ""));
+
+	test_receive_whole_case (
+		cerver, "a target with a fragment",
+		"POST /test/echo?key=value#fragment HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+	test_receive_whole_case (
+		cerver, "a path with a fragment",
+		"POST /test/echo#fragment HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	// a path that only looks like a scheme is a path
+	test_receive_whole_case (
+		cerver, "a path with the separator of a scheme",
+		"POST /test/echo?next=http://example.com/a HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, "next=http://example.com/a"));
+
+}
+
 // the query and the values of a form are split by their separators and then each piece is decoded:
 // they were decoded first, so an escaped separator (%26, %3D) made another value
 static void test_receive_escaped_separators (Cerver *cerver) {
@@ -2644,6 +2877,11 @@ static const TestReceiveStrictCase strict_cases[] = {
 		"a control character in a header value",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\x01" "b\r\nContent-Length: 5\r\n\r\nfirst",
 		HTTP_PARSER_LENIENT_HEADERS, "first"
+	},
+	{
+		"CR without LF after the request line",
+		"POST /test/echo HTTP/1.1\rHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
+		HTTP_PARSER_LENIENT_OPTIONAL_LF_AFTER_CR, "first"
 	}
 };
 
@@ -2651,6 +2889,11 @@ static const TestReceiveStrictCase strict_cases[] = {
 
 static const char nul_value_request[] = {
 	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\0b\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char nul_origin_request[] = {
+	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+	"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\0.other.com\r\nContent-Length: 5\r\n\r\nfirst"
 };
 
 static const char *lf_request = {
@@ -2682,8 +2925,17 @@ static void test_receive_parser_rejected (void) {
 
 }
 
+// a version of HTTP that cerver does not speak is a 505
+static void test_receive_version_rejected (void) {
+
+	test_receive_expect (test_receive_status_is ("505"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_REJECTED);
+	test_receive_expect (observed.n_handled == 0);
+
+}
+
 // the methods of llhttp: WebDAV and QUERY can be registered,
-// the RTSP methods and the preface of HTTP/2 are rejected by the parser
+// the RTSP methods are rejected by the parser and the preface of HTTP/2 by its version
 static void test_receive_parser_methods (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
@@ -2708,11 +2960,63 @@ static void test_receive_parser_methods (Cerver *cerver) {
 	test_receive_whole_case (cerver, "an RTSP method", "DESCRIBE /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
 
+	// its version is not one that cerver speaks
 	test_receive_whole_case (cerver, "the preface of HTTP/2", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
-	test_receive_parser_rejected ();
+	test_receive_version_rejected ();
 
 	test_receive_whole_case (cerver, "a lower case method", "post /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
+
+}
+
+static const char *rtsp_request = {
+	"POST /test/echo RTSP/1.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char *second_version_request = {
+	"POST /test/echo HTTP/2.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+// only HTTP/1.0 and HTTP/1.1 are served: llhttp also takes the request lines of RTSP and ICE
+// and the versions 0.9 and 2.0, and their requests with a method of HTTP reached the handlers
+static void test_receive_parser_protocols (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+
+	test_receive_every_split (cerver, "a request of RTSP", rtsp_request, strlen (rtsp_request), test_receive_parser_rejected);
+
+	test_receive_whole_case (cerver, "a method of RTSP in a request of RTSP", "DESCRIBE /v2/dav RTSP/1.0\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (cerver, "a request of ICE", "SOURCE /test/echo ICE/1.0\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_every_split (
+		cerver, "HTTP/2.0", second_version_request, strlen (second_version_request), test_receive_version_rejected
+	);
+
+	test_receive_whole_case (cerver, "HTTP/0.9", "GET /test/echo HTTP/0.9\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_version_rejected ();
+
+	// the lenient flag of the version is for the versions that cerver does not know, never for another protocol
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_VERSION);
+
+	test_receive_whole_case (cerver, "HTTP/2.0 with the lenient version", second_version_request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	test_receive_whole_case (cerver, "a request of RTSP with the lenient version", rtsp_request);
+	test_receive_parser_rejected ();
+
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 }
 
@@ -2748,11 +3052,33 @@ static void test_receive_parser_strict (Cerver *cerver) {
 	test_check_unsigned_eq (http_cerver->parser_lenient, HTTP_PARSER_LENIENT_ALL, NULL);
 	test_check_false (http_cerver->parser_lenient & LLHTTP_LENIENT_HEADER_VALUE_RELAXED);
 
-	// the headers lenient flag accepts it, without looping
+	// some requests are rejected even with every flag: a NUL in a header value was accepted
+	// by the headers lenient flag, and the value that cerver compares ends in it:
+	// an Origin of the whitelist followed by a NUL and anything else was allowed
 	current_case = "a NUL in a header value with every flag";
 	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
-	test_receive_expect (test_receive_status_is ("200"));
-	test_receive_expect (observed.n_handled == 1);
+	test_receive_parser_rejected ();
+
+	current_case = "a NUL in an Origin with every flag";
+	test_receive_feed_whole (cerver, nul_origin_request, sizeof (nul_origin_request) - 1);
+	test_receive_parser_rejected ();
+
+	// a request whose Transfer-Encoding does not end with chunked has no length:
+	// with its lenient flags it was read until the client closed and never answered
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding that does not end with chunked and every flag",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked, gzip\r\n\r\n"
+		"5\r\nfirst\r\n0\r\n\r\n"
+	);
+
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding without chunked, a Content-Length and every flag",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: gzip\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_parser_rejected ();
 
 	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
@@ -2760,7 +3086,14 @@ static void test_receive_parser_strict (Cerver *cerver) {
 	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
 	test_receive_parser_rejected ();
 
-	// some requests are rejected even with every flag
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding that does not end with chunked",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked, gzip\r\n\r\n"
+		"5\r\nfirst\r\n0\r\n\r\n"
+	);
+
+	test_receive_parser_rejected ();
+
 	test_receive_whole_case (cerver, "a space before a colon", "POST /test/echo HTTP/1.1\r\nHost : localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
 
@@ -2874,8 +3207,9 @@ static void test_receive_web_socket_upgrade_rejected (Cerver *cerver) {
 		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "Content-Length: 0\r\n\r\n"
 	);
 
-	// the endpoint is a GET, a POST goes to the catch all (405 is opt-in)
-	test_receive_expect (!test_receive_status_is ("101"));
+	// the endpoint is a GET, a POST goes to the catch all (405 is opt-in): its 200, never a 101
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!test_receive_has_header ("Sec-WebSocket-Accept"));
 	test_receive_expect (!result.upgraded);
 
 	test_receive_web_socket_released (cerver);
@@ -2985,6 +3319,25 @@ static void test_receive_parser_keep_alive (Cerver *cerver) {
 	test_receive_expect (!result.keep_alive_requested);
 	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
 	test_receive_expect (test_receive_count_responses () == 1);
+
+	// the lenient flags of what follows a request with Connection close change nothing:
+	// the parser is paused when its request is complete, what follows it is not parsed
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_KEEP_ALIVE | HTTP_PARSER_LENIENT_DATA_AFTER_CLOSE);
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.1 with Connection close and the lenient flags of what follows it",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\nContent-Length: 5\r\n\r\nfirst"
+		PIPELINED_SECOND_REQUEST
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!result.keep_alive_requested);
+	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
+	test_receive_expect (test_receive_count_responses () == 1);
+
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 	test_receive_whole_case (cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n");
 	test_receive_expect (test_receive_status_is ("200"));
@@ -3903,10 +4256,14 @@ void http_tests_receive (void) {
 	test_receive_groups (cerver);
 	test_receive_method_not_allowed (cerver);
 	test_receive_trailing_slash (cerver);
+	test_receive_repeated_header (cerver);
+	test_receive_header_values (cerver);
+	test_receive_targets (cerver);
 	test_receive_escaped_separators (cerver);
 	test_receive_cors_preflight (cerver);
 
 	test_receive_parser_methods (cerver);
+	test_receive_parser_protocols (cerver);
 	test_receive_parser_strict (cerver);
 	test_receive_parser_upgrade (cerver);
 	test_receive_parser_keep_alive (cerver);

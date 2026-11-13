@@ -109,7 +109,7 @@ static void bench_server_routes (HttpCerver *http_cerver) {
 	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &bench_web_socket_handlers);
 
 	// the pings would be measured as messages
-	http_endpoint_set_web_socket_ping (echo, 0, 0);
+	http_endpoint_set_web_socket_ping_milliseconds (echo, 0, 0);
 
 }
 

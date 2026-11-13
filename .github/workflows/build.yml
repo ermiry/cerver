@@ -29,12 +29,18 @@ jobs:
         run: make
       - name: gcc examples
         run: make examples
+      - name: gcc benchmarks
+        run: make bench tree load
 
       - name: clean examples
         run: make clean-examples
+      - name: clean benchmarks
+        run: make clean-bench
 
       - name: g++ examples
         run: make CC=g++ examples
+      - name: g++ benchmarks
+        run: make CC=g++ bench tree load
 
       - name: Archive Shared Library
         uses: actions/upload-artifact@v7
@@ -64,9 +70,9 @@ jobs:
         run: make clean
 
       - name: g++ library
-        run: make TYPE=test CC=g++
+        run: make TYPE=test ZLIB=1 CC=g++
       - name: g++ tests
-        run: make TYPE=test CC=g++ test
+        run: make TYPE=test ZLIB=1 CC=g++ test
       - name: g++ run tests
         run: bash test/run.sh
 
@@ -90,14 +96,16 @@ jobs:
         run: make CC=clang
       - name: clang examples
         run: make CC=clang examples
+      - name: clang benchmarks
+        run: make CC=clang bench tree load
 
       - name: clean
         run: make clean
 
       - name: clang test library
-        run: make TYPE=test CC=clang
+        run: make TYPE=test ZLIB=1 CC=clang
       - name: clang tests
-        run: make TYPE=test CC=clang test
+        run: make TYPE=test ZLIB=1 CC=clang test
       - name: clang run tests
         run: bash test/run.sh
 
@@ -115,9 +123,9 @@ jobs:
         run: apt-get update && apt-get install -y valgrind
 
       - name: Library
-        run: make TYPE=test
+        run: make TYPE=test ZLIB=1
       - name: Tests
-        run: make TYPE=test test
+        run: make TYPE=test ZLIB=1 test
 
       - name: Run tests
         env:
@@ -147,7 +155,7 @@ jobs:
             -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
             -e TSAN_OPTIONS=halt_on_error=1 \
             -e WERROR \
-            gcc:16.2 bash -c 'make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
+            gcc:16.2 bash -c 'make TYPE=test ZLIB=1 SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test ZLIB=1 SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
 
   nightly-image:
     name: Nightly docker image

@@ -33,7 +33,7 @@
 extern "C" {
 #endif
 
-// returns true when the key is the base64 of 16 bytes
+// returns true when the key is the base64 of 16 bytes, in the only form that they have
 CERVER_PUBLIC bool http_web_socket_key_is_valid (
 	const char *key, const size_t length
 );

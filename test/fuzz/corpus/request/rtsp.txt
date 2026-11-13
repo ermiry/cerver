@@ -1,0 +1,3 @@
+ADESCRIBE /stream RTSP/1.0
+Host: localhost
+
