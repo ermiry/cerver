@@ -2,6 +2,10 @@
 
 RUNNER=${RUNNER:-}
 
+if [ -n "$RUNNER" ]; then
+	export TEST_TIME_SCALE=${TEST_TIME_SCALE:-4}
+fi
+
 run () {
 	$RUNNER "$@" || { echo "$1 failed"; exit 1; }
 }

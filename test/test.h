@@ -233,6 +233,44 @@ static inline int test_double_equal (const double value, const double expected) 
 
 }
 
+#pragma region time
+
+// the timeouts of less than a few seconds that a test gives to cerver (a ping, a close, a connect)
+// are multiplied by a scale when the binary runs many times slower: under valgrind, where the runner
+// sets TEST_TIME_SCALE, and in a build with a sanitizer; without it what is tested is the speed of the machine
+#define TEST_TIME_SCALE_VARIABLE			"TEST_TIME_SCALE"
+#define TEST_TIME_SCALE_BASE				10
+
+#if defined (__SANITIZE_THREAD__) || defined (__SANITIZE_ADDRESS__)
+	#define TEST_TIME_SCALE_DEFAULT			4
+#elif defined (__has_feature)
+	#if __has_feature (thread_sanitizer) || __has_feature (address_sanitizer)
+		#define TEST_TIME_SCALE_DEFAULT		4
+	#endif
+#endif
+
+#ifndef TEST_TIME_SCALE_DEFAULT
+	#define TEST_TIME_SCALE_DEFAULT			1
+#endif
+
+static inline unsigned int test_time_scale (void) {
+
+	const char *scale = getenv (TEST_TIME_SCALE_VARIABLE);
+	const unsigned long value = scale ? strtoul (scale, NULL, TEST_TIME_SCALE_BASE) : 0;
+
+	return value ? (unsigned int) value : TEST_TIME_SCALE_DEFAULT;
+
+}
+
+// the milliseconds of a short timeout of a test, with the scale of the run
+static inline unsigned int test_milliseconds (const unsigned int milliseconds) {
+
+	return milliseconds * test_time_scale ();
+
+}
+
+#pragma endregion
+
 #pragma region wait
 
 #define TEST_WAIT_SECONDS					16
