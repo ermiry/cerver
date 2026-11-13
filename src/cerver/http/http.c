@@ -5414,7 +5414,7 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 			http_receive->type = HTTP_RECEIVE_TYPE_FILE;
 			http_receive->head = (request->method == REQUEST_METHOD_HEAD);
 
-			if (!http_receive_handle_static_authenticate (http_receive, request)) return -1;
+			if (!http_receive_handle_static_authenticate (http_receive, request)) return HTTP_RECEIVE_PARSER_STOP;
 		}
 
 		http_receive->settings.on_body = http_receive_handle_body_discard;
