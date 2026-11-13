@@ -99,6 +99,61 @@ static void features_json_handler (
 
 }
 
+// the headers of the responses with the same body that cerver filters: one of them has its headers
+// in its list, the other one has them as the bytes of its header
+#define FEATURES_TEST_CACHE_CONTROL			"max-age=60"
+#define FEATURES_TEST_KEPT_NAME				"X-Kept"
+#define FEATURES_TEST_KEPT_VALUE			"yes"
+
+// a Date of the response: cerver does not add its own to the response that has it,
+// and a 304 does not keep it, so its Date is the one of cerver
+#define FEATURES_TEST_OWN_DATE				"Sun, 06 Nov 1994 08:49:37 GMT"
+
+#define FEATURES_TEST_RAW_HEADER																	\
+	"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"					\
+	"Cache-Control: " FEATURES_TEST_CACHE_CONTROL "\r\n"											\
+	"Date: " FEATURES_TEST_OWN_DATE "\r\n"															\
+	FEATURES_TEST_KEPT_NAME ": " FEATURES_TEST_KEPT_VALUE "\r\n\r\n"
+
+// GET /features/listed, the body with headers of its own in the list of the response
+static void features_listed_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+	(void) http_response_add_header (response, HTTP_HEADER_CONTENT_TYPE, "application/json");
+	(void) http_response_add_content_length_header (response, features_json_length);
+	(void) http_response_add_header (response, HTTP_HEADER_CACHE_CONTROL, FEATURES_TEST_CACHE_CONTROL);
+	(void) http_response_add_header (response, HTTP_HEADER_DATE, FEATURES_TEST_OWN_DATE);
+	(void) http_response_header_add_by_name (response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	(void) http_response_set_data_ref (response, features_json, features_json_length);
+	(void) http_response_send (response, http_receive);
+	http_response_return (response);
+
+}
+
+// GET /features/raw, the same response with its header set as bytes
+static void features_raw_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	char header[FEATURES_TEST_VALUE_SIZE] = { 0 };
+	const int length = snprintf (header, FEATURES_TEST_VALUE_SIZE, FEATURES_TEST_RAW_HEADER, features_json_length);
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+	http_response_set_header (response, strdup (header), (size_t) length);
+	(void) http_response_set_data_ref (response, features_json, features_json_length);
+	(void) http_response_send (response, http_receive);
+	http_response_return (response);
+
+}
+
 // GET /features/image, a body that is never compressed
 static void features_image_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -300,6 +355,8 @@ static void features_routes (HttpCerver *http_cerver) {
 
 	test_check_ptr (http_group_get (features, "small", features_small_handler));
 	test_check_ptr (http_group_get (features, "json", features_json_handler));
+	test_check_ptr (http_group_get (features, "listed", features_listed_handler));
+	test_check_ptr (http_group_get (features, "raw", features_raw_handler));
 	test_check_ptr (http_group_get (features, "image", features_image_handler));
 	test_check_ptr (http_group_get (features, "stream", features_stream_handler));
 	test_check_ptr (http_group_get (features, "stream/ended", features_stream_ended_handler));
@@ -684,6 +741,74 @@ static void test_features_etag (void) {
 	features_request (head_request, strlen (head_request), &head);
 	features_expect_header (&head, "ETag", etag);
 	test_check_unsigned_eq (head.body_length, 0, NULL);
+
+}
+
+// what cerver takes from the headers of a response when it compresses it and when it answers it
+// with a 304: the same from the list of the response and from a header that was set as bytes
+static void features_filtered (const char *path) {
+
+	FeaturesResponse response;
+	char etag[FEATURES_TEST_VALUE_SIZE] = { 0 };
+	char date[FEATURES_TEST_VALUE_SIZE] = { 0 };
+	char header[FEATURES_TEST_VALUE_SIZE * 2] = { 0 };
+
+	// as it is: its length and every one of its headers, its Date is the only one
+	features_get (path, NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_header (&response, "Cache-Control", FEATURES_TEST_CACHE_CONTROL);
+	features_expect_header (&response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	features_expect_header (&response, "Date", FEATURES_TEST_OWN_DATE);
+	test_check_unsigned_eq (features_header_count (&response, "\r\nDate: "), 1, NULL);
+	test_check_unsigned_eq (features_header_count (&response, "\r\nContent-Length: "), 1, NULL);
+	test_check_unsigned_eq (features_content_length (&response), features_json_length, NULL);
+	test_check_unsigned_eq (response.body_length, features_json_length, NULL);
+	test_check_ptr (features_header (&response, "ETag", etag));
+
+	// its 304 keeps the Cache-Control and the entity tag, never the length nor the type nor the others
+	(void) snprintf (header, sizeof (header), "If-None-Match: %s\r\n", etag);
+	features_get (path, header, &response);
+	features_expect_status (&response, "HTTP/1.1 304");
+	features_expect_header (&response, "Cache-Control", FEATURES_TEST_CACHE_CONTROL);
+	features_expect_header (&response, "ETag", etag);
+	features_expect_no_header (&response, "Content-Length");
+	features_expect_no_header (&response, "Content-Type");
+	features_expect_no_header (&response, FEATURES_TEST_KEPT_NAME);
+	test_check_unsigned_eq (response.body_length, 0, NULL);
+
+	// the Date of the response is one of the headers that a 304 does not keep: it is not found
+	// in the message anymore, so cerver adds its own (the 304 of the list had no Date)
+	test_check_ptr (features_header (&response, "Date", date));
+	test_check (strcmp (date, FEATURES_TEST_OWN_DATE) != 0, "the 304 kept the Date of the response");
+	test_check_unsigned_eq (features_header_count (&response, "\r\nDate: "), 1, NULL);
+
+	// compressed: only the length of the plain body is taken away, and the one of the gzip is added
+	features_get (path, "Accept-Encoding: gzip\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_header (&response, "Cache-Control", FEATURES_TEST_CACHE_CONTROL);
+	features_expect_header (&response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	features_expect_header (&response, "Content-Type", "application/json");
+	features_expect_header (&response, "Date", FEATURES_TEST_OWN_DATE);
+	test_check_unsigned_eq (features_header_count (&response, "\r\nDate: "), 1, NULL);
+	test_check_unsigned_eq (features_header_count (&response, "\r\nContent-Length: "), 1, NULL);
+	test_check_unsigned_eq (response.body_length, features_content_length (&response), NULL);
+
+	if (http_compression_available ()) {
+		features_expect_header (&response, "Content-Encoding", HTTP_COMPRESSION_ENCODING);
+		test_check (response.body_length < features_json_length, "the body was not compressed");
+	}
+
+	else {
+		test_check_unsigned_eq (response.body_length, features_json_length, NULL);
+	}
+
+}
+
+static void test_features_filtered (void) {
+
+	features_filtered ("/features/listed");
+
+	features_filtered ("/features/raw");
 
 }
 
@@ -1102,6 +1227,7 @@ void http_tests_features (void) {
 	test_features_etag ();
 	test_features_static_files ();
 	test_features_compression ();
+	test_features_filtered ();
 	test_features_stream ();
 	test_features_chunked_body ();
 	test_features_metrics ();
