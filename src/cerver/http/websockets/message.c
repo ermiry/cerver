@@ -154,8 +154,16 @@ static int http_web_socket_receiver_data (
 			receiver->deflate, bytes, size, end, http_web_socket_receiver_sink, receiver
 		);
 
-		// the sink already set the result of its own stop
-		if (result == 1) stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+		// the sink already set the result of its own stop, and a decompressor that failed
+		// is not an error of the bytes of the peer
+		if (result == HTTP_WEB_SOCKET_INFLATE_INVALID) {
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+		}
+
+		else if (result == HTTP_WEB_SOCKET_INFLATE_FAILED) {
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INTERNAL_ERROR);
+		}
+
 		else if (result) stop = HTTP_WEB_SOCKET_MESSAGE_STOP;
 	}
 

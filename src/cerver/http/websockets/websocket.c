@@ -573,7 +573,10 @@ static u8 http_web_socket_send_message_frame (
 	size_t payload_size = size;
 	bool compressed = false;
 
-	if (web_socket->deflate && (size >= web_socket->deflate->min_size)) {
+	if (
+		web_socket->deflate && (size >= web_socket->deflate->min_size)
+		&& (size <= HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX)
+	) {
 		retval = http_web_socket_deflate_compress (web_socket->deflate, data, size, true, &payload, &payload_size);
 		compressed = true;
 	}

@@ -1,6 +1,7 @@
 #ifndef _CERVER_HTTP_WEBSOCKETS_DEFLATE_H_
 #define _CERVER_HTTP_WEBSOCKETS_DEFLATE_H_
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -9,6 +10,10 @@
 #include "cerver/config.h"
 
 #include "cerver/http/websockets/frame.h"
+
+// the most bytes that zlib takes in a call: a larger message is sent without compression,
+// and a larger piece of a stream or of a message that is received is an error
+#define HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX				((size_t) UINT_MAX)
 
 // the name of the extension (RFC 7692)
 #define HTTP_WEB_SOCKET_DEFLATE_NAME					"permessage-deflate"
@@ -140,7 +145,8 @@ typedef struct HttpWebSocketDeflate {
 	u8 *chunk;
 	size_t chunk_size;
 
-	// the message had a last block (BFINAL), nothing else of it can follow
+	// the last thing that the inflater took was a last block (BFINAL):
+	// it started again with its window and a message can end there without its tail
 	bool ended;
 
 } HttpWebSocketDeflate;
@@ -156,6 +162,7 @@ CERVER_PUBLIC void http_web_socket_deflate_delete (HttpWebSocketDeflate *deflate
 
 // compresses the next bytes of a message, end is true with its last bytes,
 // the output is valid until the next call, and without the tail 00 00 FF FF at the end
+// a call takes up to HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX bytes
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 http_web_socket_deflate_compress (
 	HttpWebSocketDeflate *deflate,
@@ -163,12 +170,21 @@ CERVER_PUBLIC u8 http_web_socket_deflate_compress (
 	const u8 **output, size_t *output_size
 );
 
+// the results of http_web_socket_deflate_decompress () that are not a success
+#define HTTP_WEB_SOCKET_INFLATE_INVALID					1
+#define HTTP_WEB_SOCKET_INFLATE_STOPPED					2
+#define HTTP_WEB_SOCKET_INFLATE_FAILED					3
+
 // receives the decompressed bytes, returns 0 to continue
 typedef int (*HttpWebSocketInflateSink)(void *data, const u8 *bytes, size_t size);
 
 // decompresses the next bytes of a message, end is true with its last bytes,
 // every decompressed piece goes to the sink, that can stop it
-// returns 0 on success, 1 on a stream that is not valid, 2 when the sink stopped it
+// a block with BFINAL does not end the message (RFC 7692 section 7.2.3.4), other blocks can follow it,
+// and a message that ends inside a block is not valid
+// returns 0 on success, HTTP_WEB_SOCKET_INFLATE_INVALID on a stream that is not valid,
+// HTTP_WEB_SOCKET_INFLATE_STOPPED when the sink stopped it
+// and HTTP_WEB_SOCKET_INFLATE_FAILED when the decompressor failed (its memory), that is not an error of the peer
 CERVER_PUBLIC u8 http_web_socket_deflate_decompress (
 	HttpWebSocketDeflate *deflate,
 	const u8 *data, const size_t size, const bool end,
