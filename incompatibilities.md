@@ -3,6 +3,27 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-1 (from 2.1b-13)
+
+The first beta of the 3.0 line (`labs`), born from the 2.1b-13 of `nightly`: the line, its license and the base
+of the modules of its own.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`): it was a copyright without a license. The code of other
+  projects keeps its own license (`thirdparty.md`), that now also lists sha-2 (`utils/sha256.c`) and fastbase64
+  (`utils/base64.c`)
+- **`cerver/crypto`** is new: `cerver_crypto_random_bytes ()`, `cerver_crypto_sha1 ()` with
+  `CERVER_CRYPTO_SHA1_SIZE` and `cerver_crypto_cleanse ()`, in `include/cerver/crypto/{random,hash,memory}.h`
+- The request ids, the keys of the handshake of a WebSocket client and the masks of its frames are random bytes
+  of `getrandom ()`, like the session ids: they came from `RAND_bytes ()` of OpenSSL. A process whose seccomp
+  forbids `getrandom ()` gets no request id (it is empty, as when `RAND_bytes ()` failed) and its WebSocket client
+  can not connect
+- The accept of the handshake is computed by the provider through `cerver_crypto_sha1 ()`, and the material of a
+  JWT key is cleared with `explicit_bzero ()` instead of `OPENSSL_cleanse ()`: the same results
+- `CRYPTO=openssl` in the `makefile` defines `CERVER_CRYPTO_OPENSSL`: it is the default and the only provider, a
+  build with another value stops. `libcerver.so` still links OpenSSL (`-lssl -lcrypto`), the JWT calls it
+  directly until L2
+- `.gitattributes` has no `merge=ours`: `labs` receives no merges
+
 ## 2.1b-13 (from 2.1b-12)
 
 The rest of the fixes of the review of the 2.1b-10, with the ones of the 2.0b-72 applied by hand, and the changes

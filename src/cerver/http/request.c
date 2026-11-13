@@ -8,14 +8,14 @@
 
 #include <ctype.h>
 
-#include <openssl/rand.h>
-
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/collections/arena.h"
 
 #include "cerver/config.h"
+
+#include "cerver/crypto/random.h"
 
 #include "cerver/http/content.h"
 #include "cerver/http/custom.h"
@@ -312,7 +312,7 @@ u8 http_request_id_generate (char *id) {
 	u8 retval = 1;
 
 	unsigned char bytes[HTTP_REQUEST_ID_UUID_BYTES] = { 0 };
-	if (id && (RAND_bytes (bytes, HTTP_REQUEST_ID_UUID_BYTES) == 1)) {
+	if (id && cerver_crypto_random_bytes (bytes, HTTP_REQUEST_ID_UUID_BYTES)) {
 		bytes[HTTP_REQUEST_ID_UUID_VERSION_BYTE] = (unsigned char) (
 			(bytes[HTTP_REQUEST_ID_UUID_VERSION_BYTE] & HTTP_REQUEST_ID_UUID_VERSION_MASK)
 			| HTTP_REQUEST_ID_UUID_VERSION

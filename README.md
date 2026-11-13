@@ -59,6 +59,7 @@ Zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IP
 | **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver, without HTTP |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus the HTTP server. It reaches `master` with the release 2.0 |
 | **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive and WebSocket |
+| **3.0** | `labs` (development), `labs-beta` | Cerver with code that is all of its own: its JSON, JWT, HTTP parser and an I/O over io_uring, measured against the best implementations. It is released when it reaches the goal of its [roadmap](./roadmap.md) |
 
 The changes between versions are in [CHANGELOG.md](./CHANGELOG.md) and [incompatibilities.md](./incompatibilities.md).
 
@@ -245,4 +246,4 @@ Build the image with `--build-arg SANITIZER=address,undefined` (or `thread`) to 
 
 ## License
 
-Copyright (C) 2018 Ermiry, see [LICENSE.md](./LICENSE.md). Find more about cerver at [cerver.ermiry.com](https://cerver.ermiry.com).
+Copyright 2018-2026 Ermiry. Licensed under the Apache License, Version 2.0, see [LICENSE.md](./LICENSE.md) and [NOTICE](./NOTICE); the code of other projects that cerver still includes keeps its own license, see [thirdparty.md](./thirdparty.md). Find more about cerver at [cerver.ermiry.com](https://cerver.ermiry.com).

@@ -88,6 +88,7 @@ jobs:
           case "${{ github.base_ref || github.ref_name }}" in
             http-beta)    moving="beta" ;;
             nightly-beta) moving="nightly-beta" ;;
+            labs-beta)    moving="labs-beta" ;;
             beta)         moving="core-beta" ;;
             *)            moving="" ;;
           esac

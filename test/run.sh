@@ -56,6 +56,12 @@ run ./test/bin/udp
 
 run ./test/bin/utils
 
+run ./test/bin/crypto
+
+if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
+	run ./test/bin/faults
+fi
+
 run ./test/bin/http
 
 run ./test/bin/websockets

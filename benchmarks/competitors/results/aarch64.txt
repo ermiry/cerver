@@ -1,0 +1,58 @@
+# cerver 2.1b-13 against its competitors
+# date: 2026-11-13T22:38:17Z
+# architecture: aarch64, cpus: 10, kernel: 7.2.12-orbstack-00394-gbecdd6130068
+# cpu: -
+# compiler: gcc (GCC) 16.2.0, -O3 -march=native
+# yyjson 0.13.0, simdjson 5.1.1, jansson 2.15.1, rapidjson 297637bc0a0f00dc504dbc1a47ebdaa577f8ae19
+# llhttp 9.4.4, picohttpparser dd573d8fa9264c646a400e96ce9f07dea6f156e4
+# the median of 5 runs of 0.25 s; allocations of one item; rss of the process until then
+module   case       implementation   operation         items/s       MB/s allocations    rss-KiB
+json     small      cerver           parse            521867.5       95.1      54.00       3760
+json     small      cerver           serialize       1016513.3      185.2      11.00       3896
+json     records    cerver           parse              1587.7       79.4   13321.00       4664
+json     records    cerver           serialize          3955.1      197.9    1040.00       4664
+json     numbers    cerver           parse                92.0      122.5   65553.00      10592
+json     numbers    cerver           serialize            96.4      128.4      21.00      11276
+json     strings    cerver           parse               233.1      138.9   16400.00      11276
+json     strings    cerver           serialize           887.5      528.7      20.00      11276
+json     small      jansson          parse            586149.7      106.8      54.00       1360
+json     small      jansson          serialize       1092706.4      199.0      11.00       1360
+json     records    jansson          parse              2084.9      104.3   13321.00       2012
+json     records    jansson          serialize          4797.9      240.0    1040.00       2012
+json     numbers    jansson          parse                91.4      121.7   65553.00       7988
+json     numbers    jansson          serialize           270.7      360.3      21.00       7988
+json     strings    jansson          parse               263.7      157.1   16400.00       7988
+json     strings    jansson          serialize           635.3      378.5      20.00       7988
+json     small      yyjson           parse          17626063.9     3210.6       2.00       1416
+json     small      yyjson           serialize      16043720.4     2922.4       1.00       1416
+json     records    yyjson           parse             50847.6     2543.9       2.00       1672
+json     records    yyjson           serialize         58229.4     2913.3       1.00       1672
+json     numbers    yyjson           parse              1609.7     2142.5       2.00       7996
+json     numbers    yyjson           serialize          1996.1     2656.8       2.00       7996
+json     strings    yyjson           parse              6431.7     3831.8       2.00       7996
+json     strings    yyjson           serialize          6603.9     3934.4       5.00       7996
+json     small      simdjson         parse          14002405.3     2550.6       0.00       3124
+json     small      simdjson         serialize       5209809.8      949.0       3.00       3124
+json     records    simdjson         parse             54056.7     2704.5       0.00       3656
+json     records    simdjson         serialize         19045.8      952.9      11.00       3656
+json     numbers    simdjson         parse              1275.8     1698.2       0.00       9500
+json     numbers    simdjson         serialize           981.2     1306.0      16.00      11240
+json     strings    simdjson         parse              3786.4     2255.9       0.00      11240
+json     strings    simdjson         serialize          6316.5     3763.2      13.00      11240
+json     small      rapidjson        parse           2825652.7      514.7       9.00       3036
+json     small      rapidjson        serialize       3924108.4      714.8       2.00       3172
+json     records    rapidjson        parse             12368.8      618.8      16.00       3428
+json     records    rapidjson        serialize         15336.7      767.3       2.00       3428
+json     numbers    rapidjson        parse               957.4     1274.3      26.00      10488
+json     numbers    rapidjson        serialize           656.6      874.0       2.00      10488
+json     strings    rapidjson        parse               569.6      339.3      31.00      10488
+json     strings    rapidjson        serialize          2154.3     1283.5       2.00      10488
+parser   small      cerver           parse          29749535.7      993.0       0.00       3348
+parser   browser    cerver           parse           5132799.6     2790.2       0.00       3744
+parser   post       cerver           parse          10843513.2     4022.7       0.00       3744
+parser   small      llhttp           parse          28172933.4      940.4       0.00       1216
+parser   browser    llhttp           parse           5194746.4     2823.8       0.00       1320
+parser   post       llhttp           parse          10698042.4     3968.8       0.00       1320
+parser   small      picohttpparser   parse          85208706.6     2844.1       0.00       1216
+parser   browser    picohttpparser   parse           8130878.1     4419.9       0.00       1216
+parser   post       picohttpparser   parse          15656742.2     5808.3       0.00       1216

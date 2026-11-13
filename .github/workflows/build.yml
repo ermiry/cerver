@@ -157,24 +157,24 @@ jobs:
             -e WERROR \
             gcc:16.2 bash -c 'make TYPE=test ZLIB=1 SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test ZLIB=1 SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
 
-  nightly-image:
-    name: Nightly docker image
+  labs-image:
+    name: Labs docker image
     needs: test
-    if: github.event_name == 'push' && github.ref_name == 'nightly'
+    if: github.event_name == 'push' && github.ref_name == 'labs'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
       - name: Image tags
         id: tags
-        run: echo "tags=ermiry/cerver:nightly,ermiry/cerver:nightly-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        run: echo "tags=ermiry/cerver:labs,ermiry/cerver:labs-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build Docker Nightly Image
+      - name: Build Docker Labs Image
         id: docker_build
         uses: docker/build-push-action@v7
         with:

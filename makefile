@@ -12,6 +12,9 @@ SANITIZER	:=
 # 1 compiles the gzip compression of the HTTP responses with zlib
 ZLIB		:= 0
 
+# the provider of the cryptography of cerver/crypto: openssl
+CRYPTO		:= openssl
+
 WERROR		?= 0
 
 SLIB		:= libcerver.so
@@ -40,6 +43,12 @@ ZLIBLIB		:= -l z
 CURL		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
+
+ifeq ($(CRYPTO), openssl)
+	DEFINES += -D CERVER_CRYPTO_OPENSSL
+else
+$(error the provider of the cryptography $(CRYPTO) is not supported)
+endif
 
 BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
@@ -411,6 +420,10 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/network.o -o ./$(TESTTARGET)/network $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/socket.o -o ./$(TESTTARGET)/socket $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/crypto/*.o -o ./$(TESTTARGET)/crypto $(TESTLIBS)
+ifeq ($(SANITIZER),)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/faults/*.o ./$(TESTBUILD)/websockets/raw.o -o ./$(TESTTARGET)/faults $(TESTLIBS)
+endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files.o -o ./$(TESTTARGET)/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
@@ -593,7 +606,7 @@ endif
 BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
-BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
+BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT) -not -path '$(BENCHDIR)/competitors/*')
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a benchmark is compiled again when a header that it includes changes

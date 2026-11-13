@@ -17,11 +17,10 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#include <openssl/crypto.h>
-#include <openssl/sha.h>
-
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
+
+#include "cerver/crypto/memory.h"
 
 #include "cerver/collections/arena.h"
 #include "cerver/collections/pool.h"
@@ -687,7 +686,7 @@ static JwtKey *http_cerver_init_load_jwt_key (
 			type, &error
 		);
 
-		OPENSSL_cleanse (material, material_length);
+		cerver_crypto_cleanse (material, material_length);
 		free (material);
 	}
 
