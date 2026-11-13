@@ -5,8 +5,6 @@
 
 #include <cerver/types/types.h>
 
-#include <cerver/http/json/utf.h>
-
 #include <cerver/http/websockets/text.h>
 
 #include "../test.h"
@@ -20,7 +18,19 @@
 
 #define TEXT_TEST_MAX_BYTES				4
 
-// the random texts that are compared with the validator of the JSON
+// the lead bytes of each length and the continuation bytes (RFC 3629)
+#define TEXT_TEST_ASCII_LAST			0x7F
+#define TEXT_TEST_LEAD_TWO_MASK			0xE0
+#define TEXT_TEST_LEAD_TWO				0xC0
+#define TEXT_TEST_LEAD_THREE_MASK		0xF0
+#define TEXT_TEST_LEAD_THREE			0xE0
+#define TEXT_TEST_LEAD_FOUR_MASK		0xF8
+#define TEXT_TEST_LEAD_FOUR				0xF0
+#define TEXT_TEST_CONTINUATION_MASK		0xC0
+#define TEXT_TEST_CONTINUATION			0x80
+#define TEXT_TEST_CONTINUATION_BITS		6
+
+// the random texts that are compared with the reference validator
 #define TEXT_TEST_RANDOM_TEXTS			(1 << 16)
 #define TEXT_TEST_RANDOM_MAX_LENGTH		(1 << 5)
 #define TEXT_TEST_RANDOM_SEED			7
@@ -60,6 +70,73 @@ static size_t text_test_encode (const u32 code_point, u8 *bytes) {
 	}
 
 	return length;
+
+}
+
+// the smallest code point of each length, a smaller one is an overlong form
+static const u32 text_test_minimum_code_point[TEXT_TEST_MAX_BYTES + 1] = { 0, 0, 0x80, 0x800, 0x10000 };
+
+// the length of the sequence that a byte starts and the bits of the code point that it has,
+// 0 for a byte that can not start a sequence
+static size_t text_test_reference_lead (const u8 lead, u32 *code_point) {
+
+	size_t length = 0;
+
+	if (lead <= TEXT_TEST_ASCII_LAST) {
+		*code_point = lead;
+		length = 1;
+	}
+
+	else if ((lead & TEXT_TEST_LEAD_TWO_MASK) == TEXT_TEST_LEAD_TWO) {
+		*code_point = lead & (u8) ~TEXT_TEST_LEAD_TWO_MASK;
+		length = 2;
+	}
+
+	else if ((lead & TEXT_TEST_LEAD_THREE_MASK) == TEXT_TEST_LEAD_THREE) {
+		*code_point = lead & (u8) ~TEXT_TEST_LEAD_THREE_MASK;
+		length = 3;
+	}
+
+	else if ((lead & TEXT_TEST_LEAD_FOUR_MASK) == TEXT_TEST_LEAD_FOUR) {
+		*code_point = lead & (u8) ~TEXT_TEST_LEAD_FOUR_MASK;
+		length = 4;
+	}
+
+	return length;
+
+}
+
+// a code point in its shortest form, that is not a surrogate and that is not above the last one
+static bool text_test_reference_code_point (const u32 code_point, const size_t length) {
+
+	return (code_point >= text_test_minimum_code_point[length])
+		&& (code_point <= TEXT_TEST_LAST_CODE_POINT)
+		&& ((code_point < TEXT_TEST_SURROGATES_FIRST) || (code_point > TEXT_TEST_SURROGATES_LAST));
+
+}
+
+// the reference validator, a decoder of RFC 3629 that takes one code point at a time,
+// written apart from the one of cerver so that the two can be compared
+static bool text_test_reference (const u8 *bytes, const size_t length) {
+
+	bool valid = true;
+
+	size_t i = 0;
+	while (valid && (i < length)) {
+		u32 code_point = 0;
+		const size_t sequence = text_test_reference_lead (bytes[i], &code_point);
+
+		valid = sequence && ((i + sequence) <= length);
+		for (size_t j = 1; valid && (j < sequence); j++) {
+			valid = (bytes[i + j] & TEXT_TEST_CONTINUATION_MASK) == TEXT_TEST_CONTINUATION;
+			code_point = (code_point << TEXT_TEST_CONTINUATION_BITS) | (bytes[i + j] & (u8) ~TEXT_TEST_CONTINUATION_MASK);
+		}
+
+		valid = valid && text_test_reference_code_point (code_point, sequence);
+		i += sequence;
+	}
+
+	return valid;
 
 }
 
@@ -181,7 +258,7 @@ static void test_text_ascii (void) {
 }
 
 // random bytes biased to the lead and the continuation bytes,
-// compared with the validator of the JSON of cerver
+// compared with the reference validator
 static void test_text_random (void) {
 
 	static const u8 alphabet[] = {
@@ -198,10 +275,10 @@ static void test_text_random (void) {
 			bytes[i] = alphabet[(size_t) rand_r (&seed) % sizeof (alphabet)];
 		}
 
-		const bool expected = utf8_check_string ((const char *) bytes, length) != 0;
+		const bool expected = text_test_reference (bytes, length);
 		if (http_web_socket_text_check (bytes, length) != expected) {
 			(void) fprintf (stderr, "random text %u of %zu bytes\n", n, length);
-			test_check (false, "the validator does not agree with the one of the JSON");
+			test_check (false, "the validator does not agree with the reference");
 		}
 
 		const size_t offset = length ? (size_t) (rand_r (&seed) % length) : 0;
