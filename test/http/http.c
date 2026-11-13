@@ -603,7 +603,7 @@ static void test_http_receive_create (void) {
 	// the parser is embedded, it parses requests with the receive's own settings
 	test_check (http_receive->parser.data == http_receive, NULL);
 	test_check (http_receive->parser.settings == &http_receive->settings, NULL);
-	test_check_unsigned_eq (llhttp_get_type (&http_receive->parser), HTTP_REQUEST, NULL);
+	test_check_unsigned_eq (http_receive->parser.type, HTTP_REQUEST, NULL);
 	test_check_unsigned_eq (http_receive->parser.lenient_flags, HTTP_PARSER_LENIENT_NONE, NULL);
 
 	test_check_null_ptr (http_receive->settings.on_message_begin);

@@ -7,6 +7,8 @@
 
 #include <sys/time.h>
 
+#include <cerver/config.h>
+
 #include <cerver/http/parser/api.h>
 
 // 8 gb
@@ -78,8 +80,8 @@ static int bench (int64_t iter_count, int silent) {
 	bench_settings_init (&settings);
 
 	llhttp_t parser;
-	struct timeval start = { 0 };
-	struct timeval end = { 0 };
+	struct timeval start = CERVER_ZERO_INITIALIZER;
+	struct timeval end = CERVER_ZERO_INITIALIZER;
 
 	if (!silent) {
 		const int err = gettimeofday (&start, NULL);

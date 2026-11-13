@@ -3311,7 +3311,7 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->start_time > 0);
 
 	// the parser is ready for a new request with the callbacks of a new one
-	test_receive_expect (llhttp_get_errno (&http_receive->parser) == HPE_OK);
+	test_receive_expect (http_receive->parser.error == HPE_OK);
 	test_receive_expect (http_receive->parser.data == http_receive);
 	test_receive_expect (http_receive->parser.settings == &http_receive->settings);
 	test_receive_expect (http_receive->settings.on_body == session->on_body);

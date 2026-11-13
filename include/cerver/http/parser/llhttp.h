@@ -76,9 +76,9 @@ struct llhttp__internal_s {
 
 };
 
-CERVER_PRIVATE int llhttp__internal_init (llhttp__internal_t *s);
+CERVER_HIDDEN int llhttp__internal_init (llhttp__internal_t *s);
 
-CERVER_PRIVATE int llhttp__internal_execute (
+CERVER_HIDDEN int llhttp__internal_execute (
 	llhttp__internal_t *s, const char *p, const char *endp
 );
 
