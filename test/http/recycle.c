@@ -107,15 +107,14 @@ static void test_recycle_buffer_inexact (void) {
 static void test_recycle_response_check_empty (const HttpResponse *response) {
 
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
-	test_check_unsigned_eq (response->n_headers, 0, NULL);
-
-	for (unsigned int index = 0; index < HTTP_HEADERS_SIZE; index++) {
-		test_check_int_eq (response->headers[index].len, 0, NULL);
-		test_check_str_empty (response->headers[index].value);
-	}
+	test_check_unsigned_eq (response->headers.count, 0, NULL);
+	test_check_unsigned_eq (response->headers.length, 0, NULL);
+	test_check_null_ptr (response->headers.fields);
+	test_check_null_ptr (response->headers.buffer);
 
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
+	test_check_bool_eq (response->header_is_raw, false, NULL);
 	test_check_str_empty (response->header_buffer);
 
 	test_check_null_ptr (response->data);
