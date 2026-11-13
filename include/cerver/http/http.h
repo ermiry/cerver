@@ -41,6 +41,7 @@
 #define HTTP_CERVER_DEFAULT_MAX_URL_SIZE			(1 << 13)
 #define HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE			(1 << 16)
 #define HTTP_CERVER_DEFAULT_MAX_HEADERS				(1 << 7)
+#define HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE	(1 << 13)
 #define HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS		(1 << 10)
 #define HTTP_CERVER_DEFAULT_MAX_FILE_SIZE			(1 << 29)
 
@@ -398,6 +399,7 @@ struct _HttpCerver {
 	unsigned int max_headers;
 	unsigned int max_multipart_parts;
 	size_t max_file_size;
+	size_t max_custom_header_size;
 
 	size_t n_limited_requests;		// rejected because they exceeded a limit
 
@@ -768,6 +770,15 @@ CERVER_EXPORT void http_cerver_set_max_header_size (
 // the default value is HTTP_CERVER_DEFAULT_MAX_HEADERS, 0 disables the limit
 CERVER_EXPORT void http_cerver_set_max_headers (
 	HttpCerver *http_cerver, const unsigned int max_headers
+);
+
+// sets the max size in bytes of the value of a header that is not one of the HTTP headers map
+// (a custom header, like the ones of a trace or the ones that a proxy adds),
+// with the values of its repetitions joined; a bigger value is answered with 431
+// the default value is HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE, 0 disables the limit,
+// and the size of all the headers is still limited by http_cerver_set_max_header_size ()
+CERVER_EXPORT void http_cerver_set_max_custom_header_size (
+	HttpCerver *http_cerver, const size_t max_custom_header_size
 );
 
 // sets the max number of parts of a multi-part request
