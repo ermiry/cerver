@@ -52,9 +52,10 @@
 #define HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT_MILLISECONDS	\
 	(HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
 
-// secs to receive a complete request, 0 disables the timeout,
-// so a body can take any time while it keeps making progress
-#define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT			0
+// secs to receive a complete request, a slower one is answered with 408:
+// a body that arrives a few bytes at a time can not keep its worker forever
+// 0 disables the timeout, so a body can take any time while it keeps making progress
+#define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT			300
 #define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS	\
 	(HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
 
