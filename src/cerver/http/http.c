@@ -104,6 +104,16 @@ static const char *query_separator = { "?" };
 static const char query_encoded_space = '+';
 static const char query_space = ' ';
 
+// the parts of the target of a request
+static const char http_target_scheme_symbols[] = { "+-." };
+static const char http_target_authority_start[] = { "://" };
+static const size_t http_target_authority_start_len = 3;
+static const char http_target_authority_end[] = { "/?#" };
+static const char http_target_query_start = '?';
+static const char http_target_fragment_start = '#';
+static const char http_target_root[] = { "/" };
+static const size_t http_target_root_len = 1;
+
 static const char static_file_extension_separator = '.';
 
 static const char *expect_continue_value = { "100-continue" };
@@ -2575,19 +2585,65 @@ static String *http_receive_string_create (
 
 }
 
+// the length of the scheme and of the authority of a target in absolute form
+// (http://host:port/path?query, RFC 9112 section 3.2.2), that a proxy sends:
+// what follows them is the path and the query of the request
+// returns 0 for a target in any other form
+static size_t http_receive_target_origin_length (const char *target, const size_t target_len) {
+
+	size_t length = 0;
+
+	// the scheme has letters, digits and a few symbols before its separator
+	size_t scheme_len = 0;
+	while (
+		(scheme_len < target_len)
+		&& (isalnum ((unsigned char) target[scheme_len]) || strchr (http_target_scheme_symbols, target[scheme_len]))
+		&& target[scheme_len]
+	) {
+		scheme_len += 1;
+	}
+
+	if (
+		scheme_len
+		&& ((target_len - scheme_len) >= http_target_authority_start_len)
+		&& !memcmp (target + scheme_len, http_target_authority_start, http_target_authority_start_len)
+	) {
+		length = scheme_len + http_target_authority_start_len;
+
+		// the authority ends where the path or the query start
+		while ((length < target_len) && !strchr (http_target_authority_end, target[length])) {
+			length += 1;
+		}
+	}
+
+	return length;
+
+}
+
 static void http_receive_close_url (HttpReceive *http_receive) {
 
 	HttpRequest *request = http_receive->request;
 
 	if (!request->url) {
 		const String *url = http_receive->url_buffer;
-		const char *start = (url && url->str) ? url->str : "";
-		const size_t url_len = url ? url->len : 0;
+		const char *target = (url && url->str) ? url->str : "";
+		const size_t target_len = url ? url->len : 0;
 
-		const char *question = (const char *) memchr (start, '?', url_len);
+		const size_t origin_len = http_receive_target_origin_length (target, target_len);
+		const char *start = target + origin_len;
+		size_t url_len = target_len - origin_len;
+
+		// a fragment is never part of the path nor of the query
+		const char *fragment = (const char *) memchr (start, http_target_fragment_start, url_len);
+		if (fragment) url_len = (size_t) (fragment - start);
+
+		const char *question = (const char *) memchr (start, http_target_query_start, url_len);
 		const size_t path_len = question ? (size_t) (question - start) : url_len;
 
-		request->url = http_receive_string_create (http_receive, start, path_len);
+		// an absolute target without a path is the root
+		request->url = (origin_len && !path_len) ?
+			http_receive_string_create (http_receive, http_target_root, http_target_root_len) :
+			http_receive_string_create (http_receive, start, path_len);
 
 		// the query does not include the '?'
 		if (question) {
