@@ -1,17 +1,27 @@
 ## General
-- Updated roadmap with F1 implemented as the 2.1b-11 beta
-- Updated CLAUDE.md with structured responses & a reset
-- Added incompatibilities of the 2.1b-11 with the headers list
+- Failing a fuzzer at the first undefined behavior UBSan finds
+- Ignoring the autobahn reports in git & in the Docker builds
+- Timing only the messages of a WebSocket benchmark run
+- Updated roadmap with the fixes betas & F3 as the 2.1b-14
+- Updated CLAUDE.md with the hidden parser & its streams
+- Added incompatibilities of the 2.1b-12 with the hidden API
 
 ## HTTP
-- Added a list of headers with repeated ones & of any name
-- Structured HTTP responses with a single header serializer
-- Separated what belongs to a request in the HTTP receives
-- Marking the responses that end without a close as framed
+- Reading a Range only when it starts at a position of the file
+- Splitting the query & the form pairs before decoding them
+- Holding nothing when a WebSocket stream does not begin
+- Creating a send deadline after the wait for other messages
+- Counting bytes of the WebSocket streams & of fragments
+- Rejecting the client urls with spaces & non token protocols
+- Hiding the symbols of the parser & of WebSocket internals
+
+## Examples
+- Sending only what fits of a text in the WebSocket example
+- Releasing the WebSocket cervers that fail with a teardown
 
 ## Tests
-- Added unit tests of the headers list with its growth & limits
-- Testing the headers of responses & their compiled header
-- Checking Connection close once in every kind of response
-- Testing framed responses & resets of a receive by request
-- Added the pipeline fuzzer that resets between its requests
+- Added tests of the Range header & of the values it ignores
+- Testing the escaped separators in a query & in form values
+- Encoding only the values of the forms of the api test client
+- Added tests of WebSocket sends when the close was sent
+- Testing WebSocket client urls, protocols & bytes counters
