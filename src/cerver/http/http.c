@@ -4997,12 +4997,18 @@ static HttpWebSocketHandshake *http_receive_web_socket_handshake (
 	const HttpRequest *request, const HttpWebSocketSettings *settings
 ) {
 
+	const String *key = request->headers[HTTP_HEADER_SEC_WEBSOCKET_KEY];
+
 	HttpWebSocketHandshake *handshake = (HttpWebSocketHandshake *) calloc (1, sizeof (HttpWebSocketHandshake));
+
+	// without its accept there is no 101: the request is answered with a 500
+	if (handshake && !http_web_socket_accept_compute (key->str, key->len, handshake->accept)) {
+		free (handshake);
+		handshake = NULL;
+	}
+
 	if (handshake) {
 		handshake->reserved = true;
-
-		const String *key = request->headers[HTTP_HEADER_SEC_WEBSOCKET_KEY];
-		(void) http_web_socket_accept_compute (key->str, key->len, handshake->accept);
 
 		const String *offered = request->headers[HTTP_HEADER_SEC_WEBSOCKET_PROTOCOL];
 		const char *protocol = offered ? http_web_socket_protocol_select (

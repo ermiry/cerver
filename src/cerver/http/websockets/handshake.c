@@ -20,6 +20,13 @@
 // a key ends with two '=' because 16 bytes are not a multiple of 3
 #define HTTP_WEB_SOCKET_KEY_DATA_LENGTH				22
 
+// the last character of the data of a key has 2 bits of its 16 bytes and 4 that are not used:
+// they are zero in the only form that a key has
+#define HTTP_WEB_SOCKET_KEY_UNUSED_BITS				0x0F
+
+// the value of a character that is not of base64
+#define HTTP_WEB_SOCKET_BASE64_NONE					0xFF
+
 static const char http_web_socket_padding = '=';
 
 static const char *http_web_socket_base64_alphabet = {
@@ -30,15 +37,29 @@ static const char http_web_socket_list_separator = ',';
 static const char http_web_socket_space = ' ';
 static const char http_web_socket_tab = '\t';
 
+// the 6 bits of a character of base64, HTTP_WEB_SOCKET_BASE64_NONE when it is not one
+static unsigned int http_web_socket_base64_value (const char c) {
+
+	const char *found = (c != '\0') ? strchr (http_web_socket_base64_alphabet, c) : NULL;
+
+	return found ? (unsigned int) (found - http_web_socket_base64_alphabet) : HTTP_WEB_SOCKET_BASE64_NONE;
+
+}
+
 bool http_web_socket_key_is_valid (
 	const char *key, const size_t length
 ) {
 
 	bool valid = key && (length == HTTP_WEB_SOCKET_KEY_LENGTH);
 
+	unsigned int value = 0;
 	for (size_t i = 0; valid && (i < HTTP_WEB_SOCKET_KEY_DATA_LENGTH); i++) {
-		valid = (key[i] != '\0') && (strchr (http_web_socket_base64_alphabet, key[i]) != NULL);
+		value = http_web_socket_base64_value (key[i]);
+		valid = (value != HTTP_WEB_SOCKET_BASE64_NONE);
 	}
+
+	// the last character of the data
+	if (valid) valid = !(value & HTTP_WEB_SOCKET_KEY_UNUSED_BITS);
 
 	for (size_t i = HTTP_WEB_SOCKET_KEY_DATA_LENGTH; valid && (i < HTTP_WEB_SOCKET_KEY_LENGTH); i++) {
 		valid = (key[i] == http_web_socket_padding);
