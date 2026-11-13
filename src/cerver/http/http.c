@@ -4885,7 +4885,14 @@ static const char *http_web_socket_response_start = {
 
 static const char *http_web_socket_response_protocol = { "\r\nSec-WebSocket-Protocol: " };
 static const char *http_web_socket_response_extensions = { "\r\nSec-WebSocket-Extensions: " };
-static const char *http_web_socket_response_end = { "\r\n\r\n" };
+
+// the end of the last header of the handshake, and the empty line of the response
+static const char http_web_socket_response_line_end[] = { "\r\n" };
+
+#define HTTP_WEB_SOCKET_RESPONSE_LINE_END_LENGTH	(sizeof (http_web_socket_response_line_end) - 1)
+
+// the headers of the handshake, the ones that on_upgrade () added and the empty line
+#define HTTP_WEB_SOCKET_RESPONSE_PARTS			3
 
 static const char *http_web_socket_rejected_key = { "error" };
 static const char *http_web_socket_rejected_value = { "WebSocket rejected!" };
@@ -5111,10 +5118,26 @@ static bool http_web_socket_response_append (
 
 }
 
-// sends the 101, it never has a Content-Length nor a Connection: close
+// a part of the 101 that has bytes
+static void http_web_socket_response_part (
+	struct iovec *parts, int *n_parts, const char *text, const size_t length
+) {
+
+	if (length) {
+		parts[*n_parts].iov_base = (void *) text;
+		parts[*n_parts].iov_len = length;
+		*n_parts += 1;
+	}
+
+}
+
+// sends the 101, it never has a Content-Length nor a Connection: close:
+// the headers of the handshake, the ones that on_upgrade () added (each one is already its line)
+// and the empty line
 // returns 0 on success, 1 on error
 static u8 http_receive_web_socket_switch (
-	HttpReceive *http_receive, const HttpWebSocketHandshake *handshake
+	HttpReceive *http_receive, const HttpWebSocketHandshake *handshake,
+	const HttpHeaders *headers
 ) {
 
 	char response[HTTP_WEB_SOCKET_RESPONSE_SIZE];
@@ -5142,13 +5165,23 @@ static u8 http_receive_web_socket_switch (
 	}
 
 	fits = fits && http_web_socket_response_append (
-		response, &length, http_web_socket_response_end, strlen (http_web_socket_response_end)
+		response, &length, http_web_socket_response_line_end, HTTP_WEB_SOCKET_RESPONSE_LINE_END_LENGTH
 	);
 
-	struct iovec part = { response, length };
+	size_t lines_length = 0;
+	const char *lines = http_headers_lines (headers, &lines_length);
+
+	struct iovec parts[HTTP_WEB_SOCKET_RESPONSE_PARTS];
+	int n_parts = 0;
+
+	http_web_socket_response_part (parts, &n_parts, response, length);
+	http_web_socket_response_part (parts, &n_parts, lines, lines_length);
+	http_web_socket_response_part (
+		parts, &n_parts, http_web_socket_response_line_end, HTTP_WEB_SOCKET_RESPONSE_LINE_END_LENGTH
+	);
 
 	return fits ?
-		http_response_send_pieces_status (http_receive, HTTP_STATUS_SWITCHING_PROTOCOLS, &part, 1) : 1;
+		http_response_send_pieces_status (http_receive, HTTP_STATUS_SWITCHING_PROTOCOLS, parts, n_parts) : 1;
 
 }
 
@@ -5182,17 +5215,19 @@ static void http_receive_web_socket_decided (
 
 }
 
-// runs on_upgrade (), that accepts the connection or rejects it with its status
+// runs on_upgrade (), that accepts the connection or rejects it with its status,
+// and adds its headers to the ones of the 101
 static bool http_receive_web_socket_accept (
 	HttpReceive *http_receive, HttpRequest *request,
-	const HttpEndpoint *endpoint, HttpWebSocketHandshake *handshake
+	const HttpEndpoint *endpoint, HttpWebSocketHandshake *handshake,
+	HttpHeaders *headers
 ) {
 
 	bool accepted = true;
 
 	const HttpWebSocketHandlers *handlers = &endpoint->resolved.web_socket.handlers;
 	if (handlers->on_upgrade) {
-		HttpWebSocketUpgrade upgrade = { handshake->protocol, NULL, NULL, false, HTTP_STATUS_FORBIDDEN };
+		HttpWebSocketUpgrade upgrade = { handshake->protocol, NULL, NULL, false, HTTP_STATUS_FORBIDDEN, headers };
 
 		accepted = handlers->on_upgrade (http_receive, request, &upgrade);
 		if (accepted) {
@@ -5249,14 +5284,20 @@ static void http_receive_web_socket_upgrade (
 
 	HttpWebSocketHandshake *handshake = http_receive->web_socket;
 
+	// the headers that on_upgrade () adds to the 101
+	HttpHeaders headers;
+	http_headers_init (&headers);
+
 	// a before middleware that stops answers the request itself
 	if (
 		http_middlewares_run_before (&endpoint->resolved.middlewares, http_receive, request)
-		&& http_receive_web_socket_accept (http_receive, request, endpoint, handshake)
-		&& !http_receive_web_socket_switch (http_receive, handshake)
+		&& http_receive_web_socket_accept (http_receive, request, endpoint, handshake, &headers)
+		&& !http_receive_web_socket_switch (http_receive, handshake, &headers)
 	) {
 		http_receive->upgraded = true;
 	}
+
+	http_headers_reset (&headers);
 
 }
 

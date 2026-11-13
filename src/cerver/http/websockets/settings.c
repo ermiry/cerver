@@ -34,6 +34,50 @@ const char *http_web_socket_error_description (const HttpWebSocketError error) {
 
 }
 
+// the headers that cerver writes in a 101, on_upgrade () can not add them again
+static bool http_web_socket_upgrade_header_is_reserved (const char *name) {
+
+	bool reserved = false;
+
+	switch (http_header_type_by_string (name)) {
+		case HTTP_HEADER_SERVER:
+		case HTTP_HEADER_UPGRADE:
+		case HTTP_HEADER_CONNECTION:
+		case HTTP_HEADER_SEC_WEBSOCKET_ACCEPT:
+		case HTTP_HEADER_SEC_WEBSOCKET_PROTOCOL:
+		case HTTP_HEADER_SEC_WEBSOCKET_EXTENSIONS:
+		case HTTP_HEADER_CONTENT_LENGTH:
+		case HTTP_HEADER_TRANSFER_ENCODING:
+			reserved = true;
+			break;
+
+		default: break;
+	}
+
+	return reserved;
+
+}
+
+u8 http_web_socket_upgrade_add_header (
+	HttpWebSocketUpgrade *upgrade, const char *name, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (
+		upgrade && upgrade->headers && name && value
+		&& !http_web_socket_upgrade_header_is_reserved (name)
+	) {
+		// the name must be a token and the value can not have the end of a line
+		retval = http_headers_add_by_name (
+			upgrade->headers, name, strlen (name), value, strlen (value)
+		);
+	}
+
+	return retval;
+
+}
+
 void http_web_socket_settings_init (HttpWebSocketSettings *settings) {
 
 	if (settings) {

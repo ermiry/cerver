@@ -34,6 +34,7 @@
 extern "C" {
 #endif
 
+struct _HttpHeaders;
 struct _HttpReceive;
 struct _HttpRequest;
 struct _HttpWebSocket;
@@ -79,10 +80,28 @@ typedef struct HttpWebSocketUpgrade {
 	// the status of the response when the upgrade is rejected, 403 by default
 	http_status status;
 
+	// the headers that the 101 adds after the ones of the handshake,
+	// they are of cerver: http_web_socket_upgrade_add_header () adds one
+	struct _HttpHeaders *headers;
+
 } HttpWebSocketUpgrade;
 
-// the methods of the connections of an endpoint,
-// all of them, but on_upgrade, run in the thread of their connection
+// adds a header to the 101 of the connection that on_upgrade () accepts, like a Set-Cookie,
+// a name can be added many times and they are sent in the order they were added
+// the headers that cerver writes in a 101 can not be added: Server, Upgrade, Connection,
+// Sec-WebSocket-Accept, Sec-WebSocket-Protocol (it is the protocol of the upgrade),
+// Sec-WebSocket-Extensions, Content-Length and Transfer-Encoding
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_web_socket_upgrade_add_header (
+	HttpWebSocketUpgrade *upgrade, const char *name, const char *value
+);
+
+// the methods of the connections of an endpoint
+// all of them, but on_upgrade, are serialized by connection: in order and never two at the same time,
+// and the ones of different connections run at the same time
+// the thread that runs them is not part of the API (today it is the one of the connection,
+// with the event loop it is one of a pool), so nothing of a connection is kept
+// in the variables of a thread: its place is http_web_socket_set_data ()
 typedef struct HttpWebSocketHandlers {
 
 	// runs in the thread of the request, after the authentication and the before middlewares,

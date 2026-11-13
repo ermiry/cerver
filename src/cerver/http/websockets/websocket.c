@@ -144,6 +144,12 @@ const String *http_web_socket_get_path (const HttpWebSocket *web_socket) {
 
 }
 
+const String *http_web_socket_get_query (const HttpWebSocket *web_socket) {
+
+	return web_socket ? web_socket->query : NULL;
+
+}
+
 const char *http_web_socket_get_protocol (const HttpWebSocket *web_socket) {
 
 	return web_socket ? web_socket->protocol : NULL;
@@ -261,6 +267,7 @@ static void http_web_socket_delete (HttpWebSocket *web_socket) {
 	free (web_socket->protocol);
 
 	str_delete (web_socket->path);
+	str_delete (web_socket->query);
 
 	if (web_socket->data && web_socket->delete_data) web_socket->delete_data (web_socket->data);
 
@@ -1456,6 +1463,10 @@ static void http_web_socket_adopt (
 	handshake->protocol = NULL;
 
 	if (request && request->url) web_socket->path = str_new (request->url->str);
+
+	if (request && request->query && request->query->len) {
+		web_socket->query = str_new (request->query->str);
+	}
 
 	const char *ip = (request && request->client_ip[0]) ? request->client_ip : web_socket->connection->ip;
 	(void) snprintf (web_socket->ip, CONNECTION_IP_SIZE, HTTP_WEB_SOCKET_IP_FORMAT, ip);

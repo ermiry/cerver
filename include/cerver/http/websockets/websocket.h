@@ -83,6 +83,10 @@ CERVER_EXPORT const char *http_web_socket_get_ip (const HttpWebSocket *web_socke
 // the path of the request of the upgrade
 CERVER_EXPORT const String *http_web_socket_get_path (const HttpWebSocket *web_socket);
 
+// the query of the request of the upgrade as it was sent (without its ?, with its escapes),
+// NULL when it had none; the connection of a client keeps its query in its path
+CERVER_EXPORT const String *http_web_socket_get_query (const HttpWebSocket *web_socket);
+
 // the subprotocol that was agreed, NULL for none
 CERVER_EXPORT const char *http_web_socket_get_protocol (const HttpWebSocket *web_socket);
 
