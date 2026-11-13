@@ -3,6 +3,43 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-12 (from 2.1b-11)
+
+The first fixes of the review of the 2.1b-10, with the ones of the 2.0b-71 applied by hand.
+
+- The query and the values of a `application/x-www-form-urlencoded` body are split by `&` and `=` before each key and
+  each value is decoded: `?key=a%26other%3D1` is one value, `a&other=1`, it was `key=a` and `other=1`; an escaped NUL
+  ends its own value and not the rest of the query. A client that escapes the whole body of a form, with its `=` and
+  its `&` (`name%3Dvalue%26other%3D1`), is not understood anymore: only the keys and the values are escaped
+- `http_request_get_bytes_range ()` returns `false` and does not change the bytes range for a `Range` that does not
+  start at a position (`bytes=-500`, `bytes=-`, another unit, a value without numbers): they crashed or were read as a
+  range. A range needs its `-`: `bytes=5` is ignored, it was read as `bytes=5-`
+- `http_web_socket_send_begin ()` that returns 1 holds nothing: the stream must not be ended, and its
+  `http_web_socket_send_write ()` and `http_web_socket_send_end ()` return 1 without a change. It returned 1 with the
+  messages of the connection locked until `http_web_socket_send_end ()`, that aborted the connection
+- A piece or the end of a stream that the connection does not take because it already sent its close returns 1
+  without `on_error` and without aborting the connection, that ends with its closing handshake (it ended with
+  `HTTP_WEB_SOCKET_ERROR_SEND` and the code 1006)
+- The send timeout of a message starts when the message can be written, it started before the wait for the other
+  messages of the connection
+- `cerver_websocket_sent_bytes_total` counts the bytes of the messages that are sent in pieces, and
+  `cerver_websocket_received_bytes_total` the bytes of every fragment of a message that is handled with
+  `on_fragment` (only the bytes of its last fragment were counted)
+- `http_web_socket_client_set_url ()` rejects a url with a space, a control character or a delete (0x7F)
+- The subprotocols of `http_web_socket_client_set_protocols ()`, `http_endpoint_set_web_socket_protocols ()` and
+  `http_group_set_web_socket_protocols ()` must be tokens (RFC 9110): a list with a `NULL`, an empty name, a
+  separator or a line end is rejected, and a rejected list does not change the settings (it removed the list that
+  was set and left a part of the new one)
+- Not exported anymore (`CERVER_HIDDEN`, they were `CERVER_PUBLIC` or `CERVER_PRIVATE`): the API of the parser in
+  `http/parser/api.h` (`llhttp_init ()`, `llhttp_execute ()`, the getters, `llhttp_set_lenient_*` …) with every
+  symbol of `http/parser/`, the methods of `websockets/websocket.h` and `websockets/registry.h` that only cerver
+  calls (`http_web_socket_create ()`, `_start ()`, `_run ()`, `_abort ()`, `_send_timeout ()`,
+  `http_web_socket_registry_*` …), `http_web_socket_settings_*` and `http_response_send_pieces_status ()`. The fields
+  of the parser are read from `HttpReceive.parser` (`parser.type`, `parser.error`)
+- `HttpWebSocket` (ABI): new `stream_size`
+- `benchmarks/bin/messages` measures from the first message to the last echo, its messages per second are not the
+  ones of the versions before; `test/performance.sh` sends 1048576 messages in each WebSocket load
+
 ## 2.1b-11 (from 2.1b-10)
 
 A response is its status and a list of headers that is written for its protocol when it is sent, and what belongs

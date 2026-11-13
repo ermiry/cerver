@@ -101,15 +101,29 @@ static void chat_join (HttpWebSocket *web_socket, ChatMember *member, const char
 
 }
 
+// the bytes of a text that was written with snprintf (), that returns the length of the whole text
+// also when it was cut: only the ones that fit in the buffer are sent
+static size_t chat_text_length (const int written) {
+
+	size_t length = 0;
+
+	if (written > 0) {
+		length = ((size_t) written < WEBSOCKET_TEXT_SIZE) ? (size_t) written : (WEBSOCKET_TEXT_SIZE - 1);
+	}
+
+	return length;
+
+}
+
 // a text goes to the others of the room, with the id of its sender
 static void chat_say (HttpWebSocket *web_socket, const ChatMember *member, const char *message) {
 
 	char text[WEBSOCKET_TEXT_SIZE];
-	const int length = snprintf (text, WEBSOCKET_TEXT_SIZE, "%lu: %s", http_web_socket_get_id (web_socket), message);
+	const int written = snprintf (text, WEBSOCKET_TEXT_SIZE, "%lu: %s", http_web_socket_get_id (web_socket), message);
 
 	(void) http_cerver_web_socket_broadcast (
 		http_web_socket_get_http_cerver (web_socket), member->room, web_socket,
-		HTTP_WEB_SOCKET_OPCODE_TEXT, text, (size_t) length
+		HTTP_WEB_SOCKET_OPCODE_TEXT, text, chat_text_length (written)
 	);
 
 }
@@ -235,7 +249,7 @@ int main (int argc, char **argv) {
 
 		else {
 			cerver_log_error ("Failed to start %s!", websocket_cerver->info->name);
-			cerver_delete (websocket_cerver);
+			(void) cerver_teardown (websocket_cerver);
 		}
 	}
 

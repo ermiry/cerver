@@ -146,7 +146,7 @@ int main (int argc, char **argv) {
 
 		else {
 			cerver_log_error ("Failed to start %s!", websocket_cerver->info->name);
-			cerver_delete (websocket_cerver);
+			(void) cerver_teardown (websocket_cerver);
 		}
 	}
 

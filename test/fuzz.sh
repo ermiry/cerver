@@ -25,6 +25,7 @@ if [ ! -f /.dockerenv ]; then
 		-e SECONDS_PER_TARGET="$SECONDS_PER_TARGET" \
 		-e MAX_LENGTH="$MAX_LENGTH" \
 		-e ARTIFACTS="$ARTIFACTS" \
+		-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
 		"$IMAGE" bash test/fuzz.sh "${TARGETS[@]}"
 fi
 

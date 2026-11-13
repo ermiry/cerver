@@ -168,6 +168,12 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
+# the parser is internal, its objects never export their symbols:
+# llhttp.c is generated and it defines its methods without a visibility
+PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS))
+
+$(PARSEROBJS): CFLAGS += -fvisibility=hidden
+
 $(SLIB):
 	$(MAKE) $(OBJECTS)
 	$(CC) $(OBJECTS) $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
@@ -589,7 +595,7 @@ bench: $(BENCHOBJS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/frames.o -o ./$(BENCHTARGET)/frames $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
-	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o $(PARSEROBJS) -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # matches real routes with the matcher of 2.0b-58 and with the routes tree
@@ -620,8 +626,9 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
-FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
+FUZZRECOVER		:= -fno-sanitize-recover=undefined
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS) $(FUZZRECOVER)
+FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS) $(FUZZRECOVER)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
 

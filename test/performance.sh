@@ -32,7 +32,7 @@ WEB_SOCKET_SIZE=64
 WEB_SOCKET_ALLOCATION_CONNECTIONS=8
 WEB_SOCKET_ALLOCATION_MESSAGES=1024
 WEB_SOCKET_MAX_ALLOCATIONS=0.01
-WEB_SOCKET_LOAD_MESSAGES=4096
+WEB_SOCKET_LOAD_MESSAGES=1048576
 
 source test/process.sh
 
@@ -162,7 +162,7 @@ check_web_socket_load () {
 	local connections="$1"
 
 	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(./benchmarks/bin/messages $PORT "$connections" $WEB_SOCKET_LOAD_MESSAGES $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
+	local result=$(./benchmarks/bin/messages $PORT "$connections" $(( WEB_SOCKET_LOAD_MESSAGES / connections )) $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
 	server_stop
 
 	echo "WebSocket $WEB_SOCKET_PATH - $result"

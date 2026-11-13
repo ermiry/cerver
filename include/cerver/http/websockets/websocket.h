@@ -154,6 +154,9 @@ struct _HttpWebSocket {
 	bool stream_started;
 	bool stream_compressed;
 
+	// the bytes of the pieces of the stream, for the stats of its message
+	size_t stream_size;
+
 	bool close_sent;
 	bool close_received;
 	struct timespec close_deadline;
@@ -263,6 +266,10 @@ CERVER_EXPORT u8 http_web_socket_send_binary (
 
 // starts a message that is sent in pieces, until http_web_socket_send_end (),
 // the other messages of the connection wait for it, the control frames do not
+// a stream that does not begin (the connection is closing or it has ended) holds nothing:
+// it must not be ended, and its pieces and its end return an error
+// a stream that began is always ended with http_web_socket_send_end (), also when a piece failed:
+// a piece that the connection did not take because it is closing is an error that does not abort it
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_web_socket_send_begin (
 	HttpWebSocket *web_socket, const HttpWebSocketOpcode type
@@ -293,42 +300,42 @@ CERVER_EXPORT u8 http_web_socket_close (
 #pragma region internal
 
 // creates a connection with its settings, its socket is taken by the caller
-CERVER_PRIVATE HttpWebSocket *http_web_socket_create (
+CERVER_HIDDEN HttpWebSocket *http_web_socket_create (
 	const HttpWebSocketRole role, const HttpWebSocketSettings *settings
 );
 
 // sets the compression that was negotiated
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_web_socket_set_compression (
+CERVER_HIDDEN u8 http_web_socket_set_compression (
 	HttpWebSocket *web_socket,
 	const HttpWebSocketDeflateParameters *parameters,
 	const HttpWebSocketDeflateOptions *options
 );
 
 // the handshake ended, the connection can send from now on (only from CONNECTING)
-CERVER_PRIVATE void http_web_socket_opened (HttpWebSocket *web_socket);
+CERVER_HIDDEN void http_web_socket_opened (HttpWebSocket *web_socket);
 
 // the bytes that arrived with the handshake, the connection takes them
-CERVER_PRIVATE void http_web_socket_set_pending (
+CERVER_HIDDEN void http_web_socket_set_pending (
 	HttpWebSocket *web_socket, u8 *pending, const size_t pending_size
 );
 
 // runs the connection in the current thread until it ends,
 // it calls every method, and it closes the socket at the end
-CERVER_PRIVATE void http_web_socket_run (HttpWebSocket *web_socket);
+CERVER_HIDDEN void http_web_socket_run (HttpWebSocket *web_socket);
 
 // wakes up the thread of the connection
-CERVER_PRIVATE void http_web_socket_wake (HttpWebSocket *web_socket);
+CERVER_HIDDEN void http_web_socket_wake (HttpWebSocket *web_socket);
 
 // the cerver is going away, the connection is closed with 1001
-CERVER_PRIVATE void http_web_socket_go_away (HttpWebSocket *web_socket);
+CERVER_HIDDEN void http_web_socket_go_away (HttpWebSocket *web_socket);
 
 // ends the connection now, without waiting for the closing handshake
-CERVER_PRIVATE void http_web_socket_abort (HttpWebSocket *web_socket);
+CERVER_HIDDEN void http_web_socket_abort (HttpWebSocket *web_socket);
 
 // sends a whole message with a deadline of timeout milliseconds, for a broadcast
 // a send that does not end in time fails the connection
-CERVER_PRIVATE u8 http_web_socket_send_timeout (
+CERVER_HIDDEN u8 http_web_socket_send_timeout (
 	HttpWebSocket *web_socket,
 	const HttpWebSocketOpcode type, const void *data, const size_t size,
 	const unsigned int timeout
@@ -336,11 +343,11 @@ CERVER_PRIVATE u8 http_web_socket_send_timeout (
 
 // starts the connection of the server of an upgraded request in its own thread,
 // it takes its connection, when it returns true the caller must not drop it
-CERVER_PRIVATE bool http_web_socket_start (
+CERVER_HIDDEN bool http_web_socket_start (
 	struct CerverReceive *cr, struct _HttpReceive *http_receive
 );
 
-CERVER_PRIVATE void http_web_socket_handshake_delete (HttpWebSocketHandshake *handshake);
+CERVER_HIDDEN void http_web_socket_handshake_delete (HttpWebSocketHandshake *handshake);
 
 #pragma endregion
 

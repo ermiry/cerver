@@ -87,38 +87,38 @@ typedef struct _HttpWebSocketRegistry {
 
 } HttpWebSocketRegistry;
 
-CERVER_PRIVATE HttpWebSocketRegistry *http_web_socket_registry_create (void);
+CERVER_HIDDEN HttpWebSocketRegistry *http_web_socket_registry_create (void);
 
-CERVER_PRIVATE void http_web_socket_registry_delete (HttpWebSocketRegistry *registry);
+CERVER_HIDDEN void http_web_socket_registry_delete (HttpWebSocketRegistry *registry);
 
 // takes a place for an upgrade, false when the cerver has its most connections or it is stopping
-CERVER_PRIVATE bool http_web_socket_registry_reserve (HttpWebSocketRegistry *registry);
+CERVER_HIDDEN bool http_web_socket_registry_reserve (HttpWebSocketRegistry *registry);
 
 // gives back the place of an upgrade that did not start
-CERVER_PRIVATE void http_web_socket_registry_unreserve (HttpWebSocketRegistry *registry);
+CERVER_HIDDEN void http_web_socket_registry_unreserve (HttpWebSocketRegistry *registry);
 
 // adds a connection with its place already taken, and sets its id
 // returns 0 on success, 1 if the cerver is stopping
-CERVER_PRIVATE u8 http_web_socket_registry_add (
+CERVER_HIDDEN u8 http_web_socket_registry_add (
 	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
 );
 
 // removes the connection, and gives back its place
-CERVER_PRIVATE void http_web_socket_registry_remove (
+CERVER_HIDDEN void http_web_socket_registry_remove (
 	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
 );
 
 // closes every connection with 1001, and accepts no more
-CERVER_PRIVATE void http_web_socket_registry_go_away (HttpWebSocketRegistry *registry);
+CERVER_HIDDEN void http_web_socket_registry_go_away (HttpWebSocketRegistry *registry);
 
 // ends every connection now
-CERVER_PRIVATE void http_web_socket_registry_abort (HttpWebSocketRegistry *registry);
+CERVER_HIDDEN void http_web_socket_registry_abort (HttpWebSocketRegistry *registry);
 
-CERVER_PRIVATE void http_web_socket_registry_count_rejection (
+CERVER_HIDDEN void http_web_socket_registry_count_rejection (
 	HttpWebSocketRegistry *registry, const HttpWebSocketRejection rejection
 );
 
-CERVER_PRIVATE void http_web_socket_registry_count_close (
+CERVER_HIDDEN void http_web_socket_registry_count_close (
 	HttpWebSocketRegistry *registry, const u16 code
 );
 

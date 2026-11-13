@@ -96,107 +96,107 @@ struct llhttp_settings_s {
 
 // initializes the parser with its type and the settings
 // the settings must live at least as long as the parser
-CERVER_PUBLIC void llhttp_init (
+CERVER_HIDDEN void llhttp_init (
 	llhttp_t *parser, llhttp_type_t type,
 	const llhttp_settings_t *settings
 );
 
-CERVER_PUBLIC uint8_t llhttp_get_type (const llhttp_t *parser);
+CERVER_HIDDEN uint8_t llhttp_get_type (const llhttp_t *parser);
 
-CERVER_PUBLIC uint8_t llhttp_get_http_major (const llhttp_t *parser);
+CERVER_HIDDEN uint8_t llhttp_get_http_major (const llhttp_t *parser);
 
-CERVER_PUBLIC uint8_t llhttp_get_http_minor (const llhttp_t *parser);
+CERVER_HIDDEN uint8_t llhttp_get_http_minor (const llhttp_t *parser);
 
-CERVER_PUBLIC uint8_t llhttp_get_method (const llhttp_t *parser);
+CERVER_HIDDEN uint8_t llhttp_get_method (const llhttp_t *parser);
 
-CERVER_PUBLIC int llhttp_get_status_code (const llhttp_t *parser);
+CERVER_HIDDEN int llhttp_get_status_code (const llhttp_t *parser);
 
-CERVER_PUBLIC uint8_t llhttp_get_upgrade (const llhttp_t *parser);
+CERVER_HIDDEN uint8_t llhttp_get_upgrade (const llhttp_t *parser);
 
 // resets an already initialized parser back to the start state,
 // preserving its type, its settings, its data and its lenient flags
-CERVER_PUBLIC void llhttp_reset (llhttp_t *parser);
+CERVER_HIDDEN void llhttp_reset (llhttp_t *parser);
 
 // initializes the settings without callbacks
-CERVER_PUBLIC void llhttp_settings_init (llhttp_settings_t *settings);
+CERVER_HIDDEN void llhttp_settings_init (llhttp_settings_t *settings);
 
 // parses a full or a partial request, invoking the callbacks of the settings
 // if a callback returns an error, the parsing stops and that error is returned,
 // after HPE_PAUSED the parsing can be resumed with llhttp_resume ()
 // a CONNECT or an Upgrade request returns HPE_PAUSED_UPGRADE after it was parsed
 // after any other error, it returns the same error until llhttp_init () is called again
-CERVER_PUBLIC llhttp_errno_t llhttp_execute (
+CERVER_HIDDEN llhttp_errno_t llhttp_execute (
 	llhttp_t *parser, const char *data, size_t len
 );
 
 // called when the other side has no further bytes to send (EOF)
 // it invokes on_message_complete () if the message ended safely,
 // returns HPE_INVALID_EOF_STATE if the message was incomplete
-CERVER_PUBLIC llhttp_errno_t llhttp_finish (llhttp_t *parser);
+CERVER_HIDDEN llhttp_errno_t llhttp_finish (llhttp_t *parser);
 
 // returns 1 if the message has to be completed by calling llhttp_finish () on EOF
-CERVER_PUBLIC int llhttp_message_needs_eof (const llhttp_t *parser);
+CERVER_HIDDEN int llhttp_message_needs_eof (const llhttp_t *parser);
 
 // returns 1 if there might be other messages after the last one that was parsed
-CERVER_PUBLIC int llhttp_should_keep_alive (const llhttp_t *parser);
+CERVER_HIDDEN int llhttp_should_keep_alive (const llhttp_t *parser);
 
 // makes the next calls of llhttp_execute () return HPE_PAUSED
 // it must not be called from a callback, a callback returns HPE_PAUSED instead
-CERVER_PUBLIC void llhttp_pause (llhttp_t *parser);
+CERVER_HIDDEN void llhttp_pause (llhttp_t *parser);
 
 // resumes the parser after llhttp_execute () returned HPE_PAUSED
-CERVER_PUBLIC void llhttp_resume (llhttp_t *parser);
+CERVER_HIDDEN void llhttp_resume (llhttp_t *parser);
 
 // resumes the parser after llhttp_execute () returned HPE_PAUSED_UPGRADE
-CERVER_PUBLIC void llhttp_resume_after_upgrade (llhttp_t *parser);
+CERVER_HIDDEN void llhttp_resume_after_upgrade (llhttp_t *parser);
 
 // returns the latest error
-CERVER_PUBLIC llhttp_errno_t llhttp_get_errno (const llhttp_t *parser);
+CERVER_HIDDEN llhttp_errno_t llhttp_get_errno (const llhttp_t *parser);
 
 // returns the explanation of the latest error
-CERVER_PUBLIC const char *llhttp_get_error_reason (const llhttp_t *parser);
+CERVER_HIDDEN const char *llhttp_get_error_reason (const llhttp_t *parser);
 
 // sets the explanation of the error that a callback returns,
 // it must be called right before the callback returns the error
-CERVER_PUBLIC void llhttp_set_error_reason (
+CERVER_HIDDEN void llhttp_set_error_reason (
 	llhttp_t *parser, const char *reason
 );
 
 // returns the position of the last byte that was parsed before the error,
 // relative to the data of llhttp_execute (), so it can count the parsed bytes
-CERVER_PUBLIC const char *llhttp_get_error_pos (const llhttp_t *parser);
+CERVER_HIDDEN const char *llhttp_get_error_pos (const llhttp_t *parser);
 
 // returns the name of an error ("HPE_OK", "HPE_INVALID_METHOD", ...)
-CERVER_PUBLIC const char *llhttp_errno_name (const llhttp_errno_t err);
+CERVER_HIDDEN const char *llhttp_errno_name (const llhttp_errno_t err);
 
 // each lenient flag can open the parser to request smuggling or cache poisoning attacks,
 // they are disabled by default (strict mode)
-CERVER_PUBLIC void llhttp_set_lenient_headers (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_headers (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_chunked_length (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_chunked_length (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_keep_alive (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_keep_alive (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_transfer_encoding (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_transfer_encoding (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_version (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_version (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_data_after_close (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_data_after_close (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_optional_lf_after_cr (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_optional_lf_after_cr (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_optional_crlf_after_chunk (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_optional_crlf_after_chunk (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_optional_cr_before_lf (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_optional_cr_before_lf (llhttp_t *parser, int enabled);
 
-CERVER_PUBLIC void llhttp_set_lenient_spaces_after_chunk_size (llhttp_t *parser, int enabled);
+CERVER_HIDDEN void llhttp_set_lenient_spaces_after_chunk_size (llhttp_t *parser, int enabled);
 
 // llhttp_set_lenient_header_value_relaxed () is not included:
 // in 9.4.3 a NUL byte in a header value makes llhttp_execute () loop forever with it
 
 // sets all the lenient flags (llhttp_lenient_flags) at once,
 // a flag outside llhttp_lenient_flags is ignored
-CERVER_PUBLIC void llhttp_set_lenient_flags (llhttp_t *parser, uint16_t flags);
+CERVER_HIDDEN void llhttp_set_lenient_flags (llhttp_t *parser, uint16_t flags);
 
 // all the flags of llhttp_lenient_flags
 #define LLHTTP_LENIENT_ALL				0x3FF
