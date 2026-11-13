@@ -1,0 +1,12 @@
+!GET /api/users/16 HTTP/1.1
+Host: localhost
+
+POST /api/items/0b6c7c0e-8f5a-4c4b-9d8e-3f2a1b0c9d8e/update HTTP/1.1
+Host: localhost
+Content-Type: application/json
+Content-Length: 15
+
+{"name": "one"}GET /api/users/john?x=1 HTTP/1.1
+Host: localhost
+X-Request-Id: third
+
