@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9) |
-> | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-65 |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70) |
+> | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10 |
 
 **Las citas `archivo:línea`:**
 
@@ -274,8 +274,8 @@ varía los flags.
 
 **El prerrequisito.** `http` tiene que recibir el port de la 1.8 completa (hasta la 1.8b-9: protocolo portable,
 serializador por esquema, game, el deadline total de envío), que cambia `cerver.c`, `handler.c`, `client.c` y
-`connection.c`. Llega con la 2.0b-66, que entra a `nightly` con el merge de la 2.0b-70 (la 2.1b-10), para resolver
-esos conflictos una sola vez.
+`connection.c`. Llegó con la 2.0b-66, mergeada a `nightly` en la 2.1b-10 (con la 2.0b-70), así que esos conflictos
+ya se resolvieron una sola vez.
 
 **La arquitectura:**
 
