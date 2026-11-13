@@ -608,12 +608,14 @@ u8 http_web_socket_send_timeout (
 	u8 retval = 1;
 
 	if (web_socket && http_web_socket_is_data_type (type) && (data || !size)) {
-		struct timespec deadline;
-		socket_deadline_create_milliseconds (&deadline, timeout);
-
 		(void) pthread_mutex_lock (&web_socket->message_mutex);
 
 		if (http_web_socket_can_send_data (web_socket)) {
+			// the time of the send starts when the message can be written:
+			// a deadline from before the wait for other messages could be already over
+			struct timespec deadline;
+			socket_deadline_create_milliseconds (&deadline, timeout);
+
 			retval = http_web_socket_send_message_frame (web_socket, type, data, size, &deadline);
 
 			if (retval) http_web_socket_fail (web_socket, HTTP_WEB_SOCKET_ERROR_SEND);
