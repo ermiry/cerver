@@ -121,6 +121,13 @@ typedef struct TestReceiveObserved {
 	char accept[TEST_RECEIVE_VALUE_SIZE];
 	char custom[TEST_RECEIVE_VALUE_SIZE];
 
+	// the length of the Accept header and the bytes of the arena of the request that are used
+	size_t accept_len;
+	size_t arena_used;
+
+	// the length of the custom header, that can be longer than what is copied of it
+	size_t custom_len;
+
 	char query[TEST_RECEIVE_VALUE_SIZE];
 	char query_key[TEST_RECEIVE_VALUE_SIZE];
 	char query_other[TEST_RECEIVE_VALUE_SIZE];
@@ -216,6 +223,13 @@ static void test_receive_echo_handler (
 	test_receive_copy (observed.content_type, http_request_get_header (request, HTTP_HEADER_CONTENT_TYPE));
 	test_receive_copy (observed.accept, http_request_get_header (request, HTTP_HEADER_ACCEPT));
 	test_receive_copy_c_string (observed.custom, http_request_get_custom_header (request, "X-Custom"));
+
+	const char *custom = http_request_get_custom_header (request, "X-Custom");
+	observed.custom_len = custom ? strlen (custom) : 0;
+
+	const String *accept = http_request_get_header (request, HTTP_HEADER_ACCEPT);
+	observed.accept_len = accept ? accept->len : 0;
+	observed.arena_used = receive_arena ? receive_arena->used : 0;
 
 	test_receive_copy (observed.query, http_request_get_query (request));
 	test_receive_copy (
@@ -605,6 +619,7 @@ static void test_receive_limits_reset (HttpCerver *http_cerver) {
 	http_cerver_set_max_url_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_URL_SIZE);
 	http_cerver_set_max_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE);
 	http_cerver_set_max_headers (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADERS);
+	http_cerver_set_max_custom_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE);
 	http_cerver_set_max_multipart_parts (http_cerver, HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS);
 	http_cerver_set_max_file_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_FILE_SIZE);
 
@@ -1373,6 +1388,26 @@ static void test_receive_limits (Cerver *cerver) {
 		"413"
 	);
 
+	// the trailers of a chunked body are not kept, but they count for the limits of the headers:
+	// a body could be followed by trailers without an end
+	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	test_receive_limit_case (
+		cerver, "trailers size limit",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"4\r\ndata\r\n0\r\n"
+		"X-Trailer: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n\r\n",
+		"431"
+	);
+
+	http_cerver_set_max_headers (http_cerver, 1 << 1);
+	test_receive_limit_case (
+		cerver, "trailers count limit",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"4\r\ndata\r\n0\r\n"
+		"X-One: 1\r\nX-Two: 2\r\n\r\n",
+		"431"
+	);
+
 	http_cerver_set_max_multipart_parts (http_cerver, 1);
 	test_receive_limit_case (cerver, "multi-part parts limit", multipart_request, "413");
 
@@ -1381,21 +1416,76 @@ static void test_receive_limits (Cerver *cerver) {
 
 }
 
-static void test_receive_custom_header_too_large (Cerver *cerver) {
+#define TEST_RECEIVE_CUSTOM_REQUEST_SIZE		(1 << 15)
 
-	char request[TEST_RECEIVE_VALUE_SIZE] = { 0 };
-	char value[HTTP_CUSTOM_HEADER_VALUE_SIZE + 1] = { 0 };
-	(void) memset (value, 'v', HTTP_CUSTOM_HEADER_VALUE_SIZE);
+// a request with a custom header of a value of that size
+static void test_receive_custom_header_case (
+	Cerver *cerver, const char *name, const size_t value_size
+) {
+
+	char *request = (char *) calloc (TEST_RECEIVE_CUSTOM_REQUEST_SIZE, sizeof (char));
+	char *value = (char *) calloc (value_size + 1, sizeof (char));
+	test_check_ptr (request);
+	test_check_ptr (value);
+
+	(void) memset (value, 'v', value_size);
 
 	(void) snprintf (
-		request, TEST_RECEIVE_VALUE_SIZE,
+		request, TEST_RECEIVE_CUSTOM_REQUEST_SIZE,
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: %s\r\n\r\n", value
 	);
 
-	test_receive_whole_case (cerver, "custom header value that does not fit", request);
+	test_receive_whole_case (cerver, name, request);
+
+	free (value);
+	free (request);
+
+}
+
+// a header that is not one of the known ones fits up to the limit of the cerver,
+// by default HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE: the limit was 512 bytes without a setting,
+// so the headers of the traces and of the certificates of a proxy rejected their requests
+static void test_receive_custom_header_too_large (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_custom_header_case (
+		cerver, "custom header value below the default limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1));
+
+	test_receive_custom_header_case (
+		cerver, "custom header value that does not fit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE
+	);
 
 	test_receive_expect (test_receive_status_is ("431"));
 	test_receive_expect (observed.n_handled == 0);
+
+	// the limit of the cerver
+	http_cerver_set_max_custom_header_size (http_cerver, 1 << 4);
+	test_receive_custom_header_case (cerver, "custom header value above the limit that was set", 1 << 4);
+
+	test_receive_expect (test_receive_status_is ("431"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_custom_header_case (cerver, "custom header value below the limit that was set", (1 << 4) - 1);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.custom_len == ((1 << 4) - 1));
+
+	// without the limit, only the size of all the headers limits it
+	http_cerver_set_max_custom_header_size (http_cerver, 0);
+	test_receive_custom_header_case (
+		cerver, "custom header value without a limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1));
+
+	test_receive_limits_reset (http_cerver);
 
 }
 
