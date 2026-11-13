@@ -325,6 +325,34 @@ static void test_client_urls (void) {
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://[::1"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host:80x"), 1, NULL);
 
+	// a url with a space or a control character would write other lines in the request
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host/chat HTTP/1.1\r\nInjected: yes\r\n\r\nGET /other"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host/chat?room=a b"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host/chat\t"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://ho\nst/chat"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host\r\n:80/chat"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host/chat\x7F"), 1, NULL);
+
+	// the subprotocols are tokens, and a list that is rejected leaves none
+	const char *injected[] = { "chat", "chat\r\nInjected: yes" };
+	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, injected, 2), 1, NULL);
+	test_check_unsigned_eq (client->settings.n_protocols, 0, NULL);
+
+	const char *missing[] = { "chat", NULL };
+	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, missing, 2), 1, NULL);
+	test_check_unsigned_eq (client->settings.n_protocols, 0, NULL);
+
+	const char *list[] = { "chat, other" };
+	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, list, 1), 1, NULL);
+
+	const char *empty[] = { "" };
+	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, empty, 1), 1, NULL);
+	test_check_unsigned_eq (client->settings.n_protocols, 0, NULL);
+
+	const char *tokens[] = { "chat.v2", "chat" };
+	test_check_unsigned_eq (http_web_socket_client_set_protocols (client, tokens, 2), 0, NULL);
+	test_check_unsigned_eq (client->settings.n_protocols, 2, NULL);
+
 	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Bad", "a\r\nInjected: yes"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_add_header (client, "Authorization", "secret"), 0, NULL);
 

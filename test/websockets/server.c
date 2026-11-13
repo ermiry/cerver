@@ -1359,6 +1359,22 @@ static void test_server_metrics (void) {
 	test_check (strstr (metrics->str, "cerver_websocket_rejected_total{reason=\"Limit\"} 0\n") != NULL, "the rejections are missing");
 	str_delete (metrics);
 
+	// the bytes of a message that is sent in pieces are counted: 7 of the echo and 5 pieces of 5,
+	// they were counted as a message of 0 bytes
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "stream", 6);
+
+	RawFrame frame;
+	for (unsigned int i = 0; i <= SERVER_TEST_STREAM_PIECES; i++) {
+		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "a frame of the stream did not arrive");
+		raw_frame_delete (&frame);
+	}
+
+	metrics = http_cerver_metrics_generate (server->http_cerver);
+	test_check (strstr (metrics->str, "cerver_websocket_messages_sent_total 2\n") != NULL, "the sent messages are wrong");
+	test_check (strstr (metrics->str, "cerver_websocket_sent_bytes_total 32\n") != NULL, "the sent bytes are wrong");
+	test_check (strstr (metrics->str, "cerver_websocket_received_bytes_total 13\n") != NULL, "the received bytes are wrong");
+	str_delete (metrics);
+
 	raw_send_close (fd, 1000, NULL);
 	server_test_expect_close (&reader, 1000);
 	server_test_wait_closed (1);
@@ -1370,6 +1386,26 @@ static void test_server_metrics (void) {
 
 	raw_reader_end (&reader);
 	(void) close (fd);
+
+	// the bytes of every fragment of a message that is received in pieces are counted: 3, 4 and 1,
+	// only the ones of its last fragment were
+	const int stream = raw_open (server->port, "/ws/stream", NULL);
+	raw_reader_init (&reader, stream);
+
+	raw_send_frame (stream, false, HTTP_WEB_SOCKET_OPCODE_BINARY, "abc", 3);
+	raw_send_frame (stream, false, HTTP_WEB_SOCKET_OPCODE_CONTINUATION, "defg", 4);
+	raw_send_frame (stream, true, HTTP_WEB_SOCKET_OPCODE_CONTINUATION, "h", 1);
+	server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "3:8", 3);
+
+	metrics = http_cerver_metrics_generate (server->http_cerver);
+	test_check (strstr (metrics->str, "cerver_websocket_messages_received_total 3\n") != NULL, "the fragmented message was not counted");
+	test_check (strstr (metrics->str, "cerver_websocket_received_bytes_total 21\n") != NULL, "the bytes of the fragments are wrong");
+	test_check (strstr (metrics->str, "cerver_websocket_sent_bytes_total 35\n") != NULL, "the bytes of the answer are wrong");
+	str_delete (metrics);
+
+	raw_reader_end (&reader);
+	(void) close (stream);
+	server_test_wait_closed (2);
 
 	server_test_stop (server);
 
