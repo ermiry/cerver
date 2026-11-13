@@ -61,6 +61,10 @@ static const char http_web_socket_client_path_start = '/';
 static const char http_web_socket_client_query_start = '?';
 static const char http_web_socket_client_fragment_start = '#';
 
+// the characters of a url are above the space and are not the delete control
+static const unsigned char http_web_socket_client_url_space = ' ';
+static const unsigned char http_web_socket_client_url_delete = 0x7F;
+
 static const char *http_web_socket_client_root_path = { "/" };
 
 #define HTTP_WEB_SOCKET_CLIENT_REQUEST_START			\
@@ -528,13 +532,30 @@ static u8 http_web_socket_client_url_path (
 
 }
 
+// the url is written in the request line and in the Host header:
+// a space or a control character in it would end them and start other lines
+static bool http_web_socket_client_url_is_visible (const char *url) {
+
+	bool visible = true;
+
+	for (const unsigned char *ch = (const unsigned char *) url; visible && *ch; ch++) {
+		visible = (*ch > http_web_socket_client_url_space) && (*ch != http_web_socket_client_url_delete);
+	}
+
+	return visible;
+
+}
+
 u8 http_web_socket_client_set_url (
 	HttpWebSocketClient *client, const char *url
 ) {
 
 	u8 retval = 1;
 
-	if (client && url && !strncasecmp (url, HTTP_WEB_SOCKET_CLIENT_SCHEME, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH)) {
+	if (
+		client && url && http_web_socket_client_url_is_visible (url)
+		&& !strncasecmp (url, HTTP_WEB_SOCKET_CLIENT_SCHEME, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH)
+	) {
 		const size_t length = strlen (url);
 
 		size_t position = http_web_socket_client_url_host (client, url, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH, length);

@@ -5,6 +5,8 @@
 
 #include "cerver/types/types.h"
 
+#include "cerver/http/headers.h"
+
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/settings.h"
 
@@ -70,6 +72,48 @@ static void http_web_socket_settings_protocols_delete (HttpWebSocketSettings *se
 
 	settings->protocols = NULL;
 	settings->n_protocols = 0;
+
+}
+
+// a subprotocol is a token (RFC 6455 section 4.1): a name with a separator or with a line end
+// would be another element of the list or another line of the handshake
+static bool http_web_socket_settings_protocols_are_valid (
+	const char * const *protocols, const unsigned int n_protocols
+) {
+
+	bool valid = true;
+
+	for (unsigned int i = 0; valid && (i < n_protocols); i++) {
+		valid = protocols[i] && http_header_name_is_valid (protocols[i], strlen (protocols[i]));
+	}
+
+	return valid;
+
+}
+
+// copies the whole list or nothing of it
+static u8 http_web_socket_settings_protocols_copy (
+	HttpWebSocketSettings *settings,
+	const char * const *protocols, const unsigned int n_protocols
+) {
+
+	u8 retval = 1;
+
+	settings->protocols = (char **) calloc (n_protocols, sizeof (char *));
+	if (settings->protocols) {
+		retval = 0;
+
+		for (unsigned int i = 0; !retval && (i < n_protocols); i++) {
+			settings->protocols[i] = strdup (protocols[i]);
+
+			if (settings->protocols[i]) settings->n_protocols = i + 1;
+			else retval = 1;
+		}
+
+		if (retval) http_web_socket_settings_protocols_delete (settings);
+	}
+
+	return retval;
 
 }
 
@@ -144,29 +188,18 @@ u8 http_web_socket_settings_set_protocols (
 
 	u8 retval = 1;
 
-	if (settings && (protocols || !n_protocols) && (n_protocols <= HTTP_WEB_SOCKET_MAX_PROTOCOLS)) {
+	// a list that is rejected does not change the settings
+	if (
+		settings && (protocols || !n_protocols) && (n_protocols <= HTTP_WEB_SOCKET_MAX_PROTOCOLS)
+		&& http_web_socket_settings_protocols_are_valid (protocols, n_protocols)
+	) {
 		if (settings->set & HTTP_WEB_SOCKET_SETTING_PROTOCOLS) {
 			http_web_socket_settings_protocols_delete (settings);
 		}
 
 		settings->set |= HTTP_WEB_SOCKET_SETTING_PROTOCOLS;
-		retval = 0;
 
-		if (n_protocols) {
-			settings->protocols = (char **) calloc (n_protocols, sizeof (char *));
-			if (settings->protocols) {
-				for (unsigned int i = 0; !retval && (i < n_protocols); i++) {
-					settings->protocols[i] = protocols[i] ? strdup (protocols[i]) : NULL;
-					settings->n_protocols = i + 1;
-
-					if (!settings->protocols[i]) retval = 1;
-				}
-			}
-
-			else {
-				retval = 1;
-			}
-		}
+		retval = n_protocols ? http_web_socket_settings_protocols_copy (settings, protocols, n_protocols) : 0;
 	}
 
 	return retval;
