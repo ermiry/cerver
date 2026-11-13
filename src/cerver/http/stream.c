@@ -160,6 +160,9 @@ u8 http_response_stream_end (
 				retval = http_response_send_pieces (receive, &part, 1);
 
 				if (retval) receive->stream.state = HTTP_STREAM_STATE_FAILED;
+
+				// the last chunk is the end of the response
+				else receive->framed = true;
 			}
 		}
 

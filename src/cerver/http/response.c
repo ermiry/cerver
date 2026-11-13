@@ -1027,6 +1027,9 @@ static void http_response_send_failed (
 		pending
 	);
 
+	// the client can not find the end of a response that was cut
+	((HttpReceive *) http_receive)->framed = false;
+
 	http_receive_response_failed (http_receive, error);
 
 }
@@ -1609,6 +1612,40 @@ static void http_response_extra_compression (HttpResponseMessage *message) {
 
 }
 
+// the status of a response that never has a body (RFC 9110 section 6.4.1)
+static bool http_response_status_has_no_body (const http_status status) {
+
+	return (status < HTTP_STATUS_OK)
+		|| (status == HTTP_STATUS_NO_CONTENT)
+		|| (status == HTTP_STATUS_NOT_MODIFIED);
+
+}
+
+// the client finds the end of the response that was sent without the close of the connection,
+// a response whose body is sent after its header (a file) is not complete yet
+static bool http_response_message_is_framed (
+	const HttpReceive *http_receive, const HttpResponseMessage *message,
+	const bool with_body
+) {
+
+	return http_response_is_head (http_receive)
+		|| http_response_status_has_no_body (message->status)
+		|| (with_body && (
+			http_response_message_has (message, HTTP_HEADER_CONTENT_LENGTH)
+			|| http_headers_count (&message->extra, HTTP_HEADER_CONTENT_LENGTH)
+		));
+
+}
+
+// the bytes of the body that was announced in the header were sent after it
+static void http_response_body_sent (
+	const HttpReceive *http_receive, const size_t sent, const size_t expected
+) {
+
+	if (sent == expected) ((HttpReceive *) http_receive)->framed = true;
+
+}
+
 static u8 http_response_message_send (
 	const HttpReceive *http_receive, const HttpResponseMessage *message,
 	const bool with_body
@@ -1638,6 +1675,10 @@ static u8 http_response_message_send (
 		http_response_sent (
 			http_receive, message->status,
 			message->header_length + extra_length + http_response_header_end_length + body_length
+		);
+
+		((HttpReceive *) http_receive)->framed = http_response_message_is_framed (
+			http_receive, message, with_body
 		);
 	}
 
@@ -2141,10 +2182,11 @@ static size_t http_response_file_validators (
 
 }
 
-// the header was already sent, so only the bytes of the file are added to the stats
+// the header was already sent, so only the bytes of the file are added to the stats,
+// the response ends where its header said when the file still has the expected bytes
 static u8 http_response_send_file_actual (
 	const HttpReceive *http_receive,
-	const char *filename
+	const char *filename, const size_t expected
 ) {
 
 	u8 retval = 1;
@@ -2158,6 +2200,8 @@ static u8 http_response_send_file_actual (
 		);
 
 		http_response_sent_bytes (http_receive, total_sent);
+
+		if (!retval) http_response_body_sent (http_receive, total_sent, expected);
 
 		(void) close (file_fd);
 	}
@@ -2228,7 +2272,9 @@ u8 http_response_send_file_internal (
 		response->header, response->header_len, NULL, 0,
 		HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
 	)) {
-		retval = http_response_send_file_actual (http_receive, filename);
+		retval = http_response_send_file_actual (
+			http_receive, filename, (size_t) filestatus->st_size
+		);
 	}
 
 	http_response_return (response);
@@ -2444,6 +2490,12 @@ static u8 http_response_handle_video_internal (
 
 			// the header was already added to the stats
 			http_response_sent_bytes (http_receive, total_sent);
+
+			if (!retval) {
+				http_response_body_sent (
+					http_receive, total_sent, (size_t) bytes_range->chunk_size
+				);
+			}
 
 			(void) close (video_fd);
 		}
