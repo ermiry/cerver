@@ -53,6 +53,12 @@ wait_listening () {
 	return 1
 }
 
+fuzzer_report () {
+	echo "wstest: $($DOCKER inspect --format 'exit {{.State.ExitCode}} - out of memory {{.State.OOMKilled}} - running {{.State.Running}} {{.State.Error}}' "$FUZZER" 2>&1)"
+	free -m 2> /dev/null
+	(sudo -n dmesg 2> /dev/null || dmesg 2> /dev/null) | grep -i "out of memory\|killed process\|oom-kill" | tail -n 8
+}
+
 run_server () {
 	echo "Autobahn fuzzingclient against the server of cerver..."
 
@@ -62,10 +68,16 @@ run_server () {
 
 	wait_listening "$SERVER" || { $DOCKER logs "$SERVER" | tail -n 64; return 1; }
 
-	$DOCKER run --rm --platform linux/amd64 --network "$NETWORK" \
+	$DOCKER run --name "$FUZZER" --platform linux/amd64 --network "$NETWORK" \
 		-v "$(pwd)/test/autobahn:/config" -v "$(pwd)/$REPORTS:/reports" \
 		"$AUTOBAHN" wstest -m fuzzingclient -s /config/fuzzingclient.json > "$REPORTS/server.log" 2>&1
 	local result=$?
+
+	if [ "$result" -ne 0 ]; then
+		fuzzer_report
+	fi
+
+	$DOCKER rm -f "$FUZZER" > /dev/null
 
 	$DOCKER stop -t 30 "$SERVER" > /dev/null
 	local status
@@ -94,6 +106,11 @@ run_client () {
 	local result=$?
 
 	$DOCKER logs "$FUZZER" > "$REPORTS/client.log" 2>&1
+
+	if [ "$result" -ne 0 ]; then
+		fuzzer_report
+	fi
+
 	$DOCKER rm -f "$FUZZER" > /dev/null
 
 	if [ "$result" -ne 0 ]; then
