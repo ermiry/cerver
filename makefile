@@ -12,6 +12,9 @@ SANITIZER	:=
 # 1 compiles the gzip compression of the HTTP responses with zlib
 ZLIB		:= 0
 
+# the provider of the cryptography of cerver/crypto: openssl
+CRYPTO		:= openssl
+
 WERROR		?= 0
 
 SLIB		:= libcerver.so
@@ -40,6 +43,12 @@ ZLIBLIB		:= -l z
 CURL		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
+
+ifeq ($(CRYPTO), openssl)
+	DEFINES += -D CERVER_CRYPTO_OPENSSL
+else
+$(error the provider of the cryptography $(CRYPTO) is not supported)
+endif
 
 BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
