@@ -154,6 +154,9 @@ struct _HttpWebSocket {
 	bool stream_started;
 	bool stream_compressed;
 
+	// the bytes of the pieces of the stream, for the stats of its message
+	size_t stream_size;
+
 	bool close_sent;
 	bool close_received;
 	struct timespec close_deadline;

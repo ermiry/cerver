@@ -671,6 +671,7 @@ u8 http_web_socket_send_begin (
 			web_socket->stream_type = (u8) type;
 			web_socket->stream_started = false;
 			web_socket->stream_compressed = (web_socket->deflate != NULL);
+			web_socket->stream_size = 0;
 
 			retval = 0;
 		}
@@ -733,6 +734,8 @@ u8 http_web_socket_send_write (
 		if (!retval && payload_size) {
 			retval = http_web_socket_send_stream_frame (web_socket, false, payload, payload_size);
 		}
+
+		if (!retval) web_socket->stream_size += size;
 	}
 
 	return retval;
@@ -751,7 +754,7 @@ u8 http_web_socket_send_end (HttpWebSocket *web_socket) {
 			http_web_socket_deflate_compress (web_socket->deflate, NULL, 0, true, &payload, &payload_size) : 0;
 
 		if (!retval) retval = http_web_socket_send_stream_frame (web_socket, true, payload, payload_size);
-		if (!retval) http_web_socket_message_sent (web_socket, 0);
+		if (!retval) http_web_socket_message_sent (web_socket, web_socket->stream_size);
 
 		web_socket->streaming = false;
 
@@ -881,15 +884,24 @@ static int http_web_socket_handled (const HttpWebSocket *web_socket) {
 
 }
 
-static void http_web_socket_message_received (HttpWebSocket *web_socket, const size_t size) {
+// the stats of the bytes of a message, that can arrive in fragments, and of the message when it ends
+static void http_web_socket_fragment_received (
+	HttpWebSocket *web_socket, const size_t size, const bool last
+) {
 
-	__atomic_add_fetch (&web_socket->n_messages_received, 1, __ATOMIC_SEQ_CST);
+	if (last) __atomic_add_fetch (&web_socket->n_messages_received, 1, __ATOMIC_SEQ_CST);
 
 	if (web_socket->http_cerver) {
 		HttpWebSocketRegistry *registry = web_socket->http_cerver->web_sockets;
-		CERVER_STATS_ADD (registry->n_messages_received, 1);
+		if (last) CERVER_STATS_ADD (registry->n_messages_received, 1);
 		CERVER_STATS_ADD (registry->n_bytes_received, size);
 	}
+
+}
+
+static void http_web_socket_message_received (HttpWebSocket *web_socket, const size_t size) {
+
+	http_web_socket_fragment_received (web_socket, size, true);
 
 }
 
@@ -918,7 +930,7 @@ static int http_web_socket_on_fragment (
 
 	HttpWebSocket *web_socket = (HttpWebSocket *) web_socket_ptr;
 
-	if (last) http_web_socket_message_received (web_socket, size);
+	http_web_socket_fragment_received (web_socket, size, last);
 
 	web_socket->settings.handlers.on_fragment (web_socket, type, payload, size, first, last);
 
