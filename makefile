@@ -606,7 +606,7 @@ endif
 BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
-BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
+BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT) -not -path '$(BENCHDIR)/competitors/*')
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a benchmark is compiled again when a header that it includes changes

@@ -1,0 +1,36 @@
+FROM gcc:16.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends cmake libssl-dev zlib1g-dev && apt-get clean
+
+ENV YYJSON_VERSION=0.13.0
+ENV SIMDJSON_VERSION=5.1.1
+ENV JANSSON_VERSION=2.15.1
+ENV RAPIDJSON_COMMIT=297637bc0a0f00dc504dbc1a47ebdaa577f8ae19
+ENV LLHTTP_VERSION=9.4.4
+ENV PICOHTTPPARSER_COMMIT=dd573d8fa9264c646a400e96ce9f07dea6f156e4
+
+ENV COMPETITORS=/opt/competitors
+
+WORKDIR ${COMPETITORS}
+
+RUN curl -fsSL https://github.com/ibireme/yyjson/archive/refs/tags/${YYJSON_VERSION}.tar.gz | tar xz \
+	&& mv yyjson-${YYJSON_VERSION} yyjson
+RUN curl -fsSL https://github.com/simdjson/simdjson/archive/refs/tags/v${SIMDJSON_VERSION}.tar.gz | tar xz \
+	&& mv simdjson-${SIMDJSON_VERSION} simdjson
+RUN curl -fsSL https://github.com/akheron/jansson/archive/refs/tags/v${JANSSON_VERSION}.tar.gz | tar xz \
+	&& cmake -S jansson-${JANSSON_VERSION} -B jansson-build -D CMAKE_BUILD_TYPE=Release -D JANSSON_BUILD_DOCS=OFF \
+		-D JANSSON_EXAMPLES=OFF -D JANSSON_WITHOUT_TESTS=ON -D CMAKE_C_FLAGS="-O3 -march=native" \
+	&& cmake --build jansson-build -j 4 && cmake --install jansson-build --prefix ${COMPETITORS}/jansson
+RUN curl -fsSL https://github.com/Tencent/rapidjson/archive/${RAPIDJSON_COMMIT}.tar.gz | tar xz \
+	&& mv rapidjson-${RAPIDJSON_COMMIT} rapidjson
+RUN curl -fsSL https://github.com/nodejs/llhttp/archive/refs/tags/release/v${LLHTTP_VERSION}.tar.gz | tar xz \
+	&& mv llhttp-release-v${LLHTTP_VERSION} llhttp
+RUN curl -fsSL https://github.com/h2o/picohttpparser/archive/${PICOHTTPPARSER_COMMIT}.tar.gz | tar xz \
+	&& mv picohttpparser-${PICOHTTPPARSER_COMMIT} picohttpparser
+
+WORKDIR /opt/cerver
+
+COPY . .
+RUN make clean && make TYPE=production NATIVE=1 -j4 && bash benchmarks/competitors/build.sh
+
+CMD ["bash", "benchmarks/competitors/bench.sh"]
