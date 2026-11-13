@@ -56,6 +56,8 @@ run ./test/bin/udp
 
 run ./test/bin/utils
 
+run ./test/bin/crypto
+
 run ./test/bin/http
 
 run ./test/bin/websockets
