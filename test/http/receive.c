@@ -2251,6 +2251,72 @@ static void test_receive_cors_preflight (Cerver *cerver) {
 
 }
 
+#define TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE		(1 << 15)
+#define TEST_RECEIVE_PREFLIGHT_LONG_HEADERS		300
+#define TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS		(1 << 13)
+
+static const char *preflight_header_end = { "\r\n\r\n" };
+
+static void test_receive_preflight_headers_case (
+	Cerver *cerver, const char *name, const size_t headers_length
+) {
+
+	char *headers = (char *) malloc (headers_length + 1);
+	char *request = (char *) malloc (TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE);
+	test_check_ptr (headers);
+	test_check_ptr (request);
+
+	(void) memset (headers, 'h', headers_length);
+	headers[headers_length] = '\0';
+
+	const int request_length = snprintf (
+		request, TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE,
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\nAccess-Control-Request-Method: GET\r\n"
+		"Access-Control-Request-Headers: %s\r\n\r\n",
+		headers
+	);
+
+	test_check ((request_length > 0) && (request_length < TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE), NULL);
+
+	current_case = name;
+	test_receive_feed_whole (cerver, request, (size_t) request_length);
+
+	test_receive_expect (test_receive_status_is ("204"));
+
+	// the response is text until its end, and its header ends with its empty line
+	test_receive_expect (result.response_len == strlen (result.response));
+	test_receive_expect (result.response_len > strlen (preflight_header_end));
+	test_receive_expect (
+		!strcmp (result.response + result.response_len - strlen (preflight_header_end), preflight_header_end)
+	);
+
+	// the header that does not fit is not sent, the other ones of the preflight are
+	test_receive_expect (!test_receive_has_header ("Access-Control-Allow-Headers"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\n"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"));
+
+	free (request);
+	free (headers);
+
+}
+
+// the headers that a preflight asks for are sent back only when they fit in a header of the response:
+// its length was the one of the whole value, so the bytes after its 256 were sent to the client
+static void test_receive_preflight_long_headers (Cerver *cerver) {
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers longer than 256 bytes",
+		TEST_RECEIVE_PREFLIGHT_LONG_HEADERS
+	);
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers longer than a response",
+		TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS
+	);
+
+}
+
 #pragma endregion
 
 void http_tests_receive (void) {
@@ -2286,6 +2352,7 @@ void http_tests_receive (void) {
 	test_receive_method_not_allowed (cerver);
 	test_receive_trailing_slash (cerver);
 	test_receive_cors_preflight (cerver);
+	test_receive_preflight_long_headers (cerver);
 
 	(void) cerver_teardown (cerver);
 
