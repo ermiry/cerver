@@ -28,6 +28,10 @@
 #define HTTP_WEB_SOCKET_FRAME_LENGTH_7_MAX			125
 #define HTTP_WEB_SOCKET_FRAME_LENGTH_16_MAX			0xFFFF
 
+// the first lengths that need 16 and 64 bits, a smaller one in them is not the shortest encoding
+#define HTTP_WEB_SOCKET_FRAME_LENGTH_16_MIN			(HTTP_WEB_SOCKET_FRAME_LENGTH_7_MAX + 1)
+#define HTTP_WEB_SOCKET_FRAME_LENGTH_64_MIN			(HTTP_WEB_SOCKET_FRAME_LENGTH_16_MAX + 1)
+
 // a length of 64 bits must have its most significant bit clear
 #define HTTP_WEB_SOCKET_FRAME_LENGTH_64_MSB			0x8000000000000000ULL
 
@@ -391,6 +395,20 @@ static u64 http_web_socket_parser_read_length (const u8 *source, const size_t si
 
 }
 
+// an extended length of size bytes: the least bytes must be used to encode a length
+// (RFC 6455 section 5.2), so its value is at least the first one that needs them
+static HttpWebSocketFrameError http_web_socket_parser_extended_length (
+	HttpWebSocketFrame *frame, const u8 *source, const size_t size, const u64 first
+) {
+
+	frame->length = http_web_socket_parser_read_length (source, size);
+
+	return (
+		(frame->length < first) || (frame->length & HTTP_WEB_SOCKET_FRAME_LENGTH_64_MSB)
+	) ? HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH : HTTP_WEB_SOCKET_FRAME_ERROR_NONE;
+
+}
+
 // the extended length and the mask, when the whole header was received
 static HttpWebSocketFrameError http_web_socket_parser_header_end (
 	HttpWebSocketParser *parser
@@ -402,21 +420,21 @@ static HttpWebSocketFrameError http_web_socket_parser_header_end (
 	size_t position = HTTP_WEB_SOCKET_FRAME_HEADER_MIN_SIZE;
 
 	if (frame->length == HTTP_WEB_SOCKET_FRAME_LENGTH_16) {
-		frame->length = http_web_socket_parser_read_length (
-			parser->header + position, HTTP_WEB_SOCKET_FRAME_LENGTH_16_SIZE
+		error = http_web_socket_parser_extended_length (
+			frame, parser->header + position,
+			HTTP_WEB_SOCKET_FRAME_LENGTH_16_SIZE, HTTP_WEB_SOCKET_FRAME_LENGTH_16_MIN
 		);
 
 		position += HTTP_WEB_SOCKET_FRAME_LENGTH_16_SIZE;
 	}
 
 	else if (frame->length == HTTP_WEB_SOCKET_FRAME_LENGTH_64) {
-		frame->length = http_web_socket_parser_read_length (
-			parser->header + position, HTTP_WEB_SOCKET_FRAME_LENGTH_64_SIZE
+		error = http_web_socket_parser_extended_length (
+			frame, parser->header + position,
+			HTTP_WEB_SOCKET_FRAME_LENGTH_64_SIZE, HTTP_WEB_SOCKET_FRAME_LENGTH_64_MIN
 		);
 
 		position += HTTP_WEB_SOCKET_FRAME_LENGTH_64_SIZE;
-
-		if (frame->length & HTTP_WEB_SOCKET_FRAME_LENGTH_64_MSB) error = HTTP_WEB_SOCKET_FRAME_ERROR_LENGTH;
 	}
 
 	if (frame->masked) {
@@ -523,6 +541,15 @@ static size_t http_web_socket_parser_payload (
 
 }
 
+// a method stopped the parser with the last bytes of a payload, or at the begin of a frame without one:
+// the frame is whole and only its end is left
+static bool http_web_socket_parser_frame_is_whole (const HttpWebSocketParser *parser) {
+
+	return (parser->state == HTTP_WEB_SOCKET_PARSER_STATE_PAYLOAD)
+		&& (parser->received == parser->frame.length);
+
+}
+
 size_t http_web_socket_parser_execute (
 	HttpWebSocketParser *parser, u8 *data, const size_t size
 ) {
@@ -530,7 +557,10 @@ size_t http_web_socket_parser_execute (
 	size_t parsed = 0;
 
 	if (parser && parser->settings && (data || !size)) {
-		int stop = 0;
+		// it does not wait for the bytes of the next frame
+		int stop = http_web_socket_parser_frame_is_whole (parser) ?
+			http_web_socket_parser_frame_end (parser) : 0;
+
 		while (!stop && (parsed < size) && (parser->state != HTTP_WEB_SOCKET_PARSER_STATE_FAILED)) {
 			if (parser->state == HTTP_WEB_SOCKET_PARSER_STATE_HEADER) {
 				parsed += http_web_socket_parser_header (parser, data + parsed, size - parsed, &stop);
