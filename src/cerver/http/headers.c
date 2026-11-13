@@ -131,38 +131,6 @@ void http_header_set (
 
 }
 
-void http_response_header_set_with_type (
-	HttpHeader *header, const http_header type,
-	const char *actual_header
-) {
-
-	header->len = snprintf (
-		header->value, HTTP_HEADER_VALUE_SIZE,
-		"%s: %s\r\n",
-		http_header_string (type), actual_header
-	);
-
-}
-
-void http_response_header_set_with_type_and_args (
-	HttpHeader *header, const http_header type,
-	const char *format, va_list args
-) {
-
-	char actual_header[HTTP_HEADER_ACTUAL_SIZE] = { 0 };
-	(void) vsnprintf (
-		actual_header, HTTP_HEADER_ACTUAL_SIZE,
-		format, args
-	);
-
-	header->len = snprintf (
-		header->value, HTTP_HEADER_VALUE_SIZE,
-		"%s: %s\r\n",
-		http_header_string (type), actual_header
-	);
-
-}
-
 void http_header_print (const HttpHeader *header) {
 
 	(void) printf ("(%d) - %s\n", header->len, header->value);

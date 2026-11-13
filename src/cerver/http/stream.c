@@ -54,7 +54,7 @@ u8 http_response_stream_begin (
 			cerver_log_error ("http_response_stream_begin () - The stream was already started");
 		}
 
-		else if (response->headers[HTTP_HEADER_CONTENT_LENGTH].len > 0) {
+		else if (http_response_header_count (response, HTTP_HEADER_CONTENT_LENGTH)) {
 			cerver_log_error ("http_response_stream_begin () - A stream can not have a Content-Length");
 		}
 
@@ -66,7 +66,9 @@ u8 http_response_stream_begin (
 				receive->stream.state = HTTP_STREAM_STATE_STARTED;
 
 				retval = http_response_send_message (
-					receive, response->status, response->header, response->header_len, NULL, 0,
+					receive, response->status,
+					response->header_is_raw ? NULL : &response->headers,
+					response->header, response->header_len, NULL, 0,
 					HTTP_RESPONSE_SEND_OPTION_STREAM
 				);
 

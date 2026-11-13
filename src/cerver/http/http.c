@@ -312,11 +312,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->custom_data = NULL;
 		http_cerver->delete_custom_data = NULL;
 
-		http_cerver->n_response_headers = 0;
-		(void) memset (
-			http_cerver->response_headers, 0,
-			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
-		);
+		http_headers_init (&http_cerver->response_headers);
 
 		http_cerver->global_reference = false;
 
@@ -430,6 +426,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 				);
 			}
 		}
+
+		http_headers_reset (&http_cerver->response_headers);
 
 		if (http_cerver->admin_routes_custom_data) {
 			if (http_cerver->delete_admin_routes_custom_data) {
@@ -2007,22 +2005,22 @@ u8 http_cerver_add_responses_header (
 	const http_header type, const char *actual_header
 ) {
 
-	u8 retval = 1;
+	return (http_cerver && actual_header) ? http_headers_set (
+		&http_cerver->response_headers, type, actual_header, strlen (actual_header)
+	) : 1;
 
-	if (http_cerver && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (http_cerver->response_headers[type].len <= 0) {
-			http_cerver->n_response_headers += 1;
-		}
+}
 
-		http_response_header_set_with_type (
-			&http_cerver->response_headers[type],
-			type, actual_header
-		);
+// works like http_cerver_add_responses_header () with the name of any header,
+// it replaces the ones with the same name
+// returns 0 on success, 1 on error
+u8 http_cerver_add_responses_header_by_name (
+	HttpCerver *http_cerver, const char *name, const char *value
+) {
 
-		retval = 0;
-	}
-
-	return retval;
+	return (http_cerver && name && value) ? http_headers_set_by_name (
+		&http_cerver->response_headers, name, strlen (name), value, strlen (value)
+	) : 1;
 
 }
 

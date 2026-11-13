@@ -156,16 +156,6 @@ CERVER_PRIVATE void http_header_set (
 	HttpHeader *header, const char *format, ...
 ) CERVER_PRINTF_FORMAT (2, 3);
 
-CERVER_PRIVATE void http_response_header_set_with_type (
-	HttpHeader *header, const http_header type,
-	const char *actual_header
-);
-
-CERVER_PRIVATE void http_response_header_set_with_type_and_args (
-	HttpHeader *header, const http_header type,
-	const char *format, va_list args
-) CERVER_PRINTF_FORMAT (3, 0);
-
 CERVER_PUBLIC void http_header_print (
 	const HttpHeader *header
 );

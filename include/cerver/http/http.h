@@ -341,9 +341,8 @@ struct _HttpCerver {
 	void *custom_data;
 	void (*delete_custom_data)(void *);
 
-	// responses
-	u8 n_response_headers;
-	HttpHeader response_headers[HTTP_HEADERS_SIZE];
+	// the headers that are added to every response that does not have them
+	HttpHeaders response_headers;
 
 	// holds a reference to the state shared by every HTTP cerver of the process:
 	// the jwt pool, the responses producer, the common responses and the multi-parts pool,
@@ -948,6 +947,13 @@ CERVER_PUBLIC struct _HttpResponse *server_error;
 CERVER_PUBLIC u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
 	const http_header type, const char *actual_header
+);
+
+// works like http_cerver_add_responses_header () with the name of any header,
+// it replaces the ones with the same name
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 http_cerver_add_responses_header_by_name (
+	HttpCerver *http_cerver, const char *name, const char *value
 );
 
 #pragma endregion
