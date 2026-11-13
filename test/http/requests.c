@@ -483,8 +483,9 @@ static void test_http_request_bytes_range_case (
 
 }
 
-// a Range that does not start at a position is ignored: the range of the last bytes (bytes=-500)
-// and the values without a number reached atol (NULL), and a short value was read beyond its end
+// a Range is one that starts at a position or the one of the last bytes of the file (bytes=-500),
+// the rest are ignored: the values without a number reached atol (NULL),
+// and a short value was read beyond its end
 static void test_http_request_bytes_range (void) {
 
 	// without the header there is no range
@@ -507,8 +508,13 @@ static void test_http_request_bytes_range (void) {
 	// only the first range of a list is used
 	test_http_request_bytes_range_case ("bytes=0-99,200-299", true, HTTP_RANGE_TYPE_FULL, 0, 99);
 
+	// the last bytes of the file, their number is the end of the range until it is resolved
+	test_http_request_bytes_range_case ("bytes=-500", true, HTTP_RANGE_TYPE_SUFFIX, 0, 500);
+	test_http_request_bytes_range_case ("bytes=-1,0-99", true, HTTP_RANGE_TYPE_SUFFIX, 0, 1);
+
 	// the ones that are ignored
-	test_http_request_bytes_range_case ("bytes=-500", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=-0", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=--5", false, HTTP_RANGE_TYPE_NONE, 0, 0);
 	test_http_request_bytes_range_case ("bytes=-", false, HTTP_RANGE_TYPE_NONE, 0, 0);
 	test_http_request_bytes_range_case ("bytes=", false, HTTP_RANGE_TYPE_NONE, 0, 0);
 	test_http_request_bytes_range_case ("bytes=5", false, HTTP_RANGE_TYPE_NONE, 0, 0);
