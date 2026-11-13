@@ -1166,6 +1166,21 @@ static const http_header http_response_not_modified_headers[] = {
 
 static const size_t http_response_n_not_modified_headers = 4;
 
+// what a message sends of the headers of its response: all of them, all but the length of the body
+// that was compressed, or only the ones that a 304 keeps
+#define HTTP_RESPONSE_FILTER_MAP(XX)		\
+	XX(0,	NONE)							\
+	XX(1,	COMPRESSED)						\
+	XX(2,	NOT_MODIFIED)
+
+typedef enum HttpResponseFilter {
+
+	#define XX(num, name) HTTP_RESPONSE_FILTER_##name = num,
+	HTTP_RESPONSE_FILTER_MAP(XX)
+	#undef XX
+
+} HttpResponseFilter;
+
 // a response that is being sent: its status, its headers and its body,
 // with the headers that cerver adds for the request (Connection, Date, X-Request-Id,
 // Access-Control-Allow-Origin, Vary, ETag, Content-Encoding) in their own list,
@@ -1176,9 +1191,12 @@ typedef struct HttpResponseMessage {
 	http_status status;
 
 	// the headers of the response and the ones of its cerver,
-	// NULL when only its compiled header is known (it was set as bytes, or it was filtered)
+	// NULL when only its compiled header is known (it was set as bytes)
 	const HttpHeaders *headers;
 	const HttpHeaders *defaults;
+
+	// the headers of those lists that the message sends, the others are not found in it
+	HttpResponseFilter filter;
 
 	const char *header;
 	size_t header_length;
@@ -1226,7 +1244,60 @@ static void http_response_extra_add_header (
 
 }
 
-// the value of a header of the list or of the ones of the cerver
+// a 304 keeps the headers of its list and the Vary of the response, that has no type
+static bool http_response_not_modified_keeps_header (
+	const http_header type, const char *name, const size_t name_length
+) {
+
+	bool keeps = (name_length == (sizeof (http_response_vary_name) - 1))
+		&& !strncasecmp (name, http_response_vary_name, name_length);
+
+	for (size_t i = 0; !keeps && (i < http_response_n_not_modified_headers); i++) {
+		keeps = (type == http_response_not_modified_headers[i]);
+	}
+
+	return keeps;
+
+}
+
+// the header is one that a message with the filter sends
+static bool http_response_filter_keeps (
+	const HttpResponseFilter filter,
+	const http_header type, const char *name, const size_t name_length
+) {
+
+	bool keeps = true;
+
+	switch (filter) {
+		case HTTP_RESPONSE_FILTER_COMPRESSED:
+			keeps = (type != HTTP_HEADER_CONTENT_LENGTH);
+			break;
+
+		case HTTP_RESPONSE_FILTER_NOT_MODIFIED:
+			keeps = http_response_not_modified_keeps_header (type, name, name_length);
+			break;
+
+		default: break;
+	}
+
+	return keeps;
+
+}
+
+// the field of one of the lists of the message is one that it sends
+static bool http_response_message_keeps (
+	const HttpResponseMessage *message,
+	const HttpHeaders *owner, const HttpHeaderField *field
+) {
+
+	size_t name_length = 0;
+	const char *name = http_headers_field_name (owner, field, &name_length);
+
+	return http_response_filter_keeps (message->filter, field->type, name, name_length);
+
+}
+
+// the value of a header of the list or of the ones of the cerver, when the message sends it
 static bool http_response_message_find_in_lists (
 	const HttpResponseMessage *message,
 	const http_header type, const char *name, const size_t name_length,
@@ -1246,6 +1317,8 @@ static bool http_response_message_find_in_lists (
 			http_headers_find (owner, type, 0) :
 			http_headers_find_by_name (owner, name, name_length, 0);
 	}
+
+	if (field && !http_response_message_keeps (message, owner, field)) field = NULL;
 
 	if (field) {
 		size_t field_length = 0;
@@ -1491,6 +1564,66 @@ static char *http_response_header_copy_without (
 
 }
 
+// the lines of the headers of one of the lists of the message that it sends:
+// the ones of the response, or the ones of the cerver that the response does not have
+// returns their length, and writes them when it is given where
+static size_t http_response_message_lines (
+	const HttpResponseMessage *message, const HttpHeaders *owner, char *end
+) {
+
+	size_t length = 0;
+
+	const bool defaults = (owner == message->defaults);
+
+	const HttpHeaderField *field = NULL;
+	for (unsigned int idx = 0; (field = http_headers_get (owner, idx)) != NULL; idx++) {
+		if (
+			(!defaults || http_response_default_applies (message->headers, owner, field))
+			&& http_response_message_keeps (message, owner, field)
+		) {
+			size_t line_length = 0;
+			const char *line = http_headers_field_line (owner, field, &line_length);
+
+			if (end) (void) memcpy (end + length, line, line_length);
+			length += line_length;
+		}
+	}
+
+	return length;
+
+}
+
+// writes in the arena the header that the message sends with its filter, without its empty line:
+// its fields are chosen in the lists of the response and of its cerver,
+// the bytes of the header that was compiled are not read again
+// returns NULL on error
+static char *http_response_message_header (
+	Arena *arena, const HttpResponseMessage *message, size_t *header_length
+) {
+
+	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE];
+	const size_t main_length = http_response_main_header (message->status, main_header);
+
+	const size_t length = main_length
+		+ http_response_message_lines (message, message->headers, NULL)
+		+ http_response_message_lines (message, message->defaults, NULL);
+
+	char *header = arena ? (char *) arena_alloc (arena, length + 1) : NULL;
+	if (header) {
+		(void) memcpy (header, main_header, main_length);
+
+		char *end = header + main_length;
+		end += http_response_message_lines (message, message->headers, end);
+		end += http_response_message_lines (message, message->defaults, end);
+		*end = '\0';
+
+		*header_length = length;
+	}
+
+	return header;
+
+}
+
 static bool http_response_is_compressible (
 	const HttpReceive *http_receive, const HttpResponseMessage *message
 ) {
@@ -1561,6 +1694,10 @@ static bool http_response_message_uses_etag (
 
 }
 
+static u8 http_response_message_filter (
+	Arena *arena, HttpResponseMessage *message, const HttpResponseFilter filter
+);
+
 static void http_response_message_compress (
 	const HttpReceive *http_receive, HttpResponseMessage *message
 ) {
@@ -1576,22 +1713,12 @@ static void http_response_message_compress (
 			&compressed, &compressed_length
 		)
 		&& (compressed_length < message->body_length)
+		// the header without the length of the plain body is the one that is sent
+		&& !http_response_message_filter (arena, message, HTTP_RESPONSE_FILTER_COMPRESSED)
 	) {
-		size_t header_length = 0;
-		const char *header = http_response_header_copy_without (
-			arena, message->header, message->header_length,
-			HTTP_HEADER_CONTENT_LENGTH, &header_length
-		);
-
-		if (header) {
-			// the header without the length of the plain body is the one that is sent
-			message->headers = NULL;
-			message->header = header;
-			message->header_length = header_length;
-			message->body = compressed;
-			message->body_length = compressed_length;
-			message->compressed = true;
-		}
+		message->body = compressed;
+		message->body_length = compressed_length;
+		message->compressed = true;
 	}
 
 }
@@ -1744,6 +1871,52 @@ static char *http_response_not_modified_header (
 
 }
 
+// the header of a response that was set as bytes has no list: its lines are read to filter them
+static char *http_response_message_filter_bytes (
+	Arena *arena, const HttpResponseMessage *message,
+	const HttpResponseFilter filter, size_t *header_length
+) {
+
+	return (filter == HTTP_RESPONSE_FILTER_NOT_MODIFIED) ?
+		http_response_not_modified_header (arena, message->header, message->header_length, header_length) :
+		http_response_header_copy_without (
+			arena, message->header, message->header_length, HTTP_HEADER_CONTENT_LENGTH, header_length
+		);
+
+}
+
+// the message sends only the headers that the filter keeps: its header is written again in the arena
+// with the fields of its lists that pass it, and the ones that do not are not found in the message anymore
+// returns 0 on success, 1 on error (the message is left as it was)
+static u8 http_response_message_filter (
+	Arena *arena, HttpResponseMessage *message, const HttpResponseFilter filter
+) {
+
+	u8 retval = 1;
+
+	const HttpResponseFilter previous = message->filter;
+	message->filter = filter;
+
+	size_t header_length = 0;
+	const char *header = message->headers ?
+		http_response_message_header (arena, message, &header_length) :
+		http_response_message_filter_bytes (arena, message, filter, &header_length);
+
+	if (header) {
+		message->header = header;
+		message->header_length = header_length;
+
+		retval = 0;
+	}
+
+	else {
+		message->filter = previous;
+	}
+
+	return retval;
+
+}
+
 // answers a conditional request whose representation was not modified
 // returns 0 on success, 1 on error
 static u8 http_response_send_not_modified (
@@ -1752,19 +1925,13 @@ static u8 http_response_send_not_modified (
 
 	u8 retval = 1;
 
-	size_t header_length = 0;
-	const char *header = http_response_not_modified_header (
-		http_request_get_arena (http_receive->request),
-		message->header, message->header_length, &header_length
-	);
+	// the status line of the header that is written is the one of the 304,
+	// and only the headers that a 304 keeps are sent
+	message->status = HTTP_STATUS_NOT_MODIFIED;
 
-	if (header) {
-		message->status = HTTP_STATUS_NOT_MODIFIED;
-
-		// only the headers that a 304 keeps are sent
-		message->headers = NULL;
-		message->header = header;
-		message->header_length = header_length;
+	if (!http_response_message_filter (
+		http_request_get_arena (http_receive->request), message, HTTP_RESPONSE_FILTER_NOT_MODIFIED
+	)) {
 		message->body = NULL;
 		message->body_length = 0;
 
@@ -1876,6 +2043,8 @@ static void http_response_message_init (
 
 	message->headers = headers;
 	message->defaults = headers ? http_response_default_headers () : NULL;
+
+	message->filter = HTTP_RESPONSE_FILTER_NONE;
 
 	// the empty line is sent after the headers that cerver adds
 	message->header = (const char *) header;
