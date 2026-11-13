@@ -1,21 +1,22 @@
 .vscode
 
 bin
-objs
 
 coverage
-
-keys
-
+coverage-integration
 data
-uploads
 
-logs
-
+fuzz-artifacts
 repeat-artifacts
 
+keys
+logs
+
+objs
+
+uploads
+
+!test/data
 !test/http/keys
 !test/jwt/keys
 !test/web/keys
-
-!test/data

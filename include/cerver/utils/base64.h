@@ -19,7 +19,7 @@ extern "C" {
  *
  * +1 is for any extra null.
  */
-#define base64_encode_len(A) ((A + 2) / 3 * 4 + 1)
+#define base64_encode_len(A) (((A) + 2) / 3 * 4 + 1)
 
 /**
  * Given a base64 string of length len,
@@ -30,7 +30,7 @@ extern "C" {
  * decode  4 chars turn into 3 bytes
  * floor[len * 3/4] + 2
  */
-#define base64_decode_len(A) (A / 4 * 3 + 2)
+#define base64_decode_len(A) ((A) / 4 * 3 + 2)
 
 /**
  * Will return the strlen of the output from encoding.
@@ -55,7 +55,7 @@ extern "C" {
  * // foo is filled out now
  * \endcode
  */
-#define base64_encode_strlen(A) ((A + 2)/ 3 * 4)
+#define base64_encode_strlen(A) (((A) + 2) / 3 * 4)
 
 /**
  * Encode a raw binary string into base 64.
@@ -130,6 +130,31 @@ CERVER_PUBLIC size_t base64_encode (
 
 CERVER_PUBLIC size_t base64_decode (
 	char *output, const char *bufcoded, size_t codedlen
+);
+
+// the characters of base64url (RFC 4648 §5) for an input of length bytes,
+// without padding and without the ending null byte
+#define base64url_encode_length(length) ((((length) / 3) * 4) + ((((length) % 3) * 4 + 2) / 3))
+
+// the bytes that an encoded string of length characters can produce
+#define base64url_decode_length(length) ((((length) / 4) * 3) + ((((length) % 4) * 3) / 4))
+
+// encodes the input as base64url (RFC 4648 §5): '-' and '_', without padding,
+// encoded must have room for base64url_encode_length (input_length) + 1 bytes,
+// the result ends with a null byte
+// returns the length of the encoded string
+CERVER_PUBLIC size_t base64url_encode (
+	char *encoded, const unsigned char *input, size_t input_length
+);
+
+// decodes a canonical base64url string: only the characters of the alphabet,
+// without padding and with the unused bits of the last character set to zero,
+// so every token has a single valid form,
+// output must have room for base64url_decode_length (encoded_length) bytes
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int base64url_decode (
+	unsigned char *output, size_t *output_length,
+	const char *encoded, size_t encoded_length
 );
 
 #ifdef __cplusplus

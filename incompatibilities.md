@@ -3,6 +3,15 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8.2 (from 1.8.1)
+
+The wire and the ABI do not change: a 1.8.2 talks with a 1.8.1, and an application built with the 1.8.1 runs with it.
+
+- `config.h` includes `<stdarg.h>`, `va_copy` is always the one of the compiler: without it, the fallback copied a `va_list` with `memcpy ()`, that in x86-64 copies the pointer of a `va_list` parameter and not the list
+- `base64_encode_len ()`, `base64_decode_len ()` and `base64_encode_strlen ()` take their argument in parentheses: `base64_decode_len (size + 1)` divided the 1 before it added it to `size`
+- A removed UDP peer is out of the stats of the cerver before `cerver_udp_peers_count ()` stops counting it (the count is released and acquired): the count dropped first, and a thread that waited for it could read the old stats
+- New: `base64url_encode ()`, `base64url_decode ()`, `base64url_encode_length ()` and `base64url_decode_length ()`, the canonical base64url of RFC 4648 §5, and `CERVER_HIDDEN` in `config.h`; the beta and production workflows only clean the tests between gcc and g++ (`make clean-tests`)
+
 ## 1.8.1 (from 1.8)
 
 The wire does not change: a 1.8.1 talks with a 1.8.

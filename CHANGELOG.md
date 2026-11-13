@@ -1,32 +1,16 @@
 ## General
-- Removed the docs workflow, cerver-docs updates the wiki
-- Closing the socket only once when the cerver fails to start
-- Releasing the data of the handlers that never had a thread
-- Running the direct multiple handlers in the receiver thread
-- Checking both the ids & the count of the multiple handlers
-- Checking the welcome, the buffer sizes & the id generator
-- Generating the default session ids from the kernel random
-- Checking the event & error types before using their arrays
-- Giving the args of a dropped event to the data of a trigger
-- Sending the teardown of a cerver before closing its clients
-- Triggering the cerver info & the on hold disconnect events
-- Giving the data of a successful authentication to the client
-- Ignoring admin polls of 0 fds & the changes after the start
-- Deleting the packets a connection can not put in its queue
-- Taking the size of a file read from the bytes that were read
-- Writing into a mutable buffer with c_string_concat_safe ()
-- Fixed the packet_check () comment about packet versions
-- Rewrote the README with the goal, capabilities & the start
-- Updated the docs submodule to the whole wiki of the core
-- Added the changes of Release 1.8.1 to the incompatibilities
-
-## Examples
-- Releasing the example cervers that fail with their teardown
-- Added the echo cerver & client example of the get started
+- Including stdarg.h in config & not a va_copy with memcpy
+- Added the hidden visibility macro for the internal methods
+- Added a canonical base64url encode & decode in base64
+- Updating the UDP peers stats before releasing their count
+- Fixed the comments of the sessions & handlers of the port
+- Added Codecov coverage targets & ignoring the tests files
+- Sorted the gitignore & added the coverage & fuzz artifacts
+- Cleaning only the tests after the gcc tests, before the g++
+- Removed the trailing spaces of the g++ checks in makefile
+- Updated the docs submodule with base64url & UDP stats
+- Added the changes of the 1.8.2 to the incompatibilities file
 
 ## Tests
-- Running the echo example as a pair, with client arguments
-- Added tests of failed starts, handlers data, events & auths
-- Added tests of cerver setters, session ids & dropped ones
-- Added tests of the connection buffer & unqueued packets
-- Added a test of the file read size with the number of bytes
+- Added tests of a canonical base64url encode & its decode
+- Waiting for the on hold stat after a UDP peer failed its auth
