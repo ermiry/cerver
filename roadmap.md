@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1) |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1; los arreglos de la revisión, §4.12) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 (§4.12) |
 
 **Las citas `archivo:línea`:**
 
@@ -123,15 +123,17 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F6a** | 2.1b-9 | WebSocket completo sobre hilos (RFC 6455 y permessage-deflate), el cliente, y el port de la 2.0b-66 que necesita | F2 |
 | **Merge** | 2.1b-10 | Un solo merge local de `http` desde el tag de la 2.0b-70 (trae de la 2.0b-66 a la 70: el port de la 1.8 y de la 1.8.1, la seguridad de JWT y JSON, los objetos calientes), y el diseño de F8 y F9 en este roadmap | 2.0b-70 publicada; 2.1b-9 en `nightly-beta` |
 | **F1** | 2.1b-11 | Preparación: la lista de cabeceras y la respuesta estructurada, `Connection: close` por petición, `framed`, el receive fuera de la arena con `http_receive_reset`, el log y los stats por petición | F2 + el merge |
-| **F3** | 2.1b-12 | Event loop, cerrando por petición | F1 |
-| **F4** | 2.1b-13 | Keep-alive real | F3 |
-| **F5** | 2.1b-14 | Pools nombrados, health / ready, métricas | F4 |
-| **F6b** | 2.1b-15 | WebSocket sobre el loop | F4, F6a |
-| **F8a** | 2.1b-16 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
-| **F8b** | 2.1b-17 | TLS no bloqueante en el loop | F4, F8a |
-| **F9a** | 2.1b-18 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
-| **F9b** | 2.1b-19 | HTTP/2 en el loop | F8b, F9a |
-| **F7** | 2.1b-20 | Auth asíncrona | F5 |
+| **Arreglos** | 2.1b-12 | Lo que encontró la revisión de la 2.1b-10, primera parte (§4.12): los arreglos de la 2.0b-71 portados a mano, el stream de WebSocket que no empieza, los contadores, la URL y los subprotocolos del cliente, los símbolos internos ocultos, el benchmark de mensajes | F1 |
+| **Arreglos** | 2.1b-13 | La segunda parte (§4.12): los de la 2.0b-72 portados a mano, el resto de WebSocket (servidor, cliente, deflate), el parser, la cobertura, y la API de WebSocket (structs opacos, stats, `_milliseconds`, las cabeceras del 101) | 2.1b-12 |
+| **F3** | 2.1b-14 | Event loop, cerrando por petición | F1 |
+| **F4** | 2.1b-15 | Keep-alive real | F3 |
+| **F5** | 2.1b-16 | Pools nombrados, health / ready, métricas | F4 |
+| **F6b** | 2.1b-17 | WebSocket sobre el loop | F4, F6a |
+| **F8a** | 2.1b-18 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
+| **F8b** | 2.1b-19 | TLS no bloqueante en el loop | F4, F8a |
+| **F9a** | 2.1b-20 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
+| **F9b** | 2.1b-21 | HTTP/2 en el loop | F8b, F9a |
+| **F7** | 2.1b-22 | Auth asíncrona | F5 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
 - **Los merges de `http` después de la 2.1b-10** (las 2.0b-71 en adelante) entran al principio de la beta de `nightly`
@@ -322,7 +324,7 @@ varía los flags.
   2233–2497 MB/s (arm64, gcc 16.2, `TYPE=production`);
 - `nm -D bin/libcerver.so` sin `http_parser_*` ni `http_method_str`.
 
-### 4.3 F3 — El event loop (2.1b-12)
+### 4.3 F3 — El event loop (2.1b-14)
 
 **El prerrequisito.** `http` tiene que recibir el port de la 1.8 completa (hasta la 1.8b-9: protocolo portable,
 serializador por esquema, game, el deadline total de envío), que cambia `cerver.c`, `handler.c`, `client.c` y
@@ -469,7 +471,7 @@ CERVER_EXPORT void cerver_set_io_threads (Cerver *cerver, unsigned int n_threads
 CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max);              // 2^14
 ```
 
-### 4.4 F4 — Keep-alive real (2.1b-13)
+### 4.4 F4 — Keep-alive real (2.1b-15)
 
 **`http_receive_reset ()`, entre peticiones de una conexión** (existe desde F1, §4.1; F4 es quien la llama):
 
@@ -520,7 +522,7 @@ CERVER_EXPORT void http_cerver_set_keep_alive_timeout (HttpCerver *http_cerver, 
 CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver, unsigned int max);      // 2^10
 ```
 
-### 4.5 F5 — Pools nombrados, health y métricas (2.1b-14)
+### 4.5 F5 — Pools nombrados, health y métricas (2.1b-16)
 
 **Los pools nombrados (decisión).**
 
@@ -618,7 +620,7 @@ cliente: 517 casos cada uno, 514 OK y 3 INFORMATIONAL, sin NON-STRICT, FAILED ni
 en las dos familias; nginx con `Upgrade`; `performance.sh` con 0 asignaciones por mensaje y ~1.9 M mensajes/s
 (`benchmarks/messages.c`); `benchmarks/frames.c`.
 
-#### F6b — WebSocket sobre el loop (2.1b-15)
+#### F6b — WebSocket sobre el loop (2.1b-17)
 
 **La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
 pool de la ruta.
@@ -632,7 +634,7 @@ de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
 `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
 
-### 4.7 F7 — Auth asíncrona (2.1b-20)
+### 4.7 F7 — Auth asíncrona (2.1b-22)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
@@ -645,9 +647,9 @@ TLS en proceso para **todos los cervers TCP** (`CUSTOM`, `GAME`, `WEB`, `FILES`,
 cliente TCP, el cliente WebSocket con `wss://` y el cliente HTTP de F9a). UDP queda fuera (DTLS no está en el alcance).
 Se parte como WebSocket:
 
-- **F8a (2.1b-16): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
+- **F8a (2.1b-18): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
   que hoy hace `recv`, con las deadlines que ya existen.
-- **F8b (2.1b-17): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
+- **F8b (2.1b-19): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
 
 #### 4.8.1 Los requisitos (las RFC)
 
@@ -826,9 +828,9 @@ CERVER_EXPORT void cerver_tls_set_reload_watch (Cerver *cerver, bool enable, uns
 HTTP/2 (RFC 9113) con HPACK (RFC 7541) **escritos por cerver**, como WebSocket: frames, HPACK con el Huffman de la
 RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. También partido:
 
-- **F9a (2.1b-18): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
+- **F9a (2.1b-20): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
   un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
-- **F9b (2.1b-19): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
+- **F9b (2.1b-21): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
 
 #### 4.9.1 Los requisitos (las RFC)
 
@@ -936,6 +938,57 @@ RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. Tamb
 4. el PR `http` → `master` publica la 2.1 (un release nunca sale de la beta).
 
 Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
+
+### 4.12 Los arreglos de la revisión de la 2.1b-10 (2.1b-12 y 2.1b-13)
+
+Una revisión de solo lectura de lo que llevaba `nightly` en la 2.1b-10 (el parser, WebSocket en el servidor y en el
+cliente, los tests y el CI, la API y los símbolos) encontró defectos propios de esta línea y otros heredados de `http`.
+Se arreglan en dos betas antes del event loop, cada arreglo con un test que falla sin él.
+
+**Los arreglos de `http` se portan a mano, sin merge.** La 2.0b-71 y la 2.0b-72 son las betas de `http` con los
+arreglos heredados; aquí se aplican archivo por archivo, porque el código ya es otro (llhttp, la lista de cabeceras).
+El siguiente merge de `http` (al empezar F3) trae esos mismos cambios: en `request.c`, en el query de `http.c`, en
+`test/client/web/api.c` y en el `makefile` de los fuzzers se queda el lado de `nightly`, que ya los tiene; en
+`headers.{h,c}` y `response.c`, también (la lista de F1 quita el defecto de la 2.0b-71 por construcción).
+
+#### 2.1b-12 — implementado
+
+- **De la 2.0b-71:** `Range` con un parser propio (el rango de los últimos bytes y los valores sin números se
+  ignoran; llegaban a `atol (NULL)`); el query y los valores de un formulario se parten en `&` y `=` antes de
+  decodificar cada pieza; los fuzzers se detienen en el primer comportamiento indefinido de UBSan; el cliente de
+  prueba `web/api` codifica cada valor de su formulario, no el body entero.
+- **El stream de WebSocket que no empieza.** `http_web_socket_send_begin ()` regresaba 1 con `message_mutex` tomado
+  cuando la conexión ya cerraba: el siguiente envío del hilo no regresaba nunca. Ahora un stream que no empieza no
+  retiene nada, y una pieza que la conexión no tomó porque está cerrando es un error del envío que no la aborta.
+- **El tiempo de un envío** empieza cuando el mensaje se puede escribir, no antes de esperar a los otros mensajes.
+- **Los contadores:** los bytes de un mensaje que se manda en piezas y los de cada fragmento que se recibe.
+- **El cliente:** una URL con espacios o caracteres de control se rechaza (escribía otras líneas en la petición); los
+  subprotocolos son tokens y una lista rechazada no cambia nada (una entrada `NULL` dejaba un hueco).
+- **Los símbolos internos:** la API de llhttp (`parser/api.h`, y todos los objetos de `parser/` con
+  `-fvisibility=hidden`), las funciones internas de WebSocket (`websocket.h`, `registry.h`), los
+  `http_web_socket_settings_*` y `http_response_send_pieces_status ()` son `CERVER_HIDDEN`: `libcerver.so` exporta
+  153 símbolos menos y ninguno de llhttp.
+- **Menores:** el example de WebSocket acota el largo de lo que manda; tres programas liberan un cerver que no
+  arrancó con `cerver_teardown ()`; `autobahn-reports/` ignorado por git y por Docker.
+- **El benchmark de mensajes** mide del primer mensaje al último eco, sin el tiempo de abrir y cerrar las
+  conexiones, con un millón de mensajes y comprobando el eco entero; medía una corrida de ~20 ms.
+
+#### 2.1b-13 — planeado
+
+- **De la 2.0b-72:** los trailers y las extensiones de chunk contra los límites; los espacios finales del valor de
+  una cabecera; la cabecera repetida que recopia su valor; el target en forma absoluta; el límite configurable de
+  una cabecera que no es de las conocidas; el default de `request_timeout` en 300 s; el rango de los últimos bytes;
+  `performance.sh` que falla cuando el servidor o la carga fallan; los objetos de los tests con sus headers; el fuzz
+  largo en matriz.
+- **WebSocket en el servidor:** un envío que pierde la carrera con un close no es un fallo; la conexión que no
+  consigue su hilo; el cierre con `SHUT_WR` y un drenado acotado; el hilo que no lee mientras otro envía.
+- **El cliente:** borrar o esperar desde un callback; un intento que se puede cancelar; `EINTR`; el backoff.
+- **permessage-deflate:** el mensaje vacío, el bloque sin terminar, el ejemplo de RFC 7692 sección 7.2.3.4.
+- **El parser:** una respuesta para cada petición con los flags lenient; solo `HTTP/1.0` y `HTTP/1.1`.
+- **La API de WebSocket** (cada cambio en `incompatibilities.md`): los structs opacos, `HttpWebSocketStats`, el
+  sufijo `_milliseconds` en los timeouts, las cabeceras que `on_upgrade` agrega al 101.
+- **La deuda de F1:** el gzip y el 304 eligen sus cabeceras en la lista.
+- **Cobertura y CI:** lo que la revisión encontró sin test.
 
 ## 5. Plan de tests y el gate de `nightly`
 
