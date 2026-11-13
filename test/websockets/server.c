@@ -68,6 +68,11 @@
 // the pieces of a streamed message
 #define SERVER_TEST_STREAM_PIECES			5
 
+// the codes of the closes that the server sends before the sends that it refuses
+#define SERVER_TEST_REFUSED_BEGIN_CODE		4001
+#define SERVER_TEST_REFUSED_STREAM_CODE		4002
+#define SERVER_TEST_CLOSED_STREAM_CODE		4003
+
 static const char *server_test_secret = { "secret" };
 static const char *server_test_origin = { "https://cerver.test" };
 static const char *server_test_upgrade_data = { "upgrade-data" };
@@ -85,6 +90,7 @@ typedef struct ServerTestCounters {
 	unsigned int errors;
 	unsigned int messages;
 	unsigned int floods;
+	unsigned int refused;
 
 	unsigned int last_code;
 	unsigned int last_error;
@@ -148,6 +154,50 @@ static void server_test_stream (HttpWebSocket *web_socket) {
 
 }
 
+// a stream that can not begin holds nothing: the next send of the thread returns its error,
+// it waited forever for the message that the stream never started
+static void server_test_refused_begin (HttpWebSocket *web_socket) {
+
+	(void) http_web_socket_close (web_socket, SERVER_TEST_REFUSED_BEGIN_CODE, "asked");
+
+	const bool refused = http_web_socket_send_begin (web_socket, HTTP_WEB_SOCKET_OPCODE_TEXT)
+		&& http_web_socket_send_text (web_socket, "late", 4);
+
+	if (refused) test_counter_add (&counters.refused);
+
+}
+
+// the pieces and the end of a stream that could not begin are errors that do not abort its connection
+static void server_test_refused_stream (HttpWebSocket *web_socket) {
+
+	(void) http_web_socket_close (web_socket, SERVER_TEST_REFUSED_STREAM_CODE, "asked");
+
+	const bool refused = http_web_socket_send_begin (web_socket, HTTP_WEB_SOCKET_OPCODE_TEXT)
+		&& http_web_socket_send_write (web_socket, "piece", 5)
+		&& http_web_socket_send_end (web_socket)
+		&& http_web_socket_send_text (web_socket, "late", 4);
+
+	if (refused) test_counter_add (&counters.refused);
+
+}
+
+// a stream that is open when its connection is closed: its next pieces and its end are errors,
+// its mutex is released by its end and the close of the connection stays clean
+static void server_test_closed_stream (HttpWebSocket *web_socket) {
+
+	test_check_unsigned_eq (http_web_socket_send_begin (web_socket, HTTP_WEB_SOCKET_OPCODE_TEXT), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_send_write (web_socket, "piece", 5), 0, NULL);
+
+	(void) http_web_socket_close (web_socket, SERVER_TEST_CLOSED_STREAM_CODE, "asked");
+
+	const bool refused = http_web_socket_send_write (web_socket, "piece", 5)
+		&& http_web_socket_send_end (web_socket)
+		&& http_web_socket_send_text (web_socket, "late", 4);
+
+	if (refused) test_counter_add (&counters.refused);
+
+}
+
 // sends large messages until a send fails, to a client that never reads
 static void server_test_flood (HttpWebSocket *web_socket) {
 
@@ -182,6 +232,9 @@ static bool server_test_command (HttpWebSocket *web_socket, const char *text) {
 	}
 
 	else if (!strcmp (text, "stream")) server_test_stream (web_socket);
+	else if (!strcmp (text, "refused-begin")) server_test_refused_begin (web_socket);
+	else if (!strcmp (text, "refused-stream")) server_test_refused_stream (web_socket);
+	else if (!strcmp (text, "closed-stream")) server_test_closed_stream (web_socket);
 	else if (!strcmp (text, "flood")) server_test_flood (web_socket);
 	else if (!strcmp (text, "close")) (void) http_web_socket_close (web_socket, 4001, "asked");
 	else command = false;
@@ -1120,6 +1173,60 @@ static void test_server_streaming (void) {
 
 }
 
+// the client asks for sends after the close of the server, answers the close
+// and the connection ends clean: with the code of the server and without errors
+static void server_test_refused_case (
+	const ServerTest *server, const char *command, const u16 code,
+	const bool stream_started, const unsigned int n_closed
+) {
+
+	const int fd = raw_open (server->port, "/ws/echo", NULL);
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, command, strlen (command));
+
+	RawFrame frame;
+	if (stream_started) {
+		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the piece of the stream did not arrive");
+		test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_TEXT, NULL);
+		test_check_false (frame.fin);
+		raw_frame_delete (&frame);
+	}
+
+	test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the close did not arrive");
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CLOSE, NULL);
+	test_check_unsigned_eq (raw_close_code (&frame), code, NULL);
+	raw_frame_delete (&frame);
+
+	raw_send_close (fd, code, NULL);
+	test_check (raw_wait_end (&reader, RAW_TIMEOUT), "the server did not end the connection");
+	server_test_wait_closed (n_closed);
+
+	test_check_unsigned_eq (__atomic_load_n (&counters.refused, __ATOMIC_SEQ_CST), n_closed, command);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), code, command);
+	test_check_unsigned_eq (__atomic_load_n (&counters.errors, __ATOMIC_SEQ_CST), 0, command);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+}
+
+// the sends of a connection that already sent its close are errors that hold nothing and abort nothing:
+// a stream that could not begin kept the mutex of the messages, so the next send of its thread never returned,
+// and the pieces of a stream after the close aborted a connection that was closing clean
+static void test_server_refused_sends (void) {
+
+	ServerTest *server = server_test_start (0);
+
+	server_test_refused_case (server, "refused-begin", SERVER_TEST_REFUSED_BEGIN_CODE, false, 1);
+	server_test_refused_case (server, "refused-stream", SERVER_TEST_REFUSED_STREAM_CODE, false, 2);
+	server_test_refused_case (server, "closed-stream", SERVER_TEST_CLOSED_STREAM_CODE, true, 3);
+
+	server_test_stop (server);
+
+}
+
 // on_upgrade gives the data and the protocol of the connection
 static void test_server_upgrade_data (void) {
 
@@ -1297,6 +1404,7 @@ void web_socket_tests_server (void) {
 	test_run (test_server_limit);
 	test_run (test_server_shutdown);
 	test_run (test_server_streaming);
+	test_run (test_server_refused_sends);
 	test_run (test_server_upgrade_data);
 	test_run (test_server_compression);
 	test_run (test_server_metrics);
