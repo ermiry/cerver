@@ -2574,30 +2574,55 @@ static inline int http_header_values_join (
 
 }
 
+// writes the separator and the value after the header, that has room for them
+static void http_header_values_write (
+	String *header, const char *value, const size_t value_len
+) {
+
+	char *end = header->str + header->len;
+
+	(void) memcpy (end, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN);
+	(void) memcpy (end + HTTP_HEADER_VALUES_SEPARATOR_LEN, value, value_len);
+
+	header->len += HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
+	header->str[header->len] = '\0';
+
+}
+
 // a string in an arena can not grow, so the joined value is a new string in it
+// with room for as many bytes again: a header that is repeated many times is copied
+// a few times, not once for every repetition
 static int http_header_values_join_arena (
 	Arena *arena, String **header, const char *value, const size_t value_len
 ) {
 
 	int retval = 1;
 
-	const String *current = *header;
-	const size_t length = current->len + HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
+	String *current = *header;
+	const size_t needed = current->len + HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len + 1;
 
-	// the same layout as str_create_from_bytes_arena ()
-	String *joined = (String *) arena_alloc (arena, sizeof (String) + length + 1);
-	if (joined) {
-		joined->max_len = 0;
-		joined->len = length;
-		joined->str = ((char *) joined) + sizeof (String);
-
-		(void) memcpy (joined->str, current->str, current->len);
-		(void) memcpy (joined->str + current->len, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN);
-		(void) memcpy (joined->str + current->len + HTTP_HEADER_VALUES_SEPARATOR_LEN, value, value_len);
-		joined->str[length] = '\0';
-
-		*header = joined;
+	// the header that was joined before keeps its capacity in max_len
+	if (current->max_len >= needed) {
+		http_header_values_write (current, value, value_len);
 		retval = 0;
+	}
+
+	else {
+		const size_t capacity = needed * HTTP_HEADER_VALUES_GROWTH;
+
+		// the same layout as str_create_from_bytes_arena ()
+		String *joined = (String *) arena_alloc (arena, sizeof (String) + capacity);
+		if (joined) {
+			joined->max_len = capacity;
+			joined->len = current->len;
+			joined->str = ((char *) joined) + sizeof (String);
+
+			(void) memcpy (joined->str, current->str, current->len);
+			http_header_values_write (joined, value, value_len);
+
+			*header = joined;
+			retval = 0;
+		}
 	}
 
 	return retval;
