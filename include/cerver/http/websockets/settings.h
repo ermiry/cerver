@@ -206,16 +206,16 @@ CERVER_HIDDEN void http_web_socket_settings_set_origin_check (
 	HttpWebSocketSettings *settings, const bool origin_check
 );
 
-CERVER_HIDDEN void http_web_socket_settings_set_ping (
+CERVER_HIDDEN void http_web_socket_settings_set_ping_milliseconds (
 	HttpWebSocketSettings *settings,
 	const unsigned int ping_interval, const unsigned int pong_timeout
 );
 
-CERVER_HIDDEN void http_web_socket_settings_set_close_timeout (
+CERVER_HIDDEN void http_web_socket_settings_set_close_timeout_milliseconds (
 	HttpWebSocketSettings *settings, const unsigned int close_timeout
 );
 
-CERVER_HIDDEN void http_web_socket_settings_set_send_timeout (
+CERVER_HIDDEN void http_web_socket_settings_set_send_timeout_milliseconds (
 	HttpWebSocketSettings *settings, const unsigned int send_timeout
 );
 

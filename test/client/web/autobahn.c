@@ -73,7 +73,7 @@ static unsigned int autobahn_run (const char *url, const HttpWebSocketHandlers *
 		http_web_socket_client_set_handlers (client, handlers);
 		http_web_socket_client_set_max_message (client, AUTOBAHN_MAX_MESSAGE);
 		http_web_socket_client_set_compression (client, true);
-		http_web_socket_client_set_ping (client, 0, 0);
+		http_web_socket_client_set_ping_milliseconds (client, 0, 0);
 
 		if (!http_web_socket_client_connect (client)) {
 			http_web_socket_client_wait (client);

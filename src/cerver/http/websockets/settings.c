@@ -228,7 +228,7 @@ void http_web_socket_settings_set_origin_check (
 
 }
 
-void http_web_socket_settings_set_ping (
+void http_web_socket_settings_set_ping_milliseconds (
 	HttpWebSocketSettings *settings,
 	const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
@@ -241,7 +241,7 @@ void http_web_socket_settings_set_ping (
 
 }
 
-void http_web_socket_settings_set_close_timeout (
+void http_web_socket_settings_set_close_timeout_milliseconds (
 	HttpWebSocketSettings *settings, const unsigned int close_timeout
 ) {
 
@@ -252,7 +252,7 @@ void http_web_socket_settings_set_close_timeout (
 
 }
 
-void http_web_socket_settings_set_send_timeout (
+void http_web_socket_settings_set_send_timeout_milliseconds (
 	HttpWebSocketSettings *settings, const unsigned int send_timeout
 ) {
 

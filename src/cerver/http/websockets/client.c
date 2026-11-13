@@ -748,31 +748,31 @@ void http_web_socket_client_set_max_message (
 
 }
 
-void http_web_socket_client_set_ping (
+void http_web_socket_client_set_ping_milliseconds (
 	HttpWebSocketClient *client, const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
 
-	if (client) http_web_socket_settings_set_ping (&client->settings, ping_interval, pong_timeout);
+	if (client) http_web_socket_settings_set_ping_milliseconds (&client->settings, ping_interval, pong_timeout);
 
 }
 
-void http_web_socket_client_set_close_timeout (
+void http_web_socket_client_set_close_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int close_timeout
 ) {
 
-	if (client) http_web_socket_settings_set_close_timeout (&client->settings, close_timeout);
+	if (client) http_web_socket_settings_set_close_timeout_milliseconds (&client->settings, close_timeout);
 
 }
 
-void http_web_socket_client_set_send_timeout (
+void http_web_socket_client_set_send_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int send_timeout
 ) {
 
-	if (client) http_web_socket_settings_set_send_timeout (&client->settings, send_timeout);
+	if (client) http_web_socket_settings_set_send_timeout_milliseconds (&client->settings, send_timeout);
 
 }
 
-void http_web_socket_client_set_timeouts (
+void http_web_socket_client_set_timeouts_milliseconds (
 	HttpWebSocketClient *client, const unsigned int connect_timeout, const unsigned int handshake_timeout
 ) {
 
@@ -783,7 +783,7 @@ void http_web_socket_client_set_timeouts (
 
 }
 
-void http_web_socket_client_set_reconnect (
+void http_web_socket_client_set_reconnect_milliseconds (
 	HttpWebSocketClient *client, const bool reconnect,
 	const unsigned int min, const unsigned int max
 ) {

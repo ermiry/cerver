@@ -103,26 +103,28 @@ CERVER_EXPORT void http_web_socket_client_set_max_message (
 	HttpWebSocketClient *client, const size_t max_message
 );
 
-CERVER_EXPORT void http_web_socket_client_set_ping (
+CERVER_EXPORT void http_web_socket_client_set_ping_milliseconds (
 	HttpWebSocketClient *client, const unsigned int ping_interval, const unsigned int pong_timeout
 );
 
-CERVER_EXPORT void http_web_socket_client_set_close_timeout (
+CERVER_EXPORT void http_web_socket_client_set_close_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int close_timeout
 );
 
-CERVER_EXPORT void http_web_socket_client_set_send_timeout (
+CERVER_EXPORT void http_web_socket_client_set_send_timeout_milliseconds (
 	HttpWebSocketClient *client, const unsigned int send_timeout
 );
 
 // the milliseconds of the connect () of each address and of the handshake, 0 keeps the defaults
-CERVER_EXPORT void http_web_socket_client_set_timeouts (
+CERVER_EXPORT void http_web_socket_client_set_timeouts_milliseconds (
 	HttpWebSocketClient *client, const unsigned int connect_timeout, const unsigned int handshake_timeout
 );
 
 // reconnects when the connection ends without http_web_socket_client_close (),
-// waiting from min to max milliseconds (doubled after each failure, with jitter)
-CERVER_EXPORT void http_web_socket_client_set_reconnect (
+// waiting from min to max milliseconds (doubled after each failure, with jitter, never above max)
+// a connection that ends before it lasted max milliseconds counts as a failure,
+// so a server that accepts and closes is not reconnected without a wait
+CERVER_EXPORT void http_web_socket_client_set_reconnect_milliseconds (
 	HttpWebSocketClient *client, const bool reconnect,
 	const unsigned int min, const unsigned int max
 );

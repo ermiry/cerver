@@ -500,27 +500,27 @@ void http_endpoint_set_web_socket_origin_check (
 
 }
 
-void http_endpoint_set_web_socket_ping (
+void http_endpoint_set_web_socket_ping_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
 
-	if (endpoint) http_web_socket_settings_set_ping (&endpoint->settings.web_socket, ping_interval, pong_timeout);
+	if (endpoint) http_web_socket_settings_set_ping_milliseconds (&endpoint->settings.web_socket, ping_interval, pong_timeout);
 
 }
 
-void http_endpoint_set_web_socket_close_timeout (
+void http_endpoint_set_web_socket_close_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int close_timeout
 ) {
 
-	if (endpoint) http_web_socket_settings_set_close_timeout (&endpoint->settings.web_socket, close_timeout);
+	if (endpoint) http_web_socket_settings_set_close_timeout_milliseconds (&endpoint->settings.web_socket, close_timeout);
 
 }
 
-void http_endpoint_set_web_socket_send_timeout (
+void http_endpoint_set_web_socket_send_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int send_timeout
 ) {
 
-	if (endpoint) http_web_socket_settings_set_send_timeout (&endpoint->settings.web_socket, send_timeout);
+	if (endpoint) http_web_socket_settings_set_send_timeout_milliseconds (&endpoint->settings.web_socket, send_timeout);
 
 }
 
@@ -1133,27 +1133,27 @@ void http_group_set_web_socket_origin_check (
 
 }
 
-void http_group_set_web_socket_ping (
+void http_group_set_web_socket_ping_milliseconds (
 	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
 
-	if (group) http_web_socket_settings_set_ping (&group->settings.web_socket, ping_interval, pong_timeout);
+	if (group) http_web_socket_settings_set_ping_milliseconds (&group->settings.web_socket, ping_interval, pong_timeout);
 
 }
 
-void http_group_set_web_socket_close_timeout (
+void http_group_set_web_socket_close_timeout_milliseconds (
 	HttpGroup *group, const unsigned int close_timeout
 ) {
 
-	if (group) http_web_socket_settings_set_close_timeout (&group->settings.web_socket, close_timeout);
+	if (group) http_web_socket_settings_set_close_timeout_milliseconds (&group->settings.web_socket, close_timeout);
 
 }
 
-void http_group_set_web_socket_send_timeout (
+void http_group_set_web_socket_send_timeout_milliseconds (
 	HttpGroup *group, const unsigned int send_timeout
 ) {
 
-	if (group) http_web_socket_settings_set_send_timeout (&group->settings.web_socket, send_timeout);
+	if (group) http_web_socket_settings_set_send_timeout_milliseconds (&group->settings.web_socket, send_timeout);
 
 }
 
