@@ -81,6 +81,9 @@
 #define HTTP_HEADER_VALUES_SEPARATOR				", "
 #define HTTP_HEADER_VALUES_SEPARATOR_LEN			2
 
+// the room of a joined header in the arena of its request, for each byte that it needs
+#define HTTP_HEADER_VALUES_GROWTH					2
+
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
