@@ -15,6 +15,11 @@
 
 #define API_CLIENT_PATH			"/api/users"
 
+// the body of a form, its pairs are "key=value" separated by '&'
+#define API_CLIENT_FORM_SIZE			4096
+#define API_CLIENT_FORM_PAIR_FORMAT		"%s%s=%s"
+#define API_CLIENT_FORM_SEPARATOR		"&"
+
 static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static const char *name = { "Erick Salas" };
@@ -33,6 +38,30 @@ static size_t api_request_all_data_handler (
 
 }
 
+// adds a pair to the body of a form: only its value is encoded,
+// the separators of the pairs ('=' and '&') are never encoded
+// returns true on success
+static bool api_form_add (char *form, const char *key, const char *value) {
+
+	bool added = false;
+
+	char *encoded = http_url_encode (value);
+	if (encoded) {
+		const size_t length = strlen (form);
+		const int written = snprintf (
+			form + length, API_CLIENT_FORM_SIZE - length,
+			API_CLIENT_FORM_PAIR_FORMAT, length ? API_CLIENT_FORM_SEPARATOR : "", key, encoded
+		);
+
+		added = (written > 0) && ((size_t) written < (API_CLIENT_FORM_SIZE - length));
+
+		free (encoded);
+	}
+
+	return added;
+
+}
+
 // POST api/users/register
 static unsigned int api_request_register (
 	CURL *curl, const char *actual_address
@@ -40,18 +69,17 @@ static unsigned int api_request_register (
 
 	unsigned int retval = 1;
 
-	char data[4096] = { 0 };
-	(void) snprintf (data, 4096, "name=%s&username=%s&password=%s", name, username, password);
-
-	char *encoded_data = http_url_encode (data);
-	if (encoded_data) {
+	char data[API_CLIENT_FORM_SIZE] = { 0 };
+	if (
+		api_form_add (data, "name", name)
+		&& api_form_add (data, "username", username)
+		&& api_form_add (data, "password", password)
+	) {
 		retval = curl_simple_post (
 			curl, actual_address,
 			HTTP_STATUS_OK,
-			encoded_data, strlen (encoded_data)
+			data, strlen (data)
 		);
-		
-		free (encoded_data);
 	}
 
 	return retval;
@@ -63,15 +91,15 @@ static unsigned int api_request_login (
 	CURL *curl, const char *actual_address, char *data_buffer
 ) {
 
-	char data[4096] = { 0 };
-	(void) snprintf (data, 4096, "username=%s&password=%s", username, password);
-
-	char *encoded_data = http_url_encode (data);
-	if (encoded_data) {
+	char data[API_CLIENT_FORM_SIZE] = { 0 };
+	if (
+		api_form_add (data, "username", username)
+		&& api_form_add (data, "password", password)
+	) {
 		if (!curl_simple_post_handle_data (
 			curl, actual_address,
 			HTTP_STATUS_OK,
-			encoded_data, strlen (encoded_data),
+			data, strlen (data),
 			api_request_all_data_handler, data_buffer
 		)) {
 			// get token
@@ -97,8 +125,6 @@ static unsigned int api_request_login (
 				);
 			}
 		}
-		
-		free (encoded_data);
 	}
 
 	return token ? 0 : 1;
