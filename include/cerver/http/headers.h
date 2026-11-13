@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "cerver/types/types.h"
+
 #include "cerver/config.h"
 
 #define HTTP_HEADERS_MAX				63
@@ -139,16 +141,23 @@ typedef struct _HttpHeader HttpHeader;
 
 CERVER_PRIVATE void http_header_reset (HttpHeader *header);
 
+// the length of the header is the one of what was kept, a value that does not fit is cut
 CERVER_PRIVATE void http_header_set (
 	HttpHeader *header, const char *format, ...
 ) CERVER_PRINTF_FORMAT (2, 3);
 
-CERVER_PRIVATE void http_response_header_set_with_type (
+// sets the line of the header, "Name: value\r\n"
+// a line that does not fit in HTTP_HEADER_VALUE_SIZE is rejected and the header keeps what it had
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_header_set_with_type (
 	HttpHeader *header, const http_header type,
 	const char *actual_header
 );
 
-CERVER_PRIVATE void http_response_header_set_with_type_and_args (
+// works like http_response_header_set_with_type () with a value that is formatted,
+// a value that does not fit in HTTP_HEADER_ACTUAL_SIZE is rejected too
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_header_set_with_type_and_args (
 	HttpHeader *header, const http_header type,
 	const char *format, va_list args
 ) CERVER_PRINTF_FORMAT (3, 0);

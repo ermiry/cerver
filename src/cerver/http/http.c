@@ -1889,6 +1889,7 @@ void http_cerver_set_default_delete_custom_data (
 // this header will be added to all the responses
 // if the response has the same header type,
 // it will be used instead of the global header
+// a header that does not fit in HTTP_HEADER_VALUE_SIZE is not added
 // returns 0 on success, 1 on error
 u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
@@ -1898,16 +1899,14 @@ u8 http_cerver_add_responses_header (
 	u8 retval = 1;
 
 	if (http_cerver && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (http_cerver->response_headers[type].len <= 0) {
-			http_cerver->n_response_headers += 1;
-		}
+		const bool had = (http_cerver->response_headers[type].len > 0);
 
-		http_response_header_set_with_type (
+		retval = http_response_header_set_with_type (
 			&http_cerver->response_headers[type],
 			type, actual_header
 		);
 
-		retval = 0;
+		if (!retval && !had) http_cerver->n_response_headers += 1;
 	}
 
 	return retval;
