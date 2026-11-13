@@ -86,6 +86,7 @@ static HttpResponse *header_fields_too_large_error = NULL;
 static HttpResponse *request_timeout_error = NULL;
 static HttpResponse *method_not_allowed_error = NULL;
 static HttpResponse *not_implemented_error = NULL;
+static HttpResponse *http_version_not_supported_error = NULL;
 
 // the rejections of an upgrade to a WebSocket endpoint
 static HttpResponse *upgrade_required_error = NULL;
@@ -117,6 +118,14 @@ static const char http_target_query_start = '?';
 static const char http_target_fragment_start = '#';
 static const char http_target_root[] = { "/" };
 static const size_t http_target_root_len = 1;
+
+// the only protocol of a request line that is served, and its versions: 1.0 and 1.1
+static const char http_receive_protocol[] = { "HTTP" };
+
+#define HTTP_RECEIVE_PROTOCOL_LENGTH			(sizeof (http_receive_protocol) - 1)
+
+#define HTTP_RECEIVE_VERSION_MAJOR				1
+#define HTTP_RECEIVE_VERSION_MINOR_MAX			1
 
 static const char static_file_extension_separator = '.';
 
@@ -598,6 +607,10 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_NOT_IMPLEMENTED, "error", "Not implemented!"
 	);
 
+	http_version_not_supported_error = http_response_create_json_key_value (
+		HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED, "error", "HTTP version not supported!"
+	);
+
 	upgrade_required_error = http_cerver_web_socket_response (
 		HTTP_STATUS_UPGRADE_REQUIRED, upgrade_required_json, HTTP_HEADER_SEC_WEBSOCKET_VERSION, HTTP_WEB_SOCKET_VERSION
 	);
@@ -620,6 +633,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& header_fields_too_large_error
 		&& request_timeout_error
 		&& method_not_allowed_error && not_implemented_error
+		&& http_version_not_supported_error
 		&& upgrade_required_error && forbidden_error && web_socket_unavailable_error
 	) retval = 0;
 
@@ -756,6 +770,8 @@ static void http_cerver_end_responses (void) {
 	method_not_allowed_error = NULL;
 	http_response_delete (not_implemented_error);
 	not_implemented_error = NULL;
+	http_response_delete (http_version_not_supported_error);
+	http_version_not_supported_error = NULL;
 
 	http_response_delete (upgrade_required_error);
 	upgrade_required_error = NULL;
@@ -3176,6 +3192,67 @@ static int http_receive_handle_url_complete (llhttp_t *parser) {
 
 }
 
+// the protocol of the request line can arrive in many pieces, it is checked when it is complete
+static int http_receive_handle_protocol (
+	llhttp_t *parser, const char *at, size_t length
+) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	const size_t matched = http_receive->protocol_length;
+	if (
+		!http_receive->protocol_other
+		&& (length <= (HTTP_RECEIVE_PROTOCOL_LENGTH - matched))
+		&& !memcmp (at, http_receive_protocol + matched, length)
+	) {
+		http_receive->protocol_length += length;
+	}
+
+	else {
+		http_receive->protocol_other = true;
+	}
+
+	return 0;
+
+}
+
+// only HTTP is served: the parser also takes the request lines of RTSP and ICE,
+// and their requests with a method that HTTP has reached the handlers
+static int http_receive_handle_protocol_complete (llhttp_t *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	const bool served = !http_receive->protocol_other
+		&& (http_receive->protocol_length == HTTP_RECEIVE_PROTOCOL_LENGTH);
+
+	return http_receive_parser_result (
+		served ? 0 : http_receive_reject (
+			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+		)
+	);
+
+}
+
+// cerver speaks HTTP/1.0 and HTTP/1.1: the other versions that the parser takes (0.9 and 2.0)
+// are answered with 505 (RFC 9110 section 15.6.6) and not served as if they were 1.1,
+// the lenient flag of the version is the choice of serving any of them
+static int http_receive_handle_version_complete (llhttp_t *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	const bool served = (
+		(llhttp_get_http_major (parser) == HTTP_RECEIVE_VERSION_MAJOR)
+		&& (llhttp_get_http_minor (parser) <= HTTP_RECEIVE_VERSION_MINOR_MAX)
+	) || (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_VERSION);
+
+	return http_receive_parser_result (
+		served ? 0 : http_receive_reject (
+			http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED
+		)
+	);
+
+}
+
 // the fields that the parser finds after on_headers_complete are the trailers of a chunked body
 static inline bool http_receive_headers_are_complete (const HttpReceive *http_receive) {
 
@@ -4017,6 +4094,9 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->keep_alive_requested = false;
 	http_receive->unparsed = 0;
 
+	http_receive->protocol_length = 0;
+	http_receive->protocol_other = false;
+
 	http_receive->mpart_parser = NULL;
 	(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
 
@@ -4274,6 +4354,9 @@ static void http_receive_settings_init (llhttp_settings_t *settings) {
 
 	settings->on_url = http_receive_handle_url;
 	settings->on_url_complete = http_receive_handle_url_complete;
+	settings->on_protocol = http_receive_handle_protocol;
+	settings->on_protocol_complete = http_receive_handle_protocol_complete;
+	settings->on_version_complete = http_receive_handle_version_complete;
 	settings->on_header_field = http_receive_handle_header_field;
 	settings->on_header_value = http_receive_handle_header_value;
 	settings->on_header_value_complete = http_receive_handle_header_value_complete;

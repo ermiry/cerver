@@ -1225,6 +1225,11 @@ struct _HttpReceive {
 	// (a pipelined request)
 	size_t unparsed;
 
+	// the protocol of the request line arrives in pieces: the bytes of it that are the ones of HTTP,
+	// and whether it had any other one (llhttp also parses the request lines of RTSP and ICE)
+	size_t protocol_length;
+	bool protocol_other;
+
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
 
