@@ -220,6 +220,65 @@ static void test_http_response_add_header (void) {
 
 }
 
+#define TEST_HEADER_LONG_VALUE_SIZE			300
+#define TEST_HEADER_FORMATTED_VALUE_SIZE	200
+
+static const char *location_header = { "Location: /short\r\n" };
+
+// a header that does not fit in its 256 bytes is rejected and the one that the response had is kept:
+// its length was the one of the whole value, so the bytes after it were sent to the client
+static void test_http_response_add_header_too_long (void) {
+
+	char long_value[TEST_HEADER_LONG_VALUE_SIZE] = { 0 };
+	(void) memset (long_value, 'v', TEST_HEADER_LONG_VALUE_SIZE - 1);
+
+	char formatted_value[TEST_HEADER_FORMATTED_VALUE_SIZE] = { 0 };
+	(void) memset (formatted_value, 'f', TEST_HEADER_FORMATTED_VALUE_SIZE - 1);
+
+	HttpResponse *response = test_http_response_new ();
+
+	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_LOCATION, long_value), 1, NULL);
+	test_check_unsigned_eq (response->n_headers, 0, NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_LOCATION].len, 0, NULL);
+	test_check_str_empty (response->headers[HTTP_HEADER_LOCATION].value);
+
+	// the header that the response had is kept
+	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_LOCATION, "/short"), 0, NULL);
+	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_LOCATION, long_value), 1, NULL);
+	test_check_unsigned_eq (response->n_headers, 1, NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_LOCATION].value, location_header, NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_LOCATION].len, (int) strlen (location_header), NULL);
+
+	// a formatted value that would be cut is not a header
+	test_check_unsigned_eq (
+		http_response_add_custom_header (response, HTTP_HEADER_ETAG, "%s", formatted_value), 1, NULL
+	);
+
+	test_check_unsigned_eq (response->n_headers, 1, NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ETAG].len, 0, NULL);
+	test_check_str_empty (response->headers[HTTP_HEADER_ETAG].value);
+
+	// the compiled header is text until its end, with the header that was kept
+	http_response_compile_header (response);
+
+	test_check_ptr (response->header);
+	test_check_unsigned_eq (response->header_len, strlen ((const char *) response->header), NULL);
+	test_check_ptr (strstr ((const char *) response->header, location_header));
+
+	http_response_delete (response);
+
+	// the headers of the cerver
+	const u8 n_response_headers = http_cerver->n_response_headers;
+
+	test_check_unsigned_eq (
+		http_cerver_add_responses_header (http_cerver, HTTP_HEADER_LOCATION, long_value), 1, NULL
+	);
+
+	test_check_unsigned_eq (http_cerver->n_response_headers, n_response_headers, NULL);
+	test_check_int_eq (http_cerver->response_headers[HTTP_HEADER_LOCATION].len, 0, NULL);
+
+}
+
 static void test_http_response_add_content_type_header (void) {
 
 	HttpResponse *response = test_http_response_new ();
@@ -593,6 +652,7 @@ void http_tests_responses (void) {
 	// headers
 	test_http_response_set_header ();
 	test_http_response_add_header ();
+	test_http_response_add_header_too_long ();
 	test_http_response_add_content_type_header ();
 	test_http_response_add_content_length_header ();
 	test_http_response_add_json_headers ();

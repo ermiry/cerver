@@ -1047,8 +1047,9 @@ Las convenciones de cerver completas en el código vendorizado:
   `JSON_HAVE_*` ni `JANSSON_USING_CMAKE`; los parámetros de `value.h` y `private.h` con nombres completos.
 - **La validación:** los símbolos exportados son idénticos a los de la 2.0b-68 y `internal.o` (solo macros) compila
   al mismo código; los demás archivos cambian código y los cubren los tests de JSON y JWT y su fuzz de 300 s.
-- **Para la 2.0b-71:** los nombres del resto de `json.c` (`s`, `c`, `ap`, `fmt`, `strbuff`, `pos`, `str`, `len`, …:
-  unos 800) y los de `json.h`, que van juntos (la 2.0b-70 es el port de la 1.8.1, §4.3.14).
+- **Para la 2.0b-73:** los nombres del resto de `json.c` (`s`, `c`, `ap`, `fmt`, `strbuff`, `pos`, `str`, `len`, …:
+  unos 800) y los de `json.h`, que van juntos (la 2.0b-70 es el port de la 1.8.1, §4.3.14; la 2.0b-71 y la 2.0b-72
+  son los arreglos de la revisión de la respuesta y de la recepción, §4.3.15 y §4.3.16).
 
 #### 4.3.14 El port de la 1.8.1 (Beta 2.0b-70) — implementado
 
@@ -1074,6 +1075,43 @@ Que `http` sea la rama con el código más actualizado: todo lo de `core` que fa
 - **Lo que baja a `core` en la 1.8.2:** `config.h` (`CERVER_HIDDEN`, `<stdarg.h>`), `utils/base64.{h,c}` con sus
   tests, `.codecov.yml`, `.gitignore`, `make clean-tests` en `beta.yml` y `production.yml`, los espacios al final
   del `makefile`, y los comentarios corregidos en el port (`cerver_set_sessions ()`, `cerver_handlers_add ()`).
+
+#### 4.3.15 Los arreglos críticos de la respuesta y de la recepción (Beta 2.0b-71) — implementado
+
+Lo que encontró una revisión de la respuesta y del camino de recepción, lo grave y sin cambios de firma, cada arreglo
+con un test que falla sin él.
+
+- **Una cabecera de respuesta que no cabe se rechaza.** Una cabecera vive en un slot de `HTTP_HEADER_VALUE_SIZE`
+  (256) bytes y su largo era lo que `snprintf ()` habría escrito, no lo que cabía: al compilar el header se copiaban
+  esos bytes desde el slot y lo que seguía en memoria salía al cliente. Se llegaba sin autenticación con un preflight
+  de un origen permitido y un `Access-Control-Request-Headers` largo, y con cualquier cabecera propia de más de ~240
+  bytes. Ahora la línea se arma aparte y solo se copia cuando cabe entera; si no, la función regresa 1, la respuesta
+  conserva la cabecera que tenía y queda un warning. Un valor formateado que no cabe en `HTTP_HEADER_ACTUAL_SIZE`
+  también se rechaza (el `Location` de un redirect se cortaba en silencio). Los valores largos y las cabeceras
+  repetidas no entran en la 2.0: son de la lista de cabeceras de la 2.1.
+- **`Range`.** `bytes=-500` (el rango de los últimos bytes) y `bytes=-` llegaban a `atol (NULL)` en el camino de
+  video, y un valor corto se leía más allá de su fin. Un parser propio: solo es un rango el que empieza en una
+  posición (`bytes=N-`, `bytes=N-M`, el primero de una lista); lo demás se ignora y el archivo se sirve como sin
+  `Range`. El rango de los últimos bytes se soporta en la 2.0b-72.
+- **El query y los formularios.** Se decodificaban antes de partirse en `&` y `=`, así que `?q=a%26admin%3Dtrue` daba
+  `q=a` y `admin=true`. Ahora se parten con los separadores del texto original y después se decodifica cada llave y
+  cada valor en su propia memoria.
+- **Los fuzzers** se detienen en el primer comportamiento indefinido que encuentra UBSan
+  (`-fno-sanitize-recover=undefined` y `UBSAN_OPTIONS` en `test/fuzz.sh`): antes seguían y pasaban.
+
+#### 4.3.16 El resto de la revisión (Beta 2.0b-72) — planeado
+
+- **Límites:** los trailers y las extensiones de chunk cuentan contra `max_header_size` y `max_headers`; una cabecera
+  conocida repetida no vuelve a copiar el valor unido en cada repetición.
+- **Valores:** los espacios y tabs finales del valor de una cabecera se quitan.
+- **Cambios de comportamiento** (cada uno en `incompatibilities.md`): el default de `request_timeout` pasa de 0 a
+  300 s; una cabecera que no es de las conocidas cabe hasta un límite configurable
+  (`http_cerver_set_max_custom_header_size ()`, por default 8 KiB en lugar de 512 bytes); un target en forma absoluta
+  (`GET http://host/path`) se rutea por su path y el fragmento no entra en la ruta; el rango de los últimos bytes
+  (`bytes=-N`) con un tipo nuevo en `HTTP_RANGE_TYPE_MAP`.
+- **Tests y CI:** el fuzz largo de `scheduled.yml` en matriz por target, con su tiempo máximo y los artefactos
+  siempre; `test/performance.sh` falla si el servidor o la carga fallan y cuenta las asignaciones sin división
+  entera; los objetos de los tests, los examples y los benchmarks dependen de sus headers.
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 

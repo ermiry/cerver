@@ -247,9 +247,30 @@ void http_response_set_header (
 
 }
 
+// a header that was set is counted once,
+// the one that does not fit is not a header of the response, that keeps the one it had
+static u8 http_response_header_added (
+	HttpResponse *response, const http_header type,
+	const bool had, const u8 result
+) {
+
+	if (result) {
+		cerver_log_warning (
+			"The %s header does not fit in a header of a response, it was not added",
+			http_header_string (type)
+		);
+	}
+
+	else if (!had) response->n_headers += 1;
+
+	return result;
+
+}
+
 // adds a new header to the response
 // the headers will be handled when calling
 // http_response_compile () to generate a continuos header buffer
+// a header that does not fit in HTTP_HEADER_VALUE_SIZE is not added
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
 	HttpResponse *response,
@@ -259,15 +280,14 @@ u8 http_response_add_header (
 	u8 retval = 1;
 
 	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (response->headers[type].len <= 0) {
-			response->n_headers += 1;
-		}
+		const bool had = (response->headers[type].len > 0);
 
-		http_response_header_set_with_type (
-			&response->headers[type], type, actual_header
+		retval = http_response_header_added (
+			response, type, had,
+			http_response_header_set_with_type (
+				&response->headers[type], type, actual_header
+			)
 		);
-
-		retval = 0;
 	}
 
 	return retval;
@@ -287,18 +307,17 @@ u8 http_response_add_custom_header (
 		va_list args;
 		va_start (args, format);
 
-		if (response->headers[type].len <= 0) {
-			response->n_headers += 1;
-		}
+		const bool had = (response->headers[type].len > 0);
 
-		http_response_header_set_with_type_and_args (
-			&response->headers[type], type,
-			format, args
+		retval = http_response_header_added (
+			response, type, had,
+			http_response_header_set_with_type_and_args (
+				&response->headers[type], type,
+				format, args
+			)
 		);
 
 		va_end (args);
-
-		retval = 0;
 	}
 
 	return retval;

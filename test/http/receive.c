@@ -123,7 +123,9 @@ typedef struct TestReceiveObserved {
 
 	char query[TEST_RECEIVE_VALUE_SIZE];
 	char query_key[TEST_RECEIVE_VALUE_SIZE];
+	char query_other[TEST_RECEIVE_VALUE_SIZE];
 	char body_value[TEST_RECEIVE_VALUE_SIZE];
+	char body_other[TEST_RECEIVE_VALUE_SIZE];
 
 	char param[TEST_RECEIVE_VALUE_SIZE];
 
@@ -221,7 +223,13 @@ static void test_receive_echo_handler (
 		http_query_pairs_get_value (http_request_get_query_params (request), "key")
 	);
 
+	test_receive_copy (
+		observed.query_other,
+		http_query_pairs_get_value (http_request_get_query_params (request), "other")
+	);
+
 	test_receive_copy (observed.body_value, http_request_body_get_value (request, "b"));
+	test_receive_copy (observed.body_other, http_request_body_get_value (request, "other"));
 
 	(void) http_response_send (oki_doki, http_receive);
 
@@ -2208,6 +2216,63 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 
 }
 
+// the query and the values of a form are split by their separators and then each piece is decoded:
+// they were decoded first, so an escaped separator (%26, %3D) made another value
+static void test_receive_escaped_separators (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "a query value with its separators escaped",
+		"POST /test/echo?key=a%26other%3D1&second=2 HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.query, "key=a%26other%3D1&second=2"));
+	test_receive_expect (!strcmp (observed.query_key, "a&other=1"));
+	test_receive_expect (!strcmp (observed.query_other, ""));
+
+	// a '+' is a space and an escaped one is kept
+	test_receive_whole_case (
+		cerver, "a query value with spaces",
+		"POST /test/echo?other=x+y%2Bz%20w&key=1+2 HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.query_key, "1 2"));
+	test_receive_expect (!strcmp (observed.query_other, "x y+z w"));
+
+	// an escaped key is found by its decoded name, a key without a value is not a pair
+	test_receive_whole_case (
+		cerver, "a query with an escaped key",
+		"POST /test/echo?flag&%6Bey=value&other HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+	test_receive_expect (!strcmp (observed.query_other, ""));
+
+	// an escaped NUL ends its own value, not the rest of the query
+	test_receive_whole_case (
+		cerver, "a query value with an escaped NUL",
+		"POST /test/echo?other=a%00b&key=after HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.query_key, "after"));
+	test_receive_expect (!strcmp (observed.query_other, "a"));
+
+	test_receive_whole_case (
+		cerver, "a form value with its separators escaped",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 20\r\n\r\n"
+		"b=x%26other%3D1&c=+2"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.body_value, "x&other=1"));
+	test_receive_expect (!strcmp (observed.body_other, ""));
+
+}
+
 // a preflight from a whitelisted origin gets the CORS headers
 static void test_receive_cors_preflight (Cerver *cerver) {
 
@@ -2251,6 +2316,72 @@ static void test_receive_cors_preflight (Cerver *cerver) {
 
 }
 
+#define TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE		(1 << 15)
+#define TEST_RECEIVE_PREFLIGHT_LONG_HEADERS		300
+#define TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS		(1 << 13)
+
+static const char *preflight_header_end = { "\r\n\r\n" };
+
+static void test_receive_preflight_headers_case (
+	Cerver *cerver, const char *name, const size_t headers_length
+) {
+
+	char *headers = (char *) malloc (headers_length + 1);
+	char *request = (char *) malloc (TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE);
+	test_check_ptr (headers);
+	test_check_ptr (request);
+
+	(void) memset (headers, 'h', headers_length);
+	headers[headers_length] = '\0';
+
+	const int request_length = snprintf (
+		request, TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE,
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\nAccess-Control-Request-Method: GET\r\n"
+		"Access-Control-Request-Headers: %s\r\n\r\n",
+		headers
+	);
+
+	test_check ((request_length > 0) && (request_length < TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE), NULL);
+
+	current_case = name;
+	test_receive_feed_whole (cerver, request, (size_t) request_length);
+
+	test_receive_expect (test_receive_status_is ("204"));
+
+	// the response is text until its end, and its header ends with its empty line
+	test_receive_expect (result.response_len == strlen (result.response));
+	test_receive_expect (result.response_len > strlen (preflight_header_end));
+	test_receive_expect (
+		!strcmp (result.response + result.response_len - strlen (preflight_header_end), preflight_header_end)
+	);
+
+	// the header that does not fit is not sent, the other ones of the preflight are
+	test_receive_expect (!test_receive_has_header ("Access-Control-Allow-Headers"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\n"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"));
+
+	free (request);
+	free (headers);
+
+}
+
+// the headers that a preflight asks for are sent back only when they fit in a header of the response:
+// its length was the one of the whole value, so the bytes after its 256 were sent to the client
+static void test_receive_preflight_long_headers (Cerver *cerver) {
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers longer than 256 bytes",
+		TEST_RECEIVE_PREFLIGHT_LONG_HEADERS
+	);
+
+	test_receive_preflight_headers_case (
+		cerver, "a preflight that asks for headers longer than a response",
+		TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS
+	);
+
+}
+
 #pragma endregion
 
 void http_tests_receive (void) {
@@ -2285,7 +2416,9 @@ void http_tests_receive (void) {
 	test_receive_groups (cerver);
 	test_receive_method_not_allowed (cerver);
 	test_receive_trailing_slash (cerver);
+	test_receive_escaped_separators (cerver);
 	test_receive_cors_preflight (cerver);
+	test_receive_preflight_long_headers (cerver);
 
 	(void) cerver_teardown (cerver);
 

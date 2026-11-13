@@ -3,6 +3,30 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-71 (from 2.0b-70)
+
+Fixes of the HTTP responses and requests. No public signature changes.
+
+- A header of a response that does not fit in its `HTTP_HEADER_VALUE_SIZE` (256) bytes, with its name and its line
+  end, is rejected: `http_response_add_header ()`, `http_response_add_custom_header ()` and
+  `http_cerver_add_responses_header ()` return 1, the response keeps the header that it had and a warning is logged.
+  They returned 0 and the header was sent cut, with the bytes that followed it in memory
+- A formatted value of `http_response_add_custom_header ()` that does not fit in `HTTP_HEADER_ACTUAL_SIZE` (128) is
+  rejected too, it was cut: the `Location` of a redirect to a path longer than that is not sent
+- A preflight whose `Access-Control-Request-Headers` do not fit in a header is answered without
+  `Access-Control-Allow-Headers`
+- The query and the values of a `application/x-www-form-urlencoded` body are split by `&` and `=` before each key and
+  each value is decoded: `?key=a%26other%3D1` is one value, `a&other=1`, it was `key=a` and `other=1`; an escaped NUL
+  ends its own value and not the rest of the query. A client that escapes the whole body of a form, with its `=` and
+  its `&` (`name%3Dvalue%26other%3D1`), is not understood anymore: only the keys and the values are escaped, as
+  `test/client/web/api.c` does now
+- `http_request_get_bytes_range ()` returns `false` and does not change the bytes range for a `Range` that does not
+  start at a position (`bytes=-500`, `bytes=-`, another unit, a value without numbers): they crashed or were read as a
+  range. A range needs its `-`: `bytes=5` is ignored, it was read as `bytes=5-`
+- The fuzzers stop at the first undefined behavior that UBSan finds (`-fno-sanitize-recover=undefined`), they kept
+  running and passed
+- `http_response_header_set_with_type ()` and `http_response_header_set_with_type_and_args ()` (private) return `u8`
+
 ## 2.0b-70 (from 2.0b-69)
 
 The port of the core of the 1.8.1. The wire does not change: a 2.0b-70 talks with a 2.0b-69.

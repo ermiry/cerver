@@ -83,6 +83,10 @@ static const size_t form_urlencoded_value_len = 33;
 
 static const char *query_separator = { "?" };
 
+// a space in a query and in the values of a form
+static const char query_encoded_space = '+';
+static const char query_space = ' ';
+
 static const char static_file_extension_separator = '.';
 
 static const char *expect_continue_value = { "100-continue" };
@@ -1889,6 +1893,7 @@ void http_cerver_set_default_delete_custom_data (
 // this header will be added to all the responses
 // if the response has the same header type,
 // it will be used instead of the global header
+// a header that does not fit in HTTP_HEADER_VALUE_SIZE is not added
 // returns 0 on success, 1 on error
 u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
@@ -1898,16 +1903,14 @@ u8 http_cerver_add_responses_header (
 	u8 retval = 1;
 
 	if (http_cerver && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (http_cerver->response_headers[type].len <= 0) {
-			http_cerver->n_response_headers += 1;
-		}
+		const bool had = (http_cerver->response_headers[type].len > 0);
 
-		http_response_header_set_with_type (
+		retval = http_response_header_set_with_type (
 			&http_cerver->response_headers[type],
 			type, actual_header
 		);
 
-		retval = 0;
+		if (!retval && !had) http_cerver->n_response_headers += 1;
 	}
 
 	return retval;
@@ -4217,20 +4220,43 @@ static void http_receive_handle_catch_all (
 
 }
 
+// a key or a value of a query is decoded in its own memory, the decoded one is never longer:
+// a '+' is a space and then the escapes are decoded, so an escaped '+' is kept
+static void http_query_piece_decode (String *piece) {
+
+	for (size_t idx = 0; idx < piece->len; idx++) {
+		if (piece->str[idx] == query_encoded_space) piece->str[idx] = query_space;
+	}
+
+	piece->len = http_url_decode_path (piece->str, piece->str, piece->len);
+	piece->str[piece->len] = '\0';
+
+}
+
+// the pairs of a query are split by the separators of the original text
+// and then each key and each value is decoded, so an escaped separator is part of its value:
+// decoding the whole text first made a new pair out of "%26" and "%3D"
+static DoubleList *http_query_pairs_decoded (const char *query) {
+
+	DoubleList *pairs = query ? http_parse_query_into_pairs (query, query + strlen (query)) : NULL;
+	if (pairs) {
+		KeyValuePair *pair = NULL;
+		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+			pair = (KeyValuePair *) le->data;
+
+			http_query_piece_decode (pair->key);
+			http_query_piece_decode (pair->value);
+		}
+	}
+
+	return pairs;
+
+}
+
 // parses the query of the request into its query params
 static void http_receive_parse_query (HttpRequest *request) {
 
-	char *real_query = http_url_decode (request->query->str);
-
-	// the decoded query is shorter than the original one
-	if (real_query) {
-		request->query_params = http_parse_query_into_pairs (
-			real_query,
-			real_query + strlen (real_query)
-		);
-
-		free (real_query);
-	}
+	request->query_params = http_query_pairs_decoded (request->query->str);
 
 }
 
@@ -4242,17 +4268,7 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 		content_type
 		&& !strncmp (form_urlencoded_value, content_type->str, form_urlencoded_value_len)
 	) {
-		char *real_body = http_url_decode (request->body->str);
-
-		// the decoded body is shorter than the original one
-		if (real_body) {
-			request->body_values = http_parse_query_into_pairs (
-				real_body,
-				real_body + strlen (real_body)
-			);
-
-			free (real_body);
-		}
+		request->body_values = http_query_pairs_decoded (request->body->str);
 	}
 
 }

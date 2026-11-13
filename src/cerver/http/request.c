@@ -28,8 +28,11 @@
 
 #include "cerver/utils/utils.h"
 
-// static const char *http_request_bytes_range = "bytes=";
+static const char http_request_bytes_range[] = { "bytes=" };
 static const size_t http_request_bytes_range_len = 6;
+
+static const char http_request_bytes_range_separator = '-';
+static const int http_request_bytes_range_base = 10;
 
 static const char *request_method_undefined = { "Undefined" };
 
@@ -595,31 +598,60 @@ bool http_request_content_type_is_json (
 
 }
 
+// the position at the start of a part of the range
+// returns true when the part starts with a number
+static bool http_request_bytes_range_position (
+	const char *part, long *position
+) {
+
+	bool result = false;
+
+	if (isdigit ((unsigned char) *part)) {
+		*position = strtol (part, NULL, http_request_bytes_range_base);
+
+		result = true;
+	}
+
+	return result;
+
+}
+
 // bytes=0-
 // bytes=4194304-8388608
-static void http_request_get_bytes_range_internal (
+// only a range that starts at a position is one: the range of the last bytes (bytes=-500),
+// another unit and a value without its numbers are ignored and the bytes range is not changed
+// returns true when the value is a range
+static bool http_request_get_bytes_range_internal (
 	const char *range, BytesRange *bytes_range
 ) {
 
-	static const char dlm[2] = { '-', '\0' };
+	bool result = false;
 
-	char range_string[HTTP_BYTES_RANGE_VALUE_SIZE] = { 0 };
-	(void) strncpy (
-		range_string, range + http_request_bytes_range_len,
-		HTTP_BYTES_RANGE_VALUE_SIZE - 1
-	);
+	if (!strncmp (range, http_request_bytes_range, http_request_bytes_range_len)) {
+		const char *first = range + http_request_bytes_range_len;
+		const char *separator = strchr (first, http_request_bytes_range_separator);
 
-	char *rest = range_string;
+		long start = 0;
+		long end = 0;
+		if (separator && http_request_bytes_range_position (first, &start)) {
+			bytes_range->start = start;
 
-	// we want the first value
-	char *token = __strtok_r (rest, dlm, &rest);
-	bytes_range->start = atol (token);
+			// bytes=0-99
+			if (http_request_bytes_range_position (separator + 1, &end)) {
+				bytes_range->type = HTTP_RANGE_TYPE_FULL;
+				bytes_range->end = end;
+			}
 
-	if (bytes_range->type == HTTP_RANGE_TYPE_FULL) {
-		// and the second value
-		token = __strtok_r (rest, dlm, &rest);
-		bytes_range->end = atol (token);
+			// bytes=0-
+			else {
+				bytes_range->type = start ? HTTP_RANGE_TYPE_FIRST : HTTP_RANGE_TYPE_EMPTY;
+			}
+
+			result = true;
+		}
 	}
+
+	return result;
 
 }
 
@@ -633,24 +665,7 @@ bool http_request_get_bytes_range (
 	if (range) {
 		// (void) printf ("Range: %s\n", range->str);
 
-		if (c_string_count_tokens (range->str, '-') == 1) {
-			http_request_get_bytes_range_internal (
-				range->str, bytes_range
-			);
-
-			bytes_range->type = bytes_range->start ?
-				HTTP_RANGE_TYPE_FIRST : HTTP_RANGE_TYPE_EMPTY;
-		}
-
-		else {
-			bytes_range->type = HTTP_RANGE_TYPE_FULL;
-
-			http_request_get_bytes_range_internal (
-				range->str, bytes_range
-			);
-		}
-
-		result = true;
+		result = http_request_get_bytes_range_internal (range->str, bytes_range);
 	}
 
 	return result;
