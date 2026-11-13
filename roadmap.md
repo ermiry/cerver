@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos) |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-65 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, implementada y validada como la 2.1b-9 (§4.6) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6) |
 
 **Las citas `archivo:línea`:**
 
@@ -121,16 +121,24 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F0** | 2.1b-7 | Ramas, merges de `ws` y `http-optimizations`, `.gitattributes`, CI por rama en `gcc:16.2`, este roadmap | 2.0b-61 publicada en `http` |
 | **F2** | 2.1b-8 | llhttp 9.4.3: modo estricto, todos los métodos HTTP, lenient por cerver | F0 |
 | **F6a** | 2.1b-9 | WebSocket completo sobre hilos (RFC 6455 y permessage-deflate), el cliente, y el port de la 2.0b-66 que necesita | F2 |
-| **Merge** | 2.1b-10 | El merge de la 2.0b-66 de `http` (el port de la 1.8 completa) | 2.0b-66 publicada |
-| **F1** | 2.1b-11 | Preparación sin cambio de comportamiento | F2 |
-| **F3** | 2.1b-12 | Event loop, cerrando por petición | F1, F2 + la 2.0b-66 mergeada en `nightly` |
+| **Merge** | 2.1b-10 | Un solo merge local de `http` desde el tag de la 2.0b-70 (trae de la 2.0b-66 a la 70: el port de la 1.8 y de la 1.8.1, la seguridad de JWT y JSON, los objetos calientes), y el diseño de F8 y F9 en este roadmap | 2.0b-70 publicada; 2.1b-9 en `nightly-beta` |
+| **F1** | 2.1b-11 | Preparación sin cambio de comportamiento | F2 + el merge |
+| **F3** | 2.1b-12 | Event loop, cerrando por petición | F1 |
 | **F4** | 2.1b-13 | Keep-alive real | F3 |
 | **F5** | 2.1b-14 | Pools nombrados, health / ready, métricas | F4 |
 | **F6b** | 2.1b-15 | WebSocket sobre el loop | F4, F6a |
-| **F7** | 2.1b-16 | Auth asíncrona | F5 |
-| **F8** | 2.1b-17 | TLS en proceso | F4 |
-| **F9** | 2.1b-18+ | HTTP/2 | F8 |
+| **F8a** | 2.1b-16 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
+| **F8b** | 2.1b-17 | TLS no bloqueante en el loop | F4, F8a |
+| **F9a** | 2.1b-18 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
+| **F9b** | 2.1b-19 | HTTP/2 en el loop | F8b, F9a |
+| **F7** | 2.1b-20 | Auth asíncrona | F5 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
+
+- **Los merges de `http` después de la 2.1b-10** (las 2.0b-71 en adelante) entran al principio de la beta de `nightly`
+  que siga, como el de la 2.0b-65 en la 2.1b-8, sin una beta propia.
+- **El orden pone el loop primero:** F1–F5 es lo que necesitan las aplicaciones (saturación, keep-alive, pools) y el
+  mínimo para integrar a `http`. F8a y F9a podrían ir antes del loop (no lo necesitan), pero se hacen después para no
+  escribir dos veces la integración con la recepción de THREADS que F1 reorganiza.
 
 ### 4.0 F0 — La línea (2.1b-7)
 
@@ -179,6 +187,8 @@ No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» d
 - **El log y los stats por petición,** fuera de `cerver_receive_http`: `start_time` y las deadlines van por petición.
 - **La conexión web sin `ConnectionStats` / `PacketsPerType`:** ya embebidos y reciclados desde el port de la 1.8;
   queda revisar lo que la conexión web todavía crea por petición.
+- **La respuesta estructurada:** la respuesta conserva su status y la lista de sus cabeceras, y se serializa por
+  protocolo al enviarse (HTTP/1.1 como hoy). Es el prerrequisito de HTTP/2 (§4.9.2).
 
 ### 4.2 F2 — llhttp (2.1b-8)
 
@@ -264,8 +274,8 @@ varía los flags.
 
 **El prerrequisito.** `http` tiene que recibir el port de la 1.8 completa (hasta la 1.8b-9: protocolo portable,
 serializador por esquema, game, el deadline total de envío), que cambia `cerver.c`, `handler.c`, `client.c` y
-`connection.c`. Llega con la 2.0b-66; F3 empieza después de mergear esa beta a `nightly`, para resolver esos
-conflictos una sola vez.
+`connection.c`. Llega con la 2.0b-66, que entra a `nightly` con el merge de la 2.0b-70 (la 2.1b-10), para resolver
+esos conflictos una sola vez.
 
 **La arquitectura:**
 
@@ -570,24 +580,285 @@ de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
 `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
 
-### 4.7 F7 — Auth asíncrona (2.1b-16)
+### 4.7 F7 — Auth asíncrona (2.1b-20)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
 - **La conexión espera en `AUTH` sin hilo,** con un pool de conexiones persistentes por loop.
 - **El fallback:** la etapa en el pool, para una auth custom que no usa ese cliente.
 
-### 4.8 F8 — TLS en proceso (2.1b-17)
+### 4.8 F8 — TLS
 
-- OpenSSL no bloqueante en la máquina de estados (`SSL_read` / `SSL_write`, `WANT_READ` / `WANT_WRITE` mapeados a
-  epoll), SNI y recarga de certificados. OpenSSL ya se enlaza, hoy solo para JWT.
-- Lleva su propia fase de diseño antes de implementar.
+TLS en proceso para **todos los cervers TCP** (`CUSTOM`, `GAME`, `WEB`, `FILES`, `BALANCER`) y para los clientes (el
+cliente TCP, el cliente WebSocket con `wss://` y el cliente HTTP de F9a). UDP queda fuera (DTLS no está en el alcance).
+Se parte como WebSocket:
 
-### 4.9 F9 — HTTP/2 (2.1b-18+)
+- **F8a (2.1b-16): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
+  que hoy hace `recv`, con las deadlines que ya existen.
+- **F8b (2.1b-17): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
 
-- Primero h2c (prior knowledge) detrás de un proxy, después ALPN con TLS.
-- Un stream = una petición al pool. El control de flujo vive en el loop.
-- Lleva su propia fase de diseño antes de implementar.
+#### 4.8.1 Los requisitos (las RFC)
+
+| RFC | Qué exige o recomienda | Cómo lo cumple cerver |
+|---|---|---|
+| 8446 (TLS 1.3) | El handshake, los registros, `close_notify`, `KeyUpdate`, sin renegociación | OpenSSL 3; `close_notify` en el cierre ordenado; `KeyUpdate` lo maneja OpenSSL |
+| 9325 (BCP 195) | TLS 1.2 como mínimo, 1.3 preferido; solo AEAD con forward secrecy; sin compresión ni renegociación insegura; extended master secret en 1.2 | El default de §4.8.3 |
+| 8996 | Sin TLS 1.0 ni 1.1 | `SSL_CTX_set_min_proto_version (TLS1_2_VERSION)`, sin opción para bajarlo |
+| 6066 (SNI) | El nombre del servidor en el ClientHello | Varios certificados por cerver, elegidos en el `client_hello_cb` |
+| 7301 (ALPN) | La negociación del protocolo | `http/1.1` y, con F9a, `h2`; sin ALPN se asume `http/1.1`; un ALPN que no coincide cierra con `no_application_protocol` |
+| 7627 | Extended master secret en 1.2 | Exigido (`SSL_OP_NO_EXTENDED_MASTER_SECRET` nunca) |
+| 5746 | La indicación de renegociación | Renegociación desactivada (`SSL_OP_NO_RENEGOTIATION`) |
+| 6960 / 6066 §8 | OCSP stapling | Opcional, §4.8.6 |
+| 8446 §8 | El replay de 0-RTT | 0-RTT apagado por default; opt-in solo para métodos idempotentes, con `425 Too Early` (RFC 8470) |
+| 5280, 9525 (antes 6125) | La validación del certificado del servidor en un cliente y su identidad (DNS / IP en el SAN, sin el CN) | `SSL_set1_host` / `X509_VERIFY_PARAM_set1_ip_asc`; la cadena contra el almacén del sistema o un CA propio |
+| 8740 | TLS 1.3 con HTTP/2: sin autenticación post-handshake | No se usa la post-handshake auth en conexiones h2 |
+| 9113 §9.2 | Las reglas de TLS para HTTP/2 (1.2+, SNI, sin compresión ni renegociación, la lista negra de cifrados en 1.2) | El default de §4.8.3 ya las cumple; una conexión h2 con un cifrado prohibido cierra con `INADEQUATE_SECURITY` |
+
+#### 4.8.2 La arquitectura
+
+**Un transporte por `Socket`.** Hoy la E/S está repartida: `recv` en `handler.c` (TCP y HTTP), `client.c`,
+`http/websockets/{websocket,client}.c`; los envíos pasan por `socket_send_*` (`socket.c`); los archivos por `sendfile`
+y `splice` (`files.c`). F8a los junta detrás de un transporte:
+
+```c
+// include/cerver/tls/transport.h
+typedef struct SocketTransport {
+	ssize_t (*receive) (struct _Socket *socket, void *buffer, size_t size);           // como recv (), EAGAIN / 0 / -1
+	u8 (*send_vector) (struct _Socket *socket, struct iovec *parts, int n_parts, const struct timespec *deadline);
+	u8 (*send_file) (struct _Socket *socket, int file_fd, off_t offset, size_t size, const struct timespec *deadline);
+	bool (*pending) (const struct _Socket *socket);                                    // bytes ya descifrados
+	void (*shutdown) (struct _Socket *socket);                                         // close_notify + shutdown
+} SocketTransport;
+```
+
+- `Socket` gana un `const SocketTransport *transport` (el plano por default, sin costo) y un `struct TlsConnection *tls`.
+- **Cada `recv` directo pasa a `socket_receive ()`** y cada espera con `poll` consulta antes `transport->pending ()`:
+  con TLS puede haber un registro ya descifrado en OpenSSL y el fd no estar legible (el hilo de WebSocket y la
+  recepción de HTTP lo necesitan).
+- **Los envíos** siguen en `socket_send_*_until`: con TLS, `SSL_write_ex` sobre los iovec copiados a un búfer por hilo
+  (TLS no tiene `writev`), con `SSL_MODE_ENABLE_PARTIAL_WRITE` y `SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER`, y el mismo
+  `poll (POLLOUT)` / `POLLIN` hasta la deadline (`SSL_ERROR_WANT_READ` en un envío espera lectura).
+- **Los archivos:** con kTLS, `SSL_sendfile ()`; sin kTLS, lectura a un búfer y `SSL_write_ex` (sin `sendfile` ni
+  `splice` de cero copias; los uploads por `splice` pasan a lectura con `SSL_read_ex`).
+- **El handshake** corre en el hilo que hoy recibe, antes de la primera lectura, con su propia deadline
+  (`CERVER_TLS_HANDSHAKE_TIMEOUT`, 2^3 s): en THREADS el socket se queda no bloqueante y se espera con `poll` como los
+  envíos; un handshake que falla o vence se cuenta y se cierra sin respuesta.
+- **El modelo POLL** (el `poll` de un hilo del core): el handshake se hace en el thpool de recepción la primera vez que
+  el fd está legible, para no bloquear el `poll` principal; hasta que termina el fd no vuelve al conjunto.
+- **El cierre:** `close_notify` en el cierre ordenado (respuesta completa, drenado, 1000 / 1001 de WebSocket), sin
+  esperar el del otro lado; un cierre sin `close_notify` del cliente en medio de una petición cuenta como hoy (vanished).
+- **Los clientes:** `client.c` (TCP), `http/websockets/client.c` (`wss://`) y el cliente HTTP de F9a comparten
+  `tls_client_*`: SNI con el host de la URL, ALPN, la verificación de §4.8.1 y una caché de sesiones por destino.
+
+#### 4.8.3 La configuración (el default seguro)
+
+```c
+// include/cerver/tls/tls.h
+typedef struct TlsSettings TlsSettings;            // opaco, uno por cerver o por cliente
+
+CERVER_EXPORT TlsSettings *tls_settings_create (void);
+CERVER_EXPORT void tls_settings_delete (TlsSettings *settings);
+
+// el certificado y la llave: archivos PEM o una URI de un provider de OpenSSL 3 ("pkcs11:...", §4.8.7);
+// varios pares por settings, elegidos por SNI; el primero es el default
+CERVER_EXPORT u8 tls_settings_add_certificate (
+	TlsSettings *settings, const char *certificate_chain, const char *private_key
+);
+
+CERVER_EXPORT void tls_settings_set_min_version (TlsSettings *settings, TlsVersion version);   // TLS_VERSION_1_2 (default) | _1_3
+CERVER_EXPORT u8 tls_settings_set_ciphers (TlsSettings *settings, const char *tls12, const char *tls13);
+CERVER_EXPORT u8 tls_settings_set_groups (TlsSettings *settings, const char *groups);           // X25519MLKEM768:X25519:P-256 …
+CERVER_EXPORT u8 tls_settings_set_client_ca (TlsSettings *settings, const char *ca_file, const char *ca_path);
+CERVER_EXPORT void tls_settings_set_client_verify (TlsSettings *settings, TlsClientVerify mode);  // NONE | OPTIONAL | REQUIRED
+
+CERVER_EXPORT u8 cerver_set_tls (Cerver *cerver, TlsSettings *settings);   // el cerver toma los settings
+```
+
+- **El default** (RFC 9325): TLS 1.2 y 1.3; en 1.2 solo ECDHE con AES-GCM o ChaCha20-Poly1305; en 1.3 los tres
+  cifrados de la RFC; grupos `X25519MLKEM768` (si OpenSSL lo trae), `X25519`, `P-256`, `P-384`; sin compresión, sin
+  renegociación, extended master secret, `SSL_OP_CIPHER_SERVER_PREFERENCE` en 1.2, `SSL_OP_NO_TICKET` solo si se
+  apagan los tickets. Todo cambio del default con un warning al arrancar si baja la seguridad.
+- **Un cerver con TLS** escucha solo TLS en su puerto (sin detección de texto plano en el mismo puerto); un cerver puede
+  tener un segundo listener plano en otro puerto si la aplicación lo crea aparte.
+- **Validación al arrancar** (como las rutas): el certificado contra su llave, la cadena, la fecha (un certificado
+  vencido detiene el arranque; uno que vence en menos de 2^4 días deja un warning), cada SNI duplicado; un error detiene
+  `cerver_start`.
+
+#### 4.8.4 SNI y mTLS
+
+- **SNI:** `SSL_CTX_set_client_hello_cb` elige el `SSL_CTX` del certificado cuyo SAN coincide (exacto, luego comodín de
+  un nivel); sin coincidencia, el default. El nombre queda en la conexión y en el `HttpRequest` (`request->tls.server_name`).
+- **mTLS** (`TlsClientVerify`): `NONE` (default), `OPTIONAL` (pide el certificado y lo verifica si llega), `REQUIRED`
+  (sin certificado válido el handshake falla). Por cerver, y en un cerver web también **por grupo y por endpoint**
+  (`http_group_set_client_certificate (group, HTTP_CLIENT_CERTIFICATE_REQUIRED)`): como TLS 1.3 no renegocia, un
+  endpoint `REQUIRED` en un cerver `OPTIONAL` responde 403 si la conexión no trae certificado (sin post-handshake auth,
+  RFC 8740).
+- **El certificado verificado** queda en la petición: sujeto, SAN, emisor, serie, huella SHA-256 y el PEM bajo demanda
+  (`http_request_get_client_certificate ()`), y para la auth de un endpoint un nuevo `HTTP_AUTH_TYPE_CERTIFICATE`.
+
+#### 4.8.5 La recarga sin reinicio
+
+Los tres mecanismos son **opcionales y se eligen por configuración**; ninguno está activo por default:
+
+```c
+CERVER_EXPORT u8 cerver_tls_reload (Cerver *cerver);                                       // API explícita
+CERVER_EXPORT void cerver_tls_set_reload_signal (Cerver *cerver, int signal_number);        // p. ej. SIGHUP; 0 lo apaga
+CERVER_EXPORT void cerver_tls_set_reload_watch (Cerver *cerver, bool enable, unsigned int debounce_ms);  // inotify
+```
+
+- **La recarga** lee y valida todo de nuevo (§4.8.3) en un `SSL_CTX` nuevo; si falla, se queda el anterior y se
+  loguea. Si pasa, se cambia con un puntero atómico y una referencia (`SSL_CTX_up_ref`): las conexiones nuevas usan el
+  nuevo, las vivas terminan con el viejo, que se libera con la última.
+- **La señal:** el hilo principal ya desbloquea las señales en `accept` / `poll`; la señal configurada marca una recarga
+  pendiente que hace el mismo hilo (no el signal handler). Los hilos de cerver siguen bloqueando SIGINT / SIGTERM y
+  ahora también la de recarga.
+- **La vigilancia:** un hilo con `inotify` sobre los archivos y sus directorios (las renovaciones reemplazan con
+  `rename`), con un debounce (default 2^10 ms) para esperar a que estén los dos archivos; en macOS, con `kqueue`.
+- **Las métricas** de la recarga: intentos, fallas, la fecha de vencimiento de cada certificado
+  (`cerver_tls_certificate_expiry_seconds`).
+
+#### 4.8.6 Reanudación y OCSP
+
+- **Session tickets** (default activo): las llaves de los tickets las genera cerver en memoria y rotan cada 2^12 s
+  (la anterior sigue válida para descifrar un periodo más) con `SSL_CTX_set_tlsext_ticket_key_evp_cb`; varios procesos
+  detrás de un balanceador pueden compartir las llaves con `tls_settings_set_ticket_keys ()` (archivo, rotado por la
+  aplicación). Caché de sesiones del lado del servidor para TLS 1.2 sin tickets, acotada (2^12).
+- **0-RTT** apagado. `tls_settings_set_early_data (settings, max_bytes)` lo activa; en un cerver web solo se acepta para
+  GET / HEAD / OPTIONS sin body, y cualquier otra petición recibida como early data responde `425 Too Early`
+  (RFC 8470) con `Early-Data: 1` disponible para el handler.
+- **OCSP stapling** (`tls_settings_set_ocsp_stapling (settings, true)`): un hilo pide la respuesta OCSP al responder del
+  AIA del certificado (o a una URL configurada), la valida y la renueva a la mitad de su validez; la respuesta se
+  adjunta en `SSL_CTX_set_tlsext_status_cb`. Si el responder no contesta, el handshake sigue sin staple (no se rompe).
+  `must-staple` en el certificado hace obligatorio tenerla: sin ella, un warning al arrancar.
+
+#### 4.8.7 Llaves en un HSM o un provider
+
+- La llave privada puede ser una URI que entienda un provider de OpenSSL 3 cargado por la aplicación
+  (`tls_settings_load_provider (settings, "pkcs11", properties)`), abierta con `OSSL_STORE_open` (p. ej.
+  `pkcs11:token=...;object=...`). cerver nunca lee la llave: el provider firma.
+- Los tests usan SoftHSM2 con el provider PKCS#11 de OpenSSL dentro de la imagen de pruebas.
+
+#### 4.8.8 kTLS
+
+- **Opt-in** (`tls_settings_set_ktls (settings, true)`, Linux con el módulo `tls`): `SSL_OP_ENABLE_KTLS`; si el kernel
+  lo acepta para la sesión, los archivos salen con `SSL_sendfile ()` (cero copias) y las lecturas siguen por OpenSSL.
+  Si no está disponible, se loguea una vez y se sigue en espacio de usuario. Métrica: conexiones con kTLS en
+  transmisión y en recepción.
+
+#### 4.8.9 F8b: TLS en el loop
+
+- El handshake es un estado de la conexión (`TLS_HANDSHAKE`) antes de `READ_HEADERS`: el loop llama `SSL_do_handshake`
+  y re-arma `EPOLLIN` / `EPOLLOUT` según `SSL_ERROR_WANT_READ` / `WANT_WRITE`, con su timer en la rueda.
+- La lectura usa `SSL_read_ex` en lugar de `recv`, y se repite mientras `SSL_pending` > 0 (con level-triggered el fd
+  puede no volver a estar listo).
+- Cuando el handler escribe desde el pool (F3), la conexión es suya: usa el mismo transporte con `poll` como en F8a.
+  Lo que escribe el loop (respuestas cortas, frames de F6b) usa el búfer de salida y `EPOLLOUT`.
+- El apagado manda `close_notify` en el drenado.
+
+#### 4.8.10 Pruebas y gate
+
+- **Unidades** con BIOs en memoria (un cliente y un servidor de cerver sin sockets): handshakes de 1.2 y 1.3, cada
+  versión y cifrado prohibido rechazado, SNI con varios certificados, mTLS en los tres modos, tickets y su rotación,
+  0-RTT y el 425, la recarga atómica bajo handshakes concurrentes, OCSP con un responder local (`openssl ocsp`), el
+  provider PKCS#11 con SoftHSM2, kTLS cuando el kernel de la imagen lo tiene.
+- **Interoperabilidad:** `curl`, `openssl s_client`, el cliente de cerver contra nginx con TLS, y **testssl.sh** contra
+  un cerver con el default (cero hallazgos de severidad media o mayor).
+- **Fuzz:** los registros y el handshake a través del par de BIOs (`test/fuzz/tls.c`), y la lectura de los PEM / URIs.
+- **Los pares de integración** con TLS en las dos familias y los sanitizers; `disconnect.c` con TLS (cortes en medio del
+  handshake y de un registro); `performance.sh` con handshakes por segundo (con y sin reanudación) y req/s con TLS.
+- **Gate:** el de §5 más testssl.sh, la recarga bajo carga (0 errores en las conexiones vivas) y los handshakes que
+  fallan contados por motivo.
+
+### 4.9 F9 — HTTP/2
+
+HTTP/2 (RFC 9113) con HPACK (RFC 7541) **escritos por cerver**, como WebSocket: frames, HPACK con el Huffman de la
+RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. También partido:
+
+- **F9a (2.1b-18): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
+  un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
+- **F9b (2.1b-19): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
+
+#### 4.9.1 Los requisitos (las RFC)
+
+| RFC | Qué exige | Cómo lo cumple cerver |
+|---|---|---|
+| 9113 §3 | El arranque: el preface del cliente, `SETTINGS` primero; h2 por ALPN, h2c **solo con prior knowledge** (el `Upgrade: h2c` de la RFC 7540 está obsoleto) | El preface se detecta en los primeros 24 bytes de una conexión sin TLS; con TLS, por ALPN `h2` |
+| 9113 §4–§6 | Los 10 tipos de frame, el tamaño máximo (2^14 mínimo, configurable hasta 2^24 − 1), los flags, los tipos desconocidos se ignoran | `frame.c` de `http2/` con el mapa X de tipos y errores; parser incremental partido en cada byte, como WebSocket |
+| 9113 §5.1 | La máquina de estados de un stream (idle, open, half-closed, closed, reserved) y los ids impares / pares crecientes | Tabla de estados probada transición por transición |
+| 9113 §5.2, §6.9 | El control de flujo de la conexión y de cada stream (ventana inicial 65 535, `WINDOW_UPDATE`, el desborde de 2^31 − 1 es error) | Ventanas por stream y por conexión; el handler que envía espera ventana con su deadline |
+| 9113 §5.4 | Los errores de conexión (`GOAWAY`) y de stream (`RST_STREAM`) con sus códigos | El mapa X de los 14 códigos |
+| 9113 §5.5 | Las extensiones: frames y settings desconocidos se ignoran | Ídem |
+| 9113 §6.5 | `SETTINGS` y su ACK, con timeout | El timeout de ACK cierra con `SETTINGS_TIMEOUT` |
+| 9113 §6.7, §6.8 | `PING` con ACK y `GOAWAY` con el último stream procesado para un apagado ordenado | El drenado manda dos `GOAWAY` (2^31 − 1 y luego el último id) |
+| 9113 §8 | La semántica: pseudo-cabeceras (`:method`, `:scheme`, `:authority`, `:path`, `:status`), nombres en minúsculas, sin cabeceras de conexión (`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Upgrade`, `TE` salvo `trailers`), `Content-Length` contra los DATA, trailers, `CONNECT` | Validación estricta antes de crear la petición; un error es `PROTOCOL_ERROR` del stream |
+| 9113 §9.2 | Las reglas de TLS | §4.8.1 |
+| 9113 §10 | Las consideraciones de seguridad: límites de cabeceras, de streams, el abuso de frames baratos | §4.9.4 |
+| 7541 | HPACK: la tabla estática, la dinámica (4096 por default, `SETTINGS_HEADER_TABLE_SIZE`), los enteros con prefijo, Huffman, los literales nunca indexados para valores sensibles | `hpack.c` probado con los ejemplos del Apéndice C; `Authorization` y `Cookie` cortas como never-indexed |
+| 9218 | Las prioridades extensibles: la cabecera `Priority` y el frame `PRIORITY_UPDATE`; `SETTINGS_NO_RFC7540_PRIORITIES` = 1 | Se envía el setting; `urgency` / `incremental` ordenan los envíos de la conexión; los frames `PRIORITY` de la RFC 7540 se leen y se ignoran |
+| 8441 | WebSocket sobre h2: `SETTINGS_ENABLE_CONNECT_PROTOCOL` = 1 y el CONNECT extendido con `:protocol: websocket` | El stream entra al mismo código de `http/websockets/` (`message.c`, el registro, los handlers del endpoint) |
+| 8470 | `425 Too Early` con 0-RTT | §4.8.6 |
+
+#### 4.9.2 La arquitectura (F9a, sobre hilos)
+
+- **Archivos:** `src/cerver/http/http2/{frame,hpack,huffman,stream,connection,settings,priority,client}.c` y sus
+  headers espejo (carpeta en plural no aplica: `http2` es el nombre del protocolo).
+- **Un hilo por conexión h2** (el de la recepción de hoy, como el de WebSocket): lee frames, mantiene HPACK, la tabla de
+  streams y las ventanas; cada stream con sus cabeceras completas (y su body, hasta `max_body` o en streaming) se
+  convierte en un `HttpReceive` / `HttpRequest` y va al thpool como una petición de HTTP/1.1.
+- **El handler no cambia:** `(const HttpReceive *, const HttpRequest *)`. Su respuesta pasa por
+  `http_response_send_message ()`, que hoy compila los bytes de HTTP/1.1. **Prerrequisito (va en F1, §4.1):** la
+  respuesta conserva el status y la lista de cabeceras estructurada, y se serializa por protocolo al enviar (HTTP/1.1
+  como hoy, h2 con HPACK). Los streams de `stream.c` (chunked en 1.1) son DATA en h2; los trailers, un HEADERS final.
+- **La escritura:** varios handlers escriben a la vez en la misma conexión; cada frame se escribe con el `send_mutex`
+  de la conexión (como WebSocket), el handler espera ventana de control de flujo con su deadline, y el planificador de
+  §4.9.1 (RFC 9218) reparte la ventana entre los streams listos.
+- **Los límites por default** (potencias de 2): `SETTINGS_MAX_CONCURRENT_STREAMS` 2^7, `INITIAL_WINDOW_SIZE` 2^16 − 1
+  (ampliable por endpoint con body grande), `MAX_FRAME_SIZE` 2^14, `MAX_HEADER_LIST_SIZE` igual al límite de cabeceras
+  de HTTP/1.1, tabla HPACK 2^12.
+- **WebSocket sobre h2:** un endpoint WebSocket acepta el CONNECT extendido; el stream se entrega al hilo de la
+  conexión h2 (no hay un hilo por WebSocket dentro de una conexión h2): los frames de WebSocket van en DATA y usan el
+  mismo `message.c`; los envíos desde otros hilos usan el `send_mutex` de la conexión h2.
+- **El cliente HTTP público** (`HttpClient`, `include/cerver/http/client.h`): peticiones con URL, método, cabeceras y
+  body; HTTP/1.1 (con llhttp en modo respuesta, como el cliente WebSocket) y HTTP/2 (por ALPN con TLS, o prior knowledge
+  configurado); un pool de conexiones por destino (keep-alive en 1.1, multiplexado en h2); timeouts por petición;
+  redirecciones opcionales; IPv4 / IPv6 con un connect por dirección. El cliente WebSocket puede usar h2 + RFC 8441.
+
+#### 4.9.3 F9b, en el loop
+
+- El loop lee y escribe los frames de todas las conexiones h2 (sin un hilo por conexión); los streams van al pool del
+  endpoint (F5); las respuestas del handler entran como frames a la cola de salida de la conexión (la de F6b) con el
+  control de flujo aplicado por el loop.
+- El mismo parser incremental de F9a, ahora alimentado por el búfer de lectura del loop.
+
+#### 4.9.4 La seguridad (los ataques conocidos de HTTP/2)
+
+| Ataque | Defensa (default) |
+|---|---|
+| Rapid reset (CVE-2023-44487): streams abiertos y cancelados con `RST_STREAM` | Cuenta de streams creados y reseteados por ventana de tiempo; superar 2^9 resets por 2^5 s cierra con `GOAWAY ENHANCE_YOUR_CALM`; el trabajo de un stream reseteado se cancela antes de despachar si aún no empezó |
+| CONTINUATION flood | El tamaño acumulado de un bloque de cabeceras (HEADERS + CONTINUATION) contra `MAX_HEADER_LIST_SIZE` antes de decodificar; un número máximo de CONTINUATION por bloque |
+| HPACK bomb | El tamaño decodificado se limita por la lista de cabeceras, no por los bytes recibidos; la tabla dinámica nunca crece sobre el setting propio |
+| Settings / ping / priority flood | Límite de frames de control por segundo; los ACK pendientes acotados |
+| Frames vacíos (DATA de 0 sin END_STREAM, CONTINUATION vacíos) | Cuenta por stream y por conexión; superar el límite es `ENHANCE_YOUR_CALM` |
+| Ventanas en cero (slow read) | Deadline de envío por stream y por conexión: un cliente que no abre la ventana pierde el stream y luego la conexión |
+| Demasiados streams | `MAX_CONCURRENT_STREAMS` y `REFUSED_STREAM` para los de más, sin crear la petición |
+
+#### 4.9.5 Pruebas y gate
+
+- **Unidades:** cada frame partido en cada byte; HPACK con los ejemplos del Apéndice C de la RFC 7541 (con y sin
+  Huffman) y la tabla dinámica en sus límites; la máquina de estados de los streams; el control de flujo; la
+  validación de §8 de la RFC 9113 (cada cabecera prohibida); las prioridades.
+- **Conformidad:** **h2spec** contra el servidor (h2c y h2), todas las secciones de la RFC 9113 y la RFC 7541 sin fallas;
+  el cliente contra nghttpx / nginx y contra un cerver.
+- **Fuzz:** `test/fuzz/{http2,hpack}.c` (frames y bloques de cabeceras), con corpus de las capturas de los tests.
+- **Interoperabilidad:** `curl --http2` y `--http2-prior-knowledge`, `h2load` para la carga, navegadores con TLS.
+  Detrás de un proxy: un proxy con h2 hacia el upstream (nginx solo lo hace con `grpc_pass`; HAProxy con `proto h2`)
+  y el caso común, el proxy termina h2 y habla HTTP/1.1 con cerver (F4, keep-alive).
+- **Los ataques de §4.9.4** como tests: cada uno debe terminar en el `GOAWAY` o `RST_STREAM` esperado sin pasar los
+  límites de memoria y de CPU del test.
+- **WebSocket sobre h2:** los mismos tests de `test/bin/websockets` sobre un stream h2, y autobahn a través de un
+  cliente h2 si la herramienta lo soporta (si no, el cliente de cerver por h2 contra el servidor de cerver).
+- **Rendimiento:** req/s y asignaciones por petición en h2 (meta: las mismas que HTTP/1.1 con keep-alive) y por stream.
+- **Gate:** el de §5 más h2spec en verde, el fuzz de 30 min por target nuevo y los tests de §4.9.4.
 
 ### 4.10 Deprecación (2.1)
 
