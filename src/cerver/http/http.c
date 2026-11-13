@@ -87,6 +87,10 @@ static const char *query_separator = { "?" };
 static const char query_encoded_space = '+';
 static const char query_space = ' ';
 
+// the optional whitespace after the value of a header
+static const char http_header_value_space = ' ';
+static const char http_header_value_tab = '\t';
+
 // the parts of the target of a request
 static const char http_target_scheme_symbols[] = { "+-." };
 static const char http_target_authority_start[] = { "://" };
@@ -2752,6 +2756,23 @@ static int http_receive_close_known_header (
 
 }
 
+// the length of the value of a header without the spaces and tabs after it,
+// that are not part of the value (RFC 9110 section 5.5): the parser gives them
+static size_t http_header_value_length (const char *value, const size_t value_len) {
+
+	size_t length = value_len;
+
+	while (
+		length
+		&& ((value[length - 1] == http_header_value_space) || (value[length - 1] == http_header_value_tab))
+	) {
+		length -= 1;
+	}
+
+	return length;
+
+}
+
 // counts a header of the request, or a trailer of its chunked body
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_count_header (HttpReceive *http_receive) {
@@ -2775,7 +2796,7 @@ static int http_receive_save_header (
 
 	const String *value_buffer = http_receive->value_buffer;
 	const char *value = (value_buffer && value_buffer->str) ? value_buffer->str : "";
-	const size_t value_len = value_buffer ? value_buffer->len : 0;
+	const size_t value_len = http_header_value_length (value, value_buffer ? value_buffer->len : 0);
 
 	if (http_receive_count_header (http_receive)) return 1;
 
