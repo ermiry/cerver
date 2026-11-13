@@ -6,6 +6,7 @@ coverage
 coverage-integration
 data
 
+autobahn-reports
 fuzz-artifacts
 repeat-artifacts
 

@@ -1,5 +1,6 @@
 .git
 .vscode
+autobahn-reports
 benchmarks/bin
 benchmarks/objs
 bin
