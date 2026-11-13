@@ -3,6 +3,31 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-72 (from 2.0b-71)
+
+The rest of the review of the requests: limits, defaults and the targets of a request.
+
+- The default request timeout is `HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT` = 300 secs, it was 0 (no timeout): a request
+  whose body takes longer is answered with 408. `http_cerver_set_request_timeout (http_cerver, 0)` keeps the
+  behavior of before. The setter warns about a value that is not a power of 2, the default included
+- A header that is not one of the HTTP headers map (a custom header) fits up to the limit of
+  `http_cerver_set_max_custom_header_size ()` (new), by default `HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE`
+  (8192 bytes): the limit was 512 bytes without a setting, so a request with a longer one that got a 431 is
+  handled now. `HTTP_CUSTOM_HEADER_VALUE_SIZE` was removed
+- The trailers of a chunked body count for `max_header_size` and for `max_headers`: a request whose headers and
+  trailers exceed them is answered with 431 (the trailers had no limit). They are still not kept
+- The spaces and tabs after the value of a header are not part of the value (`Accept: text/plain  ` is
+  `text/plain`), they were kept
+- A target in absolute form (`GET http://host/path?query HTTP/1.1`) is routed by its path, and the fragment of a
+  target (`/path#fragment`) is not part of its path nor of its query: both went to the catch all handler
+- `Range: bytes=-N` is the range of the last N bytes of the file: `http_request_get_bytes_range ()` returns
+  `true` with the new `HTTP_RANGE_TYPE_SUFFIX` (4), `start` 0 and the number of bytes in `end`, and
+  `http_response_handle_video ()` sends them (the 2.0b-71 ignored the header). `bytes=-0` is ignored
+- `HttpCerver` (ABI): new `max_custom_header_size` after `max_file_size`
+- The joined value of a repeated header in a request with an arena has its capacity in `String.max_len` (it was 0)
+- `test/performance.sh` counts the allocations of 1024 requests without rounding them, and fails when its server
+  or its load fail; the long fuzzing of `scheduled.yml` is a job for each target
+
 ## 2.0b-71 (from 2.0b-70)
 
 Fixes of the HTTP responses and requests. No public signature changes.

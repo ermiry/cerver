@@ -15,7 +15,8 @@ extern "C" {
 	XX(0,	NONE, 		None)		\
 	XX(1,	EMPTY, 		Empty)		\
 	XX(2,	FIRST, 		First)		\
-	XX(3,	FULL, 		Full)
+	XX(3,	FULL, 		Full)		\
+	XX(4,	SUFFIX, 	Suffix)
 
 typedef enum RangeType {
 
@@ -29,6 +30,9 @@ CERVER_PUBLIC const char *http_range_type_string (
 	const RangeType range_type
 );
 
+// the range of a request: bytes=0- (EMPTY), bytes=N- (FIRST), bytes=N-M (FULL)
+// and bytes=-N (SUFFIX, the last N bytes of the file: N is its end and its start is 0
+// until the range is resolved with the size of the file)
 struct _BytesRange {
 
 	long file_size;

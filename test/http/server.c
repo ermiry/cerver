@@ -130,6 +130,10 @@
 #define SERVER_TEST_FILE_SUFFIX_LENGTH		4
 #define SERVER_TEST_FILE_SIZE				(1 << 22)
 
+// the last bytes of the file that a suffix range asks for: they start at a position
+// that is a multiple of the alphabet of the file, so they are checked like a whole body
+#define SERVER_TEST_SUFFIX_SIZE				52010
+
 static const char *ok_request = {
 	"GET /ok HTTP/1.1\r\n"
 	"Host: localhost\r\n"
@@ -212,6 +216,14 @@ static const char *nonblocking_video_request = {
 	"GET /nonblocking/video HTTP/1.1\r\n"
 	"Host: localhost\r\n"
 	"Range: bytes=0-\r\n"
+	"\r\n"
+};
+
+// the last SERVER_TEST_SUFFIX_SIZE bytes of the video
+static const char *nonblocking_suffix_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=-52010\r\n"
 	"\r\n"
 };
 
@@ -1494,6 +1506,11 @@ static void test_server_nonblocking (void) {
 
 	server_test_nonblocking_response (
 		server->port, nonblocking_video_request, status_partial_content, HTTP_RESPONSE_VIDEO_CHUNK_SIZE
+	);
+
+	// the range of the last bytes of the file, it was ignored
+	server_test_nonblocking_response (
+		server->port, nonblocking_suffix_request, status_partial_content, SERVER_TEST_SUFFIX_SIZE
 	);
 
 	server_test_stop (server);
