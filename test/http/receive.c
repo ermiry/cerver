@@ -2877,6 +2877,11 @@ static const TestReceiveStrictCase strict_cases[] = {
 		"a control character in a header value",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\x01" "b\r\nContent-Length: 5\r\n\r\nfirst",
 		HTTP_PARSER_LENIENT_HEADERS, "first"
+	},
+	{
+		"CR without LF after the request line",
+		"POST /test/echo HTTP/1.1\rHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
+		HTTP_PARSER_LENIENT_OPTIONAL_LF_AFTER_CR, "first"
 	}
 };
 
@@ -2884,6 +2889,11 @@ static const TestReceiveStrictCase strict_cases[] = {
 
 static const char nul_value_request[] = {
 	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\0b\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char nul_origin_request[] = {
+	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+	"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\0.other.com\r\nContent-Length: 5\r\n\r\nfirst"
 };
 
 static const char *lf_request = {
@@ -2915,8 +2925,17 @@ static void test_receive_parser_rejected (void) {
 
 }
 
+// a version of HTTP that cerver does not speak is a 505
+static void test_receive_version_rejected (void) {
+
+	test_receive_expect (test_receive_status_is ("505"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_REJECTED);
+	test_receive_expect (observed.n_handled == 0);
+
+}
+
 // the methods of llhttp: WebDAV and QUERY can be registered,
-// the RTSP methods and the preface of HTTP/2 are rejected by the parser
+// the RTSP methods are rejected by the parser and the preface of HTTP/2 by its version
 static void test_receive_parser_methods (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
@@ -2941,11 +2960,63 @@ static void test_receive_parser_methods (Cerver *cerver) {
 	test_receive_whole_case (cerver, "an RTSP method", "DESCRIBE /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
 
+	// its version is not one that cerver speaks
 	test_receive_whole_case (cerver, "the preface of HTTP/2", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
-	test_receive_parser_rejected ();
+	test_receive_version_rejected ();
 
 	test_receive_whole_case (cerver, "a lower case method", "post /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
+
+}
+
+static const char *rtsp_request = {
+	"POST /test/echo RTSP/1.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char *second_version_request = {
+	"POST /test/echo HTTP/2.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+// only HTTP/1.0 and HTTP/1.1 are served: llhttp also takes the request lines of RTSP and ICE
+// and the versions 0.9 and 2.0, and their requests with a method of HTTP reached the handlers
+static void test_receive_parser_protocols (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+
+	test_receive_every_split (cerver, "a request of RTSP", rtsp_request, strlen (rtsp_request), test_receive_parser_rejected);
+
+	test_receive_whole_case (cerver, "a method of RTSP in a request of RTSP", "DESCRIBE /v2/dav RTSP/1.0\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (cerver, "a request of ICE", "SOURCE /test/echo ICE/1.0\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_every_split (
+		cerver, "HTTP/2.0", second_version_request, strlen (second_version_request), test_receive_version_rejected
+	);
+
+	test_receive_whole_case (cerver, "HTTP/0.9", "GET /test/echo HTTP/0.9\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_version_rejected ();
+
+	// the lenient flag of the version is for the versions that cerver does not know, never for another protocol
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_VERSION);
+
+	test_receive_whole_case (cerver, "HTTP/2.0 with the lenient version", second_version_request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	test_receive_whole_case (cerver, "a request of RTSP with the lenient version", rtsp_request);
+	test_receive_parser_rejected ();
+
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 }
 
@@ -2981,11 +3052,33 @@ static void test_receive_parser_strict (Cerver *cerver) {
 	test_check_unsigned_eq (http_cerver->parser_lenient, HTTP_PARSER_LENIENT_ALL, NULL);
 	test_check_false (http_cerver->parser_lenient & LLHTTP_LENIENT_HEADER_VALUE_RELAXED);
 
-	// the headers lenient flag accepts it, without looping
+	// some requests are rejected even with every flag: a NUL in a header value was accepted
+	// by the headers lenient flag, and the value that cerver compares ends in it:
+	// an Origin of the whitelist followed by a NUL and anything else was allowed
 	current_case = "a NUL in a header value with every flag";
 	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
-	test_receive_expect (test_receive_status_is ("200"));
-	test_receive_expect (observed.n_handled == 1);
+	test_receive_parser_rejected ();
+
+	current_case = "a NUL in an Origin with every flag";
+	test_receive_feed_whole (cerver, nul_origin_request, sizeof (nul_origin_request) - 1);
+	test_receive_parser_rejected ();
+
+	// a request whose Transfer-Encoding does not end with chunked has no length:
+	// with its lenient flags it was read until the client closed and never answered
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding that does not end with chunked and every flag",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked, gzip\r\n\r\n"
+		"5\r\nfirst\r\n0\r\n\r\n"
+	);
+
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding without chunked, a Content-Length and every flag",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: gzip\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_parser_rejected ();
 
 	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
@@ -2993,7 +3086,14 @@ static void test_receive_parser_strict (Cerver *cerver) {
 	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
 	test_receive_parser_rejected ();
 
-	// some requests are rejected even with every flag
+	test_receive_whole_case (
+		cerver, "a Transfer-Encoding that does not end with chunked",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked, gzip\r\n\r\n"
+		"5\r\nfirst\r\n0\r\n\r\n"
+	);
+
+	test_receive_parser_rejected ();
+
 	test_receive_whole_case (cerver, "a space before a colon", "POST /test/echo HTTP/1.1\r\nHost : localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
 
@@ -3107,8 +3207,9 @@ static void test_receive_web_socket_upgrade_rejected (Cerver *cerver) {
 		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" TEST_RECEIVE_WEB_SOCKET_VERSION "Content-Length: 0\r\n\r\n"
 	);
 
-	// the endpoint is a GET, a POST goes to the catch all (405 is opt-in)
-	test_receive_expect (!test_receive_status_is ("101"));
+	// the endpoint is a GET, a POST goes to the catch all (405 is opt-in): its 200, never a 101
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!test_receive_has_header ("Sec-WebSocket-Accept"));
 	test_receive_expect (!result.upgraded);
 
 	test_receive_web_socket_released (cerver);
@@ -3218,6 +3319,25 @@ static void test_receive_parser_keep_alive (Cerver *cerver) {
 	test_receive_expect (!result.keep_alive_requested);
 	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
 	test_receive_expect (test_receive_count_responses () == 1);
+
+	// the lenient flags of what follows a request with Connection close change nothing:
+	// the parser is paused when its request is complete, what follows it is not parsed
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_KEEP_ALIVE | HTTP_PARSER_LENIENT_DATA_AFTER_CLOSE);
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.1 with Connection close and the lenient flags of what follows it",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\nContent-Length: 5\r\n\r\nfirst"
+		PIPELINED_SECOND_REQUEST
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!result.keep_alive_requested);
+	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
+	test_receive_expect (test_receive_count_responses () == 1);
+
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 	test_receive_whole_case (cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n");
 	test_receive_expect (test_receive_status_is ("200"));
@@ -4143,6 +4263,7 @@ void http_tests_receive (void) {
 	test_receive_cors_preflight (cerver);
 
 	test_receive_parser_methods (cerver);
+	test_receive_parser_protocols (cerver);
 	test_receive_parser_strict (cerver);
 	test_receive_parser_upgrade (cerver);
 	test_receive_parser_keep_alive (cerver);
