@@ -71,18 +71,18 @@ void admin_cerver_stats_print (AdminCerverStats *stats) {
 		cerver_log_msg ("\nAdmin stats:");
 		cerver_log_msg ("Threshold_time: %ld\n", stats->threshold_time);
 
-		cerver_log_msg ("Total n receives done:                  %ld", stats->total_n_receives_done);
-		cerver_log_msg ("Total n packets received:               %ld", stats->total_n_packets_received);
-		cerver_log_msg ("Total bytes received:                   %ld\n", stats->total_bytes_received);
+		cerver_log_msg ("Total n receives done:                  %lu", stats->total_n_receives_done);
+		cerver_log_msg ("Total n packets received:               %lu", stats->total_n_packets_received);
+		cerver_log_msg ("Total bytes received:                   %lu\n", stats->total_bytes_received);
 
-		cerver_log_msg ("Total n packets sent:                   %ld", stats->total_n_packets_sent);
-		cerver_log_msg ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
+		cerver_log_msg ("Total n packets sent:                   %lu", stats->total_n_packets_sent);
+		cerver_log_msg ("Total bytes sent:                       %lu\n", stats->total_bytes_sent);
 
-		cerver_log_msg ("Current connections:                    %ld", stats->current_connections);
-		cerver_log_msg ("Current connected admins:               %ld\n", stats->current_connected_admins);
+		cerver_log_msg ("Current connections:                    %lu", stats->current_connections);
+		cerver_log_msg ("Current connected admins:               %lu\n", stats->current_connected_admins);
 
-		cerver_log_msg ("Total admin connections:                %ld", stats->total_admin_connections);
-		cerver_log_msg ("Total n admins:                         %ld", stats->total_n_admins);
+		cerver_log_msg ("Total admin connections:                %lu", stats->total_admin_connections);
+		cerver_log_msg ("Total n admins:                         %lu", stats->total_n_admins);
 
 		cerver_log_msg ("\nReceived packets:");
 		packets_per_type_print (stats->received_packets);
@@ -350,7 +350,7 @@ AdminConnectionsStatus admin_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
 					"admin_remove_connection_by_sock_fd () - Admin client with id "
-					"%ld does not have ANY connection - removing him from cerver...",
+					"%lu does not have ANY connection - removing him from cerver...",
 					admin->client->id
 				);
 				#endif
@@ -420,7 +420,7 @@ AdminConnectionsStatus admin_remove_connection_by_sock_fd (
 					cerver_log (
 						LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
 						"admin_remove_connection_by_sock_fd () - Admin client with id "
-						"%ld does not have a connection related to sock fd %d",
+						"%lu does not have a connection related to sock fd %d",
 						admin->client->id, sock_fd
 					);
 					#endif
@@ -608,7 +608,7 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->update_interval = NULL;
 		admin_cerver->update_interval_args = NULL;
 		admin_cerver->delete_update_interval_args = NULL;
-		admin_cerver->update_interval_secs = ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS;
+		admin_cerver->update_interval_secs = ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS;
 
 		admin_cerver->stats = NULL;
 	}
@@ -717,7 +717,8 @@ void admin_cerver_set_max_fds (
 	AdminCerver *admin_cerver, u32 max_n_fds
 ) {
 
-	if (admin_cerver) admin_cerver->max_n_fds = max_n_fds;
+	// the poll array is created with the cerver, after it the size can not change
+	if (admin_cerver && max_n_fds && !admin_cerver->fds) admin_cerver->max_n_fds = max_n_fds;
 
 }
 
@@ -1002,7 +1003,7 @@ u8 admin_cerver_register_admin (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
-				"Cerver %s ADMIN current connected admins: %ld",
+				"Cerver %s ADMIN current connected admins: %lu",
 				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connected_admins
 			);
@@ -1043,7 +1044,7 @@ u8 admin_cerver_unregister_admin (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
-				"Cerver %s ADMIN current connected admins: %ld",
+				"Cerver %s ADMIN current connected admins: %lu",
 				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connected_admins
 			);
@@ -1111,7 +1112,7 @@ static void *admin_cerver_update (void *args) {
 		const i64 time_per_frame = ADMIN_MICROSECONDS_PER_SECOND / (admin_cerver->update_ticks ? admin_cerver->update_ticks : 1);
 		i64 sleep_time = 0;
 
-		struct timespec start = { 0 }, middle = { 0 };
+		struct timespec start = CERVER_ZERO_INITIALIZER, middle = CERVER_ZERO_INITIALIZER;
 
 		while (cerver_is_running (admin_cerver->cerver)) {
 			(void) clock_gettime (CLOCK_MONOTONIC, &start);
@@ -1596,7 +1597,7 @@ static AdminCerverHandlerError admin_cerver_client_packet_handler (
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
 			#ifdef ADMIN_DEBUG
 			cerver_log_debug (
-				"Admin with client %ld requested to close the connection",
+				"Admin with client %lu requested to close the connection",
 				packet->client->id
 			);
 			#endif
@@ -1918,7 +1919,7 @@ u8 admin_cerver_poll_register_connection (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
-				"Cerver %s ADMIN current connections: %ld",
+				"Cerver %s ADMIN current connections: %lu",
 				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connections
 			);
@@ -1974,7 +1975,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
-				"Cerver %s ADMIN current connections: %ld",
+				"Cerver %s ADMIN current connections: %lu",
 				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connections
 			);

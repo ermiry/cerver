@@ -61,20 +61,20 @@ static void start () {
 	/* real */
 	j = json_real (1.7);
 	rv = json_unpack (j, "f", &f);
-	if (rv || f != 1.7)
+	if (rv || !test_double_equal (f, 1.7))
 		fail ("json_unpack real failed");
 	json_decref (j);
 
 	/* number */
 	j = json_integer (12345);
 	rv = json_unpack (j, "F", &f);
-	if (rv || f != 12345.0)
+	if (rv || !test_double_equal (f, 12345.0))
 		fail ("json_unpack (real or) integer failed");
 	json_decref (j);
 
 	j = json_real (1.7);
 	rv = json_unpack (j, "F", &f);
-	if (rv || f != 1.7)
+	if (rv || !test_double_equal (f, 1.7))
 		fail ("json_unpack real (or integer) failed");
 	json_decref (j);
 

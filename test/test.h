@@ -59,7 +59,7 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_ptr(ptr)												\
 	({																\
-		if (!ptr) {													\
+		if (!(ptr)) {												\
 			where;													\
 			(void) fprintf (stderr, "Pointer is NULL!");			\
 			exit (1);												\
@@ -69,7 +69,7 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_null_ptr(ptr)										\
 	({																\
-		if (ptr) {													\
+		if ((ptr)) {												\
 			where;													\
 			(void) fprintf (stderr, "Pointer is NOT NULL!");		\
 			exit (1);												\
@@ -79,7 +79,7 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_true(value)											\
 	({																\
-		if (!value) {												\
+		if (!(value)) {												\
 			where;													\
 			(void) fprintf (stderr, "Value is NOT true!");			\
 			exit (1);												\
@@ -89,7 +89,7 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_false(value)											\
 	({																\
-		if (value) {												\
+		if ((value)) {												\
 			where;													\
 			(void) fprintf (stderr, "Value is NOT false!");			\
 			exit (1);												\
@@ -99,12 +99,13 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_bool_eq(value, expected, msg)						\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
 				"BOOL %d does not match %d\n",						\
-				value, expected										\
+				(int) (test_value), (int) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -112,15 +113,18 @@ static inline void test_output_init (void) {
 		}															\
 	})
 
+// the value is evaluated once, so a check of a call with side effects runs it once
 #define																\
 	test_check_unsigned_eq(value, expected, msg)					\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"UNSIGNED %d does not match %d\n",					\
-				value, expected										\
+				"UNSIGNED %llu does not match %llu\n",				\
+				(unsigned long long) (test_value),					\
+				(unsigned long long) (expected)						\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -135,12 +139,13 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_int_eq(value, expected, msg)							\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"INTEGER %d does not match %d\n",					\
-				value, expected										\
+				"INTEGER %lld does not match %lld\n",				\
+				(long long) (test_value), (long long) (expected)	\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -155,12 +160,13 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_long_int_eq(value, expected, msg)					\
 	({																\
-		if (value != expected) {									\
+		const __typeof__ (value) test_value = (value);				\
+		if (test_value != (expected)) {								\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"INTEGER %ld does not match %ld\n",					\
-				value, expected										\
+				"INTEGER %lld does not match %lld\n",				\
+				(long long) (test_value), (long long) (expected)	\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -171,12 +177,13 @@ static inline void test_output_init (void) {
 #define																\
 	test_check_str_eq(value, expected, msg)							\
 	({																\
-		if (strcmp ((char *) value, (char *) expected)) {			\
+		const char *test_value = (const char *) (value);			\
+		if (strcmp (test_value, (const char *) (expected))) {		\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
 				"STRING %s does not match %s\n",					\
-				(char *) value, (char *) expected					\
+				test_value, (const char *) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -191,8 +198,8 @@ static inline void test_output_init (void) {
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
-				"STRING %s LEN does not match %d\n",				\
-				(char *) string, expected							\
+				"STRING %s LEN does not match %zu\n",				\
+				(char *) string, (size_t) (expected)				\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
@@ -214,6 +221,17 @@ static inline void test_output_init (void) {
 			exit (1);												\
 		}															\
 	})
+
+#define TEST_DOUBLE_TOLERANCE				0.000001
+
+// compares two doubles within TEST_DOUBLE_TOLERANCE, without an exact comparison
+static inline int test_double_equal (const double value, const double expected) {
+
+	const double difference = value - expected;
+
+	return (difference < TEST_DOUBLE_TOLERANCE) && (difference > -TEST_DOUBLE_TOLERANCE);
+
+}
 
 #pragma region wait
 

@@ -13,6 +13,8 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 typedef enum HandlersType {
 
 	HANDLERS_TYPE_NONE			= 0,
@@ -214,11 +216,13 @@ static void *on_client_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
-			"Client %ld connected with sock fd %d to cerver %s!\n",
+			"Client %lu connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -236,6 +240,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -325,6 +331,8 @@ static void start (HandlersType type) {
 			false, false
 		);
 
+		app_cerver_events_register (my_cerver);
+
 		if (!cerver_start (my_cerver)) {
 			finish ();
 		}
@@ -335,14 +343,12 @@ static void start (HandlersType type) {
 				my_cerver->info->name
 			);
 
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
-
-        cerver_delete (my_cerver);
+		cerver_log_error ("Failed to create cerver!");
 	}
 
 }

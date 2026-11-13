@@ -47,6 +47,8 @@ void main_users_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_send (oki_doki, http_receive);
 
 }
@@ -56,6 +58,8 @@ void users_login_handler (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	(void) http_response_send (oki_doki, http_receive);
 
@@ -67,6 +71,8 @@ void users_register_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_send (oki_doki, http_receive);
 
 }
@@ -76,6 +82,8 @@ void users_upload_handler (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	(void) http_response_send (oki_doki, http_receive);
 

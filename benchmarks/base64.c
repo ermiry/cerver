@@ -157,7 +157,7 @@ static void test_decode (
 		return;
 	}
 
-	char *buffer = malloc (datalength * 2);
+	char *buffer = (char *) malloc (datalength * 2);
 	size_t expected = chromium_base64_decode (buffer, data, datalength);
 	if (verbose) (void) printf ("original size = %zu \n", expected);
 
@@ -173,7 +173,7 @@ static void test_decode (
 }
 
 // note sources should be compiled with optmization flags to get the best results
-int main (int argc, const char **argv) {
+int main (void) {
 
 	RDTSC_SET_OVERHEAD (rdtsc_overhead_func (1), repeat);
 

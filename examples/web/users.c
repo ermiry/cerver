@@ -29,6 +29,8 @@ void main_users_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "Users route works!");
 	if (res) {
 		#ifdef EXAMPLES_DEBUG

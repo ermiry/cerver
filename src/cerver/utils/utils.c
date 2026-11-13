@@ -35,22 +35,24 @@ int clamp_int (
 }
 
 int abs_int (const int value) {
-	
+
 	return value > 0 ? value : (value * -1);
-	
+
 }
 
 float lerp (
 	const float first, const float second, const float by
 ) {
-	
+
 	return first * (1 - by) + second * by;
-	
+
 }
+
+#define UTILS_FLOAT_COMPARE_TOLERANCE		0.00001f
 
 bool float_compare (const float f1, const float f2) {
 
-	return fabs (f1 - f2) < 0.00001;
+	return fabsf (f1 - f2) < UTILS_FLOAT_COMPARE_TOLERANCE;
 
 }
 
@@ -209,7 +211,7 @@ char *c_string_concat (
 // returns the len of the final string
 size_t c_string_concat_safe (
 	const char *s1, const char *s2,
-	const char *des, size_t des_size
+	char *des, size_t des_size
 ) {
 
 	size_t retval = 0;
@@ -217,7 +219,7 @@ size_t c_string_concat_safe (
 	if (s1 && s2 && des) {
 		if ((strlen (s1) + strlen (s2)) < des_size) {
 			c_string_concat_actual (
-				(char *) s1, (char *) s2, (char *) des
+				(char *) s1, (char *) s2, des
 			);
 
 			retval = strlen (des);

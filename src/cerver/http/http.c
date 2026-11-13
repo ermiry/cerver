@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include <openssl/crypto.h>
 #include <openssl/sha.h>
 
 #include "cerver/types/types.h"
@@ -44,6 +45,7 @@
 #include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/proxy.h"
+#include "cerver/http/recycle.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
@@ -62,6 +64,7 @@
 
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
+#include "cerver/http/jwt/key.h"
 
 #include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
@@ -296,6 +299,12 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->jwt_max_size = HTTP_CERVER_DEFAULT_JWT_MAX_SIZE;
+		http_cerver->jwt_require_expiration = HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION;
+		http_cerver->jwt_leeway_seconds = HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS;
+		http_cerver->jwt_issuer = NULL;
+		http_cerver->jwt_audience = NULL;
+
 		http_cerver->n_origins = 0;
 		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
 			http_origin_reset (&http_cerver->origins_whitelist[i]);
@@ -406,10 +415,13 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		dlist_delete (http_cerver->routes);
 
 		str_delete (http_cerver->jwt_opt_key_name);
-		str_delete (http_cerver->jwt_private_key);
+		jwt_key_delete (http_cerver->jwt_private_key);
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
-		str_delete (http_cerver->jwt_public_key);
+		jwt_key_delete (http_cerver->jwt_public_key);
+
+		str_delete (http_cerver->jwt_issuer);
+		str_delete (http_cerver->jwt_audience);
 
 		if (http_cerver->custom_data) {
 			if (http_cerver->delete_custom_data) {
@@ -597,96 +609,98 @@ static unsigned int http_cerver_init_responses (void) {
 
 }
 
-static unsigned int http_cerver_init_load_jwt_private_key (
-	HttpCerver *http_cerver
+// the key of the file is created for the algorithm of the cerver,
+// it must have the type, the curve and the strength that the algorithm asks
+// returns the key, or NULL and the reason in error
+static JwtKey *http_cerver_init_create_jwt_key (
+	const HttpCerver *http_cerver,
+	const unsigned char *material, const size_t material_length,
+	const JwtKeyType type, JwtKeyError *error
 ) {
 
-	unsigned int retval = 1;
-
-	size_t private_keylen = 0;
-	char *private_key = file_read (
-		http_cerver->jwt_opt_key_name->str, &private_keylen
+	JwtKey *key = jwt_key_create (
+		http_cerver->jwt_alg, type, material, material_length, error
 	);
 
-	if (private_key) {
-		http_cerver->jwt_private_key = str_new (NULL);
-		http_cerver->jwt_private_key->str = private_key;
-		http_cerver->jwt_private_key->len = private_keylen;
+	if (key) {
+		*error = jwt_key_check_strength (key);
+		if (*error != JWT_KEY_ERROR_NONE) {
+			jwt_key_delete (key);
+			key = NULL;
+		}
+	}
 
-		// printf ("\n%s\n", http_cerver->jwt_private_key->str);
+	return key;
 
-		cerver_log_success (
-			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
-			http_cerver->cerver->info->name,
-			http_cerver->jwt_private_key->len
+}
+
+// reads the file of a key, its content is cleared after the key is created
+// returns the key, or NULL if it can not be used: the cerver does not start
+static JwtKey *http_cerver_init_load_jwt_key (
+	const HttpCerver *http_cerver,
+	const String *filename, const JwtKeyType type
+) {
+
+	JwtKey *key = NULL;
+	JwtKeyError error = JWT_KEY_ERROR_EMPTY;
+
+	size_t material_length = 0;
+	char *material = file_read (filename->str, &material_length);
+	const bool read = (material != NULL);
+	if (read) {
+		key = http_cerver_init_create_jwt_key (
+			http_cerver,
+			(const unsigned char *) material, material_length,
+			type, &error
 		);
 
-		retval = 0;
+		OPENSSL_cleanse (material, material_length);
+		free (material);
+	}
+
+	if (key) {
+		cerver_log_success (
+			"Loaded cerver's %s http jwt %s key for %s!",
+			http_cerver->cerver->info->name,
+			jwt_key_type_to_string (type), jwt_alg_str (http_cerver->jwt_alg)
+		);
 	}
 
 	else {
 		cerver_log_error (
-			"Failed to load cerver's %s http jwt PRIVATE key!",
-			http_cerver->cerver->info->name
-		);
-	}
-
-	return retval;
-
-}
-
-static unsigned int http_cerver_init_load_jwt_public_key (
-	HttpCerver *http_cerver
-) {
-
-	unsigned int retval = 1;
-
-	size_t public_keylen = 0;
-	char *public_key = file_read (
-		http_cerver->jwt_opt_pub_key_name->str, &public_keylen
-	);
-
-	if (public_key) {
-		http_cerver->jwt_public_key = str_new (NULL);
-		http_cerver->jwt_public_key->str = public_key;
-		http_cerver->jwt_public_key->len = public_keylen;
-
-		// printf ("\n%s\n", http_cerver->jwt_public_key->str);
-
-		cerver_log_success (
-			"Loaded cerver's %s http jwt PUBLIC key (size %ld)!",
+			"Failed to load cerver's %s http jwt %s key %s for %s: %s",
 			http_cerver->cerver->info->name,
-			http_cerver->jwt_public_key->len
-		);
-
-		retval = 0;
-	}
-
-	else {
-		cerver_log_error (
-			"Failed to load cerver's %s http jwt PUBLIC key!",
-			http_cerver->cerver->info->name
+			jwt_key_type_to_string (type), filename->str,
+			jwt_alg_str (http_cerver->jwt_alg),
+			read ? jwt_key_error_to_string (error) : "The file can not be read"
 		);
 	}
 
-	return retval;
+	return key;
 
 }
 
+// a key that can not be used is an error, so the cerver does not start
 static unsigned int http_cerver_init_load_jwt_keys (
 	HttpCerver *http_cerver
 ) {
 
-	unsigned int errors = 0 ;
+	unsigned int errors = 0;
 
-	if (http_cerver->jwt_opt_key_name) {
-		cerver_log_msg ("Loading jwt PRIVATE key...");
-		errors |= http_cerver_init_load_jwt_private_key (http_cerver);
+	if (http_cerver->jwt_opt_key_name && !http_cerver->jwt_private_key) {
+		http_cerver->jwt_private_key = http_cerver_init_load_jwt_key (
+			http_cerver, http_cerver->jwt_opt_key_name, JWT_KEY_TYPE_PRIVATE
+		);
+
+		if (!http_cerver->jwt_private_key) errors |= 1;
 	}
 
-	if (http_cerver->jwt_opt_pub_key_name) {
-		cerver_log_msg ("Loading jwt PUBLIC key...");
-		errors |= http_cerver_init_load_jwt_public_key (http_cerver);
+	if (http_cerver->jwt_opt_pub_key_name && !http_cerver->jwt_public_key) {
+		http_cerver->jwt_public_key = http_cerver_init_load_jwt_key (
+			http_cerver, http_cerver->jwt_opt_pub_key_name, JWT_KEY_TYPE_PUBLIC
+		);
+
+		if (!http_cerver->jwt_public_key) errors |= 1;
 	}
 
 	return errors;
@@ -755,6 +769,9 @@ static unsigned int http_cerver_global_init (
 ) {
 
 	unsigned int errors = 0;
+
+	// the random seed of the json objects, before the threads of the cerver use them
+	json_object_seed (0);
 
 	// init HTTP jwt pool
 	errors |= http_jwt_init_pool ();
@@ -949,6 +966,11 @@ static HttpStaticPath *http_static_path_new (void) {
 	if (http_static_path) {
 		http_static_path->path = NULL;
 		http_static_path->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
+
+		http_static_path->decode_data = NULL;
+		http_static_path->delete_decoded_data = NULL;
+
+		http_static_path->authentication_handler = NULL;
 	}
 
 	return http_static_path;
@@ -984,12 +1006,34 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 
 }
 
-// sets authentication requirenments for a whole static path
+// sets the authentication of the files of a whole static path
 void http_static_path_set_auth (
 	HttpStaticPath *static_path, HttpRouteAuthType auth_type
 ) {
 
 	if (static_path) static_path->auth_type = auth_type;
+
+}
+
+void http_static_path_set_decode_data (
+	HttpStaticPath *static_path,
+	void *(*decode_data)(void *),
+	void (*delete_decoded_data)(void *)
+) {
+
+	if (static_path) {
+		static_path->decode_data = decode_data;
+		static_path->delete_decoded_data = delete_decoded_data;
+	}
+
+}
+
+void http_static_path_set_authentication_handler (
+	HttpStaticPath *static_path,
+	HttpAuthenticationHandler authentication_handler
+) {
+
+	if (static_path) static_path->authentication_handler = authentication_handler;
 
 }
 
@@ -1745,13 +1789,40 @@ char *http_cerver_auth_load_key (
 
 }
 
+// the algorithms of the tokens of a cerver always sign them
+static bool http_cerver_auth_jwt_algorithm_is_valid (const jwt_alg_t jwt_alg) {
+
+	return (jwt_alg > JWT_ALG_NONE) && (jwt_alg < JWT_ALG_INVAL);
+
+}
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
-// the default value is JWT_ALG_HS256
-void http_cerver_auth_set_jwt_algorithm (
+// the default value is JWT_ALG_HS256, JWT_ALG_NONE is not accepted
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_set_jwt_algorithm (
 	HttpCerver *http_cerver, const jwt_alg_t jwt_alg
 ) {
 
-	if (http_cerver) http_cerver->jwt_alg = jwt_alg;
+	u8 retval = 1;
+
+	if (http_cerver && http_cerver_auth_jwt_algorithm_is_valid (jwt_alg)) {
+		http_cerver->jwt_alg = jwt_alg;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// a setter called again replaces the value it set before
+static void http_cerver_auth_set_string (
+	String **destination, const char *value
+) {
+
+	str_delete (*destination);
+
+	*destination = value ? str_new (value) : NULL;
 
 }
 
@@ -1761,7 +1832,7 @@ void http_cerver_auth_set_jwt_priv_key_filename (
 ) {
 
 	if (http_cerver) {
-		http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_key_name, filename);
 	}
 
 }
@@ -1772,7 +1843,61 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 ) {
 
 	if (http_cerver) {
-		http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_pub_key_name, filename);
+	}
+
+}
+
+// sets the longest bearer token that is decoded,
+// a longer one is rejected without decoding it
+// the default value is HTTP_CERVER_DEFAULT_JWT_MAX_SIZE, 0 has no limit
+void http_cerver_auth_set_jwt_max_size (
+	HttpCerver *http_cerver, const size_t max_size
+) {
+
+	if (http_cerver) http_cerver->jwt_max_size = max_size;
+
+}
+
+// sets if a token without "exp" is rejected
+// the default value is HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION
+void http_cerver_auth_set_jwt_require_expiration (
+	HttpCerver *http_cerver, const bool require
+) {
+
+	if (http_cerver) http_cerver->jwt_require_expiration = require;
+
+}
+
+// sets the seconds of clock skew that are accepted in "exp" and "nbf"
+// the default value is HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS
+void http_cerver_auth_set_jwt_leeway_seconds (
+	HttpCerver *http_cerver, const unsigned int leeway_seconds
+) {
+
+	if (http_cerver) http_cerver->jwt_leeway_seconds = leeway_seconds;
+
+}
+
+// sets the "iss" that every token must have, NULL accepts any
+void http_cerver_auth_set_jwt_issuer (
+	HttpCerver *http_cerver, const char *issuer
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_issuer, issuer);
+	}
+
+}
+
+// sets the "aud" that every token must have, as its value or in its array,
+// NULL accepts any
+void http_cerver_auth_set_jwt_audience (
+	HttpCerver *http_cerver, const char *audience
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_audience, audience);
 	}
 
 }
@@ -1941,15 +2066,15 @@ size_t http_cerver_stats_get_children_routes (
 void http_cerver_routes_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Main routes: %ld", http_cerver->routes->size);
+		cerver_log_msg ("Main routes: %zu", http_cerver->routes->size);
 
 		size_t total_handlers = 0;
 		size_t children_routes = http_cerver_stats_get_children_routes (
 			http_cerver, &total_handlers
 		);
 
-		cerver_log_msg ("Children routes: %ld", children_routes);
-		cerver_log_msg ("Total handlers: %ld", total_handlers);
+		cerver_log_msg ("Children routes: %zu", children_routes);
+		cerver_log_msg ("Total handlers: %zu", total_handlers);
 	}
 
 }
@@ -1964,7 +2089,7 @@ static void http_cerver_route_handler_stats_print (
 	const HttpRouteStats *stats = &snapshot;
 
 	cerver_log_msg (
-		"\t\t%s\t%ld",
+		"\t\t%s\t%zu",
 		http_request_method_str (method),
 		stats->n_requests
 	);
@@ -1974,13 +2099,13 @@ static void http_cerver_route_handler_stats_print (
 	cerver_log_msg ("\t\tMax process time: %.4f secs", stats->max_process_time);
 	cerver_log_msg ("\t\tMean process time: %.4f secs", stats->mean_process_time);
 
-	cerver_log_msg ("\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
-	cerver_log_msg ("\t\tMax request size: %ld", stats->max_request_size);
-	cerver_log_msg ("\t\tMean request size: %ld", stats->mean_request_size);
+	cerver_log_msg ("\t\tMin request size: %zu", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\tMax request size: %zu", stats->max_request_size);
+	cerver_log_msg ("\t\tMean request size: %zu", stats->mean_request_size);
 
-	cerver_log_msg ("\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
-	cerver_log_msg ("\t\tMax response size: %ld", stats->max_response_size);
-	cerver_log_msg ("\t\tMean response size: %ld", stats->mean_response_size);
+	cerver_log_msg ("\t\tMin response size: %zu", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\tMax response size: %zu", stats->max_response_size);
+	cerver_log_msg ("\t\tMean response size: %zu", stats->mean_response_size);
 
 }
 
@@ -1994,14 +2119,14 @@ static void http_cerver_route_file_stats_print (
 	const HttpRouteFileStats *file_stats = &snapshot;
 
 	cerver_log_line_break ();
-	cerver_log_msg ("\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+	cerver_log_msg ("\t\tUploaded files: %zu", file_stats->n_uploaded_files);
 
-	cerver_log_msg ("\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
-	cerver_log_msg ("\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\tMin n files: %zu", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\tMax n files: %zu", file_stats->max_n_files);
 	cerver_log_msg ("\t\tMean n files: %.2f", file_stats->mean_n_files);
 
-	cerver_log_msg ("\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
-	cerver_log_msg ("\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\tMin file size: %zu", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\tMax file size: %zu", file_stats->max_file_size);
 	cerver_log_msg ("\t\tMean file size: %.2f", file_stats->mean_file_size);
 
 }
@@ -2016,7 +2141,7 @@ static void http_cerver_child_route_handler_stats_print (
 	const HttpRouteStats *stats = &snapshot;
 
 	cerver_log_msg (
-		"\t\t\t%s\t%ld",
+		"\t\t\t%s\t%zu",
 		http_request_method_str (method),
 		stats->n_requests
 	);
@@ -2025,13 +2150,13 @@ static void http_cerver_child_route_handler_stats_print (
 	cerver_log_msg ("\t\t\tMax process time: %.4f secs", stats->max_process_time);
 	cerver_log_msg ("\t\t\tMean process time: %.4f secs", stats->mean_process_time);
 
-	cerver_log_msg ("\t\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
-	cerver_log_msg ("\t\t\tMax request size: %ld", stats->max_request_size);
-	cerver_log_msg ("\t\t\tMean request size: %ld", stats->mean_request_size);
+	cerver_log_msg ("\t\t\tMin request size: %zu", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\t\tMax request size: %zu", stats->max_request_size);
+	cerver_log_msg ("\t\t\tMean request size: %zu", stats->mean_request_size);
 
-	cerver_log_msg ("\t\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
-	cerver_log_msg ("\t\t\tMax response size: %ld", stats->max_response_size);
-	cerver_log_msg ("\t\t\tMean response size: %ld", stats->mean_response_size);
+	cerver_log_msg ("\t\t\tMin response size: %zu", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\t\tMax response size: %zu", stats->max_response_size);
+	cerver_log_msg ("\t\t\tMean response size: %zu", stats->mean_response_size);
 
 }
 
@@ -2044,14 +2169,14 @@ static void http_cerver_child_route_file_stats_print (
 	http_route_file_stats_snapshot (route_file_stats, &snapshot);
 	const HttpRouteFileStats *file_stats = &snapshot;
 
-	cerver_log_msg ("\t\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+	cerver_log_msg ("\t\t\tUploaded files: %zu", file_stats->n_uploaded_files);
 
-	cerver_log_msg ("\t\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
-	cerver_log_msg ("\t\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\t\tMin n files: %zu", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\t\tMax n files: %zu", file_stats->max_n_files);
 	cerver_log_msg ("\t\t\tMean n files: %.2f", file_stats->mean_n_files);
 
-	cerver_log_msg ("\t\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
-	cerver_log_msg ("\t\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\t\tMin file size: %zu", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\t\tMax file size: %zu", file_stats->max_file_size);
 	cerver_log_msg ("\t\t\tMean file size: %.2f", file_stats->mean_file_size);
 
 }
@@ -2060,7 +2185,7 @@ static void http_cerver_route_children_stats_print (
 	const HttpRoute *route
 ) {
 
-	cerver_log_msg ("\t\t%ld children:", route->children->size);
+	cerver_log_msg ("\t\t%zu children:", route->children->size);
 
 	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 
@@ -2172,11 +2297,11 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 		}
 
 		// print general stats
-		cerver_log_msg ("Incompleted requests: %ld", CERVER_STATS_GET (http_cerver->n_incompleted_requests));
-		cerver_log_msg ("Unhandled requests: %ld", CERVER_STATS_GET (http_cerver->n_unhandled_requests));
+		cerver_log_msg ("Incompleted requests: %zu", CERVER_STATS_GET (http_cerver->n_incompleted_requests));
+		cerver_log_msg ("Unhandled requests: %zu", CERVER_STATS_GET (http_cerver->n_unhandled_requests));
 
-		cerver_log_msg ("Catch requests: %ld", CERVER_STATS_GET (http_cerver->n_catch_all_requests));
-		cerver_log_msg ("Failed auth requests: %ld", CERVER_STATS_GET (http_cerver->n_failed_auth_requests));
+		cerver_log_msg ("Catch requests: %zu", CERVER_STATS_GET (http_cerver->n_catch_all_requests));
+		cerver_log_msg ("Failed auth requests: %zu", CERVER_STATS_GET (http_cerver->n_failed_auth_requests));
 
 		cerver_log_msg ("Limited requests: %zu", CERVER_STATS_GET (http_cerver->n_limited_requests));
 		cerver_log_msg ("Timeout requests: %zu", CERVER_STATS_GET (http_cerver->n_timeout_requests));
@@ -2734,11 +2859,28 @@ static int http_request_body_create (
 
 	HttpRequest *request = http_receive->request;
 
-	request->body = str_new (NULL);
-	if (!request->body) return 1;
+	// the string of the body lives in the arena of the request when it has one,
+	// and its buffer is taken from the ones that the thread reuses
+	String *body = request->arena ?
+		(String *) arena_alloc (request->arena, sizeof (String)) :
+		(String *) malloc (sizeof (String));
+
+	if (!body) return 1;
 
 	const size_t reserve = http_request_body_reserve_size (http_receive, length);
-	if (reserve && str_reserve (request->body, reserve)) return 1;
+
+	size_t capacity = 0;
+	body->str = (char *) http_recycle_buffer_take (reserve, &capacity);
+	if (!body->str) {
+		if (!request->arena) free (body);
+		return 1;
+	}
+
+	body->str[0] = '\0';
+	body->len = 0;
+	body->max_len = capacity;
+
+	request->body = body;
 
 	return str_append_bytes (request->body, at, length);
 
@@ -3825,8 +3967,9 @@ HttpReceive *http_receive_create_arena (
 
 	HttpReceive *http_receive = (HttpReceive *) arena_alloc (arena, sizeof (HttpReceive));
 	HttpRequest *request = http_request_new_arena (arena);
+	HttpRouteFileStats *file_stats = (HttpRouteFileStats *) arena_alloc (arena, sizeof (HttpRouteFileStats));
 
-	if (http_receive && request && url_buffer && field_buffer && value_buffer) {
+	if (http_receive && request && file_stats && url_buffer && field_buffer && value_buffer) {
 		http_receive_init (http_receive);
 		http_receive->arena = arena;
 
@@ -3839,7 +3982,9 @@ HttpReceive *http_receive_create_arena (
 		http_receive->request = request;
 		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
 
-		http_receive->file_stats = http_route_file_stats_new ();
+		// the stats of the uploads of the request live in the arena too
+		http_route_file_stats_init (file_stats);
+		http_receive->file_stats = file_stats;
 
 		http_receive->borrowed_buffers = true;
 		http_receive_borrow_buffer (&http_receive->url_buffer, url_buffer);
@@ -3958,7 +4103,10 @@ void http_receive_delete (HttpReceive *http_receive) {
 		http_receive->node = NULL;
 		http_receive->endpoint = NULL;
 		http_receive->route = NULL;
-		http_route_file_stats_delete (http_receive->file_stats);
+
+		// the stats in an arena are released with it
+		if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
+		http_receive->file_stats = NULL;
 
 		if (http_receive->mpart_parser)
 			multipart_parser_free (http_receive->mpart_parser);
@@ -4757,9 +4905,6 @@ static void http_receive_handle_select_failed_auth (
 
 }
 
-static const char *bearer_prefix = { "Bearer " };
-static const size_t bearer_prefix_len = 7;
-
 // returns true if the request has a valid bearer JWT
 // the route's decode_data method sets the request's decoded data
 static bool http_receive_handle_select_auth_bearer (
@@ -4773,70 +4918,27 @@ static bool http_receive_handle_select_auth_bearer (
 	// the header must be "Bearer <token>"
 	// and a token can only be validated with the cerver's public key
 	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
-	if (
-		!authorization
-		|| (authorization->len <= bearer_prefix_len)
-		|| strncmp (authorization->str, bearer_prefix, bearer_prefix_len)
-		|| !http_cerver->jwt_public_key
-	) {
+	const char *token = authorization ?
+		http_cerver_auth_bearer_token (authorization->str, authorization->len) : NULL;
+
+	jwt_t *jwt = token ? http_cerver_auth_jwt_verify (
+		http_cerver, token, authorization->len - HTTP_JWT_BEARER_PREFIX_LENGTH
+	) : NULL;
+
+	if (jwt) {
+		if (found->decode_data) {
+			request->decoded_data = found->decode_data (jwt->grants);
+			request->delete_decoded_data = found->delete_decoded_data;
+		}
+
+		jwt_free (jwt);
+
+		authenticated = true;
+	}
+
+	else {
 		http_receive_handle_select_failed_auth (http_receive);
-		return authenticated;
 	}
-
-	char *token = authorization->str + bearer_prefix_len;
-
-	jwt_t *jwt = NULL;
-	jwt_valid_t *jwt_valid = NULL;
-	if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
-		jwt_valid->hdr = 1;
-		jwt_valid->now = time (NULL);
-
-		if (!jwt_decode (
-			&jwt, token,
-			(unsigned char *) http_cerver->jwt_public_key->str,
-			http_cerver->jwt_public_key->len
-		)) {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_debug ("JWT decoded successfully!");
-			#endif
-
-			if (!jwt_validate (jwt, jwt_valid)) {
-				#ifdef HTTP_AUTH_DEBUG
-				cerver_log_success ("JWT is authentic!");
-				#endif
-
-				if (found->decode_data) {
-					request->decoded_data = found->decode_data (jwt->grants);
-					request->delete_decoded_data = found->delete_decoded_data;
-				}
-
-				authenticated = true;
-			}
-
-			else {
-				#ifdef HTTP_AUTH_DEBUG
-				cerver_log_error (
-					"Failed to validate JWT: %08x",
-					jwt_valid_get_status (jwt_valid)
-				);
-				#endif
-
-				http_receive_handle_select_failed_auth (http_receive);
-			}
-
-			jwt_free (jwt);
-		}
-
-		else {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_error ("Invalid JWT!");
-			#endif
-
-			http_receive_handle_select_failed_auth (http_receive);
-		}
-	}
-
-	jwt_valid_free (jwt_valid);
 
 	return authenticated;
 
@@ -5069,7 +5171,7 @@ static int http_receive_uploads_directory_create (
 
 	int retval = 0;
 
-	struct stat status = { 0 };
+	struct stat status = CERVER_ZERO_INITIALIZER;
 	if (stat (dirname, &status)) {
 		if (files_create_recursive_dir (dirname, http_receive->http_cerver->uploads_dir_mode)) {
 			const int error = errno;
@@ -5229,6 +5331,10 @@ static bool http_receive_body_too_large (
 
 }
 
+static bool http_receive_handle_static_authenticate (
+	HttpReceive *http_receive, HttpRequest *request
+);
+
 // the url and the headers are complete (each header was saved with its value):
 // the route is selected and the request is authenticated before its body is received,
 // so the files of a rejected request are never saved
@@ -5307,6 +5413,8 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 		if (http_receive_is_static_file (http_receive, request)) {
 			http_receive->type = HTTP_RECEIVE_TYPE_FILE;
 			http_receive->head = (request->method == REQUEST_METHOD_HEAD);
+
+			if (!http_receive_handle_static_authenticate (http_receive, request)) return HTTP_RECEIVE_PARSER_STOP;
 		}
 
 		http_receive->settings.on_body = http_receive_handle_body_discard;
@@ -5344,42 +5452,102 @@ static bool http_static_path_resolve (
 
 }
 
-// TODO: handle authentication
-static void http_receive_handle_serve_file (HttpReceive *http_receive) {
+// the first static path that has the file of the url, with its real path and its status,
+// only regular files are served
+// returns NULL if none has it
+static const HttpStaticPath *http_static_path_find (
+	const HttpCerver *http_cerver, const char *url,
+	char *real_filename, struct stat *filestatus
+) {
 
-	bool found = false;
+	const HttpStaticPath *found = NULL;
 
-	char real_filename[PATH_MAX] = { 0 };
-	struct stat filestatus = { 0 };
-	HttpStaticPath *static_path = NULL;
+	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
+		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
 
-	for (
-		ListElement *le = dlist_start (http_receive->http_cerver->static_paths);
-		le; le = le->next
-	) {
-		static_path = (HttpStaticPath *) le->data;
-
-		if (!http_static_path_resolve (
-			static_path, http_receive->request->url->str, real_filename
-		)) continue;
-
-		// only regular files are served
-		(void) memset (&filestatus, 0, sizeof (struct stat));
-		if (!stat (real_filename, &filestatus) && S_ISREG (filestatus.st_mode)) {
-			http_receive->served_file = http_receive->request->url->str;
-
-			// serve the file
-			(void) http_response_send_file_internal (
-				http_receive, HTTP_STATUS_OK,
-				real_filename, &filestatus
-			);
-
-			found = true;
-			break;
+		(void) memset (filestatus, 0, sizeof (struct stat));
+		if (
+			http_static_path_resolve (static_path, url, real_filename)
+			&& !stat (real_filename, filestatus) && S_ISREG (filestatus->st_mode)
+		) {
+			found = static_path;
 		}
 	}
 
-	if (!found) {
+	return found;
+
+}
+
+// the first static path that has authentication, NULL if every one is public
+static const HttpStaticPath *http_static_path_first_protected (const HttpCerver *http_cerver) {
+
+	const HttpStaticPath *found = NULL;
+
+	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
+		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
+		if (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE) found = static_path;
+	}
+
+	return found;
+
+}
+
+// the request of a file is authenticated with the static path that has it,
+// or with the first protected one when none has it,
+// so a file that does not exist is answered like a protected one
+// returns true if the request continues, a failed authentication was already answered
+static bool http_receive_handle_static_authenticate (
+	HttpReceive *http_receive, HttpRequest *request
+) {
+
+	bool authenticated = true;
+
+	char real_filename[PATH_MAX] = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
+
+	const HttpStaticPath *static_path = http_static_path_find (
+		http_receive->http_cerver, request->url->str, real_filename, &filestatus
+	);
+
+	if (!static_path) static_path = http_static_path_first_protected (http_receive->http_cerver);
+
+	if (static_path && (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE)) {
+		HttpRouteSettings settings;
+		(void) memset (&settings, 0, sizeof (HttpRouteSettings));
+		settings.auth_type = static_path->auth_type;
+		settings.decode_data = static_path->decode_data;
+		settings.delete_decoded_data = static_path->delete_decoded_data;
+		settings.authentication_handler = static_path->authentication_handler;
+
+		authenticated = http_receive_handle_authenticate (
+			http_receive->http_cerver, http_receive, &settings, request
+		);
+	}
+
+	return authenticated;
+
+}
+
+// the request was authenticated in on_headers_complete with its static path
+static void http_receive_handle_serve_file (HttpReceive *http_receive) {
+
+	char real_filename[PATH_MAX] = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
+
+	const bool found = http_static_path_find (
+		http_receive->http_cerver, http_receive->request->url->str, real_filename, &filestatus
+	) != NULL;
+
+	if (found) {
+		http_receive->served_file = http_receive->request->url->str;
+
+		(void) http_response_send_file_internal (
+			http_receive, HTTP_STATUS_OK,
+			real_filename, &filestatus
+		);
+	}
+
+	else {
 		#ifdef HTTP_RECEIVE_DEBUG
 		cerver_log_warning (
 			"Unable to find file %s",

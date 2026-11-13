@@ -640,3 +640,124 @@ size_t base64_decode (
 	return chromium_base64_decode (output, bufcoded, codedlen);
 
 }
+
+#pragma region url
+
+#define BASE64URL_BITS_PER_CHARACTER		6
+#define BASE64URL_BITS_PER_BYTE				8
+#define BASE64URL_CHARACTER_MASK			0x3F
+#define BASE64URL_BYTE_MASK					0xFF
+#define BASE64URL_INVALID					0xFF
+
+// the values where each range of the alphabet starts
+#define BASE64URL_LOWERCASE_FIRST_VALUE		26
+#define BASE64URL_DIGITS_FIRST_VALUE		52
+#define BASE64URL_DASH_VALUE				62
+#define BASE64URL_UNDERSCORE_VALUE			63
+
+// a group of 4 characters that has a single one left is not valid base64
+#define BASE64URL_GROUP_SIZE				4
+#define BASE64URL_INVALID_REMAINDER			1
+
+static const char base64url_alphabet[] = {
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+};
+
+// the value of each character, or BASE64URL_INVALID
+static unsigned char base64url_value (const char character) {
+
+	unsigned char value = BASE64URL_INVALID;
+
+	if ((character >= 'A') && (character <= 'Z')) value = (unsigned char) (character - 'A');
+	else if ((character >= 'a') && (character <= 'z')) value = (unsigned char) (character - 'a' + BASE64URL_LOWERCASE_FIRST_VALUE);
+	else if ((character >= '0') && (character <= '9')) value = (unsigned char) (character - '0' + BASE64URL_DIGITS_FIRST_VALUE);
+	else if (character == '-') value = BASE64URL_DASH_VALUE;
+	else if (character == '_') value = BASE64URL_UNDERSCORE_VALUE;
+
+	return value;
+
+}
+
+size_t base64url_encode (
+	char *encoded, const unsigned char *input, size_t input_length
+) {
+
+	size_t length = 0;
+	unsigned int buffer = 0;
+	unsigned int buffered_bits = 0;
+
+	for (size_t i = 0; i < input_length; i++) {
+		buffer = (buffer << BASE64URL_BITS_PER_BYTE) | input[i];
+		buffered_bits += BASE64URL_BITS_PER_BYTE;
+
+		while (buffered_bits >= BASE64URL_BITS_PER_CHARACTER) {
+			buffered_bits -= BASE64URL_BITS_PER_CHARACTER;
+			encoded[length++] = base64url_alphabet[(buffer >> buffered_bits) & BASE64URL_CHARACTER_MASK];
+		}
+	}
+
+	// the last bits are padded with zeros on the right
+	if (buffered_bits) {
+		encoded[length++] = base64url_alphabet[
+			(buffer << (BASE64URL_BITS_PER_CHARACTER - buffered_bits)) & BASE64URL_CHARACTER_MASK
+		];
+	}
+
+	encoded[length] = '\0';
+
+	return length;
+
+}
+
+// the bits that the last character carries but that are not part of a byte
+// must be zero, otherwise two strings would decode into the same bytes
+static unsigned int base64url_decode_check_end (
+	const unsigned int buffer, const unsigned int buffered_bits
+) {
+
+	return (buffer & ((1u << buffered_bits) - 1)) ? 1 : 0;
+
+}
+
+unsigned int base64url_decode (
+	unsigned char *output, size_t *output_length,
+	const char *encoded, size_t encoded_length
+) {
+
+	unsigned int errors = 0;
+
+	if (!output || !output_length || (!encoded && encoded_length)) return 1;
+
+	if ((encoded_length % BASE64URL_GROUP_SIZE) == BASE64URL_INVALID_REMAINDER) return 1;
+
+	size_t length = 0;
+	unsigned int buffer = 0;
+	unsigned int buffered_bits = 0;
+
+	for (size_t i = 0; (i < encoded_length) && !errors; i++) {
+		unsigned char value = base64url_value (encoded[i]);
+		if (value == BASE64URL_INVALID) {
+			errors = 1;
+		}
+
+		else {
+			// only the last bits are used, the older ones are shifted out
+			buffer = (buffer << BASE64URL_BITS_PER_CHARACTER) | value;
+			buffered_bits += BASE64URL_BITS_PER_CHARACTER;
+
+			if (buffered_bits >= BASE64URL_BITS_PER_BYTE) {
+				buffered_bits -= BASE64URL_BITS_PER_BYTE;
+				output[length++] = (unsigned char) ((buffer >> buffered_bits) & BASE64URL_BYTE_MASK);
+			}
+		}
+	}
+
+	if (!errors) errors = base64url_decode_check_end (buffer, buffered_bits);
+
+	*output_length = errors ? 0 : length;
+
+	return errors;
+
+}
+
+#pragma endregion

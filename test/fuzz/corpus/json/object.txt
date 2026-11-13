@@ -1,1 +1,1 @@
-{"name": "cerver", "values": [1, 2.5, -3e10, true, null], "nested": {"a": "\u00e9"}}
+2{"name": "cerver", "values": [1, 2.5, -3e10, true, null], "nested": {"a": "é"}}

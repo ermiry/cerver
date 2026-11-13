@@ -11,6 +11,8 @@
 #include "cerver/connection.h"
 #include "cerver/events.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/threads/thread.h"
 
 u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type);
@@ -43,8 +45,11 @@ static CerverEventData *cerver_event_data_new (void) {
 		event_data->client = NULL;
 		event_data->connection = NULL;
 
+		event_data->lobby = NULL;
+
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
+		event_data->owns_action_args = false;
 	}
 
 	return event_data;
@@ -53,14 +58,22 @@ static CerverEventData *cerver_event_data_new (void) {
 
 void cerver_event_data_delete (CerverEventData *event_data) {
 
-	if (event_data) free (event_data);
+	if (event_data) {
+		lobby_release (event_data->lobby);
+
+		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
+			event_data->delete_action_args (event_data->action_args);
+		}
+
+		free (event_data);
+	}
 
 }
 
 static CerverEventData *cerver_event_data_create (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
-	CerverEvent *event
+	Lobby *lobby, CerverEvent *event
 ) {
 
 	CerverEventData *event_data = cerver_event_data_new ();
@@ -69,6 +82,8 @@ static CerverEventData *cerver_event_data_create (
 
 		event_data->client = client;
 		event_data->connection = connection;
+
+		event_data->lobby = lobby_reference (lobby);
 
 		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
@@ -115,11 +130,19 @@ void cerver_event_delete (void *event_ptr) {
 
 }
 
+// an event type indexes the events of the cerver
+static inline bool cerver_event_type_is_valid (const CerverEventType event_type) {
+
+	return (unsigned int) event_type < CERVER_MAX_EVENTS;
+
+}
+
 // registers an action to be triggered when the specified event occurs
 // if there is an existing action registered to an event, it will be overrided
 // a newly allocated CerverEventData structure will be passed to your method
 // that should be free using the cerver_event_data_delete () method
 // returns 0 on success, 1 on error
+
 u8 cerver_event_register (
 	Cerver *cerver,
 	const CerverEventType event_type,
@@ -129,7 +152,7 @@ u8 cerver_event_register (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_event_type_is_valid (event_type)) {
 		CerverEvent *event = cerver_event_new ();
 		if (event) {
 			event->type = event_type;
@@ -163,7 +186,7 @@ u8 cerver_event_unregister (
 
 	u8 retval = 1;
 
-	if (cerver) {
+	if (cerver && cerver_event_type_is_valid (event_type)) {
 		if (cerver->events[event_type]) {
 			cerver_event_delete (cerver->events[event_type]);
 			cerver->events[event_type] = NULL;
@@ -183,30 +206,44 @@ void cerver_event_trigger (
 	const Client *client, const Connection *connection
 ) {
 
-	if (cerver) {
+	cerver_event_trigger_lobby (event_type, cerver, client, connection, NULL);
+
+}
+
+// triggers the actions of a lobby event, the event data keeps a reference to the lobby
+void cerver_event_trigger_lobby (
+	const CerverEventType event_type,
+	const Cerver *cerver,
+	const Client *client, const Connection *connection,
+	Lobby *lobby
+) {
+
+	if (cerver && cerver_event_type_is_valid (event_type)) {
 		CerverEvent *event = cerver->events[event_type];
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				CerverEventData *event_data = cerver_event_data_create (
+					cerver, client, connection, lobby, event
+				);
+
+				// the event is dropped while its action can still run in its thread,
+				// so the arguments go with the data of this trigger
+				if (event_data && event->drop_after_trigger) {
+					event_data->owns_action_args = true;
+					event->work_args = NULL;
+				}
+
 				// the thread is counted, so the cerver teardown waits for it
 				if (event->create_thread) {
 					(void) thread_group_create (
 						(ThreadGroup *) &cerver->event_threads,
-						event->work,
-						cerver_event_data_create (
-							cerver,
-							client, connection,
-							event
-						)
+						event->work, event_data
 					);
 				}
 
 				else {
-					(void) event->work (cerver_event_data_create (
-						cerver,
-						client, connection,
-						event
-					));
+					(void) event->work (event_data);
 				}
 
 				if (event->drop_after_trigger) {

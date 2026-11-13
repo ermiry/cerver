@@ -9,7 +9,7 @@
 		int i_, found_ = 0;                                                              \
 		if (json_error_code (&error) != code_) {                                          \
 			where;                                                                     \
-			fprintf (stderr, "code: %d != %d\n", json_error_code (&error), code_);         \
+			fprintf (stderr, "code: %u != %u\n", (unsigned int) json_error_code (&error), (unsigned int) code_); \
 			exit (1);                                                                     \
 		}                                                                                \
 		for (i_ = 0; i_ < num_; i_++) {                                                  \

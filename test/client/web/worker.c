@@ -27,7 +27,7 @@ static unsigned int worker_request_all_actual (
 	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	// GET /
 	errors |= curl_simple_handle_data (
@@ -37,7 +37,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// POST /work
-	(void) snprintf (actual_address, 128, "%s/work", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/work", address);
 	errors |= curl_post_two_form_values (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -47,7 +47,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// GET /work/start
-	(void) snprintf (actual_address, 128, "%s/work/start", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/work/start", address);
 	errors |= curl_full_handle_data (
 		actual_address,
 		HTTP_STATUS_INTERNAL_SERVER_ERROR,
@@ -55,7 +55,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// GET /work/stop
-	(void) snprintf (actual_address, 128, "%s/work/stop", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/work/stop", address);
 	errors |= curl_full_handle_data (
 		actual_address,
 		HTTP_STATUS_OK,
@@ -63,7 +63,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// GET /work/stop
-	(void) snprintf (actual_address, 128, "%s/work/stop", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/work/stop", address);
 	errors |= curl_full_handle_data (
 		actual_address,
 		HTTP_STATUS_INTERNAL_SERVER_ERROR,
@@ -71,7 +71,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// GET /work/start
-	(void) snprintf (actual_address, 128, "%s/work/start", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/work/start", address);
 	errors |= curl_full_handle_data (
 		actual_address,
 		HTTP_STATUS_OK,
@@ -79,7 +79,7 @@ static unsigned int worker_request_all_actual (
 	);
 
 	// GET /cerver/stats/workers
-	(void) snprintf (actual_address, 128, "%s/cerver/stats/workers", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/cerver/stats/workers", address);
 	errors |= curl_full_handle_data (
 		actual_address,
 		HTTP_STATUS_OK,
@@ -118,7 +118,7 @@ static unsigned int worker_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

@@ -70,8 +70,10 @@
 #define DISCONNECT_SEND_TIMEOUT				1
 
 // valgrind runs one thread at a time, so a client that reads a large response
-// can wait longer than the send timeout for its turn
-#define DISCONNECT_VALGRIND_SEND_TIMEOUT	16
+// can wait longer than the send timeout for its turn, and since the 2.0b-66
+// the send timeout is the deadline of the whole response: in a slow runner
+// a half-close client had read 1769472 of the 4194304 bytes when 16 secs ended it
+#define DISCONNECT_VALGRIND_SEND_TIMEOUT	64
 #define DISCONNECT_PRELOAD_VARIABLE			"LD_PRELOAD"
 #define DISCONNECT_VALGRIND_PRELOAD			"vgpreload"
 
@@ -81,6 +83,10 @@
 
 // secs to wait for the cerver to take or to end a batch
 #define DISCONNECT_WAIT_SECONDS				64
+
+// under valgrind a client that disappears keeps its sends blocked for the longer send timeout,
+// so a batch takes longer to end in a slow runner
+#define DISCONNECT_VALGRIND_WAIT_FACTOR		4
 
 // secs that a client waits for a response
 #define DISCONNECT_CLIENT_TIMEOUT			8
@@ -93,7 +99,8 @@
 #define DISCONNECT_GONE_WAIT				1000
 
 #define DISCONNECT_RESPONSE_SIZE			(1 << 12)
-#define DISCONNECT_REQUEST_SIZE				(1 << 13)
+// a request with a bearer of up to HTTP_JWT_BEARER_SIZE
+#define DISCONNECT_REQUEST_SIZE				(1 << 14)
 #define DISCONNECT_PATH_SIZE				(1 << 10)
 
 // the large responses do not fit in the socket buffers,
@@ -522,7 +529,7 @@ static void disconnect_model_bearer (DisconnectModel *model, HttpCerver *http_ce
 	test_check_ptr (http_jwt);
 
 	http_cerver_auth_jwt_add_value (http_jwt, "id", "disconnect-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
+	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
 
 	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 
@@ -1191,11 +1198,27 @@ static int disconnect_connect_once (const u16 port, const bool small_receive_buf
 
 }
 
+static bool disconnect_under_valgrind (void) {
+
+	const char *preload = getenv (DISCONNECT_PRELOAD_VARIABLE);
+
+	return preload && strstr (preload, DISCONNECT_VALGRIND_PRELOAD);
+
+}
+
+// the secs to wait for the cerver, scaled under valgrind like its send timeout
+static unsigned int disconnect_wait_seconds (void) {
+
+	return disconnect_under_valgrind () ?
+		DISCONNECT_WAIT_SECONDS * DISCONNECT_VALGRIND_WAIT_FACTOR : DISCONNECT_WAIT_SECONDS;
+
+}
+
 static int disconnect_connect (const u16 port, const bool small_receive_buffer) {
 
 	int fd = -1;
 
-	const double deadline = test_wait_now () + (double) DISCONNECT_WAIT_SECONDS;
+	const double deadline = test_wait_now () + (double) disconnect_wait_seconds ();
 	while ((fd < 0) && (test_wait_now () < deadline)) {
 		fd = disconnect_connect_once (port, small_receive_buffer);
 		if (fd < 0) disconnect_sleep ();
@@ -1283,7 +1306,7 @@ static void disconnect_wait_jobs (
 	ThpoolStats stats;
 	disconnect_thpool_stats (server, &stats);
 
-	const double deadline = test_wait_now () + (double) DISCONNECT_WAIT_SECONDS;
+	const double deadline = test_wait_now () + (double) disconnect_wait_seconds ();
 	u64 value = completed ? stats.completed_jobs : stats.total_jobs;
 	while ((value < expected) && (test_wait_now () < deadline)) {
 		disconnect_sleep ();
@@ -1305,7 +1328,7 @@ static void disconnect_wait_jobs (
 
 static void disconnect_wait_value (const unsigned int *counter, const unsigned int expected) {
 
-	test_check_unsigned_eq (test_wait_counter (counter, expected, DISCONNECT_WAIT_SECONDS), expected, NULL);
+	test_check_unsigned_eq (test_wait_counter (counter, expected, disconnect_wait_seconds ()), expected, NULL);
 
 }
 
@@ -1382,9 +1405,7 @@ static DisconnectOptions disconnect_options_default (void) {
 
 static unsigned int disconnect_send_timeout (void) {
 
-	const char *preload = getenv (DISCONNECT_PRELOAD_VARIABLE);
-
-	return (preload && strstr (preload, DISCONNECT_VALGRIND_PRELOAD)) ?
+	return disconnect_under_valgrind () ?
 		DISCONNECT_VALGRIND_SEND_TIMEOUT : DISCONNECT_SEND_TIMEOUT;
 
 }
@@ -1582,7 +1603,7 @@ static void disconnect_cases_read (DisconnectCase *cases, const size_t n_cases) 
 
 	char buffer[DISCONNECT_READ_BUFFER];
 
-	const double deadline = test_wait_now () + (double) DISCONNECT_WAIT_SECONDS;
+	const double deadline = test_wait_now () + (double) disconnect_wait_seconds ();
 	while (reading && (test_wait_now () < deadline)) {
 		if (poll (descriptors, (nfds_t) n_cases, DISCONNECT_MILLISECONDS_PER_SECOND) <= 0) continue;
 
@@ -2315,9 +2336,74 @@ static long disconnect_task_syscall (const char *task) {
 
 }
 
-// interrupts with SIGUSR1 every thread of the process that waits in recvfrom ()
+#define DISCONNECT_PROBE_SECONDS			8
+#define DISCONNECT_PROBE_TASK_SIZE			32
+
+static pid_t disconnect_probe_task = 0;
+
+// keeps its task id and waits in the same recv () as the connections of the cerver
+static void *disconnect_receive_probe (void *fd_ptr) {
+
+	const int fd = *(const int *) fd_ptr;
+
+	__atomic_store_n (&disconnect_probe_task, (pid_t) syscall (SYS_gettid), __ATOMIC_SEQ_CST);
+
+	char byte = 0;
+	(void) recv (fd, &byte, sizeof (byte), 0);
+
+	return NULL;
+
+}
+
+static long disconnect_receive_probe_read (const double deadline) {
+
+	long number = -1;
+	char task[DISCONNECT_PROBE_TASK_SIZE] = { 0 };
+
+	while ((number == -1) && (test_wait_now () < deadline)) {
+		const pid_t probe = __atomic_load_n (&disconnect_probe_task, __ATOMIC_SEQ_CST);
+		if (probe) {
+			(void) snprintf (task, DISCONNECT_PROBE_TASK_SIZE, "%d", (int) probe);
+			number = disconnect_task_syscall (task);
+		}
+
+		if (number == -1) disconnect_sleep ();
+	}
+
+	return number;
+
+}
+
+// the number that /proc reports for a thread that waits in recv (),
+// which is not SYS_recvfrom when the binary runs emulated (an amd64 binary on arm64 reports the numbers of arm64)
+// returns -1 if it could not be read
+static long disconnect_receive_syscall (void) {
+
+	long number = -1;
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
+
+	__atomic_store_n (&disconnect_probe_task, 0, __ATOMIC_SEQ_CST);
+
+	pthread_t thread;
+	if (!pthread_create (&thread, NULL, disconnect_receive_probe, &fds[0])) {
+		number = disconnect_receive_probe_read (test_wait_now () + (double) DISCONNECT_PROBE_SECONDS);
+
+		(void) send (fds[1], "", 1, MSG_NOSIGNAL);
+		(void) pthread_join (thread, NULL);
+	}
+
+	(void) close (fds[0]);
+	(void) close (fds[1]);
+
+	return number;
+
+}
+
+// interrupts with SIGUSR1 every thread of the process that waits in the receive system call
 // returns how many were interrupted
-static unsigned int disconnect_interrupt_receives (void) {
+static unsigned int disconnect_interrupt_receives (const long receive_syscall) {
 
 	unsigned int interrupted = 0;
 
@@ -2328,7 +2414,7 @@ static unsigned int disconnect_interrupt_receives (void) {
 	while ((entry = readdir (tasks)) != NULL) {
 		if (entry->d_name[0] == '.') continue;
 
-		if (disconnect_task_syscall (entry->d_name) == SYS_recvfrom) {
+		if (disconnect_task_syscall (entry->d_name) == receive_syscall) {
 			const pid_t task = (pid_t) strtol (entry->d_name, NULL, 10);
 			if (!syscall (SYS_tgkill, getpid (), task, SIGUSR1)) interrupted += 1;
 		}
@@ -2355,6 +2441,9 @@ static void test_disconnect_interrupted (void) {
 	struct sigaction previous;
 	test_check_int_eq (sigaction (SIGUSR1, &action, &previous), 0, NULL);
 
+	const long receive_syscall = disconnect_receive_syscall ();
+	test_check (receive_syscall > -1, "the system call of a thread in recv () could not be read");
+
 	const size_t fds = disconnect_open_fds ();
 
 	DisconnectCounters before;
@@ -2374,7 +2463,7 @@ static void test_disconnect_interrupted (void) {
 	// the thread of the connection waits for the rest of the headers, well inside the idle timeout
 	unsigned int interrupted = 0;
 	const double deadline = test_wait_now () + ((double) DISCONNECT_IDLE_TIMEOUT / (2 * DISCONNECT_MILLISECONDS_PER_SECOND));
-	while (!interrupted && (test_wait_now () < deadline)) interrupted = disconnect_interrupt_receives ();
+	while (!interrupted && (test_wait_now () < deadline)) interrupted = disconnect_interrupt_receives (receive_syscall);
 
 	disconnect_send (dc.fd, model->request + dc.offset, model->length - dc.offset);
 
@@ -2418,7 +2507,7 @@ static void disconnect_gate_fill (const DisconnectServer *server, int *blocked, 
 		disconnect_send (blocked[i], block_request, strlen (block_request));
 	}
 
-	const double deadline = test_wait_now () + (double) DISCONNECT_WAIT_SECONDS;
+	const double deadline = test_wait_now () + (double) disconnect_wait_seconds ();
 	while ((disconnect_gate_waiting () < n_blocked) && (test_wait_now () < deadline)) disconnect_sleep ();
 
 	test_check_unsigned_eq (disconnect_gate_waiting (), n_blocked, "the handlers did not wait in the gate");
@@ -2581,7 +2670,7 @@ static void test_disconnect_overload (void) {
 	disconnect_leave (extra, DISCONNECT_FORM_RESET);
 
 	test_check (
-		test_wait_counter_64 (&server->cerver->stats->total_rejected_connections, rejected + 1, DISCONNECT_WAIT_SECONDS) == rejected + 1,
+		test_wait_counter_64 (&server->cerver->stats->total_rejected_connections, rejected + 1, disconnect_wait_seconds ()) == rejected + 1,
 		"the full cerver did not reject the connection"
 	);
 

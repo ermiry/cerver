@@ -19,6 +19,7 @@ source "$ROOT/test/process.sh"
 SERVERS=()
 PORTS=()
 RESTARTS=()
+CLIENT_ARGUMENTS=()
 DIRECTORY="."
 
 balancer_servers () {
@@ -43,6 +44,13 @@ upstream_servers () {
 	CLIENT="test/bin/client/load/$2"
 }
 
+example_servers () {
+	SERVERS=("examples/bin/$1")
+	PORTS=($TCP_PORT)
+	CLIENT="test/bin/client/ping"
+	export LD_LIBRARY_PATH="$ROOT/bin:$ROOT/examples/bin/app"
+}
+
 case "$PAIR" in
 	cerver/*)
 		SERVERS=("test/bin/cerver/${PAIR#cerver/}")
@@ -54,6 +62,17 @@ case "$PAIR" in
 		PORTS=($TCP_PORT)
 		CLIENT="test/bin/handler/client"
 		;;
+	examples/handlers)
+		example_servers "handlers -t q"
+		;;
+	examples/start)
+		example_servers "start server"
+		CLIENT="examples/bin/start"
+		CLIENT_ARGUMENTS=(client)
+		;;
+	examples/*)
+		example_servers "${PAIR#examples/}"
+		;;
 	balancer/round_robin)
 		balancer_servers round_robin
 		CLIENT="test/bin/client/load/simple"
@@ -61,6 +80,10 @@ case "$PAIR" in
 	balancer/handler_id)
 		balancer_servers handler_id
 		CLIENT="test/bin/client/load/id"
+		;;
+	balancer/custom)
+		balancer_servers custom
+		CLIENT="test/bin/client/load/simple"
 		;;
 	balancer/reconnect)
 		upstream_servers $SERVICE_RESTART_SECONDS reconnect
@@ -131,7 +154,7 @@ for index in "${!SERVERS[@]}"; do
 	fi
 done
 
-"$ROOT/$CLIENT" > "$CLIENT_LOG" 2>&1 &
+"$ROOT/$CLIENT" "${CLIENT_ARGUMENTS[@]}" > "$CLIENT_LOG" 2>&1 &
 CLIENT_PID=$!
 
 CLIENT_HUNG=0

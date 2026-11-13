@@ -6,27 +6,26 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
-// #if HAVE_STDINT_H
 #include <stdint.h>
 #include <stddef.h>
 #include <time.h>
-// #endif
+#include <unistd.h>
 
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/private.h"
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
 
-#ifndef INITIAL_HASHTABLE_ORDER
-#define INITIAL_HASHTABLE_ORDER 3
-#endif
+// a new table has 2^3 buckets
+#define JSON_HASHTABLE_INITIAL_ORDER		3
 
 typedef struct hashtable_list list_t;
 typedef struct hashtable_pair pair_t;
 typedef struct hashtable_bucket bucket_t;
 
-extern volatile uint32_t hashtable_seed;
+static uint32_t hashtable_seed_get (void);
 
 #pragma region lookup3
 
@@ -369,446 +368,375 @@ static uint32_t hashlittle (const void *key, size_t length, uint32_t initval)
 
 #pragma endregion
 
-#define list_to_pair(list_)         container_of (list_, pair_t, list)
-#define ordered_list_to_pair(list_) container_of (list_, pair_t, ordered_list)
-#define hash_str(key)               ((size_t)hashlittle ((key), strlen (key), hashtable_seed))
+#pragma region table
 
-static CERVER_INLINE void list_init (list_t *list) {
-    list->next = list;
-    list->prev = list;
+#define hashtable_list_to_pair(list_)			container_of (list_, pair_t, list)
+#define hashtable_ordered_list_to_pair(list_)	container_of (list_, pair_t, ordered_list)
+
+// the hash of a key with the seed of the process
+static size_t hashtable_hash_key (const char *key) {
+
+	return (size_t) hashlittle (key, strlen (key), hashtable_seed_get ());
+
 }
 
-static CERVER_INLINE void list_insert (list_t *list, list_t *node) {
-    node->next = list;
-    node->prev = list->prev;
-    list->prev->next = node;
-    list->prev = node;
+static CERVER_INLINE void hashtable_list_init (list_t *list) {
+
+	list->next = list;
+	list->prev = list;
+
 }
 
-static CERVER_INLINE void list_remove (list_t *list) {
-    list->prev->next = list->next;
-    list->next->prev = list->prev;
+static CERVER_INLINE void hashtable_list_insert (list_t *list, list_t *node) {
+
+	node->next = list;
+	node->prev = list->prev;
+	list->prev->next = node;
+	list->prev = node;
+
 }
 
-static CERVER_INLINE int bucket_is_empty (hashtable_t *hashtable, bucket_t *bucket) {
-    return bucket->first == &hashtable->list && bucket->first == bucket->last;
+static CERVER_INLINE void hashtable_list_remove (list_t *list) {
+
+	list->prev->next = list->next;
+	list->next->prev = list->prev;
+
 }
 
-static void insert_to_bucket (hashtable_t *hashtable, bucket_t *bucket, list_t *list) {
-    if (bucket_is_empty (hashtable, bucket)) {
-        list_insert (&hashtable->list, list);
-        bucket->first = bucket->last = list;
-    } else {
-        list_insert (bucket->first, list);
-        bucket->first = list;
-    }
+static CERVER_INLINE int hashtable_bucket_is_empty (hashtable_t *hashtable, bucket_t *bucket) {
+
+	return (bucket->first == &hashtable->list) && (bucket->first == bucket->last);
+
 }
 
-static pair_t *hashtable_find_pair (hashtable_t *hashtable, bucket_t *bucket,
-                                   const char *key, size_t hash) {
-    list_t *list;
-    pair_t *pair;
+static void hashtable_bucket_insert (hashtable_t *hashtable, bucket_t *bucket, list_t *list) {
 
-    if (bucket_is_empty (hashtable, bucket))
-        return NULL;
+	if (hashtable_bucket_is_empty (hashtable, bucket)) {
+		hashtable_list_insert (&hashtable->list, list);
+		bucket->first = list;
+		bucket->last = list;
+	}
 
-    list = bucket->first;
-    while (1) {
-        pair = list_to_pair (list);
-        if (pair->hash == hash && strcmp (pair->key, key) == 0)
-            return pair;
+	else {
+		hashtable_list_insert (bucket->first, list);
+		bucket->first = list;
+	}
 
-        if (list == bucket->last)
-            break;
-
-        list = list->next;
-    }
-
-    return NULL;
 }
 
-/* returns 0 on success, -1 if key was not found */
-static int hashtable_do_del (hashtable_t *hashtable, const char *key, size_t hash) {
-    pair_t *pair;
-    bucket_t *bucket;
-    size_t index;
+// every bucket of the table is empty
+static void hashtable_buckets_reset (hashtable_t *hashtable) {
 
-    index = hash & hashmask (hashtable->order);
-    bucket = &hashtable->buckets[index];
+	for (size_t index = 0; index < hashsize (hashtable->order); index++) {
+		hashtable->buckets[index].first = &hashtable->list;
+		hashtable->buckets[index].last = &hashtable->list;
+	}
 
-    pair = hashtable_find_pair (hashtable, bucket, key, hash);
-    if (!pair)
-        return -1;
-
-    if (&pair->list == bucket->first && &pair->list == bucket->last)
-        bucket->first = bucket->last = &hashtable->list;
-
-    else if (&pair->list == bucket->first)
-        bucket->first = pair->list.next;
-
-    else if (&pair->list == bucket->last)
-        bucket->last = pair->list.prev;
-
-    list_remove (&pair->list);
-    list_remove (&pair->ordered_list);
-    json_decref (pair->value);
-
-    jsonp_free (pair);
-    hashtable->size--;
-
-    return 0;
 }
 
-static void hashtable_do_clear (hashtable_t *hashtable) {
-    list_t *list, *next;
-    pair_t *pair;
+static bucket_t *hashtable_bucket_of (hashtable_t *hashtable, const size_t hash) {
 
-    for (list = hashtable->list.next; list != &hashtable->list; list = next) {
-        next = list->next;
-        pair = list_to_pair (list);
-        json_decref (pair->value);
-        jsonp_free (pair);
-    }
+	return &hashtable->buckets[hash & hashmask (hashtable->order)];
+
 }
 
-static int hashtable_do_rehash (hashtable_t *hashtable) {
-    list_t *list, *next;
-    pair_t *pair;
-    size_t i, index, new_size, new_order;
-    struct hashtable_bucket *new_buckets;
+static pair_t *hashtable_find_pair (
+	hashtable_t *hashtable, bucket_t *bucket,
+	const char *key, size_t hash
+) {
 
-    new_order = hashtable->order + 1;
-    new_size = hashsize (new_order);
+	if (hashtable_bucket_is_empty (hashtable, bucket)) return NULL;
 
-    new_buckets = (struct hashtable_bucket *) jsonp_malloc (new_size * sizeof (bucket_t));
-    if (!new_buckets)
-        return -1;
+	list_t *list = bucket->first;
+	while (true) {
+		pair_t *pair = hashtable_list_to_pair (list);
+		if ((pair->hash == hash) && !strcmp (pair->key, key)) return pair;
 
-    jsonp_free (hashtable->buckets);
-    hashtable->buckets = new_buckets;
-    hashtable->order = new_order;
+		if (list == bucket->last) break;
 
-    for (i = 0; i < hashsize (hashtable->order); i++) {
-        hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
-    }
+		list = list->next;
+	}
 
-    list = hashtable->list.next;
-    list_init (&hashtable->list);
+	return NULL;
 
-    for (; list != &hashtable->list; list = next) {
-        next = list->next;
-        pair = list_to_pair (list);
-        index = pair->hash % new_size;
-        insert_to_bucket (hashtable, &hashtable->buckets[index], &pair->list);
-    }
+}
 
-    return 0;
+// the bucket no longer has the pair as its first or its last element
+static void hashtable_bucket_remove (hashtable_t *hashtable, bucket_t *bucket, pair_t *pair) {
+
+	if ((&pair->list == bucket->first) && (&pair->list == bucket->last)) {
+		bucket->first = &hashtable->list;
+		bucket->last = &hashtable->list;
+	}
+
+	else if (&pair->list == bucket->first) {
+		bucket->first = pair->list.next;
+	}
+
+	else if (&pair->list == bucket->last) {
+		bucket->last = pair->list.prev;
+	}
+
+}
+
+// returns 0 on success, -1 if key was not found
+static int hashtable_remove (hashtable_t *hashtable, const char *key, size_t hash) {
+
+	bucket_t *bucket = hashtable_bucket_of (hashtable, hash);
+
+	pair_t *pair = hashtable_find_pair (hashtable, bucket, key, hash);
+	if (!pair) return -1;
+
+	hashtable_bucket_remove (hashtable, bucket, pair);
+
+	hashtable_list_remove (&pair->list);
+	hashtable_list_remove (&pair->ordered_list);
+	json_decref (pair->value);
+
+	jsonp_free (pair);
+	hashtable->size -= 1;
+
+	return 0;
+
+}
+
+static void hashtable_release_pairs (hashtable_t *hashtable) {
+
+	list_t *next = NULL;
+	for (list_t *list = hashtable->list.next; list != &hashtable->list; list = next) {
+		next = list->next;
+
+		pair_t *pair = hashtable_list_to_pair (list);
+		json_decref (pair->value);
+		jsonp_free (pair);
+	}
+
+}
+
+// doubles the buckets and inserts every pair again
+static int hashtable_rehash (hashtable_t *hashtable) {
+
+	const size_t new_order = hashtable->order + 1;
+	const size_t new_size = hashsize (new_order);
+
+	bucket_t *new_buckets = (bucket_t *) jsonp_malloc (new_size * sizeof (bucket_t));
+	if (!new_buckets) return -1;
+
+	jsonp_free (hashtable->buckets);
+	hashtable->buckets = new_buckets;
+	hashtable->order = new_order;
+
+	hashtable_buckets_reset (hashtable);
+
+	list_t *list = hashtable->list.next;
+	hashtable_list_init (&hashtable->list);
+
+	list_t *next = NULL;
+	for (; list != &hashtable->list; list = next) {
+		next = list->next;
+
+		pair_t *pair = hashtable_list_to_pair (list);
+		hashtable_bucket_insert (hashtable, &hashtable->buckets[pair->hash % new_size], &pair->list);
+	}
+
+	return 0;
+
 }
 
 int hashtable_init (hashtable_t *hashtable) {
-    size_t i;
 
-    hashtable->size = 0;
-    hashtable->order = INITIAL_HASHTABLE_ORDER;
-    hashtable->buckets = (struct hashtable_bucket *) jsonp_malloc (hashsize (hashtable->order) * sizeof (bucket_t));
-    if (!hashtable->buckets)
-        return -1;
+	hashtable->size = 0;
+	hashtable->order = JSON_HASHTABLE_INITIAL_ORDER;
+	hashtable->buckets = (bucket_t *) jsonp_malloc (hashsize (hashtable->order) * sizeof (bucket_t));
+	if (!hashtable->buckets) return -1;
 
-    list_init (&hashtable->list);
-    list_init (&hashtable->ordered_list);
+	hashtable_list_init (&hashtable->list);
+	hashtable_list_init (&hashtable->ordered_list);
 
-    for (i = 0; i < hashsize (hashtable->order); i++) {
-        hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
-    }
+	hashtable_buckets_reset (hashtable);
 
-    return 0;
+	return 0;
+
 }
 
 void hashtable_close (hashtable_t *hashtable) {
-    hashtable_do_clear (hashtable);
-    jsonp_free (hashtable->buckets);
+
+	hashtable_release_pairs (hashtable);
+	jsonp_free (hashtable->buckets);
+
+}
+
+// a new pair with a copy of the key,
+// offsetof () is the size of pair_t without its flexible member, the key
+static pair_t *hashtable_pair_create (const char *key, size_t hash, json_t *value) {
+
+	const size_t length = strlen (key);
+
+	// a key so long that its size does not fit
+	if (length >= (SIZE_MAX - offsetof (pair_t, key))) return NULL;
+
+	pair_t *pair = (pair_t *) jsonp_malloc (offsetof (pair_t, key) + length + 1);
+	if (pair) {
+		pair->hash = hash;
+		(void) memcpy (pair->key, key, length + 1);
+		pair->value = value;
+		hashtable_list_init (&pair->list);
+		hashtable_list_init (&pair->ordered_list);
+	}
+
+	return pair;
+
 }
 
 int hashtable_set (hashtable_t *hashtable, const char *key, json_t *value) {
-    pair_t *pair;
-    bucket_t *bucket;
-    size_t hash, index;
 
-    /* rehash if the load ratio exceeds 1 */
-    if (hashtable->size >= hashsize (hashtable->order))
-        if (hashtable_do_rehash (hashtable))
-            return -1;
+	// rehash if the load ratio exceeds 1
+	if ((hashtable->size >= hashsize (hashtable->order)) && hashtable_rehash (hashtable)) return -1;
 
-    hash = hash_str (key);
-    index = hash & hashmask (hashtable->order);
-    bucket = &hashtable->buckets[index];
-    pair = hashtable_find_pair (hashtable, bucket, key, hash);
+	const size_t hash = hashtable_hash_key (key);
+	bucket_t *bucket = hashtable_bucket_of (hashtable, hash);
 
-    if (pair) {
-        json_decref (pair->value);
-        pair->value = value;
-    } else {
-        /* offsetof(...) returns the size of pair_t without the last,
-           flexible member. This way, the correct amount is
-           allocated. */
+	pair_t *pair = hashtable_find_pair (hashtable, bucket, key, hash);
+	if (pair) {
+		json_decref (pair->value);
+		pair->value = value;
+	}
 
-        size_t len = strlen (key);
-        if (len >= (size_t)-1 - offsetof (pair_t, key)) {
-            /* Avoid an overflow if the key is very long */
-            return -1;
-        }
+	else {
+		pair = hashtable_pair_create (key, hash, value);
+		if (!pair) return -1;
 
-        pair = (pair_t *) jsonp_malloc (offsetof (pair_t, key) + len + 1);
-        if (!pair)
-            return -1;
+		hashtable_bucket_insert (hashtable, bucket, &pair->list);
+		hashtable_list_insert (&hashtable->ordered_list, &pair->ordered_list);
 
-        pair->hash = hash;
-        strncpy (pair->key, key, len + 1);
-        pair->value = value;
-        list_init (&pair->list);
-        list_init (&pair->ordered_list);
+		hashtable->size += 1;
+	}
 
-        insert_to_bucket (hashtable, bucket, &pair->list);
-        list_insert (&hashtable->ordered_list, &pair->ordered_list);
+	return 0;
 
-        hashtable->size++;
-    }
-    return 0;
 }
 
 void *hashtable_get (hashtable_t *hashtable, const char *key) {
-    pair_t *pair;
-    size_t hash;
-    bucket_t *bucket;
 
-    hash = hash_str (key);
-    bucket = &hashtable->buckets[hash & hashmask (hashtable->order)];
+	const size_t hash = hashtable_hash_key (key);
 
-    pair = hashtable_find_pair (hashtable, bucket, key, hash);
-    if (!pair)
-        return NULL;
+	pair_t *pair = hashtable_find_pair (hashtable, hashtable_bucket_of (hashtable, hash), key, hash);
 
-    return pair->value;
+	return pair ? pair->value : NULL;
+
 }
 
 int hashtable_del (hashtable_t *hashtable, const char *key) {
-    size_t hash = hash_str (key);
-    return hashtable_do_del (hashtable, key, hash);
+
+	return hashtable_remove (hashtable, key, hashtable_hash_key (key));
+
 }
 
 void hashtable_clear (hashtable_t *hashtable) {
-    size_t i;
 
-    hashtable_do_clear (hashtable);
+	hashtable_release_pairs (hashtable);
 
-    for (i = 0; i < hashsize (hashtable->order); i++) {
-        hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
-    }
+	hashtable_buckets_reset (hashtable);
 
-    list_init (&hashtable->list);
-    list_init (&hashtable->ordered_list);
-    hashtable->size = 0;
+	hashtable_list_init (&hashtable->list);
+	hashtable_list_init (&hashtable->ordered_list);
+	hashtable->size = 0;
+
 }
 
 void *hashtable_iter (hashtable_t *hashtable) {
-    return hashtable_iter_next (hashtable, &hashtable->ordered_list);
+
+	return hashtable_iter_next (hashtable, &hashtable->ordered_list);
+
 }
 
 void *hashtable_iter_at (hashtable_t *hashtable, const char *key) {
-    pair_t *pair;
-    size_t hash;
-    bucket_t *bucket;
 
-    hash = hash_str (key);
-    bucket = &hashtable->buckets[hash & hashmask (hashtable->order)];
+	const size_t hash = hashtable_hash_key (key);
 
-    pair = hashtable_find_pair (hashtable, bucket, key, hash);
-    if (!pair)
-        return NULL;
+	pair_t *pair = hashtable_find_pair (hashtable, hashtable_bucket_of (hashtable, hash), key, hash);
 
-    return &pair->ordered_list;
+	return pair ? &pair->ordered_list : NULL;
+
 }
 
 void *hashtable_iter_next (hashtable_t *hashtable, void *iter) {
-    list_t *list = (list_t *)iter;
-    if (list->next == &hashtable->ordered_list)
-        return NULL;
-    return list->next;
+
+	list_t *list = (list_t *) iter;
+
+	return (list->next == &hashtable->ordered_list) ? NULL : list->next;
+
 }
 
 void *hashtable_iter_key (void *iter) {
-    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
-    return pair->key;
+
+	pair_t *pair = hashtable_ordered_list_to_pair ((list_t *) iter);
+
+	return pair->key;
+
 }
 
 void *hashtable_iter_value (void *iter) {
-    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
-    return pair->value;
+
+	pair_t *pair = hashtable_ordered_list_to_pair ((list_t *) iter);
+
+	return pair->value;
+
 }
 
 void hashtable_iter_set (void *iter, json_t *value) {
-    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
 
-    json_decref (pair->value);
-    pair->value = value;
+	pair_t *pair = hashtable_ordered_list_to_pair ((list_t *) iter);
+
+	json_decref (pair->value);
+	pair->value = value;
+
 }
 
-// static uint32_t buf_to_uint32(char *data) {
-//     size_t i;
-//     uint32_t result = 0;
+#pragma endregion
 
-//     for (i = 0; i < sizeof(uint32_t); i++)
-//         result = (result << 8) | (unsigned char)data[i];
+#pragma region seed
 
-//     return result;
-// }
+// the seed of the hash of the keys of every object of the process,
+// set once before the first object, it never changes after that
+static uint32_t hashtable_seed = 0;
 
-/* /dev/urandom */
-#if !defined (_WIN32) && defined (USE_URANDOM)
-static int seed_from_urandom (uint32_t *seed) {
-    /* Use unbuffered I/O if we have open(), close() and read(). Otherwise
-       fall back to fopen() */
+static uint32_t hashtable_seed_get (void) {
 
-    char data[sizeof (uint32_t)];
-    int ok;
+	return __atomic_load_n (&hashtable_seed, __ATOMIC_ACQUIRE);
 
-#if defined (HAVE_OPEN) && defined (HAVE_CLOSE) && defined (HAVE_READ)
-    int urandom;
-    urandom = open ("/dev/urandom", O_RDONLY);
-    if (urandom == -1)
-        return 1;
-
-    ok = read (urandom, data, sizeof (uint32_t)) == sizeof (uint32_t);
-    close (urandom);
-#else
-    FILE *urandom;
-
-    urandom = fopen ("/dev/urandom", "rb");
-    if (!urandom)
-        return 1;
-
-    ok = fread (data, 1, sizeof (uint32_t), urandom) == sizeof (uint32_t);
-    fclose (urandom);
-#endif
-
-    if (!ok)
-        return 1;
-
-    *seed = buf_to_uint32 (data);
-    return 0;
-}
-#endif
-
-/* gettimeofday() and getpid() */
-static int seed_from_timestamp_and_pid (uint32_t *seed) {
-#ifdef HAVE_GETTIMEOFDAY
-    /* XOR of seconds and microseconds */
-    struct timeval tv;
-    gettimeofday (&tv, NULL);
-    *seed = (uint32_t)tv.tv_sec ^ (uint32_t)tv.tv_usec;
-#else
-    /* Seconds only */
-    *seed = (uint32_t)time (NULL);
-#endif
-
-    /* XOR with PID for more randomness */
-#if defined (_WIN32)
-    *seed ^= (uint32_t)GetCurrentProcessId ();
-#elif defined (HAVE_GETPID)
-    *seed ^= (uint32_t)getpid ();
-#endif
-
-    return 0;
 }
 
-static uint32_t generate_seed () {
-    uint32_t seed = 0;
-    int done = 0;
+// a seed that nobody can compute, so the keys that collide in the buckets
+// can not be chosen to slow down every object of a request (hash flooding)
+// the time, the process and an address only if the kernel gives no entropy
+static uint32_t hashtable_seed_generate (void) {
 
-#if !defined (_WIN32) && defined (USE_URANDOM)
-    if (seed_from_urandom (&seed) == 0)
-        done = 1;
-#endif
+	uint32_t seed = 0;
+	if (getentropy (&seed, sizeof (seed))) {
+		seed = (uint32_t) time (NULL) ^ (uint32_t) getpid () ^ (uint32_t) (uintptr_t) &seed;
+	}
 
-#if defined (_WIN32) && defined (USE_WINDOWS_CRYPTOAPI)
-    if (seed_from_windows_cryptoapi (&seed) == 0)
-        done = 1;
-#endif
+	// zero means that the seed was not set
+	return seed ? seed : 1;
 
-    if (!done) {
-        /* Fall back to timestamp and PID if no better randomness is
-           available */
-        seed_from_timestamp_and_pid (&seed);
-    }
-
-    /* Make sure the seed is never zero */
-    if (seed == 0)
-        seed = 1;
-
-    return seed;
 }
 
-volatile uint32_t hashtable_seed = 0;
-
-#if defined (HAVE_ATOMIC_BUILTINS) && (defined (HAVE_SCHED_YIELD) || !defined (_WIN32))
-static volatile char seed_initialized = 0;
-
+// the first call sets the seed: the given one or a random one if it is 0,
+// the next calls do nothing, also when two threads call it at the same time
 void json_object_seed (size_t seed) {
-    uint32_t new_seed = (uint32_t)seed;
 
-    if (hashtable_seed == 0) {
-        if (__atomic_test_and_set (&seed_initialized, __ATOMIC_RELAXED) == 0) {
-            /* Do the seeding ourselves */
-            if (new_seed == 0)
-                new_seed = generate_seed ();
+	if (!hashtable_seed_get ()) {
+		uint32_t new_seed = (uint32_t) seed;
+		if (!new_seed) new_seed = hashtable_seed_generate ();
 
-            __atomic_store_n (&hashtable_seed, new_seed, __ATOMIC_RELEASE);
-        } else {
-            /* Wait for another thread to do the seeding */
-            do {
-#ifdef HAVE_SCHED_YIELD
-                sched_yield ();
-#endif
-            } while (__atomic_load_n (&hashtable_seed, __ATOMIC_ACQUIRE) == 0);
-        }
-    }
+		uint32_t expected = 0;
+		(void) __atomic_compare_exchange_n (
+			&hashtable_seed, &expected, new_seed,
+			false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE
+		);
+	}
+
 }
-#elif defined (HAVE_SYNC_BUILTINS) && (defined (HAVE_SCHED_YIELD) || !defined (_WIN32))
-void json_object_seed (size_t seed) {
-    uint32_t new_seed = (uint32_t)seed;
 
-    if (hashtable_seed == 0) {
-        if (new_seed == 0) {
-            /* Explicit synchronization fences are not supported by the
-               __sync builtins, so every thread getting here has to
-               generate the seed value.
-            */
-            new_seed = generate_seed ();
-        }
-
-        do {
-            if (__sync_bool_compare_and_swap (&hashtable_seed, 0, new_seed)) {
-                /* We were the first to seed */
-                break;
-            } else {
-                /* Wait for another thread to do the seeding */
-#ifdef HAVE_SCHED_YIELD
-                sched_yield ();
-#endif
-            }
-        } while (hashtable_seed == 0);
-    }
-}
-#else
-/* Fall back to a thread-unsafe version */
-void json_object_seed (size_t seed) {
-    uint32_t new_seed = (uint32_t)seed;
-
-    if (hashtable_seed == 0) {
-        if (new_seed == 0)
-            new_seed = generate_seed ();
-
-        hashtable_seed = new_seed;
-    }
-}
-#endif
+#pragma endregion

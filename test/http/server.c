@@ -1187,7 +1187,7 @@ static void test_server_slowloris (void) {
 	(void) close (fd);
 
 	// answered with the headers deadline, not the recv () timeout
-	test_check ((server_test_now () - start) < CERVER_DEFAULT_SOCKET_RECV_TIMEOUT, "the slowloris was not stopped in time");
+	test_check ((server_test_now () - start) < CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT, "the slowloris was not stopped in time");
 
 	// the thread is free for the next request
 	server_test_request (server->port, ok_request, status_ok);

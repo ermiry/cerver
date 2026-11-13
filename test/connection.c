@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <cerver/connection.h>
+#include <cerver/packets.h>
 
 #include "test.h"
 
@@ -97,13 +98,52 @@ static void test_connection_recycle (void) {
 
 }
 
-int main (int argc, char **argv) {
+#define CONNECTION_TEST_BUFFER_SIZE				2048
+
+static unsigned int released_packets = 0;
+
+static void test_connection_packet_release (void *args) {
+
+	(void) args;
+
+	released_packets += 1;
+
+}
+
+// a receive buffer of 0 bytes is ignored, and a packet that can not be queued
+// is deleted like the send thread does with the ones it sends
+static void test_connection_setters_invalid (void) {
+
+	Connection *connection = test_connection_create ();
+
+	connection_set_receive_buffer_size (connection, CONNECTION_TEST_BUFFER_SIZE);
+	connection_set_receive_buffer_size (connection, 0);
+	test_check_unsigned_eq (
+		connection->receive_packet_buffer_size, CONNECTION_TEST_BUFFER_SIZE,
+		"set a receive buffer of 0 bytes"
+	);
+
+	Packet *packet = packet_new ();
+	test_check_ptr (packet);
+	packet->release = test_connection_packet_release;
+
+	released_packets = 0;
+	connection_send_packet (connection, packet);
+	test_check_unsigned_eq (released_packets, 1, "a packet without a send queue was not deleted");
+
+	connection_delete (connection);
+
+}
+
+int main (void) {
 
 	test_output_init ();
 
 	(void) printf ("Testing CONNECTION...\n");
 
 	test_connection_base_configuration ();
+
+	test_connection_setters_invalid ();
 
 	test_connection_storage ();
 

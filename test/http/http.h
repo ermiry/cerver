@@ -28,6 +28,8 @@ extern void http_tests_requests (void);
 
 extern void http_tests_responses (void);
 
+extern void http_tests_recycle (void);
+
 extern void http_tests_multiparts (void);
 
 extern void http_tests_urls (void);
@@ -51,6 +53,8 @@ extern void http_tests_jwt (void);
 extern void http_tests_jwt_encode (void);
 
 extern void http_tests_jwt_decode (void);
+
+extern void http_tests_tokens (void);
 
 extern void http_tests_admin (void);
 

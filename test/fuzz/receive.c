@@ -18,7 +18,7 @@ static u8 fuzz_receive_dispatch (ReceiveHandle *receive_handle, Packet *packet) 
 	(void) receive_handle;
 
 	// the data of the packet has the size of its header
-	if (packet->data_size != (packet->header.packet_size - sizeof (PacketHeader))) abort ();
+	if (packet->data_size != (packet->header.packet_size - PACKET_HEADER_SIZE)) abort ();
 
 	packet_delete (packet);
 

@@ -94,7 +94,7 @@ int main (void) {
 
 	// every client waited for all the identities before it ended
 	const unsigned int total = concurrent_identities ();
-	(void) printf ("Identities: %u of %u\n", total, CONCURRENT_CLIENTS * CONCURRENT_IDENTITIES);
+	(void) printf ("Identities: %u of %u\n", total, (unsigned int) (CONCURRENT_CLIENTS * CONCURRENT_IDENTITIES));
 
 	const unsigned int minimum = total >> CONCURRENT_MINIMUM_SHIFT;
 	for (unsigned int service = 0; service < UPSTREAM_SERVICES; service++) {

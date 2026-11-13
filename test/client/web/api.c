@@ -75,7 +75,7 @@ static unsigned int api_request_login (
 			api_request_all_data_handler, data_buffer
 		)) {
 			// get token
-			json_error_t json_error = { 0 };
+			json_error_t json_error = CERVER_ZERO_INITIALIZER;
 			json_t *json = json_loads (data_buffer, 0, &json_error);
 			if (json) {
 				const char *key = NULL;
@@ -112,7 +112,7 @@ static unsigned int api_request_all_actual (
 	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	// GET /api/users
 	errors |= curl_simple_handle_data (
@@ -122,15 +122,15 @@ static unsigned int api_request_all_actual (
 	);
 
 	// POST api/users/register
-	(void) snprintf (actual_address, 128, "%s/register", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/register", address);
 	errors |= api_request_register (curl, actual_address);
 
 	// POST api/users/login
-	(void) snprintf (actual_address, 128, "%s/login", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/login", address);
 	errors |= api_request_login (curl, actual_address, data_buffer);
 
 	// GET api/users/profile
-	(void) snprintf (actual_address, 128, "%s/profile", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/profile", address);
 	errors |= curl_simple_with_auth (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -169,7 +169,7 @@ static unsigned int api_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

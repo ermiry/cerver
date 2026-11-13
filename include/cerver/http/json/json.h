@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See thirdparty.md for details.
+ */
+
 #ifndef _CERVER_HTTP_JSON_H_
 #define _CERVER_HTTP_JSON_H_
 
@@ -74,23 +81,23 @@ CERVER_PUBLIC enum json_error_code json_error_code (
 	const json_error_t *e
 );
 
-CERVER_PUBLIC void jsonp_error_init (
+CERVER_HIDDEN void jsonp_error_init (
 	json_error_t *error, const char *source
 );
 
-CERVER_PUBLIC void jsonp_error_set_source (
+CERVER_HIDDEN void jsonp_error_set_source (
 	json_error_t *error, const char *source
 );
 
-CERVER_PUBLIC void jsonp_error_set (
+CERVER_HIDDEN void jsonp_error_set (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, ...
-);
+) CERVER_PRINTF_FORMAT (6, 7);
 
-CERVER_PUBLIC void jsonp_error_vset (
+CERVER_HIDDEN void jsonp_error_vset (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, va_list ap
-);
+) CERVER_PRINTF_FORMAT (6, 0);
 
 #pragma endregion
 
@@ -144,6 +151,11 @@ CERVER_PUBLIC int json_vunpack_ex (
 typedef size_t (*json_load_callback_t) (
 	void *buffer, size_t buflen, void *data
 );
+
+// sets the bytes of values that a parse can allocate for each byte that it reads,
+// a document that needs more fails with json_error_out_of_memory,
+// the default value is JSON_PARSER_DEFAULT_MEMORY_FACTOR, 0 has no limit
+CERVER_PUBLIC void json_set_parser_memory_factor (size_t factor);
 
 CERVER_PUBLIC json_t *json_loads (
 	const char *input, size_t flags, json_error_t *error

@@ -33,6 +33,7 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/origin.h"
+#include "cerver/http/recycle.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/status.h"
@@ -41,8 +42,12 @@
 #include "cerver/http/utils.h"
 
 #include "cerver/http/json/json.h"
+#include "cerver/http/json/value.h"
 
 #include "cerver/utils/utils.h"
+
+// the separators ", " and ": " of the json bodies, as they were written before
+#define HTTP_RESPONSE_JSON_DUMP_FLAGS		0
 
 typedef struct HttpResponseProducer {
 
@@ -95,28 +100,59 @@ static const HttpCerver *http_response_producer_cerver (void) {
 
 #pragma region responses
 
-void *http_response_new (void) {
+// the header of the response was allocated, it is not its buffer
+static bool http_response_header_is_allocated (const HttpResponse *response) {
 
-	HttpResponse *response = (HttpResponse *) malloc (sizeof (HttpResponse));
-	if (response) {
-		response->status = HTTP_STATUS_OK;
+	return response->header && (response->header != (void *) response->header_buffer);
 
-		response->n_headers = 0;
+}
+
+static void http_response_header_release (HttpResponse *response) {
+
+	if (http_response_header_is_allocated (response)) free (response->header);
+
+	response->header = NULL;
+	response->header_len = 0;
+
+}
+
+// the headers of a response are all empty when it has none,
+// a recycled response was reset, so only a new one clears them
+static void http_response_init (HttpResponse *response, const bool clear_headers) {
+
+	response->status = HTTP_STATUS_OK;
+
+	response->n_headers = 0;
+	if (clear_headers) {
 		(void) memset (
 			response->headers, 0,
 			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
 		);
-
-		response->header = NULL;
-		response->header_len = 0;
-
-		response->data = NULL;
-		response->data_len = 0;
-		response->data_ref = false;
-
-		response->res = NULL;
-		response->res_len = 0;
 	}
+
+	response->header = NULL;
+	response->header_len = 0;
+	response->header_buffer[0] = '\0';
+
+	response->data = NULL;
+	response->data_len = 0;
+	response->data_ref = false;
+
+	response->res = NULL;
+	response->res_len = 0;
+
+	response->recycle_next = NULL;
+
+}
+
+void *http_response_new (void) {
+
+	HttpResponse *response = http_recycle_response_take ();
+	const bool recycled = (response != NULL);
+
+	if (!response) response = (HttpResponse *) malloc (sizeof (HttpResponse));
+
+	if (response) http_response_init (response, !recycled);
 
 	return response;
 
@@ -126,17 +162,17 @@ void http_response_reset (HttpResponse *response) {
 
 	response->status = HTTP_STATUS_OK;
 
-	response->n_headers = 0;
-	(void) memset (
-		response->headers, 0,
-		HTTP_HEADERS_SIZE * sizeof (HttpHeader)
-	);
-
-	response->header_len = 0;
-	if (response->header) {
-		free (response->header);
-		response->header = NULL;
+	// only the headers that were added have values
+	if (response->n_headers) {
+		(void) memset (
+			response->headers, 0,
+			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
+		);
 	}
+
+	response->n_headers = 0;
+
+	http_response_header_release (response);
 
 	if (!response->data_ref) {
 		if (response->data) free (response->data);
@@ -154,12 +190,15 @@ void http_response_reset (HttpResponse *response) {
 
 }
 
+// the response is reset and kept to be used again
 void http_response_delete (void *res_ptr) {
 
 	if (res_ptr) {
-		http_response_reset ((HttpResponse *) res_ptr);
+		HttpResponse *response = (HttpResponse *) res_ptr;
 
-		free (res_ptr);
+		http_response_reset (response);
+
+		http_recycle_response_give_back (response);
 	}
 
 }
@@ -198,10 +237,7 @@ void http_response_set_header (
 ) {
 
 	if (response) {
-		if (response->header) {
-			free (response->header);
-			response->header = NULL;
-		}
+		http_response_header_release (response);
 
 		if (header) {
 			response->header = (void *) header;
@@ -577,11 +613,10 @@ static void http_response_compile_single_header (
 	HttpResponse *response
 ) {
 
-	response->header = (char *) calloc (HTTP_RESPONSE_MAIN_HEADER_SIZE, sizeof (char));
-	if (!response->header) return;
+	response->header = response->header_buffer;
 
 	const int written = snprintf (
-		(char *) response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		response->header_buffer, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
 		"\r\n",
@@ -594,6 +629,39 @@ static void http_response_compile_single_header (
 		((size_t) written < HTTP_RESPONSE_MAIN_HEADER_SIZE) ?
 			(size_t) written : HTTP_RESPONSE_MAIN_HEADER_SIZE - 1
 	);
+
+}
+
+#define HTTP_RESPONSE_JSON_HEADER_FORMAT									\
+	"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"								\
+	HTTP_RESPONSE_CONNECTION_CLOSE_HEADER									\
+	"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n"
+
+// the header of a json body, in the buffer of the response when it fits
+static void http_response_json_header (HttpResponse *response) {
+
+	const unsigned int status = (unsigned int) response->status;
+	const char *status_string = http_status_string (response->status);
+
+	const int written = snprintf (
+		response->header_buffer, HTTP_RESPONSE_HEADER_BUFFER_SIZE,
+		HTTP_RESPONSE_JSON_HEADER_FORMAT,
+		status, status_string, CERVER_VERSION, response->data_len
+	);
+
+	if ((written >= 0) && ((size_t) written < HTTP_RESPONSE_HEADER_BUFFER_SIZE)) {
+		response->header = response->header_buffer;
+		response->header_len = (size_t) written;
+	}
+
+	else {
+		response->header = c_string_create (
+			HTTP_RESPONSE_JSON_HEADER_FORMAT,
+			status, status_string, CERVER_VERSION, response->data_len
+		);
+
+		response->header_len = response->header ? strlen ((const char *) response->header) : 0;
+	}
 
 }
 
@@ -628,8 +696,16 @@ static void http_response_compile_multiple_headers (
 
 	response->header_len += 2;	// \r\n
 
-	// one more byte to always terminate the header with '\0'
-	response->header = calloc (response->header_len + 1, sizeof (char));
+	// one more byte to always terminate the header with '\0',
+	// in the buffer of the response when it fits
+	const size_t header_size = response->header_len + 1;
+	response->header = (header_size <= HTTP_RESPONSE_HEADER_BUFFER_SIZE) ?
+		response->header_buffer : calloc (header_size, sizeof (char));
+
+	if (!response->header) {
+		response->header_len = 0;
+		return;
+	}
 
 	char *end = (char *) response->header;
 	(void) memcpy (end, main_header, main_header_len);
@@ -655,6 +731,8 @@ static void http_response_compile_multiple_headers (
 	*end = '\r';
 	end += 1;
 	*end = '\n';
+	end += 1;
+	*end = '\0';
 
 }
 
@@ -2298,26 +2376,61 @@ HttpResponse *http_response_create_json (
 
 }
 
-HttpResponse *http_response_create_json_key_value (
-	const http_status status, const char *key, const char *value
+// the body { "key": value } of the json responses,
+// the key and a string value are escaped by the json library,
+// a real is written without the locale, and a NaN or an infinite value is an error
+// it takes the value, as json_object_set_new () does
+// returns the body allocated with malloc (), or NULL on error
+static char *http_response_json_body (const char *key, json_t *value) {
+
+	char *body = NULL;
+
+	json_t *json = json_object ();
+	if (json && value) {
+		// the value is released by the object, also when it fails to set it
+		if (!json_object_set_new (json, key, value)) {
+			body = json_dumps (json, HTTP_RESPONSE_JSON_DUMP_FLAGS);
+		}
+	}
+
+	else {
+		json_decref (value);
+	}
+
+	json_decref (json);
+
+	return body;
+
+}
+
+// the response owns the json, so its data is never left dangling,
+// a response that is compiled again or sent in parts still has its body
+static HttpResponse *http_response_create_json_owned (
+	const http_status status, char *json
 ) {
 
 	HttpResponse *response = NULL;
 
-	if (key && value) {
-		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
+	if (json) {
+		response = http_response_create_json_common (
+			status, json, strlen (json)
+		);
 
-			// the response owns the json, so its data is never left dangling
-			if (response) response->data_ref = false;
-			else free (json);
-		}
+		if (response) response->data_ref = false;
+		else free (json);
 	}
 
 	return response;
+
+}
+
+HttpResponse *http_response_create_json_key_value (
+	const http_status status, const char *key, const char *value
+) {
+
+	return (key && value) ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_string (value))
+	) : NULL;
 
 }
 
@@ -2328,20 +2441,9 @@ HttpResponse *http_response_json_int_value (
 	const http_status status, const char *key, const int value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %d}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_integer ((json_int_t) value))
+	) : NULL;
 
 }
 
@@ -2378,20 +2480,9 @@ HttpResponse *http_response_json_large_int_value (
 	const http_status status, const char *key, const long value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %ld}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_integer ((json_int_t) value))
+	) : NULL;
 
 }
 
@@ -2428,20 +2519,9 @@ HttpResponse *http_response_json_real_value (
 	const http_status status, const char *key, const double value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = c_string_create ("{\"%s\": %f}", key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_real (value))
+	) : NULL;
 
 }
 
@@ -2471,27 +2551,6 @@ u8 http_response_json_real_value_send (
 
 }
 
-static char *http_response_create_json_bool_string (
-	const char *key, const bool value
-) {
-
-	char *json_string_value = NULL;
-
-	json_t *json = json_object ();
-	if (json) {
-		(void) json_object_set_new (
-			json, key, json_boolean (value)
-		);
-
-		json_string_value = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	return json_string_value;
-
-}
-
 // creates a HTTP response with the defined status code
 // with a json body of type { "key": bool_value }
 // returns a new HTTP response instance ready to be sent
@@ -2499,20 +2558,9 @@ HttpResponse *http_response_json_bool_value (
 	const http_status status, const char *key, const bool value
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (key) {
-		char *json = http_response_create_json_bool_string (key, value);
-		if (json) {
-			response = http_response_create_json_common (
-				status, json, strlen (json)
-			);
-
-			free (json);
-		}
-	}
-
-	return response;
+	return key ? http_response_create_json_owned (
+		status, http_response_json_body (key, json_boolean (value))
+	) : NULL;
 
 }
 
@@ -2542,38 +2590,27 @@ u8 http_response_json_bool_value_send (
 
 }
 
+// a message that is not valid UTF-8 can not be json, there is no response
 static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
+	char *json = http_response_json_body (key, json_string (value));
+	if (!json) return NULL;
+
 	HttpResponse *response = (HttpResponse *) http_response_new ();
-	if (response) {
+	if (!response) {
+		free (json);
+	}
+
+	else {
 		response->status = status;
 
 		// body
-		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
-		if (json) {
-			response->data = json;
-			response->data_len = strlen (json);
-		}
+		response->data = json;
+		response->data_len = strlen (json);
 
-		// header
-		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_TYPE, "application/json");
-
-		// char json_len[16] = { 0 };
-		// snprintf (json_len, 16, "%ld", response->data_len);
-		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
-
-		response->header = c_string_create (
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
-			(unsigned int) response->status, http_status_string (response->status),
-			CERVER_VERSION,
-			response->data_len
-		);
-
-		response->header_len = strlen ((const char *) response->header);
+		http_response_json_header (response);
 	}
 
 	return response;
@@ -2688,29 +2725,28 @@ u8 http_response_json_key_value_send (
 
 }
 
+// a body that can not be copied is an error, not a response with uninitialized bytes
 static HttpResponse *http_response_json_custom_internal (
 	const http_status status, const char *json
 ) {
 
+	char *body = strdup (json);
+	if (!body) return NULL;
+
 	HttpResponse *response = (HttpResponse *) http_response_new ();
-	if (response) {
+	if (!response) {
+		free (body);
+	}
+
+	else {
 		response->status = status;
 
 		// body
-		response->data = strdup (json);
-		response->data_len = strlen (json);
+		response->data = body;
+		response->data_len = strlen (body);
 
 		// header
-		response->header = c_string_create (
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
-			(unsigned int) response->status, http_status_string (response->status),
-			CERVER_VERSION,
-			response->data_len
-		);
-
-		response->header_len = strlen ((const char *) response->header);
+		http_response_json_header (response);
 	}
 
 	return response;
@@ -2726,7 +2762,7 @@ HttpResponse *http_response_json_custom (
 	if (json) {
 		response = http_response_json_custom_internal (status, json);
 
-		(void) http_response_compile (response);
+		if (response) (void) http_response_compile (response);
 	}
 
 	return response;
@@ -2773,16 +2809,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 		response->data_len = json_len;
 
 		// header
-		response->header = c_string_create (
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
-			(unsigned int) response->status, http_status_string (response->status),
-			CERVER_VERSION,
-			response->data_len
-		);
-
-		response->header_len = strlen ((const char *) response->header);
+		http_response_json_header (response);
 	}
 
 	return response;

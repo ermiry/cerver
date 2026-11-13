@@ -3,13 +3,16 @@ name: Cerver Scheduled
 on:
   workflow_dispatch:
 
+env:
+  WERROR: 1
+
 jobs:
   integration-thread:
     name: Cerver integration tests with thread sanitizer
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Disable address randomization
         run: sudo sysctl vm.mmap_rnd_bits=28
@@ -32,7 +35,7 @@ jobs:
             sanitizer: thread
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Disable address randomization
         run: sudo sysctl vm.mmap_rnd_bits=28
@@ -44,21 +47,76 @@ jobs:
 
       - name: Upload reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: autobahn-reports-${{ matrix.name }}
           path: ./autobahn-reports/
           retention-days: 7
+
+  units-thread:
+    name: Cerver in process tests with thread sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Routing
+        env:
+          SANITIZER: thread
+        run: bash test/repeat.sh test/bin/routing 20
+
+      - name: Client features
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/features 20
+
+      - name: Client files
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/files 20
+
+      - name: Cerver lobby
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/lobby 20
+
+      - name: Game
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 20
+
+      - name: Game pair
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 20
 
   repeat:
     name: Cerver flaky hunter
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Threads pair
         run: bash test/repeat.sh cerver/threads 200
+
+      - name: Balancer round robin pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/round_robin 50
+
+      - name: Balancer handler id pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/handler_id 50
 
       - name: Client lifecycle
         env:
@@ -68,7 +126,28 @@ jobs:
       - name: Cerver core
         env:
           BUILD: 0
-        run: bash test/repeat.sh test/bin/cerver/core 50
+        run: bash test/repeat.sh test/bin/cerver/core 100
+
+      - name: Cerver UDP peers
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/peers 100
+
+      - name: Game
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 50
+
+      - name: Game pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 50
+
+      - name: Balancer reconnect pair in IPv6
+        env:
+          BUILD: 0
+          CERVER_TEST_ADDRESS: '::1'
+        run: bash test/repeat.sh balancer/reconnect 50
 
       - name: HTTP
         env:
@@ -93,7 +172,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Fuzzing
         env:
@@ -102,7 +181,7 @@ jobs:
 
       - name: Upload crashes
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts
           path: ./fuzz-artifacts/
@@ -113,7 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev valgrind
@@ -124,12 +203,22 @@ jobs:
       - name: Core allocations
         run: bash test/allocations.sh
 
+  stress:
+    name: Cerver protocol stress with concurrent clients
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Stress
+        run: bash test/stress.sh
+
   nginx:
     name: Cerver behind nginx
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: nginx
         run: bash test/nginx/run.sh
@@ -139,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Disable address randomization
         run: sudo sysctl vm.mmap_rnd_bits=28

@@ -122,7 +122,7 @@ static void decode_int_as_real () {
 	char big[311];
 
 	json = json_loads ("42", JSON_DECODE_INT_AS_REAL | JSON_DECODE_ANY, &error);
-	if (!json || !json_is_real (json) || json_real_value (json) != 42.0)
+	if (!json || !json_is_real (json) || !test_double_equal (json_real_value (json), 42.0))
 		fail ("json_load decode int as real failed - int");
 	json_decref (json);
 

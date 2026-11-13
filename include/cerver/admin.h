@@ -28,7 +28,7 @@
 #define ADMIN_CERVER_DEFAULT_CHECK_PACKETS				false
 
 #define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
-#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
+#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS	1
 
 #ifdef __cplusplus
 extern "C" {
@@ -266,7 +266,8 @@ CERVER_EXPORT void admin_cerver_set_receive_buffer_size (
 	AdminCerver *admin_cerver, const size_t buffer_size
 );
 
-// sets the max number of poll fds for the admin cerver
+// sets, before the cerver starts, the max number of poll fds for the admin cerver
+// (ADMIN_CERVER_DEFAULT_POLL_FDS), 0 and a call after the start are ignored
 CERVER_EXPORT void admin_cerver_set_max_fds (
 	AdminCerver *admin_cerver, u32 max_n_fds
 );

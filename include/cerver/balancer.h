@@ -26,7 +26,8 @@ struct _Service;
 #define BALANCER_TYPE_MAP(XX)									\
 	XX(0, 	NONE, 				None)							\
 	XX(1, 	ROUND_ROBIN, 		Round-Robin)					\
-	XX(2, 	HANDLER_ID, 		Handler-ID)
+	XX(2, 	HANDLER_ID, 		Handler-ID)						\
+	XX(3, 	CUSTOM, 			Custom)
 
 typedef enum BalancerType {
 
@@ -91,22 +92,66 @@ CERVER_EXPORT void balancer_stats_print (
 
 #pragma region main
 
-// the route of each client connection, by its sock fd,
+// the route of each client connection, in a slot of its own that does not depend on its sock fd,
 // a reference to the socket is kept while the connection is alive,
 // so a response is never sent to a socket that was deleted
+// the generation of the slot changes every time that a connection ends,
+// so a response for a connection that ended is discarded even when its slot was given to another one
+// a free slot is in the list of the free slots, the one that was released last is taken first
 typedef struct BalancerRoute {
 
 	Socket *socket;
+	u32 next_free;
+	u16 generation;
 
 } BalancerRoute;
 
+// the end of the list of the free slots
+#define BALANCER_ROUTE_NONE					UINT32_MAX
+
 #define BALANCER_DEFAULT_ROUTES_SIZE		64
 #define BALANCER_ROUTES_GROWTH_FACTOR		2
+
+// the route id that travels in the header of a packet:
+// the generation of the slot in the high bits, and the slot in the low bits
+#define BALANCER_ROUTE_SLOT_BITS			20
+#define BALANCER_ROUTE_GENERATION_BITS		12
+#define BALANCER_ROUTE_SLOT_MASK			((1u << BALANCER_ROUTE_SLOT_BITS) - 1)
+#define BALANCER_ROUTE_GENERATION_MASK		((1u << BALANCER_ROUTE_GENERATION_BITS) - 1)
+
+// the connections that are routed at the same time, one more is not routed
+#define BALANCER_ROUTES_MAX					(BALANCER_ROUTE_SLOT_MASK + 1)
+
+// a generation is never 0, so a route id is never 0, the id of a packet without a route
+#define BALANCER_ROUTE_FIRST_GENERATION		1
+
+// returns the route id of a slot and a generation
+CERVER_PUBLIC u32 balancer_route_id (const u32 slot, const u16 generation);
+
+// returns the slot of a route id
+CERVER_PUBLIC u32 balancer_route_id_slot (const u32 route_id);
+
+// returns the generation of a route id
+CERVER_PUBLIC u16 balancer_route_id_generation (const u32 route_id);
+
+// returns the generation that comes after the one passed, without 0
+CERVER_PUBLIC u16 balancer_route_next_generation (const u16 generation);
+
+// selects the service of a packet in a BALANCER_TYPE_CUSTOM balancer, from its header and its body,
+// it runs in the thread of the client connection, without the lock of the balancer
+// returns the index of the service; a negative index, or one without a working service,
+// sends the packet to the on unavailable services method
+typedef int (*BalancerSelectService) (
+	const PacketHeader *header, const char *body, const size_t body_size, void *args
+);
 
 struct _Balancer {
 
 	String *name;
 	BalancerType type;
+
+	BalancerSelectService select_service;
+	void *select_service_args;
 
 	Cerver *cerver;
 	Client *client;
@@ -122,8 +167,11 @@ struct _Balancer {
 	// protects the next service and the routes
 	pthread_mutex_t *mutex;
 
+	// the slots that were allocated, the ones that were ever used and the first free one
 	BalancerRoute *routes;
-	size_t routes_size;
+	u32 routes_size;
+	u32 routes_used;
+	u32 free_route;
 
 	// the services that were down when the balancer started
 	// wait for their next attempt in this condition
@@ -144,6 +192,12 @@ CERVER_EXPORT BalancerType balancer_get_type (const Balancer *balancer);
 // a reference to the received packet will be passed to the method
 CERVER_EXPORT void balancer_set_on_unavailable_services (
 	Balancer *balancer, const Action on_unavailable_services
+);
+
+// sets, before the balancer starts, the method that selects the service of each packet
+// in a BALANCER_TYPE_CUSTOM balancer, args are passed to it with each packet
+CERVER_EXPORT void balancer_set_select_service (
+	Balancer *balancer, const BalancerSelectService select_service, void *args
 );
 
 // create a new load balancer of the selected type
@@ -303,15 +357,23 @@ CERVER_EXPORT u8 balancer_start (Balancer *balancer);
 // how many times a recv () can time out in the middle of a packet
 #define BALANCER_RECEIVE_MAX_TIMEOUTS		4
 
-// registers the route of a client connection that the balancer receives from
-CERVER_PRIVATE void balancer_connection_start (
-	Balancer *balancer, const i32 sock_fd, Socket *socket
+// gives a route to a client connection that the balancer receives from,
+// in a free slot, with a reference to its socket
+// returns the route id, or 0 when every slot is taken (BALANCER_ROUTES_MAX)
+CERVER_PRIVATE u32 balancer_connection_start (
+	Balancer *balancer, Socket *socket
 );
 
-// removes the route of a client connection that has ended,
-// its pending responses are discarded
+// releases the route of a client connection that has ended,
+// the next generation of its slot discards its pending responses
 CERVER_PRIVATE void balancer_connection_end (
-	Balancer *balancer, const i32 sock_fd
+	Balancer *balancer, const u32 route_id
+);
+
+// returns a reference to the socket of the client connection of the route id,
+// NULL if the connection has ended, even when its slot belongs to another connection now
+CERVER_PRIVATE Socket *balancer_route_get (
+	Balancer *balancer, const u32 route_id
 );
 
 // receives a complete packet from a client and routes it to a service

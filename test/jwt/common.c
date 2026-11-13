@@ -97,7 +97,7 @@ void verify_alg_key (
 	jwt_valid_new (&jwt_valid, alg);
 
 	test_check_int_eq (
-		JWT_VALIDATION_SUCCESS, jwt_validate (jwt, jwt_valid), NULL
+		jwt_validate (jwt, jwt_valid), JWT_VALIDATION_SUCCESS, NULL
 	);
 
 	jwt_valid_free (jwt_valid);

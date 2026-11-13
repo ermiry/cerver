@@ -75,20 +75,23 @@ static void send_app_message (
 	test_check_ptr (message);
 
 	// generate the packet
-	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
+	size_t packet_len = PACKET_HEADER_SIZE + sizeof (AppMessage);
 	message->packet = calloc (1, packet_len);
 	message->packet_size = packet_len;
 
+	PacketHeader header;
+	(void) memset (&header, 0, sizeof (PacketHeader));
+	header.packet_type = PACKET_TYPE_APP;
+	header.packet_size = packet_len;
+
+	header.request_type = APP_REQUEST_MESSAGE;
+
+	header.version = packet_version_local ();
+
 	char *end = (char *) message->packet;
-	PacketHeader *header = (PacketHeader *) end;
-	header->packet_type = PACKET_TYPE_APP;
-	header->packet_size = packet_len;
+	packet_header_encode (&header, (u8 *) end);
 
-	header->request_type = APP_REQUEST_MESSAGE;
-
-	header->version = packet_version_local ();
-
-	end += sizeof (PacketHeader);
+	end += PACKET_HEADER_SIZE;
 
 	app_message_create_internal (
 		(AppMessage *) end, id, msg
@@ -113,7 +116,7 @@ static void send_app_message (
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) signal (SIGPIPE, SIG_IGN);
 
@@ -151,7 +154,7 @@ int main (int argc, const char **argv) {
 	/*** send **/
 	unsigned int n_sent_packets = 0;
 
-	register size_t i = 0;
+	size_t i = 0;
 	for (; i < REQUESTS; i++) {
 		// (void) printf ("Sending: %lu...\n", i);
 

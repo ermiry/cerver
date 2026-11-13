@@ -28,6 +28,8 @@ static void test_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Test route works!"
 	);
@@ -45,6 +47,8 @@ static unsigned int custom_authentication_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) http_receive;
 
 	unsigned int retval = 1;
 

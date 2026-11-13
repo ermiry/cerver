@@ -192,8 +192,8 @@ static unsigned int web_bench_single_for_seconds (
 
 	Session *sess = session_create ();
 
-	struct timeval start = { 0 };
-	struct timeval end = { 0 };
+	struct timeval start = CERVER_ZERO_INITIALIZER;
+	struct timeval end = CERVER_ZERO_INITIALIZER;
 
 	size_t count = 0;
 
@@ -214,12 +214,12 @@ static unsigned int web_bench_single_for_seconds (
 		(void) gettimeofday (&end, NULL);
 	} while (
 		((double) (end.tv_sec - start.tv_sec) +
-		(end.tv_usec - start.tv_usec) * 1e-6f)
+		(double) (end.tv_usec - start.tv_usec) * 1e-6)
 		< (double) seconds
 	);
 
 	(void) printf ("\n\nweb_bench_single_for_seconds () results: \n");
-	(void) printf ("Performed %ld requests in %d seconds\n\n", count, seconds);
+	(void) printf ("Performed %zu requests in %u seconds\n\n", count, seconds);
 
 	session_delete (sess);
 

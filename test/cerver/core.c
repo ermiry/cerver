@@ -5,9 +5,13 @@
 
 #include <time.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <unistd.h>
 #include <pthread.h>
 
 #include <cerver/admin.h>
+#include <cerver/auth.h>
 #include <cerver/cerver.h>
 #include <cerver/client.h>
 #include <cerver/connection.h>
@@ -72,6 +76,19 @@
 #define CORE_UNSYNCHRONIZED_CANCEL_SECONDS		1
 
 #define CORE_UNUSED_CONNECTIONS			8
+
+#define CORE_REQUEST_PAUSE				5
+#define CORE_PAUSE_NANOSECONDS			8000000L
+#define CORE_PAUSE_MICROSECONDS			8000
+#define CORE_STATS_SHARED_REQUEST		(CERVER_REQUEST_STATS_SIZE + 8)
+#define CORE_STATS_OTHER_SHARED_REQUEST	(CERVER_REQUEST_STATS_SIZE + 64)
+#define CORE_STATS_PAUSES				4
+
+#define CORE_REQUEST_ROUTED				6
+
+#define CORE_POLL_MAX_CONNECTIONS		2
+#define CORE_POLL_REJECTED_CONNECTIONS	2
+#define CORE_ON_HOLD_POLL_FDS			8
 #define CORE_FD_DIRECTORY				"/proc/self/fd"
 
 #define CORE_UPDATE_FPS					32
@@ -97,6 +114,11 @@
 #define CORE_SLOW_HANDLER_SECONDS		2
 #define CORE_SLOW_UPDATE_FPS			1
 #define CORE_DRAIN_TIMEOUT				1
+
+#define CORE_INTERRUPT_SIGNAL			SIGUSR1
+#define CORE_INTERRUPTS					8
+#define CORE_INTERRUPT_NANOSECONDS		16000000L
+#define CORE_INTERRUPTED_PACKETS		2
 
 #define CORE_IPV4_LOOPBACK				"127.0.0.1"
 #define CORE_IPV6_LOOPBACK				"::1"
@@ -146,15 +168,18 @@ static unsigned int app_error_packets = 0;
 static unsigned int custom_packets = 0;
 static unsigned int handler_packets[CORE_MULTIPLE_HANDLERS] = { 0 };
 static unsigned int queued_packets = 0;
+static unsigned int request_packets = 0;
+static unsigned int direct_request_packets = 0;
 static unsigned int slow_events = 0;
 static unsigned int slow_started = 0;
 static unsigned int slow_finished = 0;
 static unsigned int update_ticks = 0;
 static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
+static unsigned int handler_data_deletes = 0;
 
 // written by the handler before it counts the request, read after the count
-static char client_ip[INET6_ADDRSTRLEN] = { 0 };
+static char client_ip[CONNECTION_IP_SIZE] = { 0 };
 static unsigned int address_requests = 0;
 
 // client side
@@ -168,12 +193,15 @@ static void core_counters_reset (void) {
 	custom_packets = 0;
 	(void) memset (handler_packets, 0, sizeof (handler_packets));
 	queued_packets = 0;
+	request_packets = 0;
+	direct_request_packets = 0;
 	slow_events = 0;
 	slow_started = 0;
 	slow_finished = 0;
 	update_ticks = 0;
 	interval_ticks = 0;
 	(void) memset (events, 0, sizeof (events));
+	handler_data_deletes = 0;
 	(void) memset (client_ip, 0, sizeof (client_ip));
 	address_requests = 0;
 	echoes = 0;
@@ -224,6 +252,12 @@ static void core_app_handler (void *packet_ptr) {
 			test_check_unsigned_eq (connection_drop_request (packet->connection), 0, NULL);
 			break;
 
+		// a request that takes a known time in the stats
+		case CORE_REQUEST_PAUSE: {
+			const struct timespec pause = { 0, CORE_PAUSE_NANOSECONDS };
+			(void) nanosleep (&pause, NULL);
+		} break;
+
 		// a handler that is still working when the drain times out
 		case CORE_REQUEST_SLOW:
 			test_counter_add (&slow_started);
@@ -261,6 +295,17 @@ static void core_multiple_handler (void *handler_data_ptr) {
 	test_check_ptr (handler_data->packet);
 
 	test_counter_add (&handler_packets[handler_data->handler_id]);
+
+}
+
+// a direct multiple handler gets the packet, with the handler id in its header
+static void core_multiple_direct_handler (void *packet_ptr) {
+
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	test_check (packet->header.handler_id < CORE_MULTIPLE_HANDLERS, "unknown handler id");
+
+	test_counter_add (&handler_packets[packet->header.handler_id]);
 
 }
 
@@ -752,6 +797,79 @@ static void test_core_multiple_handlers (void) {
 
 }
 
+// a multiple handler is added only in a free slot of its id,
+// and the handlers are counted before the cerver starts
+static void test_core_multiple_handlers_add (void) {
+
+	core_counters_reset ();
+
+	Cerver *cerver = core_cerver_create_base (core_port++, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_int_eq (cerver_set_multiple_handlers (cerver, 0), 1, "enabled the multiple handlers without handlers");
+	test_check_int_eq (cerver_set_multiple_handlers (cerver, CORE_MULTIPLE_HANDLERS), 0, NULL);
+	test_check_int_eq (cerver_set_multiple_handlers (cerver, CORE_MULTIPLE_HANDLERS), 1, "enabled the multiple handlers twice");
+	test_check_unsigned_eq (cerver_get_n_handlers (cerver), CORE_MULTIPLE_HANDLERS, NULL);
+
+	Handler *without_id = handler_create (core_multiple_handler);
+	test_check_unsigned_eq (cerver_handlers_add (cerver, without_id), 1, "added a handler without an id");
+
+	Handler *out_of_range = handler_create_with_id (CORE_MULTIPLE_HANDLERS, core_multiple_handler);
+	test_check_unsigned_eq (cerver_handlers_add (cerver, out_of_range), 1, "added a handler beyond the handlers");
+
+	test_check_unsigned_eq (cerver_handlers_add (cerver, handler_create_with_id (0, core_multiple_handler)), 0, NULL);
+
+	Handler *repeated = handler_create_with_id (0, core_multiple_handler);
+	test_check_unsigned_eq (cerver_handlers_add (cerver, repeated), 1, "replaced a handler with the same id");
+
+	handler_delete (without_id);
+	handler_delete (out_of_range);
+	handler_delete (repeated);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+// a direct multiple handler runs in the thread that received the packet,
+// next to a handler of the same cerver that has its own queue
+static void test_core_multiple_handlers_direct (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_int_eq (cerver_set_multiple_handlers (cerver, CORE_MULTIPLE_HANDLERS), 0, NULL);
+
+	Handler *direct = handler_create_with_id (0, core_multiple_direct_handler);
+	handler_set_direct_handle (direct, true);
+	test_check_unsigned_eq (cerver_handlers_add (cerver, direct), 0, NULL);
+
+	test_check_unsigned_eq (
+		cerver_handlers_add (cerver, handler_create_with_id (1, core_multiple_handler)),
+		0, NULL
+	);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, 0, 1, CORE_PACKETS / 2);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&handler_packets[0], CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_PACKETS, "the direct handler did not handle its packets"
+	);
+
+	test_check_unsigned_eq (test_wait_counter (&handler_packets[1], CORE_PACKETS / 2, TEST_WAIT_SECONDS), CORE_PACKETS / 2, NULL);
+
+	core_client_end (&client);
+
+	core_cerver_stop_quickly (&core);
+
+}
+
 // the app, app error and custom handlers threads handle their packets,
 // and the teardown stops them without waiting a second for each
 static void test_core_handlers_teardown (const CerverHandlerType handler_type) {
@@ -820,6 +938,95 @@ static void test_core_auth_success (void) {
 	test_check_unsigned_eq (events[CERVER_EVENT_ON_HOLD_CONNECTED], 1, NULL);
 	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_SUCCESS_AUTH], 1, NULL);
 	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_FAILED_AUTH], 0, NULL);
+
+}
+
+static unsigned int auth_data_deletes = 0;
+static unsigned int auth_data_clients = 0;
+
+static void core_auth_data_delete (void *data) {
+
+	free (data);
+
+	test_counter_add (&auth_data_deletes);
+
+}
+
+// the data that the authenticate method recovers goes to the new client
+static u8 core_auth_method_with_data (void *auth_method_ptr) {
+
+	AuthMethod *auth_method = (AuthMethod *) auth_method_ptr;
+
+	auth_method->auth_data->data = malloc (sizeof (unsigned int));
+	auth_method->auth_data->delete_data = core_auth_data_delete;
+
+	return app_auth_method (auth_method_ptr);
+
+}
+
+static void *core_auth_data_connected (void *event_data_ptr) {
+
+	CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+	if (event_data->client && event_data->client->data) {
+		test_counter_add (&auth_data_clients);
+	}
+
+	cerver_event_data_delete (event_data);
+
+	return NULL;
+
+}
+
+// the data of a successful authentication is the data of the client,
+// and the data of a failed one is released
+static void test_core_auth_data (void) {
+
+	core_counters_reset ();
+	auth_data_deletes = 0;
+	auth_data_clients = 0;
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, core_auth_method_with_data), 0, NULL);
+
+	test_check_unsigned_eq (
+		cerver_event_register (
+			cerver, CERVER_EVENT_CLIENT_SUCCESS_AUTH,
+			core_auth_data_connected, NULL, NULL, false, false
+		), 0, NULL
+	);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient failed = core_client_connect (port, credentials_new (CORE_USERNAME, CORE_BAD_PASSWORD));
+
+	test_check (
+		test_wait_counter (&events[CERVER_EVENT_CLIENT_FAILED_AUTH], 1, TEST_WAIT_SECONDS) >= 1,
+		"the authentication did not fail"
+	);
+
+	core_client_end (&failed);
+
+	const unsigned int failed_auths = __atomic_load_n (&events[CERVER_EVENT_CLIENT_FAILED_AUTH], __ATOMIC_SEQ_CST);
+	test_check_unsigned_eq (
+		test_wait_counter (&auth_data_deletes, failed_auths, TEST_WAIT_SECONDS),
+		failed_auths, "the data of the failed authentications was not released"
+	);
+
+	CoreClient client = core_client_connect (port, credentials_new (CORE_USERNAME, CORE_PASSWORD));
+
+	test_check_unsigned_eq (
+		test_wait_counter (&auth_data_clients, 1, TEST_WAIT_SECONDS),
+		1, "the client did not get the data of its authentication"
+	);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (auth_data_deletes, failed_auths + 1, "the data of the client was not released once");
 
 }
 
@@ -911,6 +1118,115 @@ static void test_core_on_hold_timeout (void) {
 	core_cerver_stop (&core);
 
 	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_SUCCESS_AUTH], 0, NULL);
+
+}
+
+static unsigned int client_info_events = 0;
+static unsigned int client_teardown_events = 0;
+
+static void *core_client_info_event (void *event_data_ptr) {
+
+	ClientEventData *event_data = (ClientEventData *) event_data_ptr;
+
+	test_check_ptr (event_data->connection);
+	test_check_ptr (event_data->connection->cerver_report);
+
+	test_counter_add (&client_info_events);
+
+	client_event_data_delete (event_data);
+
+	return NULL;
+
+}
+
+static void *core_client_teardown_event (void *event_data_ptr) {
+
+	test_counter_add (&client_teardown_events);
+
+	client_event_data_delete ((ClientEventData *) event_data_ptr);
+
+	return NULL;
+
+}
+
+// a client gets the info of its cerver, and the teardown of the cerver before it disconnects
+static void test_core_client_cerver_events (void) {
+
+	core_counters_reset ();
+	client_info_events = 0;
+	client_teardown_events = 0;
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_create (port, NULL, false);
+
+	test_check_unsigned_eq (
+		client_event_register (
+			client.client, CLIENT_EVENT_CERVER_INFO,
+			core_client_info_event, NULL, NULL, false, false
+		), 0, NULL
+	);
+
+	test_check_unsigned_eq (
+		client_event_register (
+			client.client, CLIENT_EVENT_CERVER_TEARDOWN,
+			core_client_teardown_event, NULL, NULL, false, false
+		), 0, NULL
+	);
+
+	client = core_client_start (client);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&client_info_events, 1, TEST_WAIT_SECONDS),
+		1, "the client did not get the info of its cerver"
+	);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&client_teardown_events, 1, TEST_WAIT_SECONDS),
+		1, "the client did not get the teardown of its cerver"
+	);
+
+	core_client_end (&client);
+
+}
+
+// an on hold connection that its client closes disconnects, it is not dropped
+static void test_core_on_hold_disconnected (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, app_auth_method), 0, NULL);
+	cerver_set_on_hold_timeout (cerver, 0);
+	cerver_set_on_hold_poll_timeout (cerver, CORE_ON_HOLD_POLL_TIMEOUT);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ON_HOLD_CONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the connection was not put on hold"
+	);
+
+	core_client_end (&client);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ON_HOLD_DISCONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the on hold connection did not disconnect"
+	);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_ON_HOLD_DROPPED], 0, "the on hold connection that disconnected was dropped");
 
 }
 
@@ -1502,6 +1818,108 @@ static void test_core_stop_before_start_threads (void) {
 
 }
 
+static void core_handler_data_delete (void *data) {
+
+	free (data);
+
+	(void) __atomic_add_fetch (&handler_data_deletes, 1, __ATOMIC_SEQ_CST);
+
+}
+
+static Handler *core_handler_with_data (Action method, const bool direct) {
+
+	Handler *handler = handler_create (method);
+	test_check_ptr (handler);
+
+	handler_set_direct_handle (handler, direct);
+	handler_set_data (handler, malloc (sizeof (unsigned int)));
+	handler_set_data_delete (handler, core_handler_data_delete);
+
+	return handler;
+
+}
+
+static void core_handlers_with_data (Cerver *cerver) {
+
+	cerver_set_app_handlers (
+		cerver,
+		core_handler_with_data (core_app_handler, true),
+		core_handler_with_data (core_app_error_handler, false)
+	);
+
+}
+
+// the data of a direct handler and of a handler of a cerver that never started
+// is released with the handler
+static void test_core_handler_data_never_started (void) {
+
+	core_counters_reset ();
+
+	Cerver *cerver = core_cerver_create_base (core_port++, CERVER_HANDLER_TYPE_POLL);
+	core_handlers_with_data (cerver);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+	test_check_unsigned_eq (handler_data_deletes, 2, "the data of the handlers was not released");
+
+}
+
+// the thread of a handler with a queue releases its data, and the handler does not release it again
+static void test_core_handler_data_started (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create_base (port, CERVER_HANDLER_TYPE_POLL);
+	core_handlers_with_data (cerver);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (handler_data_deletes, 2, "the data of the handlers was not released once");
+
+}
+
+// a cerver that fails to bind its port closes its socket once,
+// so its teardown can not close the fd that another open took with the same number
+static void test_core_start_failed_socket (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *listening = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	CoreCerver core;
+	core_cerver_start (&core, listening, port);
+
+	Cerver *failed = cerver_create (
+		CERVER_TYPE_CUSTOM, CORE_NAME,
+		port, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE
+	);
+
+	test_check_ptr (failed);
+
+	cerver_set_reusable_address_flags (failed, false);
+	cerver_set_handler_type (failed, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (cerver_start (failed), 1, "a cerver started in a port that is in use");
+
+	int pipe_fds[2] = { -1, -1 };
+	test_check_int_eq (pipe (pipe_fds), 0, NULL);
+
+	test_check_unsigned_eq (cerver_teardown (failed), 0, NULL);
+
+	test_check (fcntl (pipe_fds[0], F_GETFD) != -1, "the teardown closed an fd that was not its socket");
+	test_check (fcntl (pipe_fds[1], F_GETFD) != -1, "the teardown closed an fd that was not its socket");
+
+	(void) close (pipe_fds[0]);
+	(void) close (pipe_fds[1]);
+
+	core_cerver_stop (&core);
+
+}
+
 // a stop that races with cerver_start () always ends with the cerver stopped,
 // whether it arrives before the running flag, before listen () or inside accept (),
 // each round waits a bit longer before the stop to land in a later moment of the start
@@ -1988,6 +2406,495 @@ static void test_core_unused_connections (void) {
 
 }
 
+// the main poll starts with the minimum size and grows,
+// and the connections beyond its max are rejected without leaking their clients
+static void test_core_poll_max_connections (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_ne (cerver_set_poll_fds (cerver, CERVER_POLL_MIN_FDS - 1, CORE_POLL_MAX_CONNECTIONS), 0);
+	test_check_unsigned_ne (cerver_set_poll_fds (NULL, CERVER_POLL_MIN_FDS, CORE_POLL_MAX_CONNECTIONS), 0);
+	test_check_unsigned_eq (cerver_set_poll_fds (cerver, CERVER_POLL_MIN_FDS, CORE_POLL_MAX_CONNECTIONS), 0, NULL);
+	test_check_unsigned_eq (cerver->max_n_fds, CERVER_POLL_MIN_FDS, NULL);
+	test_check_unsigned_eq (cerver->poll_max_connections, CORE_POLL_MAX_CONNECTIONS, NULL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	// the array is already allocated
+	test_check_unsigned_ne (cerver_set_poll_fds (cerver, CERVER_POLL_MIN_FDS, CORE_POLL_MAX_CONNECTIONS), 0);
+
+	CoreClient clients[CORE_POLL_MAX_CONNECTIONS];
+	for (unsigned int index = 0; index < CORE_POLL_MAX_CONNECTIONS; index++) {
+		clients[index] = core_client_connect (port, NULL);
+	}
+
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_CLIENT_CONNECTED], CORE_POLL_MAX_CONNECTIONS, TEST_WAIT_SECONDS),
+		CORE_POLL_MAX_CONNECTIONS, NULL
+	);
+
+	test_check_unsigned_gt (cerver->max_n_fds, CERVER_POLL_MIN_FDS);
+
+	// the cerver accepts them and closes them at once
+	CoreClient rejected[CORE_POLL_REJECTED_CONNECTIONS];
+	for (unsigned int index = 0; index < CORE_POLL_REJECTED_CONNECTIONS; index++) {
+		rejected[index] = core_client_create (port, NULL, false);
+		(void) client_connect_and_start (rejected[index].client, rejected[index].connection);
+	}
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + TEST_WAIT_SECONDS;
+	while (
+		(CERVER_STATS_GET (cerver->stats->total_rejected_connections) < CORE_POLL_REJECTED_CONNECTIONS)
+		&& (test_wait_now () < deadline)
+	) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	test_check_unsigned_eq (
+		(unsigned int) CERVER_STATS_GET (cerver->stats->total_rejected_connections),
+		CORE_POLL_REJECTED_CONNECTIONS, "the cerver did not reject the connections beyond its max"
+	);
+
+	test_check_unsigned_eq (
+		(unsigned int) CERVER_STATS_GET (cerver->stats->current_active_client_connections),
+		CORE_POLL_MAX_CONNECTIONS, NULL
+	);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_CONNECTED], CORE_POLL_MAX_CONNECTIONS, NULL);
+
+	// the clients that were accepted still work
+	for (unsigned int index = 0; index < CORE_POLL_MAX_CONNECTIONS; index++) {
+		core_client_send (&clients[index], PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	}
+
+	test_check_unsigned_eq (
+		test_wait_counter (&echoes, CORE_PACKETS * CORE_POLL_MAX_CONNECTIONS, TEST_WAIT_SECONDS),
+		CORE_PACKETS * CORE_POLL_MAX_CONNECTIONS, NULL
+	);
+
+	for (unsigned int index = 0; index < CORE_POLL_REJECTED_CONNECTIONS; index++) {
+		core_client_end (&rejected[index]);
+	}
+
+	for (unsigned int index = 0; index < CORE_POLL_MAX_CONNECTIONS; index++) {
+		core_client_end (&clients[index]);
+	}
+
+	core_cerver_stop (&core);
+
+}
+
+// the stats of a handler are added after it returns
+static u64 core_wait_handler_packets (const Handler *handler, const u64 expected) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + TEST_WAIT_SECONDS;
+
+	HandlerStats stats;
+	handler_get_stats (handler, &stats);
+	while ((stats.durations.count < expected) && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+		handler_get_stats (handler, &stats);
+	}
+
+	return stats.durations.count;
+
+}
+
+static void core_check_request_stats (
+	const Cerver *cerver, const PacketType packet_type, const u32 request_type, const u64 expected
+) {
+
+	RequestStats stats;
+	test_check_unsigned_eq (cerver_get_request_stats (cerver, packet_type, request_type, &stats), 0, NULL);
+	test_check_unsigned_eq (stats.durations.count, expected, NULL);
+	test_check_unsigned_eq (stats.sizes.count, expected, NULL);
+
+	if (expected) {
+		test_check_unsigned_eq (stats.sizes.min, PACKET_HEADER_SIZE, NULL);
+		test_check_unsigned_eq (stats.sizes.max, PACKET_HEADER_SIZE, NULL);
+		test_check_unsigned_eq (stats.sizes.total, expected * PACKET_HEADER_SIZE, NULL);
+	}
+
+}
+
+// #173: each handler and each request type have the count, the sizes and the durations
+// of the packets that the cerver handled, the big request types share their stats
+static void test_core_request_stats (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_cerver_create (port, CERVER_HANDLER_TYPE_POLL), port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_STATS_SHARED_REQUEST, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_STATS_OTHER_SHARED_REQUEST, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_PAUSE, 0, CORE_STATS_PAUSES);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, 0, 0, CORE_PACKETS);
+
+	const u64 app_expected = (CORE_PACKETS * 3) + CORE_STATS_PAUSES;
+	test_check_unsigned_eq (
+		core_wait_handler_packets (core.cerver->app_packet_handler, app_expected), app_expected,
+		"the app handler stats do not have every packet"
+	);
+
+	test_check_unsigned_eq (
+		core_wait_handler_packets (core.cerver->app_error_packet_handler, CORE_PACKETS), CORE_PACKETS,
+		"the app error handler stats do not have every packet"
+	);
+
+	HandlerStats handler_stats;
+	handler_get_stats (core.cerver->app_packet_handler, &handler_stats);
+	test_check_unsigned_eq (handler_stats.sizes.count, app_expected, NULL);
+	test_check_unsigned_eq (handler_stats.sizes.min, PACKET_HEADER_SIZE, NULL);
+	test_check (handler_stats.durations.max >= CORE_PAUSE_MICROSECONDS, "the pauses are not in the durations");
+
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_REQUEST_ECHO, CORE_PACKETS);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_STATS_SHARED_REQUEST, CORE_PACKETS * 2);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_STATS_OTHER_SHARED_REQUEST, CORE_PACKETS * 2);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_REQUEST_PAUSE, CORE_STATS_PAUSES);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP_ERROR, 0, CORE_PACKETS);
+	core_check_request_stats (core.cerver, PACKET_TYPE_CUSTOM, 0, 0);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_REQUEST_ADDRESS, 0);
+
+	// every pause is in a bucket of at least its time
+	RequestStats pauses;
+	test_check_unsigned_eq (cerver_get_request_stats (core.cerver, PACKET_TYPE_APP, CORE_REQUEST_PAUSE, &pauses), 0, NULL);
+	test_check (histogram_min (&pauses.durations) >= CORE_PAUSE_MICROSECONDS, "a pause took less than its time");
+
+	u64 slow = 0;
+	for (unsigned int bucket = histogram_bucket (CORE_PAUSE_MICROSECONDS); bucket < HISTOGRAM_BUCKETS; bucket++) {
+		slow += pauses.durations.buckets[bucket];
+	}
+
+	test_check_unsigned_eq (slow, CORE_STATS_PAUSES, NULL);
+
+	// only the packet types that have handlers
+	RequestStats unused;
+	test_check_unsigned_ne (cerver_get_request_stats (core.cerver, PACKET_TYPE_GAME, 0, &unused), 0);
+	test_check_unsigned_ne (cerver_get_request_stats (NULL, PACKET_TYPE_APP, 0, &unused), 0);
+	test_check_unsigned_ne (cerver_get_request_stats (core.cerver, PACKET_TYPE_APP, 0, NULL), 0);
+
+	handler_stats_print (core.cerver->app_packet_handler);
+	cerver_request_stats_print (core.cerver);
+
+	core_client_end (&client);
+	core_cerver_stop (&core);
+
+}
+
+// the handlers with their own threads add their stats too
+static void test_core_request_stats_queued (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_queued_cerver_create (port, CERVER_HANDLER_TYPE_THREADS), port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (
+		core_wait_handler_packets (core.cerver->app_packet_handler, CORE_PACKETS), CORE_PACKETS, NULL
+	);
+
+	test_check_unsigned_eq (
+		core_wait_handler_packets (core.cerver->custom_packet_handler, CORE_PACKETS), CORE_PACKETS, NULL
+	);
+
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP, CORE_REQUEST_ECHO, CORE_PACKETS);
+	core_check_request_stats (core.cerver, PACKET_TYPE_CUSTOM, CORE_REQUEST_ECHO, CORE_PACKETS);
+	core_check_request_stats (core.cerver, PACKET_TYPE_APP_ERROR, CORE_REQUEST_ECHO, 0);
+
+	core_client_end (&client);
+	core_cerver_stop (&core);
+
+}
+
+// the handler of a request type, with its own thread
+static void core_request_handler (void *handler_data_ptr) {
+
+	const HandlerData *handler_data = (const HandlerData *) handler_data_ptr;
+
+	test_check_ptr (handler_data->packet);
+	test_check_unsigned_eq (handler_data->packet->header.request_type, CORE_REQUEST_ROUTED, NULL);
+
+	test_counter_add (&request_packets);
+
+}
+
+// the handler of a request type that handles its packets in the receive thread
+static void core_direct_request_handler (void *packet_ptr) {
+
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	test_check_unsigned_eq (packet->header.request_type, CORE_REQUEST_ROUTED, NULL);
+
+	test_counter_add (&direct_request_packets);
+
+}
+
+// the setter only takes the packet types with handlers, request types below the max,
+// and one handler for each request type
+static void core_request_handlers_set (Cerver *cerver) {
+
+	Handler *handler = handler_create (core_request_handler);
+	test_check_ptr (handler);
+
+	test_check_unsigned_ne (cerver_set_request_handler (NULL, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, handler), 0);
+	test_check_unsigned_ne (cerver_set_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, NULL), 0);
+	test_check_unsigned_ne (cerver_set_request_handler (cerver, PACKET_TYPE_GAME, CORE_REQUEST_ROUTED, handler), 0);
+	test_check_unsigned_ne (cerver_set_request_handler (cerver, PACKET_TYPE_APP, CERVER_REQUEST_HANDLERS_MAX, handler), 0);
+
+	test_check_unsigned_eq (cerver_set_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, handler), 0, NULL);
+	test_check_unsigned_ne (cerver_set_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, handler), 0);
+	test_check_ptr_eq (cerver_get_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED), handler);
+	test_check_null_ptr (cerver_get_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ECHO));
+	test_check_null_ptr (cerver_get_request_handler (cerver, PACKET_TYPE_APP, CERVER_REQUEST_HANDLERS_MAX));
+
+	Handler *direct = handler_create (core_direct_request_handler);
+	handler_set_direct_handle (direct, true);
+	test_check_unsigned_eq (cerver_set_request_handler (cerver, PACKET_TYPE_CUSTOM, CORE_REQUEST_ROUTED, direct), 0, NULL);
+
+}
+
+// #176: the packets of a request type with a handler go to it,
+// and the rest to the handler of their packet type
+static void test_core_request_handlers (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, handler_type);
+	core_request_handlers_set (cerver);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, CORE_REQUEST_ROUTED, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, CORE_REQUEST_ROUTED, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (test_wait_counter (&request_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&direct_request_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&app_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&custom_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&app_error_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&echoes, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+
+	// the request handler adds its stats to the ones of its request type
+	test_check_unsigned_eq (
+		core_wait_handler_packets (cerver_get_request_handler (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED), CORE_PACKETS),
+		CORE_PACKETS, NULL
+	);
+
+	core_check_request_stats (cerver, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, CORE_PACKETS);
+
+	core_client_end (&client);
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (request_packets, CORE_PACKETS, NULL);
+	test_check_unsigned_eq (direct_request_packets, CORE_PACKETS, NULL);
+	test_check_unsigned_eq (app_packets, CORE_PACKETS, NULL);
+	test_check_unsigned_eq (custom_packets, CORE_PACKETS, NULL);
+
+}
+
+static void test_core_request_handlers_poll (void) {
+
+	test_core_request_handlers (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_request_handlers_threads (void) {
+
+	test_core_request_handlers (CERVER_HANDLER_TYPE_THREADS);
+
+}
+
+// with multiple app handlers, the request handlers go first
+static void test_core_request_handlers_multiple (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+
+	test_check_int_eq (cerver_set_multiple_handlers (cerver, CORE_MULTIPLE_HANDLERS), 0, NULL);
+	for (int id = 0; id < CORE_MULTIPLE_HANDLERS; id++) {
+		test_check_unsigned_eq (
+			cerver_handlers_add (cerver, handler_create_with_id (id, core_multiple_handler)),
+			0, NULL
+		);
+	}
+
+	core_request_handlers_set (cerver);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ROUTED, 1, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ECHO, 1, CORE_PACKETS);
+
+	test_check_unsigned_eq (test_wait_counter (&request_packets, CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+	test_check_unsigned_eq (test_wait_counter (&handler_packets[1], CORE_PACKETS, TEST_WAIT_SECONDS), CORE_PACKETS, NULL);
+
+	core_client_end (&client);
+	core_cerver_stop_quickly (&core);
+
+	test_check_unsigned_eq (request_packets, CORE_PACKETS, NULL);
+	test_check_unsigned_eq (handler_packets[1], CORE_PACKETS, NULL);
+	test_check_unsigned_eq (handler_packets[0], 0, NULL);
+
+}
+
+// the on hold poll takes its size before the cerver starts
+static void test_core_on_hold_poll_fds (void) {
+
+	Cerver *cerver = core_cerver_create_base (core_port++, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (cerver->max_on_hold_connections, CERVER_DEFAULT_ON_HOLD_POLL_FDS, NULL);
+	test_check_unsigned_ne (cerver_set_on_hold_poll_fds (cerver, 0), 0);
+	test_check_unsigned_ne (cerver_set_on_hold_poll_fds (NULL, CORE_ON_HOLD_POLL_FDS), 0);
+	test_check_unsigned_eq (cerver_set_on_hold_poll_fds (cerver, CORE_ON_HOLD_POLL_FDS), 0, NULL);
+	test_check_unsigned_eq (cerver->max_on_hold_connections, CORE_ON_HOLD_POLL_FDS, NULL);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+static pthread_t interrupted_thread;
+static unsigned int interrupted_packets = 0;
+static unsigned int interrupt_signals = 0;
+
+static void core_interrupt_signal (int signal_number) {
+
+	(void) signal_number;
+
+	(void) __atomic_add_fetch (&interrupt_signals, 1, __ATOMIC_SEQ_CST);
+
+}
+
+// a direct handler runs in the thread that receives the connection,
+// so the first packet tells which thread the test interrupts
+static void core_interrupted_handler (void *packet_ptr) {
+
+	(void) packet_ptr;
+
+	if (__atomic_load_n (&interrupted_packets, __ATOMIC_SEQ_CST) == 0) {
+		interrupted_thread = pthread_self ();
+	}
+
+	test_counter_add (&interrupted_packets);
+
+}
+
+static void core_interrupt_receive_thread (void) {
+
+	const struct timespec interval = { 0, CORE_INTERRUPT_NANOSECONDS };
+
+	for (unsigned int i = 0; i < CORE_INTERRUPTS; i++) {
+		(void) nanosleep (&interval, NULL);
+		test_check_int_eq (pthread_kill (interrupted_thread, CORE_INTERRUPT_SIGNAL), 0, NULL);
+	}
+
+}
+
+// a signal that interrupts the receive of a connection with the threads handler
+// does not end the connection, the next packet still reaches its handler
+static void test_core_receive_interrupted (void) {
+
+	core_counters_reset ();
+
+	interrupted_packets = 0;
+	interrupt_signals = 0;
+
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (struct sigaction));
+	action.sa_handler = core_interrupt_signal;
+	(void) sigemptyset (&action.sa_mask);
+
+	struct sigaction previous;
+	test_check_int_eq (sigaction (CORE_INTERRUPT_SIGNAL, &action, &previous), 0, NULL);
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create_base (port, CERVER_HANDLER_TYPE_THREADS);
+
+	Handler *app_handler = handler_create (core_interrupted_handler);
+	handler_set_direct_handle (app_handler, true);
+	cerver_set_app_handlers (cerver, app_handler, NULL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&interrupted_packets, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	core_interrupt_receive_thread ();
+	test_check_unsigned_eq (
+		test_wait_counter (&interrupt_signals, CORE_INTERRUPTS, TEST_WAIT_SECONDS),
+		CORE_INTERRUPTS, "the receive thread did not get the signals"
+	);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+	test_check_unsigned_eq (
+		test_wait_counter (&interrupted_packets, CORE_INTERRUPTED_PACKETS, TEST_WAIT_SECONDS),
+		CORE_INTERRUPTED_PACKETS, "the interrupted connection did not receive the next packet"
+	);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_CLOSE_CONNECTION], 0, NULL);
+	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_DROPPED], 0, NULL);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	test_check_int_eq (sigaction (CORE_INTERRUPT_SIGNAL, &previous, NULL), 0, NULL);
+
+}
+
+static void core_thpool_check (const CerverHandlerType handler_type, const bool expected) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_cerver_create (port, handler_type), port);
+
+	test_check_bool_eq ((core.cerver->thpool != NULL), expected, NULL);
+
+	core_cerver_stop (&core);
+
+}
+
+// only a cerver with the threads handler creates its thpool
+static void test_core_thpool_handler_types (void) {
+
+	core_thpool_check (CERVER_HANDLER_TYPE_POLL, false);
+	core_thpool_check (CERVER_HANDLER_TYPE_THREADS, true);
+
+}
+
 #pragma endregion
 
 int main (int argc, char **argv) {
@@ -2005,15 +2912,22 @@ int main (int argc, char **argv) {
 	test_core_dispatch_threads ();
 	test_core_without_handlers ();
 	test_core_multiple_handlers ();
+	test_core_multiple_handlers_direct ();
+	test_core_multiple_handlers_add ();
 	test_core_handlers_teardown_poll ();
 	test_core_handlers_teardown_threads ();
 	test_core_auth_success ();
 	test_core_auth_failed ();
+	test_core_auth_data ();
 	test_core_auth_retry ();
 	test_core_on_hold_timeout ();
 	test_core_on_hold_without_timeout ();
+	test_core_on_hold_disconnected ();
+	test_core_client_cerver_events ();
 	test_core_drop_request_poll ();
 	test_core_drop_request_threads ();
+	test_core_receive_interrupted ();
+	test_core_thpool_handler_types ();
 	test_core_admin ();
 	test_core_admin_bad_packets ();
 	test_core_check_packets ();
@@ -2026,6 +2940,13 @@ int main (int argc, char **argv) {
 	test_core_inactive_churn_threads ();
 	test_core_connect_unsynchronized ();
 	test_core_unused_connections ();
+	test_core_poll_max_connections ();
+	test_core_on_hold_poll_fds ();
+	test_core_request_stats ();
+	test_core_request_stats_queued ();
+	test_core_request_handlers_poll ();
+	test_core_request_handlers_threads ();
+	test_core_request_handlers_multiple ();
 	test_core_update ();
 	test_core_teardown_connected ();
 	test_core_event_thread_teardown ();
@@ -2035,6 +2956,9 @@ int main (int argc, char **argv) {
 	test_core_stop_before_start_poll ();
 	test_core_stop_before_start_threads ();
 	test_core_stop_while_starting ();
+	test_core_start_failed_socket ();
+	test_core_handler_data_never_started ();
+	test_core_handler_data_started ();
 	test_core_address_loopback ();
 	test_core_address_dual_stack ();
 	test_core_address_host_name ();

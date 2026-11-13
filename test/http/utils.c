@@ -22,7 +22,7 @@ static void test_http_range_type_string (void) {
 
 static void test_http_bytes_range_init (void) {
 
-	BytesRange bytes_range = { 0 };
+	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
 
 	http_bytes_range_init (&bytes_range);
 
@@ -36,7 +36,7 @@ static void test_http_bytes_range_init (void) {
 
 static void test_http_bytes_range_print (void) {
 
-	BytesRange bytes_range = { 0 };
+	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
 
 	http_bytes_range_init (&bytes_range);
 

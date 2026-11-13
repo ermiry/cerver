@@ -1,5 +1,12 @@
-#ifndef JANSSON_PRIVATE_H
-#define JANSSON_PRIVATE_H
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See thirdparty.md for details.
+ */
+
+#ifndef _CERVER_HTTP_JSON_PRIVATE_H_
+#define _CERVER_HTTP_JSON_PRIVATE_H_
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -12,39 +19,14 @@
 extern "C" {
 #endif
 
-#ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
-#if JSON_INTEGER_IS_LONG_LONG
-#ifdef _WIN32
-#define JSON_INTEGER_FORMAT "I64d"
-#else
-#define JSON_INTEGER_FORMAT "lld"
-#endif
+#define JSON_INTEGER_FORMAT			"lld"
+
 typedef long long json_int_t;
-#else
-#define JSON_INTEGER_FORMAT "ld"
-typedef long json_int_t;
-#endif /* JSON_INTEGER_IS_LONG_LONG */
-#endif
 
-/* do not call JSON_INTERNAL_INCREF or JSON_INTERNAL_DECREF directly */
-#if JSON_HAVE_ATOMIC_BUILTINS
-#define JSON_INTERNAL_INCREF(json)                                                       \
-	__atomic_add_fetch (&json->refcount, 1, __ATOMIC_ACQUIRE)
-#define JSON_INTERNAL_DECREF(json)                                                       \
-	__atomic_sub_fetch (&json->refcount, 1, __ATOMIC_RELEASE)
-#elif JSON_HAVE_SYNC_BUILTINS
-#define JSON_INTERNAL_INCREF(json) __sync_add_and_fetch (&json->refcount, 1)
-#define JSON_INTERNAL_DECREF(json) __sync_sub_and_fetch (&json->refcount, 1)
-#else
-#define JSON_INTERNAL_INCREF(json) (++json->refcount)
-#define JSON_INTERNAL_DECREF(json) (--json->refcount)
-#endif
-
-/* If __atomic or __sync builtins are available the library is thread
- * safe for all read-only functions plus reference counting. */
-#if JSON_HAVE_ATOMIC_BUILTINS || JSON_HAVE_SYNC_BUILTINS
-#define JANSSON_THREAD_SAFE_REFCOUNT 1
-#endif
+// the reference counts are atomic, so every read only function is thread safe,
+// they are never called directly, json_incref () and json_decref () use them
+#define JSON_INTERNAL_INCREF(json)	__atomic_add_fetch (&json->refcount, 1, __ATOMIC_ACQUIRE)
+#define JSON_INTERNAL_DECREF(json)	__atomic_sub_fetch (&json->refcount, 1, __ATOMIC_RELEASE)
 
 #define container_of(ptr_, type_, member_)                                               \
 	((type_ *)((char *)ptr_ - offsetof (type_, member_)))
@@ -53,49 +35,45 @@ struct json_t;
 
 struct hashtable_t;
 
-/* Create a string by taking ownership of an existing buffer */
-CERVER_PUBLIC struct json_t *jsonp_stringn_nocheck_own (
-	const char *value, size_t len
+// creates a string that takes the buffer of the value
+CERVER_HIDDEN struct json_t *jsonp_stringn_nocheck_own (
+	const char *value, size_t length
 );
 
-CERVER_PUBLIC int jsonp_dtostr (
+CERVER_HIDDEN int jsonp_dtostr (
 	char *buffer, size_t size, double value, int prec
 );
 
 /* Wrappers for custom memory functions */
-CERVER_PUBLIC void *jsonp_malloc (
+CERVER_HIDDEN void *jsonp_malloc (
 	size_t size
 ) CERVER_ATTRS ((warn_unused_result));
 
-CERVER_PUBLIC void jsonp_free (void *ptr);
+CERVER_HIDDEN void jsonp_free (void *ptr);
 
-CERVER_PUBLIC char *jsonp_strndup (
-	const char *str, size_t length
-) CERVER_ATTRS ((warn_unused_result));
-
-CERVER_PUBLIC char *jsonp_strdup (
+CERVER_HIDDEN char *jsonp_strdup (
 	const char *str
 ) CERVER_ATTRS ((warn_unused_result));
 
-CERVER_PUBLIC char *jsonp_strndup (
+CERVER_HIDDEN char *jsonp_strndup (
 	const char *str, size_t len
 ) CERVER_ATTRS ((warn_unused_result));
 
-/* Circular reference check*/
-/* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
-#define LOOP_KEY_LEN (2 + (sizeof (struct json_t *) * 2) + 1)
+// the key of a value in the check of circular references:
+// "0x", two hex characters for each byte of a pointer and the terminator
+#define JSON_LOOP_KEY_LENGTH			(2 + (sizeof (struct json_t *) * 2) + 1)
 
-CERVER_PUBLIC int jsonp_loop_check (
+CERVER_HIDDEN int jsonp_loop_check (
 	struct hashtable_t *parents,
 	const struct json_t *json, char *key, size_t key_size
 );
 
 CERVER_PUBLIC struct json_t *json_sprintf (
-	const char *fmt, ...
+	const char *format, ...
 ) CERVER_ATTRS ((warn_unused_result, format (printf, 1, 2)));
 
 CERVER_PUBLIC struct json_t *json_vsprintf (
-	const char *fmt, va_list ap
+	const char *format, va_list arguments
 ) CERVER_ATTRS ((warn_unused_result, format (printf, 1, 0)));
 
 CERVER_PUBLIC int json_equal (

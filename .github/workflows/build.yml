@@ -10,6 +10,9 @@ on:
       - 'master'
       - '*beta'
 
+env:
+  WERROR: 1
+
 jobs:
   build:
     name: Cerver build
@@ -17,7 +20,7 @@ jobs:
     container: gcc:16.2
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: System Information
         run: gcc --version && g++ --version
@@ -34,7 +37,7 @@ jobs:
         run: make CC=g++ examples
 
       - name: Archive Shared Library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cerver-lib
           path: ./bin/libcerver.so
@@ -48,7 +51,7 @@ jobs:
       image: gcc:16.2
       options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: gcc library
         run: make TYPE=test
@@ -67,6 +70,37 @@ jobs:
       - name: g++ run tests
         run: bash test/run.sh
 
+  clang:
+    name: Cerver build & tests with clang
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y clang make libssl-dev libcurl4-openssl-dev zlib1g-dev
+
+      - name: System Information
+        run: clang --version
+
+      - name: clang library
+        run: make CC=clang
+      - name: clang examples
+        run: make CC=clang examples
+
+      - name: clean
+        run: make clean
+
+      - name: clang test library
+        run: make TYPE=test CC=clang
+      - name: clang tests
+        run: make TYPE=test CC=clang test
+      - name: clang run tests
+        run: bash test/run.sh
+
   valgrind:
     name: Cerver tests with valgrind
     needs: build
@@ -75,7 +109,7 @@ jobs:
       image: gcc:16.2
       options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Dependencies
         run: apt-get update && apt-get install -y valgrind
@@ -99,7 +133,7 @@ jobs:
       matrix:
         sanitizer: [address, undefined, thread]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Disable address randomization
         if: matrix.sanitizer == 'thread'
@@ -108,9 +142,11 @@ jobs:
       - name: Run tests
         run: |
           docker run --rm -v "$PWD":/opt/cerver -w /opt/cerver \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             -e ASAN_OPTIONS=detect_leaks=1 \
             -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
             -e TSAN_OPTIONS=halt_on_error=1 \
+            -e WERROR \
             gcc:16.2 bash -c 'make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
 
   nightly-image:
@@ -119,20 +155,20 @@ jobs:
     if: github.event_name == 'push' && github.ref_name == 'nightly'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Image tags
         id: tags
         run: echo "tags=ermiry/cerver:nightly,ermiry/cerver:nightly-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Docker Nightly Image
         id: docker_build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.beta

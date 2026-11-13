@@ -8,6 +8,7 @@
 #include "cerver/types/string.h"
 
 #include "cerver/config.h"
+#include "cerver/serializer.h"
 
 // the size of the buffer used to get the description of an errno with strerror_r ()
 #define CERVER_ERRNO_DESCRIPTION_SIZE			64
@@ -39,7 +40,8 @@ struct _Connection;
 	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
 	XX(11,	GAME_INIT, 			The game failed to init)						\
 	XX(12,	GAME_START, 		The game failed to start)						\
-	XX(13,	UNKNOWN, 			Unknown error)
+	XX(13,	DESTROY_LOBBY, 		The lobby could not be destroyed)				\
+	XX(14,	UNKNOWN, 			Unknown error)
 
 typedef enum CerverErrorType {
 
@@ -115,6 +117,11 @@ typedef struct CerverErrorEventData {
 
 	void *action_args;                  // the action arguments
 
+	// the error was dropped after this trigger, so cerver_error_event_data_delete ()
+	// releases the action arguments with delete_action_args ()
+	Action delete_action_args;
+	bool owns_action_args;
+
 	String *error_message;
 
 } CerverErrorEventData;
@@ -156,14 +163,27 @@ CERVER_PUBLIC u8 error_packet_generate_and_send (
 
 #define ERROR_MESSAGE_LENGTH        128
 
-// serialized error data
-typedef struct SError {
+// the bytes of the map, the version, the keys, the timestamp, the type and the length of the message
+#define ERROR_MESSAGE_ENCODING_OVERHEAD		32
 
-	time_t timestamp;
-	u32 error_type;
-	char msg[ERROR_MESSAGE_LENGTH];
+// the biggest encoded error message
+#define ERROR_MESSAGE_MAX_ENCODED_SIZE		(ERROR_MESSAGE_LENGTH + ERROR_MESSAGE_ENCODING_OVERHEAD)
 
-} SError;
+#define ERROR_MESSAGE_VERSION				1
+
+// the data of an error packet, the timestamp in seconds since the epoch
+#define ERROR_MESSAGE_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)		\
+	SCALAR(T, 1, I64, timestamp, SERIALIZER_OPTIONAL, 0)							\
+	SCALAR(T, 2, U32, error_type, SERIALIZER_REQUIRED, 0)							\
+	STRING(T, 3, TEXT, msg, ERROR_MESSAGE_LENGTH, SERIALIZER_OPTIONAL)
+
+SERIALIZER_DECLARE (ErrorMessage, error_message, ERROR_MESSAGE_FIELDS)
+
+// creates an error packet ready to be sent with the type and the message,
+// a message longer than ERROR_MESSAGE_LENGTH is cut without splitting a character
+CERVER_PRIVATE struct _Packet *error_message_packet_create (
+	const u32 error_type, const char *msg
+);
 
 #pragma endregion
 

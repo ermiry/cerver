@@ -40,5 +40,5 @@ void data_print (Data *data) {
 		"idx: %u - value: %u\n",
 		data->idx, data->value
 	);
-	
+
 }

@@ -5,11 +5,14 @@
 
 #include "../test.h"
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 
 	(void) printf ("Testing JSON...\n");
+
+	// before any other test sets the seed with its first object
+	json_tests_seed ();
 
 	json_tests_array ();
 
@@ -42,6 +45,8 @@ int main (int argc, char **argv) {
 	json_tests_sprintf ();
 
 	json_tests_unpack ();
+
+	json_tests_safety ();
 
 	(void) printf ("\nDone with JSON tests!\n\n");
 
