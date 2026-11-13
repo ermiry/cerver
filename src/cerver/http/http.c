@@ -346,6 +346,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->max_headers = HTTP_CERVER_DEFAULT_MAX_HEADERS;
 		http_cerver->max_multipart_parts = HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS;
 		http_cerver->max_file_size = HTTP_CERVER_DEFAULT_MAX_FILE_SIZE;
+		http_cerver->max_custom_header_size = HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE;
 
 		http_cerver->n_limited_requests = 0;
 
@@ -1483,6 +1484,17 @@ void http_cerver_set_max_headers (
 
 }
 
+void http_cerver_set_max_custom_header_size (
+	HttpCerver *http_cerver, const size_t max_custom_header_size
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_custom_header_size", max_custom_header_size);
+		http_cerver->max_custom_header_size = max_custom_header_size;
+	}
+
+}
+
 void http_cerver_set_max_multipart_parts (
 	HttpCerver *http_cerver, const unsigned int max_multipart_parts
 ) {
@@ -2557,11 +2569,21 @@ static int http_header_values_join_arena (
 	Arena *arena, String **header, const char *value, const size_t value_len
 );
 
+// the value of a custom header fits below the limit of its cerver, 0 is no limit
+static inline bool http_custom_header_value_fits (
+	const size_t value_len, const size_t max_value_size
+) {
+
+	return !max_value_size || (value_len < max_value_size);
+
+}
+
 // joins a new value to a custom header that was already received
 // returns 0 on success, 1 if the joined value does not fit
 static int http_receive_join_custom_header (
 	HttpRequest *request,
-	HttpCustomHeader *existing, const char *value, const size_t value_len
+	HttpCustomHeader *existing, const char *value, const size_t value_len,
+	const size_t max_value_size
 ) {
 
 	int retval = 1;
@@ -2570,7 +2592,7 @@ static int http_receive_join_custom_header (
 		+ HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
 
 	Arena *arena = http_request_get_arena (request);
-	if (arena && (new_len < HTTP_CUSTOM_HEADER_VALUE_SIZE)) {
+	if (arena && http_custom_header_value_fits (new_len, max_value_size)) {
 		retval = http_header_values_join_arena (arena, &existing->value, value, value_len);
 	}
 
@@ -2582,13 +2604,14 @@ static int http_receive_join_custom_header (
 // returns 0 on success, 1 if the value does not fit
 static int http_receive_add_custom_header (
 	HttpRequest *request,
-	const String *field, const char *value, const size_t value_len
+	const String *field, const char *value, const size_t value_len,
+	const size_t max_value_size
 ) {
 
 	int retval = 1;
 
 	Arena *arena = http_request_get_arena (request);
-	if (arena && (value_len < HTTP_CUSTOM_HEADER_VALUE_SIZE)) {
+	if (arena && http_custom_header_value_fits (value_len, max_value_size)) {
 		HttpCustomHeader *previous = request->current_custom_header;
 		http_request_set_current_custom_header (request, field->str);
 
@@ -2606,7 +2629,8 @@ static int http_receive_add_custom_header (
 // returns 0 on success, 1 if the header does not fit
 static int http_receive_close_custom_header (
 	HttpRequest *request,
-	const String *field, const char *value, const size_t value_len
+	const String *field, const char *value, const size_t value_len,
+	const size_t max_value_size
 ) {
 
 	if (field->len >= HTTP_CUSTOM_HEADER_SIZE) return 1;
@@ -2614,8 +2638,8 @@ static int http_receive_close_custom_header (
 	HttpCustomHeader *existing = http_request_custom_header_find (request, field->str);
 
 	return existing ?
-		http_receive_join_custom_header (request, existing, value, value_len) :
-		http_receive_add_custom_header (request, field, value, value_len);
+		http_receive_join_custom_header (request, existing, value, value_len, max_value_size) :
+		http_receive_add_custom_header (request, field, value, value_len, max_value_size);
 
 }
 
@@ -2760,7 +2784,10 @@ static int http_receive_save_header (
 		return http_receive_close_known_header (http_receive, type, value, value_len);
 	}
 
-	return http_receive_close_custom_header (http_receive->request, field, value, value_len) ?
+	return http_receive_close_custom_header (
+		http_receive->request, field, value, value_len,
+		http_receive->http_cerver->max_custom_header_size
+	) ?
 		http_receive_reject (
 			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
 		) : 0;

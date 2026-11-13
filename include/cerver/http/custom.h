@@ -6,9 +6,9 @@
 
 #include "cerver/config.h"
 
-// the limits of a custom header, a bigger one is answered with 431
+// the limit of the name of a custom header, a bigger one is answered with 431
+// the limit of its value is the one of its cerver (http_cerver_set_max_custom_header_size ())
 #define HTTP_CUSTOM_HEADER_SIZE					256
-#define HTTP_CUSTOM_HEADER_VALUE_SIZE			512
 
 #ifdef __cplusplus
 extern "C" {
