@@ -462,11 +462,69 @@ static void test_http_request_id (void) {
 
 }
 
+static void test_http_request_bytes_range_case (
+	const char *value, const bool expected,
+	const RangeType type, const long start, const long end
+) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	request->headers[HTTP_HEADER_RANGE] = str_new (value);
+
+	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	http_bytes_range_init (&bytes_range);
+
+	test_check_bool_eq (http_request_get_bytes_range (request, &bytes_range), expected, value);
+	test_check_int_eq (bytes_range.type, type, value);
+	test_check_long_int_eq (bytes_range.start, start, value);
+	test_check_long_int_eq (bytes_range.end, end, value);
+
+	http_request_delete (request);
+
+}
+
+// a Range that does not start at a position is ignored: the range of the last bytes (bytes=-500)
+// and the values without a number reached atol (NULL), and a short value was read beyond its end
+static void test_http_request_bytes_range (void) {
+
+	// without the header there is no range
+	HttpRequest *request = test_http_request_new ();
+
+	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	http_bytes_range_init (&bytes_range);
+
+	test_check_bool_eq (http_request_get_bytes_range (request, &bytes_range), false, NULL);
+	test_check_int_eq (bytes_range.type, HTTP_RANGE_TYPE_NONE, NULL);
+
+	http_request_delete (request);
+
+	// the ranges that start at a position
+	test_http_request_bytes_range_case ("bytes=0-", true, HTTP_RANGE_TYPE_EMPTY, 0, 0);
+	test_http_request_bytes_range_case ("bytes=4194304-", true, HTTP_RANGE_TYPE_FIRST, 4194304, 0);
+	test_http_request_bytes_range_case ("bytes=4194304-8388608", true, HTTP_RANGE_TYPE_FULL, 4194304, 8388608);
+	test_http_request_bytes_range_case ("bytes=0-0", true, HTTP_RANGE_TYPE_FULL, 0, 0);
+
+	// only the first range of a list is used
+	test_http_request_bytes_range_case ("bytes=0-99,200-299", true, HTTP_RANGE_TYPE_FULL, 0, 99);
+
+	// the ones that are ignored
+	test_http_request_bytes_range_case ("bytes=-500", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=-", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=5", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("bytes=a-b", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("items=0-99", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("x", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+	test_http_request_bytes_range_case ("", false, HTTP_RANGE_TYPE_NONE, 0, 0);
+
+}
+
 void http_tests_requests (void) {
 
 	(void) printf ("Testing HTTP requests...\n");
 
 	test_http_request_id ();
+	test_http_request_bytes_range ();
 
 	// main
 	test_http_request_create ();
