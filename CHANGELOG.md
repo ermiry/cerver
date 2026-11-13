@@ -1,12 +1,17 @@
 ## General
-- Planned TLS & HTTP/2 as phases F8 & F9 of the roadmap
-- Using checkout v6 & upload artifact v7 in WebSocket jobs
-- Updated roadmap with the merge of the 2.0b-70 in nightly
-- Added incompatibilities of the 2.1b-10 with the http merge
+- Updated roadmap with F1 implemented as the 2.1b-11 beta
+- Updated CLAUDE.md with structured responses & a reset
+- Added incompatibilities of the 2.1b-11 with the headers list
 
 ## HTTP
-- Stopping the parser when the static path rejects a request
+- Added a list of headers with repeated ones & of any name
+- Structured HTTP responses with a single header serializer
+- Separated what belongs to a request in the HTTP receives
+- Marking the responses that end without a close as framed
 
 ## Tests
-- Scaling disconnect waits & its send timeout under valgrind
-- Using a reference UTF-8 validator in WebSocket text tests
+- Added unit tests of the headers list with its growth & limits
+- Testing the headers of responses & their compiled header
+- Checking Connection close once in every kind of response
+- Testing framed responses & resets of a receive by request
+- Added the pipeline fuzzer that resets between its requests

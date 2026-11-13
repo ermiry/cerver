@@ -17,23 +17,25 @@
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
+// the status line and the Server header of a response
 #define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
 
 // the header of a response is written inside it when it fits,
 // the main header with the type and the length of its body take less than 2^8
 #define HTTP_RESPONSE_HEADER_BUFFER_SIZE		(1 << 8)
 
-// cerver always closes the connection after sending a response,
-// so every response must say so (RFC 9112 9.6),
+// a connection that cerver closes after a response must say so (RFC 9112 9.6),
 // otherwise a client (like nginx) may reuse the connection
 // and its next request gets reset when cerver closes the socket
-#define HTTP_RESPONSE_CONNECTION_CLOSE_HEADER	"Connection: close\r\n"
+// the header is added when the response is sent, as it depends on the connection
+#define HTTP_RESPONSE_CONNECTION_CLOSE			"close"
+#define HTTP_RESPONSE_CONNECTION_CLOSE_HEADER	"Connection: " HTTP_RESPONSE_CONNECTION_CLOSE "\r\n"
 
-#define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
+// the digits of the biggest length of a body
+#define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		32
 
-#define HTTP_RESPONSE_SEND_FILE_HEADER_SIZE		256
-#define HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE	256
-#define HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE	256
+// the longest value of a header that is written with a format
+#define HTTP_RESPONSE_HEADER_FORMAT_SIZE		(1 << 10)
 
 // a response is sent as its header and its data, in a single system call
 #define HTTP_RESPONSE_PARTS						2
@@ -41,10 +43,6 @@
 // a response is sent as its header (without the empty line that ends it),
 // the headers that cerver adds for the request, the empty line and its data
 #define HTTP_RESPONSE_MESSAGE_PARTS				4
-
-// the most bytes of the headers that cerver adds to a response:
-// Date, X-Request-Id, Access-Control-Allow-Origin, Vary, ETag, Content-Encoding
-#define HTTP_RESPONSE_EXTRA_HEADERS_SIZE		(1 << 10)
 
 // the endpoint's entity tag and compression can be applied to the response
 #define HTTP_RESPONSE_SEND_OPTION_TRANSFORM		(1 << 0)
@@ -85,11 +83,18 @@ struct _HttpResponse {
 
 	http_status status;
 
-	u8 n_headers;
-	HttpHeader headers[HTTP_HEADERS_SIZE];
+	// what the response says, without the protocol that sends it:
+	// its headers in the order they were added, a name can be repeated
+	HttpHeaders headers;
 
+	// the status and the headers as HTTP/1.1 sends them,
+	// compiled from the ones above when the response is sent
 	void *header;
 	size_t header_len;
+
+	// the header was set as bytes with http_response_set_header (),
+	// so it is sent as it is and the headers of the response are not in it
+	bool header_is_raw;
 
 	// where the header is written when it fits, header points to it,
 	// so a response without custom headers does not allocate it
@@ -128,15 +133,77 @@ CERVER_EXPORT void http_response_set_status (
 	HttpResponse *response, const http_status status
 );
 
-// sets the response's header, it will replace the existing one
+// sets the response's header as the bytes that are sent, it will replace the existing one
+// and the headers that were added to the response are not sent
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_header (
 	HttpResponse *response, const void *header, const size_t header_len
 );
 
-// adds a new header to the response
-// the headers will be handled when calling 
-// http_response_compile () to generate a continuos header buffer
+// sets a header of the response, it replaces the ones that it has with the same type
+// the value can not have a CR, a LF or a NUL
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_header_set (
+	HttpResponse *response, const http_header type, const char *value
+);
+
+// adds a header to the response, after the ones that it has,
+// so a header can be repeated, like Set-Cookie
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_header_add (
+	HttpResponse *response, const http_header type, const char *value
+);
+
+// removes the headers of the response with the type
+// returns the number of headers that were removed
+CERVER_EXPORT unsigned int http_response_header_remove (
+	HttpResponse *response, const http_header type
+);
+
+// returns the number of headers of the response with the type
+CERVER_EXPORT unsigned int http_response_header_count (
+	const HttpResponse *response, const http_header type
+);
+
+// gets the value of a header of the response, the one in the position
+// between the ones with the type (0 is the first one that was added)
+// the value does not end with '\0', its length is set in value_length
+// returns NULL if the response does not have it
+CERVER_EXPORT const char *http_response_header_get (
+	const HttpResponse *response, const http_header type,
+	const unsigned int position, size_t *value_length
+);
+
+// works like http_response_header_set () with the name of any header,
+// the name must be a token, and it is compared without case
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_header_set_by_name (
+	HttpResponse *response, const char *name, const char *value
+);
+
+// works like http_response_header_add () with the name of any header
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_header_add_by_name (
+	HttpResponse *response, const char *name, const char *value
+);
+
+// works like http_response_header_remove () with the name of any header
+CERVER_EXPORT unsigned int http_response_header_remove_by_name (
+	HttpResponse *response, const char *name
+);
+
+// works like http_response_header_count () with the name of any header
+CERVER_EXPORT unsigned int http_response_header_count_by_name (
+	const HttpResponse *response, const char *name
+);
+
+// works like http_response_header_get () with the name of any header
+CERVER_EXPORT const char *http_response_header_get_by_name (
+	const HttpResponse *response, const char *name,
+	const unsigned int position, size_t *value_length
+);
+
+// sets a header of the response, like http_response_header_set ()
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_header (
 	HttpResponse *response,
@@ -275,12 +342,14 @@ CERVER_PUBLIC void http_response_print (
 #pragma region send
 
 // sends a complete header (it ends with an empty line) and its data
-// with the headers that cerver adds for the request (Date, X-Request-Id, CORS, Vary),
+// with the headers that cerver adds for the request (Connection, Date, X-Request-Id, CORS, Vary),
 // and with the endpoint's entity tag and compression when the options have TRANSFORM
+// the headers are the ones that the header was compiled from, NULL when only its bytes are known
 // a header that does not end with an empty line is sent as it is
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 http_response_send_message (
 	const struct _HttpReceive *http_receive, const http_status status,
+	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len,
 	const unsigned int options

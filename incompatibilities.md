@@ -3,6 +3,48 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-11 (from 2.1b-10)
+
+A response is its status and a list of headers that is written for its protocol when it is sent, and what belongs
+to a request is separated from what belongs to its connection. A cerver still handles one request in each
+connection and closes it after its response.
+
+- The headers of a response arrive in the order they were added to it (they arrived in the order of `http_header`),
+  after `Server`, and the headers that cerver adds for the request go after them: `Connection: close` first (it was
+  the third line of every response), then `Date`, `X-Request-Id`, the CORS ones, `Vary` and `ETag`. The responses
+  of `http_response_json_*` and `http_response_render_*` keep `Content-Type` before `Content-Length`
+- `Connection: close` is not part of a compiled header (`HttpResponse.header`, `HttpResponse.res`), it is added when
+  the response is sent, and a response with its own `Connection` header is not given another (it was sent twice).
+  The response of `HTTP_RESPONSE_SERVICE_UNAVAILABLE` keeps it
+- The headers of the cerver (`http_cerver_add_responses_header ()`) are also added to the responses of
+  `http_response_json_*` and `http_response_render_*`, they only reached the responses with their own headers
+- A header whose value has a CR, a LF or a NUL is rejected (`http_response_add_header ()` and the other methods
+  return 1, they wrote it as it was), so a value of a request can not add headers to a response; the header
+  `HTTP_HEADER_UNDEFINED` is rejected too (it was sent as `Undefined: value`)
+- The value of a header is not cut: it was cut at 256 bytes with its name (127 bytes in
+  `http_response_add_custom_header ()`), and a longer one sent the bytes after it to the client. A value written
+  with a format can have up to `HTTP_RESPONSE_HEADER_FORMAT_SIZE` (1024) bytes, a longer one is not added
+- A header or the status that changes after the response was compiled discards its `header` and its `res`, they
+  are compiled again when it is sent (the compiled ones were sent without the change)
+- `HttpResponse` (ABI): `HttpHeaders headers` and `header_is_raw` replace `n_headers` and
+  `HttpHeader headers[HTTP_HEADERS_SIZE]` (a response is 16 KiB smaller); `HttpCerver.response_headers` is a
+  `HttpHeaders` and `n_response_headers` is removed. `HttpHeader` is only used by the parts of a multi-part body
+- New in `headers.h`: `HttpHeaderField`, `HttpHeaders` and `http_headers_*`. New in `response.h`:
+  `http_response_header_set ()`, `_add ()`, `_remove ()`, `_count ()`, `_get ()` and the same with `_by_name`
+  (any name that is a token, a header can be repeated), `HTTP_RESPONSE_CONNECTION_CLOSE` and
+  `HTTP_RESPONSE_HEADER_FORMAT_SIZE`. New in `http.h`: `http_cerver_add_responses_header_by_name ()`
+- Removed: `http_response_header_set_with_type ()` and `http_response_header_set_with_type_and_args ()`
+  (`headers.h`), `HTTP_RESPONSE_SEND_FILE_HEADER_SIZE`, `HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE`,
+  `HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE` and `HTTP_RESPONSE_EXTRA_HEADERS_SIZE`;
+  `HTTP_RESPONSE_CONTENT_LENGTH_SIZE` is 32 (it was 16)
+- `http_response_send_message ()` takes the headers of the response before its compiled header (private)
+- `HttpReceive` (ABI): new fields `framed`, `sock_fd`, `start_time`, `received`, `diagnostics`, `headers_deadline`
+  and `request_deadline`; `HandlerThreadContext.http_receive`. `http_receive_prepare ()` replaces
+  `http_receive_create_arena ()`: the receive lives in the memory of its owner, not in the arena of its request.
+  New: `HttpReceiveResources`, `HttpReceiveDiagnostics`, `http_receive_reset ()` and `http_access_request ()`
+  (`http/access.h`)
+- The fuzz target `pipeline` and its corpus
+
 ## 2.1b-10 (from 2.1b-9)
 
 The merge of the 2.0b-66 to the 2.0b-70 of `http`: their entries below apply to code built with a 2.1b-9, except

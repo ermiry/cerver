@@ -1,0 +1,16 @@
+POST /api/items/0b6c7c0e-8f5a-4c4b-9d8e-3f2a1b0c9d8e/update HTTP/1.1
+Host: localhost
+Transfer-Encoding: chunked
+Trailer: X-Sum
+
+5
+first
+6
+second
+0
+X-Sum: 11
+
+GET /api/users/16 HTTP/1.1
+Host: localhost
+Accept-Encoding: gzip
+

@@ -1,0 +1,14 @@
+GET /api/users/16 HTTP/1.1
+Bad Header
+
+GET /api/users/16 HTTP/1.1
+Host: localhost
+
+GET /missing HTTP/1.1
+Host: localhost
+
+PATCH /api/files/a/b/c HTTP/1.1
+Host: localhost
+Content-Length: 3
+
+abc

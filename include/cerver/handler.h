@@ -245,6 +245,7 @@ CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
 #pragma region context
 
 struct Arena;
+struct _HttpReceive;
 
 // the memory that a worker thread reuses between requests
 // the data of a request lives in the arena only while it is handled
@@ -258,6 +259,10 @@ typedef struct HandlerThreadContext {
 	String *url_buffer;
 	String *field_buffer;
 	String *value_buffer;
+
+	// the receive of the HTTP connection that the thread handles,
+	// it uses the arena and the buffers of the thread
+	struct _HttpReceive *http_receive;
 
 } HandlerThreadContext;
 

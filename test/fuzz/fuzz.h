@@ -160,7 +160,8 @@ static Connection *fuzz_connection_create (const int sock_fd) {
 }
 
 // feeds the request in pieces of piece_len bytes, 0 feeds it whole
-static void fuzz_feed (
+// a target that feeds its connection its own way does not use it
+static inline void fuzz_feed (
 	const uint8_t *request, const size_t request_len, const size_t piece_len
 ) {
 

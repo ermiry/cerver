@@ -60,6 +60,13 @@ static const char *features_other_origin = { "https://other.com" };
 static const char *features_stream_first = { "first" };
 static const char *features_stream_second = { "second" };
 
+static const char *features_first_cookie = { "session=first; Path=/" };
+static const char *features_second_cookie = { "theme=dark; Path=/" };
+static const char *features_trace_name = { "X-Trace" };
+static const char *features_trace_value = { "abc-123" };
+
+static const char *features_video_file = { "./test/web/public/index.html" };
+
 static char features_json[FEATURES_TEST_JSON_SIZE] = { 0 };
 static size_t features_json_length = 0;
 
@@ -195,6 +202,67 @@ static void features_client_handler (
 
 }
 
+// GET /features/cookies, a header that is repeated and one with a name of the application
+static void features_cookies_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_first_cookie), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_by_name (response, features_trace_name, features_trace_value), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_second_cookie), 0, NULL);
+	(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
+	(void) http_response_add_content_length_header (response, strlen (features_stream_first));
+	(void) http_response_set_data_ref (response, features_stream_first, strlen (features_stream_first));
+	(void) http_response_send (response, http_receive);
+	http_response_return (response);
+
+}
+
+// GET /features/connection, a response that says what its connection does
+static void features_connection_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	HttpResponse *response = http_response_get ();
+	http_response_set_status (response, HTTP_STATUS_OK);
+	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_CONNECTION, HTTP_RESPONSE_CONNECTION_CLOSE), 0, NULL);
+	(void) http_response_add_content_length_header (response, strlen (features_stream_first));
+	(void) http_response_set_data_ref (response, features_stream_first, strlen (features_stream_first));
+	(void) http_response_send (response, http_receive);
+	http_response_return (response);
+
+}
+
+// GET /features/created, a body without its length, that ends when the connection is closed
+static void features_created_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) http_response_create_and_send (
+		HTTP_STATUS_CREATED, features_stream_first, strlen (features_stream_first), http_receive
+	);
+
+}
+
+// GET /features/video, a range of a file
+static void features_video_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) http_response_handle_video (http_receive, features_video_file);
+
+}
+
 // GET /plain/small, an endpoint without the settings of the features group
 static void features_plain_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -237,6 +305,10 @@ static void features_routes (HttpCerver *http_cerver) {
 	test_check_ptr (http_group_get (features, "stream/ended", features_stream_ended_handler));
 	test_check_ptr (http_group_post (features, "echo", features_echo_handler));
 	test_check_ptr (http_group_get (features, "client", features_client_handler));
+	test_check_ptr (http_group_get (features, "cookies", features_cookies_handler));
+	test_check_ptr (http_group_get (features, "connection", features_connection_handler));
+	test_check_ptr (http_group_get (features, "created", features_created_handler));
+	test_check_ptr (http_group_get (features, "video", features_video_handler));
 
 	HttpGroup *plain = http_cerver_group_create (http_cerver, "plain");
 	test_check_ptr (http_group_get (plain, "small", features_plain_handler));
@@ -821,6 +893,183 @@ static void test_features_metrics (void) {
 }
 
 // the date header can be disabled
+// the response says once that its connection is closed
+static void features_expect_close (const FeaturesResponse *response) {
+
+	if (features_header_count (response, "\r\nConnection: ") != 1) {
+		(void) fprintf (stderr, "unexpected Connection headers in: %.*s\n", (int) response->header_length, response->raw);
+	}
+
+	test_check_unsigned_eq (features_header_count (response, "\r\nConnection: "), 1, NULL);
+	features_expect_header (response, "Connection", HTTP_RESPONSE_CONNECTION_CLOSE);
+
+}
+
+static void features_send (const char *request, FeaturesResponse *response) {
+
+	features_request (request, strlen (request), response);
+
+}
+
+// cerver closes the connection after every response, and each one says it once,
+// whatever the way it was created and sent
+static void test_features_connection (void) {
+
+	FeaturesResponse response;
+	char etag[FEATURES_TEST_VALUE_SIZE] = { 0 };
+	char header[FEATURES_TEST_VALUE_SIZE * 2] = { 0 };
+
+	// a compiled response of cerver
+	features_get ("/features/small", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+	test_check_ptr (features_header (&response, "ETag", etag));
+
+	features_get ("/plain/small", NULL, &response);
+	features_expect_close (&response);
+
+	// its 304
+	(void) snprintf (header, sizeof (header), "If-None-Match: %s\r\n", etag);
+	features_get ("/features/small", header, &response);
+	features_expect_status (&response, "HTTP/1.1 304");
+	features_expect_close (&response);
+
+	// its HEAD
+	features_send ("HEAD /features/small HTTP/1.1\r\nHost: localhost\r\n\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+
+	// a rendered body, plain and compressed
+	features_get ("/features/json", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+
+	features_get ("/features/json", "Accept-Encoding: gzip\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+	test_check_unsigned_eq (features_header_count (&response, "\r\nContent-Length: "), 1, NULL);
+
+	// a response with its own headers
+	features_get ("/features/image", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+
+	// the errors of cerver
+	features_get ("/features/missing", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 404");
+	features_expect_close (&response);
+
+	features_send ("DELETE /features/small HTTP/1.1\r\nHost: localhost\r\n\r\n", &response);
+	features_expect_close (&response);
+
+	features_send ("GET /features/small HTTP/1.1\r\nHost: localhost\r\nBad Header\r\n\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 400");
+	features_expect_close (&response);
+
+	// the answer to a preflight
+	features_send (
+		"OPTIONS /features/small HTTP/1.1\r\nHost: localhost\r\n"
+		"Origin: https://ermiry.com\r\nAccess-Control-Request-Method: GET\r\n\r\n",
+		&response
+	);
+
+	features_expect_close (&response);
+
+	// a redirect to the path without its last slash
+	features_get ("/features/small/", NULL, &response);
+	features_expect_close (&response);
+
+	// a stream, chunked and until the connection is closed
+	features_get ("/features/stream", NULL, &response);
+	features_expect_header (&response, "Transfer-Encoding", HTTP_STREAM_CHUNKED_ENCODING);
+	features_expect_close (&response);
+
+	features_send ("GET /features/stream HTTP/1.0\r\n\r\n", &response);
+	features_expect_close (&response);
+
+	// a file, its 304 and a range of it
+	features_get ("/index.html", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+	test_check_ptr (features_header (&response, "ETag", etag));
+
+	(void) snprintf (header, sizeof (header), "If-None-Match: %s\r\n", etag);
+	features_get ("/index.html", header, &response);
+	features_expect_status (&response, "HTTP/1.1 304");
+	features_expect_close (&response);
+
+	features_get ("/features/video", "Range: bytes=0-15\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 206");
+	features_expect_close (&response);
+	features_expect_header (&response, "Content-Range", NULL);
+	test_check_unsigned_eq (response.body_length, features_content_length (&response), NULL);
+
+	// a body without its length
+	features_get ("/features/created", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 201");
+	features_expect_close (&response);
+	features_expect_no_header (&response, "Content-Length");
+	test_check_str_eq (response.body, features_stream_first, NULL);
+
+	// a response that already says it is not told twice
+	features_get ("/features/connection", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_close (&response);
+	test_check_str_eq (response.body, features_stream_first, NULL);
+
+	// the admin routes
+	features_get ("/cerver/stats", NULL, &response);
+	features_expect_close (&response);
+
+}
+
+// a header can be repeated, and they arrive in the order that the handler added them
+static void test_features_repeated_headers (void) {
+
+	FeaturesResponse response;
+
+	features_get ("/features/cookies", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+
+	test_check_unsigned_eq (features_header_count (&response, "\r\nSet-Cookie: "), 2, NULL);
+	features_expect_header (&response, features_trace_name, features_trace_value);
+
+	const char *first = strstr (response.raw, "\r\nSet-Cookie: session=first; Path=/\r\n");
+	const char *trace = strstr (response.raw, "\r\nX-Trace: abc-123\r\n");
+	const char *second = strstr (response.raw, "\r\nSet-Cookie: theme=dark; Path=/\r\n");
+	const char *type = strstr (response.raw, "\r\nContent-Type: ");
+	const char *date = strstr (response.raw, "\r\nDate: ");
+
+	test_check_ptr (first);
+	test_check_ptr (trace);
+	test_check_ptr (second);
+	test_check_ptr (type);
+	test_check_ptr (date);
+
+	test_check (first < trace, NULL);
+	test_check (trace < second, NULL);
+	test_check (second < type, NULL);
+
+	// the headers that cerver adds for the request go after the ones of the response
+	test_check (type < date, NULL);
+
+	features_expect_close (&response);
+	test_check_str_eq (response.body, features_stream_first, NULL);
+
+	// the 304 of the response keeps none of them
+	char etag[FEATURES_TEST_VALUE_SIZE] = { 0 };
+	char header[FEATURES_TEST_VALUE_SIZE * 2] = { 0 };
+	test_check_ptr (features_header (&response, "ETag", etag));
+
+	(void) snprintf (header, sizeof (header), "If-None-Match: %s\r\n", etag);
+	features_get ("/features/cookies", header, &response);
+	features_expect_status (&response, "HTTP/1.1 304");
+	test_check_unsigned_eq (features_header_count (&response, "\r\nSet-Cookie: "), 0, NULL);
+	features_expect_no_header (&response, features_trace_name);
+	features_expect_close (&response);
+
+}
+
 static void test_features_without_date (void) {
 
 	HttpCerver *http_cerver = (HttpCerver *) features_cerver->cerver_data;
@@ -856,6 +1105,8 @@ void http_tests_features (void) {
 	test_features_stream ();
 	test_features_chunked_body ();
 	test_features_metrics ();
+	test_features_connection ();
+	test_features_repeated_headers ();
 	test_features_without_date ();
 
 	features_cerver_stop ();

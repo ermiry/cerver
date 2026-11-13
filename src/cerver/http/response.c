@@ -98,6 +98,16 @@ static const HttpCerver *http_response_producer_cerver (void) {
 
 }
 
+// the headers that the cerver adds to every response that does not have them,
+// NULL when no HTTP cerver has been created
+static const HttpHeaders *http_response_default_headers (void) {
+
+	const HttpCerver *http_cerver = producer ? http_response_producer_cerver () : NULL;
+
+	return http_cerver ? &http_cerver->response_headers : NULL;
+
+}
+
 #pragma region responses
 
 // the header of the response was allocated, it is not its buffer
@@ -113,25 +123,19 @@ static void http_response_header_release (HttpResponse *response) {
 
 	response->header = NULL;
 	response->header_len = 0;
+	response->header_is_raw = false;
 
 }
 
-// the headers of a response are all empty when it has none,
-// a recycled response was reset, so only a new one clears them
-static void http_response_init (HttpResponse *response, const bool clear_headers) {
+static void http_response_init (HttpResponse *response) {
 
 	response->status = HTTP_STATUS_OK;
 
-	response->n_headers = 0;
-	if (clear_headers) {
-		(void) memset (
-			response->headers, 0,
-			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
-		);
-	}
+	http_headers_init (&response->headers);
 
 	response->header = NULL;
 	response->header_len = 0;
+	response->header_is_raw = false;
 	response->header_buffer[0] = '\0';
 
 	response->data = NULL;
@@ -148,11 +152,10 @@ static void http_response_init (HttpResponse *response, const bool clear_headers
 void *http_response_new (void) {
 
 	HttpResponse *response = http_recycle_response_take ();
-	const bool recycled = (response != NULL);
 
 	if (!response) response = (HttpResponse *) malloc (sizeof (HttpResponse));
 
-	if (response) http_response_init (response, !recycled);
+	if (response) http_response_init (response);
 
 	return response;
 
@@ -162,15 +165,7 @@ void http_response_reset (HttpResponse *response) {
 
 	response->status = HTTP_STATUS_OK;
 
-	// only the headers that were added have values
-	if (response->n_headers) {
-		(void) memset (
-			response->headers, 0,
-			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
-		);
-	}
-
-	response->n_headers = 0;
+	http_headers_reset (&response->headers);
 
 	http_response_header_release (response);
 
@@ -221,16 +216,23 @@ void http_response_return (HttpResponse *response) {
 
 }
 
+static void http_response_headers_changed (HttpResponse *response);
+
 // sets the HTTP response's status code to be used in the header
 void http_response_set_status (
 	HttpResponse *response, const http_status status
 ) {
 
-	if (response) response->status = status;
+	if (response && (response->status != status)) {
+		response->status = status;
+
+		// the status is part of the header that was compiled
+		http_response_headers_changed (response);
+	}
 
 }
 
-// sets the response's header, it will replace the existing one
+// sets the response's header as the bytes that are sent, it will replace the existing one
 // the data will be deleted when the response gets deleted
 void http_response_set_header (
 	HttpResponse *response, const void *header, const size_t header_len
@@ -242,35 +244,192 @@ void http_response_set_header (
 		if (header) {
 			response->header = (void *) header;
 			response->header_len = header_len;
+			response->header_is_raw = true;
 		}
 	}
 
 }
 
-// adds a new header to the response
-// the headers will be handled when calling
-// http_response_compile () to generate a continuos header buffer
+// the header that was compiled does not have the change, so it is compiled again
+// when the response is sent, a header that was set as bytes is kept
+static void http_response_headers_changed (HttpResponse *response) {
+
+	if (!response->header_is_raw) {
+		http_response_header_release (response);
+
+		// the compiled response starts with the header that changed
+		if (response->res) {
+			free (response->res);
+			response->res = NULL;
+			response->res_len = 0;
+		}
+	}
+
+}
+
+u8 http_response_header_set (
+	HttpResponse *response, const http_header type, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (response && value) {
+		retval = http_headers_set (&response->headers, type, value, strlen (value));
+
+		if (!retval) http_response_headers_changed (response);
+	}
+
+	return retval;
+
+}
+
+u8 http_response_header_add (
+	HttpResponse *response, const http_header type, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (response && value) {
+		retval = http_headers_add (&response->headers, type, value, strlen (value));
+
+		if (!retval) http_response_headers_changed (response);
+	}
+
+	return retval;
+
+}
+
+unsigned int http_response_header_remove (
+	HttpResponse *response, const http_header type
+) {
+
+	unsigned int removed = 0;
+
+	if (response) {
+		removed = http_headers_remove (&response->headers, type);
+
+		if (removed) http_response_headers_changed (response);
+	}
+
+	return removed;
+
+}
+
+unsigned int http_response_header_count (
+	const HttpResponse *response, const http_header type
+) {
+
+	return response ? http_headers_count (&response->headers, type) : 0;
+
+}
+
+static const char *http_response_header_field_value (
+	const HttpResponse *response, const HttpHeaderField *field, size_t *value_length
+) {
+
+	if (!field && value_length) *value_length = 0;
+
+	return field ? http_headers_field_value (&response->headers, field, value_length) : NULL;
+
+}
+
+const char *http_response_header_get (
+	const HttpResponse *response, const http_header type,
+	const unsigned int position, size_t *value_length
+) {
+
+	return http_response_header_field_value (
+		response,
+		response ? http_headers_find (&response->headers, type, position) : NULL,
+		value_length
+	);
+
+}
+
+u8 http_response_header_set_by_name (
+	HttpResponse *response, const char *name, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (response && name && value) {
+		retval = http_headers_set_by_name (
+			&response->headers, name, strlen (name), value, strlen (value)
+		);
+
+		if (!retval) http_response_headers_changed (response);
+	}
+
+	return retval;
+
+}
+
+u8 http_response_header_add_by_name (
+	HttpResponse *response, const char *name, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (response && name && value) {
+		retval = http_headers_add_by_name (
+			&response->headers, name, strlen (name), value, strlen (value)
+		);
+
+		if (!retval) http_response_headers_changed (response);
+	}
+
+	return retval;
+
+}
+
+unsigned int http_response_header_remove_by_name (
+	HttpResponse *response, const char *name
+) {
+
+	unsigned int removed = 0;
+
+	if (response && name) {
+		removed = http_headers_remove_by_name (&response->headers, name, strlen (name));
+
+		if (removed) http_response_headers_changed (response);
+	}
+
+	return removed;
+
+}
+
+unsigned int http_response_header_count_by_name (
+	const HttpResponse *response, const char *name
+) {
+
+	return (response && name) ?
+		http_headers_count_by_name (&response->headers, name, strlen (name)) : 0;
+
+}
+
+const char *http_response_header_get_by_name (
+	const HttpResponse *response, const char *name,
+	const unsigned int position, size_t *value_length
+) {
+
+	return http_response_header_field_value (
+		response,
+		(response && name) ? http_headers_find_by_name (
+			&response->headers, name, strlen (name), position
+		) : NULL,
+		value_length
+	);
+
+}
+
+// sets a header of the response, like http_response_header_set ()
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
 	HttpResponse *response,
 	const http_header type, const char *actual_header
 ) {
 
-	u8 retval = 1;
-
-	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (response->headers[type].len <= 0) {
-			response->n_headers += 1;
-		}
-
-		http_response_header_set_with_type (
-			&response->headers[type], type, actual_header
-		);
-
-		retval = 0;
-	}
-
-	return retval;
+	return http_response_header_set (response, type, actual_header);
 
 }
 
@@ -283,22 +442,19 @@ u8 http_response_add_custom_header (
 
 	u8 retval = 1;
 
-	if (response && format && (type < HTTP_HEADERS_SIZE)) {
+	if (response && format) {
 		va_list args;
 		va_start (args, format);
 
-		if (response->headers[type].len <= 0) {
-			response->n_headers += 1;
-		}
-
-		http_response_header_set_with_type_and_args (
-			&response->headers[type], type,
-			format, args
-		);
+		char value[HTTP_RESPONSE_HEADER_FORMAT_SIZE];
+		const int written = vsnprintf (value, HTTP_RESPONSE_HEADER_FORMAT_SIZE, format, args);
 
 		va_end (args);
 
-		retval = 0;
+		// a value that does not fit is not added cut
+		if ((written >= 0) && (written < HTTP_RESPONSE_HEADER_FORMAT_SIZE)) {
+			retval = http_response_header_set (response, type, value);
+		}
 	}
 
 	return retval;
@@ -311,26 +467,21 @@ u8 http_response_add_content_type_header (
 	HttpResponse *response, const ContentType type
 ) {
 
-	u8 retval = 1;
+	return http_response_header_set (
+		response, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
+	);
 
-	if (response) {
-		HttpHeader *header = &response->headers[HTTP_HEADER_CONTENT_TYPE];
+}
 
-		if (header->len <= 0) {
-			response->n_headers += 1;
-		}
+// the length of a body as the value of its header
+// returns the length of the value
+static size_t http_response_content_length_value (
+	const size_t length, char *value
+) {
 
-		header->len = snprintf (
-			header->value, HTTP_HEADER_VALUE_SIZE,
-			"%s: %s\r\n",
-			http_header_string (HTTP_HEADER_CONTENT_TYPE),
-			http_content_type_mime (type)
-		);
+	const int written = snprintf (value, HTTP_RESPONSE_CONTENT_LENGTH_SIZE, "%zu", length);
 
-		retval = 0;
-	}
-
-	return retval;
+	return (written > 0) ? (size_t) written : 0;
 
 }
 
@@ -343,19 +494,10 @@ u8 http_response_add_content_length_header (
 	u8 retval = 1;
 
 	if (response) {
-		HttpHeader *header = &response->headers[HTTP_HEADER_CONTENT_LENGTH];
+		char value[HTTP_RESPONSE_CONTENT_LENGTH_SIZE];
+		(void) http_response_content_length_value (length, value);
 
-		if (header->len <= 0) {
-			response->n_headers += 1;
-		}
-
-		header->len = snprintf (
-			header->value, HTTP_HEADER_VALUE_SIZE,
-			"%s: %lu\r\n",
-			http_header_string (HTTP_HEADER_CONTENT_LENGTH), length
-		);
-
-		retval = 0;
+		retval = http_response_header_set (response, HTTP_HEADER_CONTENT_LENGTH, value);
 	}
 
 	return retval;
@@ -609,146 +751,162 @@ HttpResponse *http_response_create (
 
 }
 
-static void http_response_compile_single_header (
-	HttpResponse *response
+static const char http_response_header_end[] = { "\r\n" };
+static const size_t http_response_header_end_length = 2;
+
+// the status line and the Server header, the start of the header that HTTP/1.1 sends
+// returns the length that was written
+static size_t http_response_main_header (
+	const http_status status, char *main_header
 ) {
 
-	response->header = response->header_buffer;
-
 	const int written = snprintf (
-		response->header_buffer, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-		"\r\n",
-		(unsigned int) response->status, http_status_string (response->status),
+		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
+		(unsigned int) status, http_status_string (status),
 		CERVER_VERSION
 	);
 
-	// a truncated header is never sent beyond its buffer
-	response->header_len = (written < 0) ? 0 : (
+	// a truncated main header is never used beyond its buffer
+	return (written < 0) ? 0 : (
 		((size_t) written < HTTP_RESPONSE_MAIN_HEADER_SIZE) ?
 			(size_t) written : HTTP_RESPONSE_MAIN_HEADER_SIZE - 1
 	);
 
 }
 
-#define HTTP_RESPONSE_JSON_HEADER_FORMAT									\
-	"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"								\
-	HTTP_RESPONSE_CONNECTION_CLOSE_HEADER									\
-	"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n"
+// a header of the cerver is added to a response that does not have one with its name
+static bool http_response_default_applies (
+	const HttpHeaders *headers,
+	const HttpHeaders *defaults, const HttpHeaderField *field
+) {
 
-// the header of a json body, in the buffer of the response when it fits
-static void http_response_json_header (HttpResponse *response) {
+	size_t name_length = 0;
+	const char *name = http_headers_field_name (defaults, field, &name_length);
 
-	const unsigned int status = (unsigned int) response->status;
-	const char *status_string = http_status_string (response->status);
-
-	const int written = snprintf (
-		response->header_buffer, HTTP_RESPONSE_HEADER_BUFFER_SIZE,
-		HTTP_RESPONSE_JSON_HEADER_FORMAT,
-		status, status_string, CERVER_VERSION, response->data_len
-	);
-
-	if ((written >= 0) && ((size_t) written < HTTP_RESPONSE_HEADER_BUFFER_SIZE)) {
-		response->header = response->header_buffer;
-		response->header_len = (size_t) written;
-	}
-
-	else {
-		response->header = c_string_create (
-			HTTP_RESPONSE_JSON_HEADER_FORMAT,
-			status, status_string, CERVER_VERSION, response->data_len
-		);
-
-		response->header_len = response->header ? strlen ((const char *) response->header) : 0;
-	}
+	return (field->type != HTTP_HEADER_UNDEFINED) ?
+		!http_headers_count (headers, field->type) :
+		!http_headers_count_by_name (headers, name, name_length);
 
 }
 
-static void http_response_compile_multiple_headers (
-	HttpResponse *response
+// the length of the lines of the headers of the cerver that the response does not have
+static size_t http_response_defaults_length (
+	const HttpHeaders *headers, const HttpHeaders *defaults
 ) {
 
-	const HttpCerver *http_cerver = http_response_producer_cerver ();
+	size_t length = 0;
 
-	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE] = { 0 };
-	(void) snprintf (
-		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER,
-		(unsigned int) response->status, http_status_string (response->status),
-		CERVER_VERSION
-	);
+	const HttpHeaderField *field = NULL;
+	for (unsigned int idx = 0; (field = http_headers_get (defaults, idx)) != NULL; idx++) {
+		if (http_response_default_applies (headers, defaults, field)) {
+			size_t line_length = 0;
+			(void) http_headers_field_line (defaults, field, &line_length);
 
-	size_t main_header_len = strlen (main_header);
-	response->header_len = main_header_len;
-
-	u8 i = 0;
-	for (; i < HTTP_HEADERS_SIZE; i++) {
-		if (response->headers[i].len > 0) {
-			response->header_len += response->headers[i].len;
-		}
-
-		else if (http_cerver->response_headers[i].len > 0) {
-			response->header_len += http_cerver->response_headers[i].len;
+			length += line_length;
 		}
 	}
 
-	response->header_len += 2;	// \r\n
+	return length;
 
-	// one more byte to always terminate the header with '\0',
-	// in the buffer of the response when it fits
-	const size_t header_size = response->header_len + 1;
-	response->header = (header_size <= HTTP_RESPONSE_HEADER_BUFFER_SIZE) ?
-		response->header_buffer : calloc (header_size, sizeof (char));
+}
 
-	if (!response->header) {
-		response->header_len = 0;
-		return;
-	}
+// writes the lines of the headers of the cerver that the response does not have
+// returns the end of what was written
+static char *http_response_defaults_write (
+	char *end, const HttpHeaders *headers, const HttpHeaders *defaults
+) {
 
-	char *end = (char *) response->header;
-	(void) memcpy (end, main_header, main_header_len);
-	end += main_header_len;
-	for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
-		if (response->headers[i].len > 0) {
-			(void) memcpy (end, response->headers[i].value, response->headers[i].len);
-			end += response->headers[i].len;
-		}
+	const HttpHeaderField *field = NULL;
+	for (unsigned int idx = 0; (field = http_headers_get (defaults, idx)) != NULL; idx++) {
+		if (http_response_default_applies (headers, defaults, field)) {
+			size_t line_length = 0;
+			const char *line = http_headers_field_line (defaults, field, &line_length);
 
-		else if (http_cerver->response_headers[i].len > 0) {
-			(void) memcpy (
-				end,
-				http_cerver->response_headers[i].value,
-				http_cerver->response_headers[i].len
-			);
-
-			end += http_cerver->response_headers[i].len;
+			(void) memcpy (end, line, line_length);
+			end += line_length;
 		}
 	}
 
-	// append header end
-	*end = '\r';
-	end += 1;
-	*end = '\n';
-	end += 1;
+	return end;
+
+}
+
+// writes the header as HTTP/1.1 sends it: the main header, the headers of the response
+// in the order they were added, the ones of the cerver that it does not have and the empty line
+static void http_response_header_write (
+	char *end,
+	const char *main_header, const size_t main_length,
+	const HttpHeaders *headers, const HttpHeaders *defaults
+) {
+
+	(void) memcpy (end, main_header, main_length);
+	end += main_length;
+
+	size_t lines_length = 0;
+	const char *lines = http_headers_lines (headers, &lines_length);
+
+	(void) memcpy (end, lines, lines_length);
+	end += lines_length;
+
+	end = http_response_defaults_write (end, headers, defaults);
+
+	(void) memcpy (end, http_response_header_end, http_response_header_end_length);
+	end += http_response_header_end_length;
+
 	*end = '\0';
 
 }
 
-// uses the exiting response's values to correctly
-// create a HTTP header in a continuos buffer
-// ready to be sent by the response
+// uses the status and the headers of the response to create its header
+// as HTTP/1.1 sends it, in a continuos buffer ready to be sent by the response,
+// it is the only place where a header is serialized, in the buffer of the response when it fits
 void http_response_compile_header (HttpResponse *response) {
 
-	if (response->n_headers || http_response_producer_cerver ()->n_response_headers) {
-		http_response_compile_multiple_headers (response);
+	const HttpHeaders *defaults = http_response_default_headers ();
+
+	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE];
+	const size_t main_length = http_response_main_header (response->status, main_header);
+
+	const size_t header_len = main_length + response->headers.length
+		+ http_response_defaults_length (&response->headers, defaults)
+		+ http_response_header_end_length;
+
+	http_response_header_release (response);
+
+	// one more byte to always terminate the header with '\0'
+	const size_t header_size = header_len + 1;
+	char *header = (header_size <= HTTP_RESPONSE_HEADER_BUFFER_SIZE) ?
+		response->header_buffer : (char *) malloc (header_size);
+
+	if (header) {
+		http_response_header_write (
+			header, main_header, main_length, &response->headers, defaults
+		);
+
+		response->header = header;
+		response->header_len = header_len;
 	}
 
-	// create the default header
-	else {
-		http_response_compile_single_header (response);
-	}
+}
+
+// the type and the length of a json body are headers of the response
+static void http_response_json_header (HttpResponse *response) {
+
+	const char *type = http_content_type_mime (HTTP_CONTENT_TYPE_JSON);
+
+	(void) http_headers_set (
+		&response->headers, HTTP_HEADER_CONTENT_TYPE, type, strlen (type)
+	);
+
+	char length[HTTP_RESPONSE_CONTENT_LENGTH_SIZE];
+	const size_t length_length = http_response_content_length_value (response->data_len, length);
+
+	(void) http_headers_set (
+		&response->headers, HTTP_HEADER_CONTENT_LENGTH, length, length_length
+	);
+
+	http_response_compile_header (response);
 
 }
 
@@ -869,6 +1027,9 @@ static void http_response_send_failed (
 		pending
 	);
 
+	// the client can not find the end of a response that was cut
+	((HttpReceive *) http_receive)->framed = false;
+
 	http_receive_response_failed (http_receive, error);
 
 }
@@ -983,15 +1144,9 @@ u8 http_response_send_pieces_status (
 
 #pragma region message
 
-static const char http_response_header_end[] = { "\r\n" };
-static const size_t http_response_header_end_length = 2;
-
 // the empty line that ends a compiled header
 static const char http_response_headers_end[] = { "\r\n\r\n" };
 static const size_t http_response_headers_end_length = 4;
-
-static const char http_response_header_separator[] = { ": " };
-static const size_t http_response_header_separator_length = 2;
 
 static const char http_response_header_name_separator = ':';
 
@@ -1000,12 +1155,6 @@ static const char http_response_vary_encoding[] = { "Accept-Encoding" };
 static const char http_response_vary_origin_and_encoding[] = { "Origin, Accept-Encoding" };
 
 static const char http_response_vary_name[] = { "Vary" };
-
-#define HTTP_RESPONSE_NOT_MODIFIED_MAIN_HEADER							\
-	"HTTP/1.1 304 Not Modified\r\nServer: Cerver/" CERVER_VERSION "\r\n"	\
-	HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-
-static const char http_response_not_modified_main_header[] = { HTTP_RESPONSE_NOT_MODIFIED_MAIN_HEADER };
 
 // the headers of a response that a 304 keeps (RFC 9110 section 15.4.5)
 static const http_header http_response_not_modified_headers[] = {
@@ -1017,19 +1166,19 @@ static const http_header http_response_not_modified_headers[] = {
 
 static const size_t http_response_n_not_modified_headers = 4;
 
-// the headers that cerver adds to a response when it sends it
-typedef struct HttpResponseExtra {
-
-	size_t length;
-	char headers[HTTP_RESPONSE_EXTRA_HEADERS_SIZE];
-
-} HttpResponseExtra;
-
-// a response that is being sent,
-// its header does not have the empty line that ends it
+// a response that is being sent: its status, its headers and its body,
+// with the headers that cerver adds for the request (Connection, Date, X-Request-Id,
+// Access-Control-Allow-Origin, Vary, ETag, Content-Encoding) in their own list,
+// so each protocol writes them its way: HTTP/1.1 sends the compiled header
+// (without the empty line that ends it), the lines of the added ones and the empty line
 typedef struct HttpResponseMessage {
 
 	http_status status;
+
+	// the headers of the response and the ones of its cerver,
+	// NULL when only its compiled header is known (it was set as bytes, or it was filtered)
+	const HttpHeaders *headers;
+	const HttpHeaders *defaults;
 
 	const char *header;
 	size_t header_length;
@@ -1044,35 +1193,19 @@ typedef struct HttpResponseMessage {
 	bool compress;
 	bool compressed;
 
-	HttpResponseExtra extra;
+	HttpHeaders extra;
 
 } HttpResponseMessage;
 
-static void http_response_extra_add (
-	HttpResponseExtra *extra,
+static void http_response_extra_add_by_name (
+	HttpHeaders *extra,
 	const char *name, const size_t name_length,
 	const char *value, const size_t value_length
 ) {
 
-	const size_t needed = name_length + http_response_header_separator_length
-		+ value_length + http_response_header_end_length;
-
-	if ((extra->length + needed) <= HTTP_RESPONSE_EXTRA_HEADERS_SIZE) {
-		char *end = extra->headers + extra->length;
-		(void) memcpy (end, name, name_length);
-		end += name_length;
-		(void) memcpy (end, http_response_header_separator, http_response_header_separator_length);
-		end += http_response_header_separator_length;
-		(void) memcpy (end, value, value_length);
-		end += value_length;
-		(void) memcpy (end, http_response_header_end, http_response_header_end_length);
-
-		extra->length += needed;
-	}
-
-	else {
+	if (http_headers_add_by_name (extra, name, name_length, value, value_length)) {
 		cerver_log_warning (
-			"http_response_send () - The %.*s header does not fit in the response",
+			"http_response_send () - The %.*s header could not be added to the response",
 			(int) name_length, name
 		);
 	}
@@ -1080,23 +1213,84 @@ static void http_response_extra_add (
 }
 
 static void http_response_extra_add_header (
-	HttpResponseExtra *extra, const http_header type,
+	HttpHeaders *extra, const http_header type,
 	const char *value, const size_t value_length
 ) {
 
-	const char *name = http_header_string (type);
-
-	http_response_extra_add (extra, name, strlen (name), value, value_length);
+	if (http_headers_add (extra, type, value, value_length)) {
+		cerver_log_warning (
+			"http_response_send () - The %s header could not be added to the response",
+			http_header_string (type)
+		);
+	}
 
 }
 
-static bool http_response_header_has (
-	const char *header, const size_t header_length, const http_header type
+// the value of a header of the list or of the ones of the cerver
+static bool http_response_message_find_in_lists (
+	const HttpResponseMessage *message,
+	const http_header type, const char *name, const size_t name_length,
+	const char **value, size_t *value_length
+) {
+
+	const bool known = (type != HTTP_HEADER_UNDEFINED);
+
+	const HttpHeaders *owner = message->headers;
+	const HttpHeaderField *field = known ?
+		http_headers_find (owner, type, 0) :
+		http_headers_find_by_name (owner, name, name_length, 0);
+
+	if (!field) {
+		owner = message->defaults;
+		field = known ?
+			http_headers_find (owner, type, 0) :
+			http_headers_find_by_name (owner, name, name_length, 0);
+	}
+
+	if (field) {
+		size_t field_length = 0;
+		const char *field_value = http_headers_field_value (owner, field, &field_length);
+
+		if (value) *value = field_value;
+		if (value_length) *value_length = field_length;
+	}
+
+	return field != NULL;
+
+}
+
+// finds a header of the response that is being sent, in its headers when it has them
+// or in its compiled header, a header that has no type is found by its name
+static bool http_response_message_find (
+	const HttpResponseMessage *message,
+	const http_header type, const char *name, const size_t name_length,
+	const char **value, size_t *value_length
+) {
+
+	return message->headers ?
+		http_response_message_find_in_lists (message, type, name, name_length, value, value_length) :
+		http_headers_buffer_find (
+			message->header, message->header_length, name, name_length, value, value_length
+		);
+
+}
+
+static bool http_response_message_find_type (
+	const HttpResponseMessage *message, const http_header type,
+	const char **value, size_t *value_length
 ) {
 
 	const char *name = http_header_string (type);
 
-	return http_headers_buffer_find (header, header_length, name, strlen (name), NULL, NULL);
+	return http_response_message_find (message, type, name, strlen (name), value, value_length);
+
+}
+
+static bool http_response_message_has (
+	const HttpResponseMessage *message, const http_header type
+) {
+
+	return http_response_message_find_type (message, type, NULL, NULL);
 
 }
 
@@ -1106,7 +1300,7 @@ static void http_response_extra_date (
 
 	if (
 		http_receive->http_cerver->date_header
-		&& !http_response_header_has (message->header, message->header_length, HTTP_HEADER_DATE)
+		&& !http_response_message_has (message, HTTP_HEADER_DATE)
 	) {
 		http_response_extra_add_header (
 			&message->extra, HTTP_HEADER_DATE, http_date_current (), HTTP_DATE_LENGTH
@@ -1123,7 +1317,7 @@ static void http_response_extra_request_id (
 
 	if (
 		id && id[0]
-		&& !http_response_header_has (message->header, message->header_length, HTTP_HEADER_REQUEST_ID)
+		&& !http_response_message_has (message, HTTP_HEADER_REQUEST_ID)
 	) {
 		http_response_extra_add_header (&message->extra, HTTP_HEADER_REQUEST_ID, id, strlen (id));
 	}
@@ -1155,9 +1349,7 @@ static void http_response_extra_cors (
 	if (
 		origin
 		&& http_response_origin_is_whitelisted (http_receive->http_cerver, origin)
-		&& !http_response_header_has (
-			message->header, message->header_length, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN
-		)
+		&& !http_response_message_has (message, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN)
 	) {
 		http_response_extra_add_header (
 			&message->extra, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin->str, origin->len
@@ -1175,15 +1367,33 @@ static void http_response_extra_vary (
 
 	if (
 		(origin || encoding)
-		&& !http_headers_buffer_find (
-			message->header, message->header_length,
+		&& !http_response_message_find (
+			message, HTTP_HEADER_UNDEFINED,
 			http_response_vary_name, sizeof (http_response_vary_name) - 1, NULL, NULL
 		)
 	) {
-		http_response_extra_add (
+		http_response_extra_add_by_name (
 			&message->extra,
 			http_response_vary_name, sizeof (http_response_vary_name) - 1,
 			vary, strlen (vary)
+		);
+	}
+
+}
+
+// a connection that is closed after the response says so, as it is known when it is sent,
+// a response with its own Connection header keeps it
+static void http_response_extra_connection (
+	const HttpReceive *http_receive, HttpResponseMessage *message
+) {
+
+	if (
+		!http_receive->keep_alive
+		&& !http_response_message_has (message, HTTP_HEADER_CONNECTION)
+	) {
+		http_response_extra_add_header (
+			&message->extra, HTTP_HEADER_CONNECTION,
+			HTTP_RESPONSE_CONNECTION_CLOSE, sizeof (HTTP_RESPONSE_CONNECTION_CLOSE) - 1
 		);
 	}
 
@@ -1193,6 +1403,8 @@ static void http_response_extra_vary (
 static void http_response_extra_common (
 	const HttpReceive *http_receive, HttpResponseMessage *message
 ) {
+
+	http_response_extra_connection (http_receive, message);
 
 	http_response_extra_date (http_receive, message);
 
@@ -1287,15 +1499,12 @@ static bool http_response_is_compressible (
 
 	const char *content_type = NULL;
 	size_t content_type_length = 0;
-	const char *content_type_name = http_header_string (HTTP_HEADER_CONTENT_TYPE);
 
 	return accept_encoding
 		&& http_compression_accepts_gzip (accept_encoding->str, accept_encoding->len)
-		&& !http_response_header_has (message->header, message->header_length, HTTP_HEADER_CONTENT_ENCODING)
-		&& http_headers_buffer_find (
-			message->header, message->header_length,
-			content_type_name, strlen (content_type_name),
-			&content_type, &content_type_length
+		&& !http_response_message_has (message, HTTP_HEADER_CONTENT_ENCODING)
+		&& http_response_message_find_type (
+			message, HTTP_HEADER_CONTENT_TYPE, &content_type, &content_type_length
 		)
 		&& http_compression_is_compressible (content_type, content_type_length);
 
@@ -1323,10 +1532,9 @@ static void http_response_message_etag (HttpResponseMessage *message) {
 
 	const char *value = NULL;
 	size_t value_length = 0;
-	const char *name = http_header_string (HTTP_HEADER_ETAG);
 
-	message->etag_in_header = http_headers_buffer_find (
-		message->header, message->header_length, name, strlen (name), &value, &value_length
+	message->etag_in_header = http_response_message_find_type (
+		message, HTTP_HEADER_ETAG, &value, &value_length
 	);
 
 	if (message->etag_in_header) {
@@ -1376,6 +1584,8 @@ static void http_response_message_compress (
 		);
 
 		if (header) {
+			// the header without the length of the plain body is the one that is sent
+			message->headers = NULL;
 			message->header = header;
 			message->header_length = header_length;
 			message->body = compressed;
@@ -1388,18 +1598,51 @@ static void http_response_message_compress (
 
 static void http_response_extra_compression (HttpResponseMessage *message) {
 
-	char length[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
-	const int written = snprintf (length, HTTP_RESPONSE_CONTENT_LENGTH_SIZE, "%zu", message->body_length);
+	char length[HTTP_RESPONSE_CONTENT_LENGTH_SIZE];
+	const size_t length_length = http_response_content_length_value (message->body_length, length);
 
 	http_response_extra_add_header (
-		&message->extra, HTTP_HEADER_CONTENT_LENGTH,
-		length, (written > 0) ? (size_t) written : 0
+		&message->extra, HTTP_HEADER_CONTENT_LENGTH, length, length_length
 	);
 
 	http_response_extra_add_header (
 		&message->extra, HTTP_HEADER_CONTENT_ENCODING,
 		HTTP_COMPRESSION_ENCODING, sizeof (HTTP_COMPRESSION_ENCODING) - 1
 	);
+
+}
+
+// the status of a response that never has a body (RFC 9110 section 6.4.1)
+static bool http_response_status_has_no_body (const http_status status) {
+
+	return (status < HTTP_STATUS_OK)
+		|| (status == HTTP_STATUS_NO_CONTENT)
+		|| (status == HTTP_STATUS_NOT_MODIFIED);
+
+}
+
+// the client finds the end of the response that was sent without the close of the connection,
+// a response whose body is sent after its header (a file) is not complete yet
+static bool http_response_message_is_framed (
+	const HttpReceive *http_receive, const HttpResponseMessage *message,
+	const bool with_body
+) {
+
+	return http_response_is_head (http_receive)
+		|| http_response_status_has_no_body (message->status)
+		|| (with_body && (
+			http_response_message_has (message, HTTP_HEADER_CONTENT_LENGTH)
+			|| http_headers_count (&message->extra, HTTP_HEADER_CONTENT_LENGTH)
+		));
+
+}
+
+// the bytes of the body that was announced in the header were sent after it
+static void http_response_body_sent (
+	const HttpReceive *http_receive, const size_t sent, const size_t expected
+) {
+
+	if (sent == expected) ((HttpReceive *) http_receive)->framed = true;
 
 }
 
@@ -1411,11 +1654,14 @@ static u8 http_response_message_send (
 	const size_t body_length = (with_body && !http_response_is_head (http_receive) && message->body) ?
 		message->body_length : 0;
 
+	size_t extra_length = 0;
+	const char *extra = http_headers_lines (&message->extra, &extra_length);
+
 	struct iovec parts[HTTP_RESPONSE_MESSAGE_PARTS];
 	parts[0].iov_base = (void *) message->header;
 	parts[0].iov_len = message->header_length;
-	parts[1].iov_base = (void *) message->extra.headers;
-	parts[1].iov_len = message->extra.length;
+	parts[1].iov_base = (void *) extra;
+	parts[1].iov_len = extra_length;
 	parts[2].iov_base = (void *) http_response_header_end;
 	parts[2].iov_len = http_response_header_end_length;
 	parts[3].iov_base = (void *) message->body;
@@ -1428,7 +1674,11 @@ static u8 http_response_message_send (
 	if (!retval) {
 		http_response_sent (
 			http_receive, message->status,
-			message->header_length + message->extra.length + http_response_header_end_length + body_length
+			message->header_length + extra_length + http_response_header_end_length + body_length
+		);
+
+		((HttpReceive *) http_receive)->framed = http_response_message_is_framed (
+			http_receive, message, with_body
 		);
 	}
 
@@ -1463,12 +1713,13 @@ static char *http_response_not_modified_header (
 	Arena *arena, const char *header, const size_t header_length, size_t *copy_length
 ) {
 
-	const size_t main_length = sizeof (http_response_not_modified_main_header) - 1;
+	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE];
+	const size_t main_length = http_response_main_header (HTTP_STATUS_NOT_MODIFIED, main_header);
 
 	char *copy = arena ? (char *) arena_alloc (arena, main_length + header_length + 1) : NULL;
 	if (copy) {
 		char *end = copy;
-		(void) memcpy (end, http_response_not_modified_main_header, main_length);
+		(void) memcpy (end, main_header, main_length);
 		end += main_length;
 
 		const char *last = header + header_length;
@@ -1509,11 +1760,15 @@ static u8 http_response_send_not_modified (
 
 	if (header) {
 		message->status = HTTP_STATUS_NOT_MODIFIED;
+
+		// only the headers that a 304 keeps are sent
+		message->headers = NULL;
 		message->header = header;
 		message->header_length = header_length;
 		message->body = NULL;
 		message->body_length = 0;
-		message->extra.length = 0;
+
+		http_headers_reset (&message->extra);
 
 		if (!message->etag_in_header) {
 			http_response_extra_add_header (
@@ -1612,11 +1867,15 @@ static u8 http_response_send_raw (
 
 static void http_response_message_init (
 	HttpResponseMessage *message, const http_status status,
+	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
 ) {
 
 	message->status = status;
+
+	message->headers = headers;
+	message->defaults = headers ? http_response_default_headers () : NULL;
 
 	// the empty line is sent after the headers that cerver adds
 	message->header = (const char *) header;
@@ -1632,7 +1891,7 @@ static void http_response_message_init (
 	message->compress = false;
 	message->compressed = false;
 
-	message->extra.length = 0;
+	http_headers_init (&message->extra);
 
 }
 
@@ -1662,6 +1921,7 @@ static void http_response_message_extra (
 
 u8 http_response_send_message (
 	const HttpReceive *http_receive, const http_status status,
+	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len,
 	const unsigned int options
@@ -1682,7 +1942,7 @@ u8 http_response_send_message (
 
 	else {
 		HttpResponseMessage message;
-		http_response_message_init (&message, status, header, header_len, data, data_len);
+		http_response_message_init (&message, status, headers, header, header_len, data, data_len);
 
 		bool answered = false;
 		if (
@@ -1700,6 +1960,8 @@ u8 http_response_send_message (
 				http_receive, &message, !(options & HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY)
 			);
 		}
+
+		http_headers_reset (&message.extra);
 	}
 
 	return retval;
@@ -1715,12 +1977,14 @@ u8 http_response_send_not_modified_header (
 
 	if (http_receive->request && http_response_header_is_complete (header, header_len)) {
 		HttpResponseMessage message;
-		http_response_message_init (&message, HTTP_STATUS_OK, header, header_len, NULL, 0);
+		http_response_message_init (&message, HTTP_STATUS_OK, NULL, header, header_len, NULL, 0);
 
 		// the entity tag is copied from the header
 		message.etag_in_header = true;
 
 		retval = http_response_send_not_modified (http_receive, &message);
+
+		http_headers_reset (&message.extra);
 	}
 
 	return retval;
@@ -1737,14 +2001,23 @@ u8 http_response_send_not_modified_header (
 // returns 0 on success, 1 on error
 static u8 http_response_send_parts (
 	const HttpReceive *http_receive, const http_status status,
+	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
 ) {
 
 	return http_response_send_message (
-		http_receive, status, header, header_len, data, data_len,
+		http_receive, status, headers, header, header_len, data, data_len,
 		HTTP_RESPONSE_SEND_OPTION_TRANSFORM
 	);
+
+}
+
+// the headers of a response are sent with its header,
+// but the ones of a header that was set as bytes are only in those bytes
+static const HttpHeaders *http_response_sent_headers (const HttpResponse *response) {
+
+	return response->header_is_raw ? NULL : &response->headers;
 
 }
 
@@ -1767,6 +2040,7 @@ u8 http_response_send (
 
 			retval = http_response_send_parts (
 				http_receive, response->status,
+				http_response_sent_headers (response),
 				response->res, header_len,
 				(const char *) response->res + header_len, response->res_len - header_len
 			);
@@ -1778,6 +2052,7 @@ u8 http_response_send (
 			if (response->header) {
 				retval = http_response_send_parts (
 					http_receive, response->status,
+					http_response_sent_headers (response),
 					response->header, response->header_len,
 					response->data, response->data_len
 				);
@@ -1804,6 +2079,7 @@ u8 http_response_send_split (
 		if (response->header && response->data) {
 			retval = http_response_send_parts (
 				http_receive, response->status,
+				http_response_sent_headers (response),
 				response->header, response->header_len,
 				response->data, response->data_len
 			);
@@ -1906,10 +2182,11 @@ static size_t http_response_file_validators (
 
 }
 
-// the header was already sent, so only the bytes of the file are added to the stats
+// the header was already sent, so only the bytes of the file are added to the stats,
+// the response ends where its header said when the file still has the expected bytes
 static u8 http_response_send_file_actual (
 	const HttpReceive *http_receive,
-	const char *filename
+	const char *filename, const size_t expected
 ) {
 
 	u8 retval = 1;
@@ -1923,6 +2200,8 @@ static u8 http_response_send_file_actual (
 		);
 
 		http_response_sent_bytes (http_receive, total_sent);
+
+		if (!retval) http_response_body_sent (http_receive, total_sent, expected);
 
 		(void) close (file_fd);
 	}
@@ -1962,7 +2241,7 @@ u8 http_response_send_file_internal (
 	char etag[HTTP_ETAG_SIZE] = { 0 };
 	const size_t etag_length = http_response_file_validators (response, filestatus, etag);
 
-	http_response_compile_multiple_headers (response);
+	http_response_compile_header (response);
 
 	#ifdef HTTP_RESPONSE_DEBUG
 	cerver_log_msg ("\n%s\n", (const char *) response->header);
@@ -1982,16 +2261,20 @@ u8 http_response_send_file_internal (
 	// a HEAD request only receives the header
 	else if (http_response_is_head (http_receive)) {
 		retval = http_response_send_message (
-			http_receive, status, response->header, response->header_len, NULL, 0, 0
+			http_receive, status, &response->headers,
+			response->header, response->header_len, NULL, 0, 0
 		);
 	}
 
 	// pipe header
 	else if (!http_response_send_message (
-		http_receive, status, response->header, response->header_len, NULL, 0,
+		http_receive, status, &response->headers,
+		response->header, response->header_len, NULL, 0,
 		HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
 	)) {
-		retval = http_response_send_file_actual (http_receive, filename);
+		retval = http_response_send_file_actual (
+			http_receive, filename, (size_t) filestatus->st_size
+		);
 	}
 
 	http_response_return (response);
@@ -2064,16 +2347,43 @@ u8 http_response_send_file_generate (
 
 #pragma region render
 
-static u8 http_response_render_send (
+// sends the data with its type and its length as the headers of a response,
+// the data is not copied and the response is used again
+static u8 http_response_render (
 	const HttpReceive *http_receive,
-	const http_status status,
-	const char *header, const size_t header_len,
+	const http_status status, const ContentType type,
 	const char *data, const size_t data_len
 ) {
 
-	return http_receive->cr->connection ? http_response_send_parts (
-		http_receive, status, header, header_len, data, data_len
-	) : 1;
+	u8 retval = 1;
+
+	HttpResponse *response = http_receive->cr->connection ?
+		(HttpResponse *) http_response_new () : NULL;
+
+	if (response) {
+		response->status = status;
+
+		(void) http_response_add_content_type_header (response, type);
+		(void) http_response_add_content_length_header (response, data_len);
+
+		http_response_compile_header (response);
+
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", (const char *) response->header);
+		#endif
+
+		if (response->header) {
+			retval = http_response_send_parts (
+				http_receive, status, &response->headers,
+				response->header, response->header_len,
+				data, data_len
+			);
+		}
+
+		http_response_delete (response);
+	}
+
+	return retval;
 
 }
 
@@ -2089,27 +2399,8 @@ u8 http_response_render_text (
 	u8 retval = 1;
 
 	if (http_receive && text) {
-		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
-		size_t header_len = (size_t) snprintf (
-			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %zu\r\n\r\n",
-			(unsigned int) status,
-			http_status_string (status),
-			CERVER_VERSION,
-			text_len
-		);
-
-		#ifdef HTTP_RESPONSE_DEBUG
-		cerver_log_msg ("\n%s\n", header);
-		#endif
-
-		retval = http_response_render_send (
-			http_receive,
-			status,
-			header, header_len,
-			text, text_len
+		retval = http_response_render (
+			http_receive, status, HTTP_CONTENT_TYPE_HTML, text, text_len
 		);
 	}
 
@@ -2129,27 +2420,8 @@ u8 http_response_render_json (
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
-		size_t header_len = (size_t) snprintf (
-			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
-			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
-			(unsigned int) status,
-			http_status_string (status),
-			CERVER_VERSION,
-			json_len
-		);
-
-		#ifdef HTTP_RESPONSE_DEBUG
-		cerver_log_msg ("\n%s\n", header);
-		#endif
-
-		retval = http_response_render_send (
-			http_receive,
-			status,
-			header, header_len,
-			json, json_len
+		retval = http_response_render (
+			http_receive, status, HTTP_CONTENT_TYPE_JSON, json, json_len
 		);
 	}
 
@@ -2195,13 +2467,14 @@ static u8 http_response_handle_video_internal (
 	response->status = HTTP_STATUS_PARTIAL_CONTENT;
 	const ContentType content_type = http_response_handle_video_content (filename);
 	http_response_add_video_headers (response, content_type, bytes_range);
-	http_response_compile_multiple_headers (response);
+	http_response_compile_header (response);
 
 	// (void) printf ("\n\n%s\n\n", response->header);
 
 	// pipe header
 	if (!http_response_send_message (
-		http_receive, response->status, response->header, response->header_len, NULL, 0,
+		http_receive, response->status, &response->headers,
+		response->header, response->header_len, NULL, 0,
 		HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
 	)) {
 		size_t total_sent = 0;
@@ -2217,6 +2490,12 @@ static u8 http_response_handle_video_internal (
 
 			// the header was already added to the stats
 			http_response_sent_bytes (http_receive, total_sent);
+
+			if (!retval) {
+				http_response_body_sent (
+					http_receive, total_sent, (size_t) bytes_range->chunk_size
+				);
+			}
 
 			(void) close (video_fd);
 		}

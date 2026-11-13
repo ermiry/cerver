@@ -1,0 +1,17 @@
+POST /api/upload HTTP/1.1
+Host: localhost
+Content-Type: multipart/form-data; boundary=----Boundary
+Content-Length: 179
+
+------Boundary
+Content-Disposition: form-data; name="field"
+
+value
+------Boundary
+Content-Disposition: form-data; name="file"; filename="a.txt"
+
+content
+------Boundary--
+GET /api/users/16 HTTP/1.1
+Host: localhost
+

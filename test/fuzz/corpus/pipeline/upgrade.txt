@@ -1,0 +1,16 @@
+GET /api/private HTTP/1.1
+Host: localhost
+Authorization: Bearer abc.def.ghi
+
+GET /api/users/16 HTTP/1.0
+Connection: keep-alive
+
+GET /api/socket HTTP/1.1
+Host: localhost
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Version: 13
+Origin: http://allowed.com
+
+ÅÖ7˙!=üMQX
