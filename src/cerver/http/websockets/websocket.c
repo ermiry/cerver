@@ -116,6 +116,16 @@ void http_web_socket_opened (HttpWebSocket *web_socket) {
 
 }
 
+void http_web_socket_closed (HttpWebSocket *web_socket) {
+
+	if (web_socket) {
+		(void) pthread_mutex_lock (&web_socket->send_mutex);
+		http_web_socket_set_state (web_socket, HTTP_WEB_SOCKET_STATE_CLOSED);
+		(void) pthread_mutex_unlock (&web_socket->send_mutex);
+	}
+
+}
+
 HttpWebSocketRole http_web_socket_get_role (const HttpWebSocket *web_socket) {
 
 	return web_socket ? web_socket->role : HTTP_WEB_SOCKET_ROLE_SERVER;

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 #include <pthread.h>
 
@@ -57,6 +58,8 @@ typedef struct _HttpWebSocketClient HttpWebSocketClient;
 CERVER_EXPORT HttpWebSocketClient *http_web_socket_client_create (void);
 
 // closes the connection with 1000, waits for its thread and releases the client
+// it is the last call of a client, from a thread that is not running one of its methods:
+// a method (on_open, on_message, on_close, on_error) that deletes its client only closes it
 CERVER_EXPORT void http_web_socket_client_delete (HttpWebSocketClient *client);
 
 // ws://host[:port][/path][?query], the host can be an IPv6 in brackets
@@ -126,7 +129,8 @@ CERVER_EXPORT void http_web_socket_client_set_reconnect (
 
 // connects in the current thread and returns after the handshake,
 // the connection runs in its own thread, where every method is called
-// returns 0 on success, 1 on error (on_error and on_close were called)
+// returns 0 on success, 1 on error (on_error and on_close were called, also when
+// the connection opened and its thread could not be created)
 CERVER_EXPORT u8 http_web_socket_client_connect (HttpWebSocketClient *client);
 
 // connects in the thread of the connection, the methods report the result
@@ -158,6 +162,7 @@ CERVER_EXPORT u8 http_web_socket_client_close (
 );
 
 // waits until the thread of the client ends, after a close or without reconnections
+// a method of the client does not wait: it runs in that thread
 CERVER_EXPORT void http_web_socket_client_wait (HttpWebSocketClient *client);
 
 // the connections that were opened

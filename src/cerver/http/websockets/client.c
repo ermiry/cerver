@@ -27,6 +27,10 @@
 #include "cerver/network.h"
 #include "cerver/socket.h"
 
+#include "cerver/utils/log.h"
+
+#include "cerver/http/headers.h"
+
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 
@@ -93,6 +97,15 @@ static const char *http_web_socket_client_extensions_name = { "Sec-WebSocket-Ext
 
 // a fraction of the wait between reconnections is random, so many clients do not come back together
 #define HTTP_WEB_SOCKET_CLIENT_JITTER_DIVISOR			4
+
+// an attempt waits for its socket and for the wake up of a client that is stopping
+#define HTTP_WEB_SOCKET_CLIENT_WAIT_FDS					2
+#define HTTP_WEB_SOCKET_CLIENT_WAIT_SOCKET				0
+#define HTTP_WEB_SOCKET_CLIENT_WAIT_WAKE				1
+
+// the client whose methods run in this thread: its own thread, or the one of its synchronous connect
+// that client can not be waited for nor deleted from here
+static __thread const HttpWebSocketClient *http_web_socket_client_running = NULL;
 
 #define HTTP_WEB_SOCKET_CLIENT_WAKE_VALUE				1
 
@@ -275,7 +288,7 @@ u8 http_web_socket_client_response_parse (
 	HttpWebSocketClientResponse *response
 ) {
 
-	u8 retval = 2;
+	u8 retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID;
 
 	if (data && response) {
 		(void) memset (response, 0, sizeof (HttpWebSocketClientResponse));
@@ -285,7 +298,9 @@ u8 http_web_socket_client_response_parse (
 		);
 
 		if (!end) {
-			retval = (size < HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE) ? 1 : 2;
+			// a response that has no end in the most bytes that are read is not valid either
+			response->invalid = (size >= HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE);
+			if (!response->invalid) retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL;
 		}
 
 		else {
@@ -309,8 +324,8 @@ u8 http_web_socket_client_response_parse (
 			const llhttp_errno_t result = llhttp_execute (&parser, data, response->size);
 
 			const bool parsed = (result == HPE_OK) || (result == HPE_PAUSED_UPGRADE) || (result == HPE_PAUSED);
-			retval = (parsed && response->complete && !response->invalid) ? 0 : 2;
-			if (retval) response->invalid = true;
+			response->invalid = !parsed || !response->complete || response->invalid;
+			if (!response->invalid) retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE;
 		}
 	}
 
@@ -395,6 +410,7 @@ HttpWebSocketClient *http_web_socket_client_create (void) {
 		client->reconnect_max = HTTP_WEB_SOCKET_CLIENT_RECONNECT_MAX;
 
 		(void) pthread_mutex_init (&client->mutex, NULL);
+		(void) pthread_mutex_init (&client->join_mutex, NULL);
 
 		client->wake_fd = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
 
@@ -408,21 +424,39 @@ HttpWebSocketClient *http_web_socket_client_create (void) {
 
 }
 
+// releases the client, its thread already ended
+static void http_web_socket_client_release (HttpWebSocketClient *client) {
+
+	dlist_delete (client->headers);
+
+	http_web_socket_settings_end (&client->settings);
+
+	if (client->wake_fd >= 0) (void) close (client->wake_fd);
+
+	(void) pthread_mutex_destroy (&client->join_mutex);
+	(void) pthread_mutex_destroy (&client->mutex);
+
+	free (client);
+
+}
+
 void http_web_socket_client_delete (HttpWebSocketClient *client) {
 
 	if (client) {
 		(void) http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
-		http_web_socket_client_wait (client);
 
-		dlist_delete (client->headers);
+		// a method of the client runs in the thread that still uses the client:
+		// it is closed, and it is deleted from another thread
+		if (http_web_socket_client_running == client) {
+			cerver_log_error (
+				"http_web_socket_client_delete () - A client can not be deleted by one of its methods, it was only closed"
+			);
+		}
 
-		http_web_socket_settings_end (&client->settings);
-
-		if (client->wake_fd >= 0) (void) close (client->wake_fd);
-
-		(void) pthread_mutex_destroy (&client->mutex);
-
-		free (client);
+		else {
+			http_web_socket_client_wait (client);
+			http_web_socket_client_release (client);
+		}
 	}
 
 }
@@ -706,9 +740,62 @@ unsigned int http_web_socket_client_get_connections (const HttpWebSocketClient *
 
 #pragma region connect
 
+static bool http_web_socket_client_is_stopping (HttpWebSocketClient *client);
+
+// empties the eventfd that wakes up the client
+static void http_web_socket_client_wake_drain (const HttpWebSocketClient *client) {
+
+	u64 value = 0;
+	while (read (client->wake_fd, &value, sizeof (u64)) > 0);
+
+}
+
+// waits until the socket of an attempt is ready for the events or its deadline ends
+// a signal does not end the wait, it continues with the time that is left;
+// a client that is closed or deleted ends it now, and a wake up of before is discarded
+// returns true when the socket is ready
+static bool http_web_socket_client_wait_socket (
+	HttpWebSocketClient *client, const int fd, const short events,
+	const struct timespec *deadline
+) {
+
+	bool ready = false;
+	bool waiting = true;
+
+	while (waiting) {
+		struct pollfd fds[HTTP_WEB_SOCKET_CLIENT_WAIT_FDS] = {
+			{ fd, events, 0 }, { client->wake_fd, POLLIN, 0 }
+		};
+
+		const int remaining = socket_deadline_remaining (deadline);
+		const int result = remaining ? poll (fds, HTTP_WEB_SOCKET_CLIENT_WAIT_FDS, remaining) : 0;
+
+		if (result > 0) {
+			if (fds[HTTP_WEB_SOCKET_CLIENT_WAIT_WAKE].revents) {
+				if (http_web_socket_client_is_stopping (client)) waiting = false;
+				else http_web_socket_client_wake_drain (client);
+			}
+
+			if (waiting && fds[HTTP_WEB_SOCKET_CLIENT_WAIT_SOCKET].revents) {
+				ready = true;
+				waiting = false;
+			}
+		}
+
+		// the deadline ended, or poll () failed with something that is not a signal
+		else if (!result || (errno != EINTR)) {
+			waiting = false;
+		}
+	}
+
+	return ready;
+
+}
+
 // a non blocking connect () to the address that ends before the timeout
 // returns the fd of the connected socket, -1 on error
 static int http_web_socket_client_connect_address (
+	HttpWebSocketClient *client,
 	const struct sockaddr_storage *address, const unsigned int timeout
 ) {
 
@@ -717,11 +804,13 @@ static int http_web_socket_client_connect_address (
 	if (fd >= 0) {
 		int result = connect (fd, (const struct sockaddr *) address, sock_address_size (address));
 		if (result && (errno == EINPROGRESS)) {
-			struct pollfd pfd = { fd, POLLOUT, 0 };
+			struct timespec deadline;
+			socket_deadline_create_milliseconds (&deadline, timeout);
+
 			int error = 0;
 			socklen_t error_length = sizeof (int);
 
-			result = ((poll (&pfd, 1, (int) timeout) == 1)
+			result = (http_web_socket_client_wait_socket (client, fd, POLLOUT, &deadline)
 				&& !getsockopt (fd, SOL_SOCKET, SO_ERROR, &error, &error_length)
 				&& !error) ? 0 : -1;
 		}
@@ -749,8 +838,13 @@ static int http_web_socket_client_connect_host (HttpWebSocketClient *client) {
 
 	NetworkAddresses addresses;
 	if (!network_resolve_addresses (client->host, client->port, false, IPPROTO_TCP, &addresses)) {
-		for (unsigned int i = 0; (fd < 0) && (i < addresses.count); i++) {
-			fd = http_web_socket_client_connect_address (&addresses.addresses[i], client->connect_timeout);
+		// a client that is stopping does not try the addresses that are left
+		for (
+			unsigned int i = 0;
+			(fd < 0) && (i < addresses.count) && !http_web_socket_client_is_stopping (client);
+			i++
+		) {
+			fd = http_web_socket_client_connect_address (client, &addresses.addresses[i], client->connect_timeout);
 			if (fd >= 0) {
 				(void) sock_ip_to_string_actual ((const struct sockaddr *) &addresses.addresses[i], client->ip);
 			}
@@ -870,16 +964,15 @@ static size_t http_web_socket_client_request (
 // reads the response of the server until its empty line, before the deadline
 // returns 0 when it is complete, 1 on error
 static u8 http_web_socket_client_read_response (
+	HttpWebSocketClient *client,
 	Socket *socket, const struct timespec *deadline,
 	char *response, size_t *size, HttpWebSocketClientResponse *parsed
 ) {
 
-	u8 result = 1;
+	u8 result = HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL;
 
-	while (result == 1) {
-		struct pollfd pfd = { socket->sock_fd, POLLIN, 0 };
-		const int remaining = socket_deadline_remaining (deadline);
-		if (!remaining || (poll (&pfd, 1, remaining) != 1)) break;
+	while (result == HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL) {
+		if (!http_web_socket_client_wait_socket (client, socket->sock_fd, POLLIN, deadline)) break;
 
 		const ssize_t received = recv (
 			socket->sock_fd, response + *size, HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE - *size, MSG_DONTWAIT
@@ -895,15 +988,18 @@ static u8 http_web_socket_client_read_response (
 		}
 	}
 
-	return result ? 1 : 0;
+	return (result == HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE) ? 0 : 1;
 
 }
 
 // the bytes that followed the response, the first frames of the server
-static void http_web_socket_client_pending (
+// returns 0 on success, 1 when there is no memory for them: they are never lost in silence
+static u8 http_web_socket_client_pending (
 	HttpWebSocket *web_socket, const char *response, const size_t size,
 	const HttpWebSocketClientResponse *parsed
 ) {
+
+	u8 retval = 0;
 
 	const size_t pending = size - parsed->size;
 	if (pending) {
@@ -912,18 +1008,46 @@ static void http_web_socket_client_pending (
 			(void) memcpy (bytes, response + parsed->size, pending);
 			http_web_socket_set_pending (web_socket, bytes, pending);
 		}
+
+		else {
+			retval = 1;
+		}
 	}
+
+	return retval;
 
 }
 
-// the connection takes what the response decided
-static u8 http_web_socket_client_accepted (
+// the connection takes what the response decided: its compression, its protocol and its first frames
+// returns HTTP_WEB_SOCKET_ERROR_NONE on success, HTTP_WEB_SOCKET_ERROR_MEMORY without memory for them
+static HttpWebSocketError http_web_socket_client_accepted_take (
+	HttpWebSocketClient *client, HttpWebSocket *web_socket,
+	const char *response, const size_t size, const HttpWebSocketClientResponse *parsed,
+	const char *protocol, const HttpWebSocketDeflateParameters *parameters
+) {
+
+	u8 failed = parameters ?
+		http_web_socket_set_compression (web_socket, parameters, &client->settings.compression) : 0;
+
+	if (!failed && protocol) {
+		web_socket->protocol = strdup (protocol);
+		failed = web_socket->protocol ? 0 : 1;
+	}
+
+	if (!failed) failed = http_web_socket_client_pending (web_socket, response, size, parsed);
+
+	return failed ? HTTP_WEB_SOCKET_ERROR_MEMORY : HTTP_WEB_SOCKET_ERROR_NONE;
+
+}
+
+// the response of the server is checked, and the connection takes what it decided
+static HttpWebSocketError http_web_socket_client_accepted (
 	HttpWebSocketClient *client, HttpWebSocket *web_socket,
 	const char *response, const size_t size,
 	const HttpWebSocketClientResponse *parsed, const char *key
 ) {
 
-	u8 retval = 1;
+	HttpWebSocketError error = HTTP_WEB_SOCKET_ERROR_HANDSHAKE;
 
 	const char *protocol = NULL;
 	bool compression = false;
@@ -934,24 +1058,23 @@ static u8 http_web_socket_client_accepted (
 		parsed, key, client->settings.protocols, client->settings.n_protocols,
 		&client->settings.compression, &protocol, &compression, &parameters
 	)) {
-		retval = compression ?
-			http_web_socket_set_compression (web_socket, &parameters, &client->settings.compression) : 0;
-
-		if (!retval && protocol) web_socket->protocol = strdup (protocol);
-		if (!retval) http_web_socket_client_pending (web_socket, response, size, parsed);
+		error = http_web_socket_client_accepted_take (
+			client, web_socket, response, size, parsed,
+			protocol, compression ? &parameters : NULL
+		);
 	}
 
-	return retval;
+	return error;
 
 }
 
 // sends the request and checks the response
-// returns 0 on success, 1 on error
-static u8 http_web_socket_client_handshake (
+// returns HTTP_WEB_SOCKET_ERROR_NONE on success
+static HttpWebSocketError http_web_socket_client_handshake (
 	HttpWebSocketClient *client, HttpWebSocket *web_socket
 ) {
 
-	u8 retval = 1;
+	HttpWebSocketError error = HTTP_WEB_SOCKET_ERROR_HANDSHAKE;
 
 	struct timespec deadline;
 	socket_deadline_create_milliseconds (&deadline, client->handshake_timeout);
@@ -963,21 +1086,25 @@ static u8 http_web_socket_client_handshake (
 	const size_t request_length = (request && http_web_socket_key_generate (key)) ?
 		http_web_socket_client_request (client, key, request) : 0;
 
-	if (
-		request_length && response
+	if (!request || !response) {
+		error = HTTP_WEB_SOCKET_ERROR_MEMORY;
+	}
+
+	else if (
+		request_length
 		&& !socket_send_buffer_until (web_socket->socket, request, request_length, 0, &deadline, NULL, NULL)
 	) {
 		size_t size = 0;
 		HttpWebSocketClientResponse parsed;
-		if (!http_web_socket_client_read_response (web_socket->socket, &deadline, response, &size, &parsed)) {
-			retval = http_web_socket_client_accepted (client, web_socket, response, size, &parsed, key);
+		if (!http_web_socket_client_read_response (client, web_socket->socket, &deadline, response, &size, &parsed)) {
+			error = http_web_socket_client_accepted (client, web_socket, response, size, &parsed, key);
 		}
 	}
 
 	free (request);
 	free (response);
 
-	return retval;
+	return error;
 
 }
 
@@ -1030,10 +1157,8 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 			(void) snprintf (web_socket->ip, CONNECTION_IP_SIZE, HTTP_WEB_SOCKET_CLIENT_HOST_FORMAT, client->ip);
 			web_socket->path = str_new (client->path);
 
-			error = HTTP_WEB_SOCKET_ERROR_HANDSHAKE;
-			if (web_socket->socket && !http_web_socket_client_handshake (client, web_socket)) {
-				error = HTTP_WEB_SOCKET_ERROR_NONE;
-			}
+			error = web_socket->socket ?
+				http_web_socket_client_handshake (client, web_socket) : HTTP_WEB_SOCKET_ERROR_MEMORY;
 		}
 
 		if (error != HTTP_WEB_SOCKET_ERROR_NONE) {
@@ -1113,6 +1238,9 @@ static void *http_web_socket_client_thread (void *client_ptr) {
 
 	HttpWebSocketClient *client = (HttpWebSocketClient *) client_ptr;
 
+	// the methods of the client run in this thread until it ends
+	http_web_socket_client_running = client;
+
 	unsigned int seed = (unsigned int) time (NULL) ^ (unsigned int) (uintptr_t) client;
 
 	// a connect () that was not synchronous starts here
@@ -1134,7 +1262,42 @@ static void *http_web_socket_client_thread (void *client_ptr) {
 		web_socket = running ? http_web_socket_client_attempt (client) : NULL;
 	}
 
+	http_web_socket_client_running = NULL;
+
 	return NULL;
+
+}
+
+// the connection of a synchronous connect () opened and its thread could not be created:
+// it ends like an attempt that failed, its methods report it and it is not one of the connections
+// that were opened; it is closed before its socket is released, another thread can be sending
+static void http_web_socket_client_abandon (HttpWebSocketClient *client, HttpWebSocket *web_socket) {
+
+	(void) pthread_mutex_lock (&client->mutex);
+	client->web_socket = NULL;
+	(void) pthread_mutex_unlock (&client->mutex);
+
+	http_web_socket_closed (web_socket);
+	http_web_socket_client_socket_end (web_socket);
+
+	(void) __atomic_sub_fetch (&client->n_connections, 1, __ATOMIC_SEQ_CST);
+	client->n_failures += 1;
+
+	http_web_socket_client_running = client;
+	http_web_socket_client_failed (web_socket, HTTP_WEB_SOCKET_ERROR_MEMORY);
+	http_web_socket_client_running = NULL;
+
+	http_web_socket_release (web_socket);
+
+}
+
+// a client that connects again is not stopping, and the wake up of its last close is discarded:
+// it ended the first wait between the reconnections of the new connection
+static void http_web_socket_client_restart (HttpWebSocketClient *client) {
+
+	__atomic_store_n (&client->stopping, false, __ATOMIC_SEQ_CST);
+
+	http_web_socket_client_wake_drain (client);
 
 }
 
@@ -1143,9 +1306,13 @@ u8 http_web_socket_client_connect (HttpWebSocketClient *client) {
 	u8 retval = 1;
 
 	if (client && !client->thread_started) {
-		__atomic_store_n (&client->stopping, false, __ATOMIC_SEQ_CST);
+		http_web_socket_client_restart (client);
 
+		// the methods of an attempt that fails run here, in the thread of the caller
+		http_web_socket_client_running = client;
 		HttpWebSocket *web_socket = http_web_socket_client_attempt (client);
+		http_web_socket_client_running = NULL;
+
 		if (web_socket) {
 			if (!thread_create_joinable (&client->thread, http_web_socket_client_thread, client)) {
 				client->thread_started = true;
@@ -1153,12 +1320,7 @@ u8 http_web_socket_client_connect (HttpWebSocketClient *client) {
 			}
 
 			else {
-				(void) pthread_mutex_lock (&client->mutex);
-				client->web_socket = NULL;
-				(void) pthread_mutex_unlock (&client->mutex);
-
-				http_web_socket_client_socket_end (web_socket);
-				http_web_socket_release (web_socket);
+				http_web_socket_client_abandon (client, web_socket);
 			}
 		}
 	}
@@ -1172,7 +1334,7 @@ u8 http_web_socket_client_connect_async (HttpWebSocketClient *client) {
 	u8 retval = 1;
 
 	if (client && !client->thread_started) {
-		__atomic_store_n (&client->stopping, false, __ATOMIC_SEQ_CST);
+		http_web_socket_client_restart (client);
 
 		if (!thread_create_joinable (&client->thread, http_web_socket_client_thread, client)) {
 			client->thread_started = true;
@@ -1256,9 +1418,17 @@ u8 http_web_socket_client_close (
 
 void http_web_socket_client_wait (HttpWebSocketClient *client) {
 
-	if (client && client->thread_started) {
-		(void) pthread_join (client->thread, NULL);
-		client->thread_started = false;
+	// a method of the client runs in the thread of the client, that can not wait for itself
+	if (client && (http_web_socket_client_running != client)) {
+		// two threads that wait at once: only one of them joins the thread
+		(void) pthread_mutex_lock (&client->join_mutex);
+
+		if (client->thread_started) {
+			(void) pthread_join (client->thread, NULL);
+			client->thread_started = false;
+		}
+
+		(void) pthread_mutex_unlock (&client->join_mutex);
 	}
 
 }
