@@ -225,6 +225,9 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+# an example is compiled again when a header that it includes changes
+-include $(EXOBJS:.$(OBJEXT)=.$(DEPEXT))
+
 EXAPP		:= ./$(EXATARGET)/app/libapp.so
 EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
 
@@ -356,6 +359,9 @@ TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT) -not -path '$(TESTDIR)/fuzz/*')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+# a test is compiled again when a header that it includes changes
+-include $(TESTOBJS:.$(OBJEXT)=.$(DEPEXT))
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
@@ -589,6 +595,9 @@ BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
+
+# a benchmark is compiled again when a header that it includes changes
+-include $(BENCHOBJS:.$(OBJEXT)=.$(DEPEXT))
 
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
