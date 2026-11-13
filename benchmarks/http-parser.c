@@ -33,9 +33,23 @@ static const char data[] =
 	"Referer: https://github.com/joyent/http-parser\r\n"
 	"Connection: keep-alive\r\n"
 	"Transfer-Encoding: chunked\r\n"
-	"Cache-Control: max-age=0\r\n\r\nb\r\nhello world\r\n0\r\n";
+	"Cache-Control: max-age=0\r\n\r\nb\r\nhello world\r\n0\r\n\r\n";
 
 static const size_t data_len = sizeof (data) - 1;
+
+// the requests that the parser completed: the request ended in its last chunk without its empty line,
+// so the message was never complete and the benchmark did not measure a whole request
+static int64_t bench_completed = 0;
+
+static int on_complete (llhttp_t *p) {
+
+	(void) p;
+
+	bench_completed += 1;
+
+	return 0;
+
+}
 
 static int on_info (llhttp_t *p) {
 
@@ -70,7 +84,7 @@ static void bench_settings_init (llhttp_settings_t *settings) {
 	settings->on_header_value_complete = on_info;
 	settings->on_headers_complete = on_info;
 	settings->on_body = on_data;
-	settings->on_message_complete = on_info;
+	settings->on_message_complete = on_complete;
 
 }
 
@@ -90,12 +104,23 @@ static int bench (int64_t iter_count, int silent) {
 	}
 
 	(void) fprintf (stderr, "req_len=%d\n", (int) data_len);
+
+	bench_completed = 0;
+	int64_t failed = 0;
 	for (int64_t i = 0; i < iter_count; i++) {
 		llhttp_init (&parser, HTTP_REQUEST, &settings);
 
-		const llhttp_errno_t err = llhttp_execute (&parser, data, data_len);
-		assert (err == HPE_OK);
-		(void) err;
+		if (llhttp_execute (&parser, data, data_len) != HPE_OK) failed += 1;
+	}
+
+	// what is measured is whole requests, without the asserts of a build that has them
+	if (failed || (bench_completed != iter_count)) {
+		(void) fprintf (
+			stderr, "the parser completed %lld of %lld requests, %lld failed\n",
+			(long long) bench_completed, (long long) iter_count, (long long) failed
+		);
+
+		return 1;
 	}
 
 	if (!silent) {
