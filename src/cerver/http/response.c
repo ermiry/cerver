@@ -2240,6 +2240,19 @@ static u8 http_response_handle_video_internal (
 
 // handles the transmission of a video to the client
 // returns 0 on success, 1 on error
+// the last bytes of the file, all of it when the file is smaller than the suffix:
+// the end of the range was the number of bytes, it becomes the byte after the last one
+static void http_response_video_range_suffix (BytesRange *bytes_range) {
+
+	const long suffix = (bytes_range->end < bytes_range->file_size) ?
+		bytes_range->end : bytes_range->file_size;
+
+	bytes_range->chunk_size = suffix;
+	bytes_range->start = bytes_range->file_size - suffix;
+	bytes_range->end = bytes_range->file_size;
+
+}
+
 u8 http_response_handle_video (
 	const HttpReceive *http_receive,
 	const char *filename
@@ -2279,6 +2292,10 @@ u8 http_response_handle_video (
 			case HTTP_RANGE_TYPE_FULL: {
 				bytes_range.chunk_size = bytes_range.end - bytes_range.start;
 			} break;
+
+			case HTTP_RANGE_TYPE_SUFFIX:
+				http_response_video_range_suffix (&bytes_range);
+				break;
 
 			default: break;
 		}
