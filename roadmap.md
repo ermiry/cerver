@@ -1099,19 +1099,28 @@ con un test que falla sin él.
 - **Los fuzzers** se detienen en el primer comportamiento indefinido que encuentra UBSan
   (`-fno-sanitize-recover=undefined` y `UBSAN_OPTIONS` en `test/fuzz.sh`): antes seguían y pasaban.
 
-#### 4.3.16 El resto de la revisión (Beta 2.0b-72) — planeado
+#### 4.3.16 El resto de la revisión (Beta 2.0b-72) — implementado
 
-- **Límites:** los trailers y las extensiones de chunk cuentan contra `max_header_size` y `max_headers`; una cabecera
-  conocida repetida no vuelve a copiar el valor unido en cada repetición.
-- **Valores:** los espacios y tabs finales del valor de una cabecera se quitan.
-- **Cambios de comportamiento** (cada uno en `incompatibilities.md`): el default de `request_timeout` pasa de 0 a
-  300 s; una cabecera que no es de las conocidas cabe hasta un límite configurable
-  (`http_cerver_set_max_custom_header_size ()`, por default 8 KiB en lugar de 512 bytes); un target en forma absoluta
-  (`GET http://host/path`) se rutea por su path y el fragmento no entra en la ruta; el rango de los últimos bytes
-  (`bytes=-N`) con un tipo nuevo en `HTTP_RANGE_TYPE_MAP`.
-- **Tests y CI:** el fuzz largo de `scheduled.yml` en matriz por target, con su tiempo máximo y los artefactos
-  siempre; `test/performance.sh` falla si el servidor o la carga fallan y cuenta las asignaciones sin división
-  entera; los objetos de los tests, los examples y los benchmarks dependen de sus headers.
+- **Los trailers** de un body chunked cuentan contra `max_header_size` y `max_headers` (431): no tenían límite, así
+  que un body podía ir seguido de trailers sin fin. Siguen sin guardarse. **Las extensiones de chunk** no tienen
+  callback en este parser: las acota el timeout de la petición, que ahora tiene default.
+- **Una cabecera conocida repetida** se une en memoria que crece por un factor (`HTTP_HEADER_VALUES_GROWTH`, con la
+  capacidad en `String.max_len`): el valor unido se copiaba otra vez en cada repetición y la arena de una petición
+  usaba cientos de veces los bytes de sus cabeceras.
+- **Los espacios y tabs finales** del valor de una cabecera se quitan al cerrarla (`http_header_value_length ()`).
+- **Cambios de comportamiento** (cada uno en `incompatibilities.md`):
+  - el default de `request_timeout` pasa de 0 a 300 s, para que un body que gotea no retenga su worker para siempre;
+  - una cabecera que no es de las conocidas cabe hasta `http_cerver_set_max_custom_header_size ()`, por default
+    8 KiB en lugar de 512 bytes fijos (`baggage`, `tracestate`, las de un proxy);
+  - un target en forma absoluta (`GET http://host/path`) se rutea por su path y el fragmento no entra en la ruta ni
+    en el query (`http_receive_target_origin_length ()`);
+  - `bytes=-N`, el rango de los últimos bytes, con `HTTP_RANGE_TYPE_SUFFIX` y su caso en el camino de video.
+- **Tests y CI:** el fuzz largo de `scheduled.yml` es un job por target, con su tiempo máximo y los artefactos
+  siempre; `test/performance.sh` falla si el servidor o la carga fallan y cuenta las asignaciones de 1024 peticiones
+  sin redondear (GET 0, POST JSON 14 exactas); los objetos de los tests, los examples y los benchmarks se recompilan
+  cuando cambia un header que incluyen.
+- **Lo que queda de la revisión para después:** el rango que no cabe en el archivo y el rango completo que manda un
+  byte menos en el camino de video; una cabecera desconocida con un nombre de 256 bytes o más sigue siendo 431.
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
