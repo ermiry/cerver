@@ -587,7 +587,7 @@ BENCHTARGET	:= $(BENCHDIR)/bin
 BENCHFLAGS	:= $(DEFINES) $(COMMON) -O3
 
 ifeq ($(NATIVE), 1)
-	BENCHFLAGS += -march=native -mavx2
+	BENCHFLAGS += -march=native
 endif
 
 BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
