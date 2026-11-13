@@ -3298,6 +3298,18 @@ static int http_receive_handle_header_field (
 }
 
 // a header value can arrive in many pieces, it is closed in on_header_value_complete
+// the parser rejects a NUL in the value of a header, but not with its lenient flag of the headers:
+// the values are C strings for whoever reads them, so a value of the whitelist of origins
+// followed by a NUL and anything else was the value of the whitelist, and a proxy saw another one
+static bool http_receive_header_value_has_nul (
+	const HttpReceive *http_receive, const char *at, const size_t length
+) {
+
+	return (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_HEADERS)
+		&& (memchr (at, '\0', length) != NULL);
+
+}
+
 static int http_receive_handle_header_value (
 	llhttp_t *parser, const char *at, size_t length
 ) {
@@ -3309,6 +3321,12 @@ static int http_receive_handle_header_value (
 	}
 
 	if (http_receive_check_header_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
+
+	if (http_receive_header_value_has_nul (http_receive, at, length)) {
+		return http_receive_parser_result (
+			http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR)
+		);
+	}
 
 	return http_receive_parser_result (
 		http_receive_buffer_append (&http_receive->value_buffer, at, length) ?
@@ -5737,6 +5755,15 @@ static bool http_receive_body_too_large (
 
 }
 
+// a request whose Transfer-Encoding does not end with chunked can not tell the length of its body
+// (RFC 9112 section 6.3): the parser rejects it, but with its lenient flags of the transfer encoding
+// it reads the body until the connection is closed, a request that cerver never completes nor answers
+static bool http_receive_body_has_no_end (const llhttp_t *parser) {
+
+	return (parser->flags & F_TRANSFER_ENCODING) && !(parser->flags & F_CHUNKED);
+
+}
+
 static bool http_receive_handle_static_authenticate (
 	HttpReceive *http_receive, HttpRequest *request
 );
@@ -5760,6 +5787,14 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 	request->method = (RequestMethod) method;
 
 	http_receive_identify (http_receive);
+
+	if (http_receive_body_has_no_end (parser)) {
+		(void) http_receive_reject (
+			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+		);
+
+		return HTTP_RECEIVE_PARSER_STOP;
+	}
 
 	// a method that the parser accepts but cerver does not know (RFC 9110 section 9.1)
 	if (!http_request_method_is_valid (request->method)) {
