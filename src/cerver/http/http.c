@@ -2647,6 +2647,21 @@ static int http_receive_close_known_header (
 
 }
 
+// counts a header of the request, or a trailer of its chunked body
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_count_header (HttpReceive *http_receive) {
+
+	http_receive->n_headers += 1;
+
+	const unsigned int max_headers = http_receive->http_cerver->max_headers;
+
+	return (max_headers && (http_receive->n_headers > max_headers)) ?
+		http_receive_reject (
+			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		) : 0;
+
+}
+
 // saves a complete header in the request
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_save_header (
@@ -2657,14 +2672,7 @@ static int http_receive_save_header (
 	const char *value = (value_buffer && value_buffer->str) ? value_buffer->str : "";
 	const size_t value_len = value_buffer ? value_buffer->len : 0;
 
-	http_receive->n_headers += 1;
-
-	const unsigned int max_headers = http_receive->http_cerver->max_headers;
-	if (max_headers && (http_receive->n_headers > max_headers)) {
-		return http_receive_reject (
-			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
-		);
-	}
+	if (http_receive_count_header (http_receive)) return 1;
 
 	const http_header type = http_header_type_by_string (field->str);
 	if (type != HTTP_HEADER_UNDEFINED) {
@@ -2915,6 +2923,26 @@ static inline bool http_receive_headers_are_complete (const HttpReceive *http_re
 
 }
 
+// the trailers of a chunked body are not kept, but they are limited as the headers are:
+// their bytes count for the size of the headers and each one of them for their number,
+// so a body can not be followed by trailers without an end
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_handle_trailer (
+	HttpReceive *http_receive, const HttpReceiveToken token, const size_t length
+) {
+
+	// a field after a value, or the first one, starts a trailer
+	const bool starts = (token == HTTP_RECEIVE_TOKEN_FIELD)
+		&& (http_receive->token != HTTP_RECEIVE_TOKEN_FIELD);
+
+	http_receive->token = token;
+
+	if (starts && http_receive_count_header (http_receive)) return 1;
+
+	return http_receive_check_header_size (http_receive, length);
+
+}
+
 // a header field can arrive in many pieces,
 // a new field after a value closes the previous header
 static int http_receive_handle_header_field (
@@ -2923,8 +2951,9 @@ static int http_receive_handle_header_field (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	// the trailers of a chunked body are not used
-	if (http_receive_headers_are_complete (http_receive)) return 0;
+	if (http_receive_headers_are_complete (http_receive)) {
+		return http_receive_handle_trailer (http_receive, HTTP_RECEIVE_TOKEN_FIELD, length);
+	}
 
 	// the first field ends the request line
 	http_receive->stage = HTTP_STAGE_HEADERS;
@@ -2950,7 +2979,9 @@ static int http_receive_handle_header_value (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	if (http_receive_headers_are_complete (http_receive)) return 0;
+	if (http_receive_headers_are_complete (http_receive)) {
+		return http_receive_handle_trailer (http_receive, HTTP_RECEIVE_TOKEN_VALUE, length);
+	}
 
 	http_receive->token = HTTP_RECEIVE_TOKEN_VALUE;
 
