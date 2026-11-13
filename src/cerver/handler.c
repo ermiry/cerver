@@ -38,6 +38,7 @@
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/http/access.h"
 #include "cerver/http/http.h"
 
 #include "cerver/http/websockets/websocket.h"
@@ -2097,25 +2098,9 @@ static void cerver_receive_threads_reject (void *cerver_receive_ptr) {
 
 }
 
-// FIXME:
-// keeps track of the recv () calls of a single HTTP connection
-// to explain why a request ended before being completed
-typedef struct HttpReceiveDiagnostics {
-
-	ssize_t last_rc;
-	int last_errno;
-	unsigned int n_recvs;
-
-	// the last recv () timed out or a deadline expired
-	bool timed_out;
-
-} HttpReceiveDiagnostics;
-
-// the deadlines of a single request, in monotonic secs, 0 when disabled
-typedef struct HttpReceiveDeadlines {
-
-	double headers;
-	double request;
+// the timeouts of the recv () calls of a HTTP connection,
+// the deadlines of each one of its requests are in its receive
+typedef struct HttpConnectionTimeouts {
 
 	// the most milliseconds that a recv () waits, the idle timeout of the cerver
 	unsigned int idle_timeout;
@@ -2123,7 +2108,7 @@ typedef struct HttpReceiveDeadlines {
 	// the SO_RCVTIMEO in milliseconds that the socket currently has
 	unsigned int applied_timeout;
 
-} HttpReceiveDeadlines;
+} HttpConnectionTimeouts;
 
 #define HANDLER_MILLISECONDS_PER_SECOND				1000
 #define HANDLER_MICROSECONDS_PER_MILLISECOND		1000
@@ -2148,35 +2133,28 @@ static double cerver_receive_monotonic_time (void) {
 
 }
 
-static void cerver_receive_http_deadlines_init (
-	const HttpCerver *http_cerver, HttpReceiveDeadlines *deadlines
+static void cerver_receive_http_timeouts_init (
+	const HttpCerver *http_cerver, HttpConnectionTimeouts *timeouts
 ) {
 
-	const double now = cerver_receive_monotonic_time ();
-	const double milliseconds = (double) HANDLER_MILLISECONDS_PER_SECOND;
-
-	deadlines->headers = http_cerver->headers_timeout ?
-		now + ((double) http_cerver->headers_timeout / milliseconds) : 0;
-
-	deadlines->request = http_cerver->request_timeout ?
-		now + ((double) http_cerver->request_timeout / milliseconds) : 0;
-
-	deadlines->idle_timeout = http_cerver->idle_timeout ?
+	timeouts->idle_timeout = http_cerver->idle_timeout ?
 		http_cerver->idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 
-	deadlines->applied_timeout = 0;
+	timeouts->applied_timeout = 0;
 
 }
 
-// returns the deadline that applies right now, 0 if there is none
+// returns the deadline of the request that applies right now, 0 if there is none
 static double cerver_receive_http_deadline_current (
-	const HttpReceive *http_receive, const HttpReceiveDeadlines *deadlines
+	const HttpReceive *http_receive
 ) {
 
-	double deadline = deadlines->request;
+	double deadline = http_receive->request_deadline;
 
-	if ((deadlines->headers > 0) && http_receive_is_receiving_headers (http_receive)) {
-		if ((deadline <= 0) || (deadlines->headers < deadline)) deadline = deadlines->headers;
+	if ((http_receive->headers_deadline > 0) && http_receive_is_receiving_headers (http_receive)) {
+		if ((deadline <= 0) || (http_receive->headers_deadline < deadline)) {
+			deadline = http_receive->headers_deadline;
+		}
 	}
 
 	return deadline;
@@ -2187,14 +2165,14 @@ static double cerver_receive_http_deadline_current (
 // returns false if the current deadline has expired
 static bool cerver_receive_http_deadline_check (
 	const CerverReceive *cr, const HttpReceive *http_receive,
-	HttpReceiveDeadlines *deadlines
+	HttpConnectionTimeouts *timeouts
 ) {
 
 	bool retval = true;
 
-	unsigned int timeout = deadlines->idle_timeout;
+	unsigned int timeout = timeouts->idle_timeout;
 
-	const double deadline = cerver_receive_http_deadline_current (http_receive, deadlines);
+	const double deadline = cerver_receive_http_deadline_current (http_receive);
 	if (deadline > 0) {
 		const double remaining = (deadline - cerver_receive_monotonic_time ()) * (double) HANDLER_MILLISECONDS_PER_SECOND;
 		if (remaining <= 0) retval = false;
@@ -2203,9 +2181,9 @@ static bool cerver_receive_http_deadline_check (
 		else if (remaining < (double) timeout) timeout = (unsigned int) remaining + 1;
 	}
 
-	if (retval && (timeout != deadlines->applied_timeout)) {
+	if (retval && (timeout != timeouts->applied_timeout)) {
 		cerver_receive_http_set_timeout (cr->socket->sock_fd, timeout);
-		deadlines->applied_timeout = timeout;
+		timeouts->applied_timeout = timeout;
 	}
 
 	return retval;
@@ -2214,9 +2192,10 @@ static bool cerver_receive_http_deadline_check (
 
 // a recv () error ends the request, for example when the client resets the connection
 static void cerver_receive_http_failed (
-	const CerverReceive *cr, HttpReceive *http_receive,
-	const size_t total_received, const HttpReceiveDiagnostics *diagnostics
+	const CerverReceive *cr, HttpReceive *http_receive
 ) {
+
+	const HttpReceiveDiagnostics *diagnostics = &http_receive->diagnostics;
 
 	char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
 	cerver_log_with_date (
@@ -2224,7 +2203,7 @@ static void cerver_receive_http_failed (
 		"cerver_receive_http () - recv () failed - fd %d - errno %d (%s) - received %zu - recv #%u",
 		cr->socket->sock_fd, diagnostics->last_errno,
 		strerror_r (diagnostics->last_errno, error_description, sizeof (error_description)),
-		total_received, diagnostics->n_recvs
+		http_receive->received, diagnostics->n_recvs
 	);
 
 	http_receive_client_left (http_receive, diagnostics->last_errno);
@@ -2233,12 +2212,12 @@ static void cerver_receive_http_failed (
 
 static inline u8 cerver_receive_http_actual (
 	CerverReceive *cr, HttpReceive *http_receive,
-	size_t *total_received,
-	char *buffer, const size_t buffer_size,
-	HttpReceiveDiagnostics *diagnostics
+	char *buffer, const size_t buffer_size
 ) {
 
 	u8 retval = 1;
+
+	HttpReceiveDiagnostics *diagnostics = &http_receive->diagnostics;
 
 	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
 
@@ -2266,9 +2245,7 @@ static inline u8 cerver_receive_http_actual (
 			}
 
 			else {
-				cerver_receive_http_failed (
-					cr, http_receive, *total_received, diagnostics
-				);
+				cerver_receive_http_failed (cr, http_receive);
 			}
 		} break;
 
@@ -2310,7 +2287,7 @@ static inline u8 cerver_receive_http_actual (
 			CERVER_STATS_ADD (cr->cerver->stats->total_n_receives_done, 1);
 			CERVER_STATS_ADD (cr->cerver->stats->total_bytes_received, (u64) rc);
 
-			*total_received += rc;
+			http_receive->received += (size_t) rc;
 
 			http_receive->handler (http_receive, rc, buffer);
 
@@ -2323,178 +2300,96 @@ static inline u8 cerver_receive_http_actual (
 
 }
 
-static const char *http_receive_unknown_path = { "-" };
-
-// the address of the client and the one of the proxy that forwarded its request
-#define CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE		((2 * CONNECTION_IP_SIZE) + 8)
-
-static const char *http_receive_log_id_separator = { " - " };
-static const char *http_receive_log_empty = { "" };
-
-// writes the client's address, with " via <peer>" when a proxy forwarded the request
-static void cerver_receive_http_log_client (
-	const CerverReceive *cr, const HttpReceive *http_receive, char *client
+// the receive of the connection: the one of the thread, with its arena and its buffers,
+// or one that allocates its own memory when the thread has no context
+static HttpReceive *cerver_receive_http_create (
+	CerverReceive *cr, HandlerThreadContext **context
 ) {
 
-	const char *peer = cr->connection->ip;
-	const HttpRequest *request = http_receive->request;
-	const char *ip = (request && request->client_ip[0]) ? request->client_ip : peer;
+	HttpReceive *http_receive = NULL;
 
-	if (strcmp (ip, peer)) {
-		(void) snprintf (client, CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE, "%s via %s", ip, peer);
-	}
+	if (*context) {
+		const HttpReceiveResources resources = {
+			(*context)->arena,
+			(*context)->url_buffer, (*context)->field_buffer, (*context)->value_buffer
+		};
 
-	else {
-		(void) snprintf (client, CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE, "%s", ip);
-	}
-
-}
-
-static inline bool cerver_receive_http_log_has_id (const HttpReceive *http_receive) {
-
-	return http_receive->request && http_receive->request->id[0];
-
-}
-
-static inline const char *cerver_receive_http_log_id_separator (const HttpReceive *http_receive) {
-
-	return cerver_receive_http_log_has_id (http_receive) ? http_receive_log_id_separator : http_receive_log_empty;
-
-}
-
-static inline const char *cerver_receive_http_log_id (const HttpReceive *http_receive) {
-
-	return cerver_receive_http_log_has_id (http_receive) ? http_receive->request->id : http_receive_log_empty;
-
-}
-
-// logs a request that was answered by an endpoint and updates its stats,
-// an OPTIONS, a 405 or a redirect answered by the cerver only logs the url
-static void cerver_receive_http_log_completed_route (
-	const CerverReceive *cr, const HttpReceive *http_receive,
-	const size_t total_received, const double process_time
-) {
-
-	const HttpEndpoint *endpoint = http_receive->endpoint;
-
-	char client[CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE] = { 0 };
-	cerver_receive_http_log_client (cr, http_receive, client);
-
-	cerver_log_with_date (
-		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"%s -> [%s] %s - %zu -> %fs -> %u - %zu%s%s",
-		client,
-		http_request_method_str (http_receive->request->method),
-		endpoint ? endpoint->path->str : http_receive->request->url->str,
-		total_received,
-		process_time,
-		(unsigned int) http_receive->status, http_receive->sent,
-		cerver_receive_http_log_id_separator (http_receive),
-		cerver_receive_http_log_id (http_receive)
-	);
-
-	if (endpoint) {
-		http_route_stats_update (
-			endpoint->stats, process_time, total_received, http_receive->sent
-		);
-
-		if (
-			(endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
-			&& http_receive->is_multi_part
-		) {
-			http_route_file_stats_update (endpoint->file_stats, http_receive->file_stats);
+		if (!http_receive_prepare ((*context)->http_receive, cr, &resources)) {
+			http_receive = (*context)->http_receive;
 		}
 	}
 
-}
-
-// logs a request that was answered before its body was handled:
-// a failed authentication, a limit that was exceeded or a file that could not be saved
-static void cerver_receive_http_log_rejected (
-	const CerverReceive *cr, const HttpReceive *http_receive,
-	const size_t total_received, const double process_time
-) {
-
-	const char *path = http_receive_unknown_path;
-	if (http_receive->endpoint) path = http_receive->endpoint->path->str;
-	else if (http_receive->request->url) path = http_receive->request->url->str;
-
-	char client[CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE] = { 0 };
-	cerver_receive_http_log_client (cr, http_receive, client);
-
-	// the method that the parser found, the request was rejected before its headers were complete
-	const uint8_t method = llhttp_get_method (&http_receive->parser);
-
-	cerver_log_with_date (
-		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"%s -> [%s] %s - %zu -> %fs -> %s -> %u - %zu%s%s",
-		client,
-		http_request_method_str ((RequestMethod) method),
-		path,
-		total_received,
-		process_time,
-		http_receive_status_str (http_receive->receive_status),
-		(unsigned int) http_receive->status, http_receive->sent,
-		cerver_receive_http_log_id_separator (http_receive),
-		cerver_receive_http_log_id (http_receive)
-	);
-
-}
-
-// a request that did not complete: the client left (aborted), it stopped sending
-// until a timeout ended it (vanished), or the parser could not parse it (incompleted)
-// a request whose response failed was already counted where its client left
-static void cerver_receive_http_count_incomplete (const HttpReceive *http_receive) {
-
-	HttpCerver *http_cerver = http_receive->http_cerver;
-	const HttpStage stage = http_receive->stage;
-	const bool counted = http_receive->response_failed;
-
-	switch (http_receive->receive_status) {
-		case HTTP_RECEIVE_STATUS_CLOSED:
-			if (!counted) CERVER_STATS_ADD (http_cerver->n_aborted_requests[stage][http_receive->abort_reason], 1);
-			break;
-
-		case HTTP_RECEIVE_STATUS_TIMEOUT:
-			if (!counted) CERVER_STATS_ADD (http_cerver->n_vanished_requests[stage], 1);
-			break;
-
-		default:
-			CERVER_STATS_ADD (http_cerver->n_incompleted_requests, 1);
-			break;
-	}
-
-}
-
-// we expect only one request to be sent,
-// so keep reading the socket until no more data is left,
-// and then handle the complete buffer
-static void *cerver_receive_http (void *cerver_receive_ptr) {
-
-	// #if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
-	double start_time = timer_get_current_time ();
-	// #endif
-
-	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
-
-	size_t total_received = 0;
-
-	HttpReceiveDiagnostics diagnostics = { 0, 0, 0, false };
-
-	// the request lives in the arena of the thread, if it is available
-	HandlerThreadContext *context = handler_context_get (cr->cerver->receive_buffer_size);
-	HttpReceive *http_receive = context ?
-		http_receive_create_arena (
-			cr, context->arena,
-			context->url_buffer, context->field_buffer, context->value_buffer
-		) : NULL;
-
 	if (!http_receive) {
-		context = NULL;
+		*context = NULL;
 		http_receive = http_receive_create (cr);
 	}
 
-	i32 sock_fd = cr->socket->sock_fd;
+	return http_receive;
+
+}
+
+// receives the data of the connection until its request ends
+static void cerver_receive_http_requests (
+	CerverReceive *cr, HttpReceive *http_receive,
+	char *buffer, const size_t buffer_size
+) {
+
+	// the socket's timeout is set by the first deadline check,
+	// so the thread never waits for data longer than the idle timeout
+	HttpConnectionTimeouts timeouts = { 0, 0 };
+	cerver_receive_http_timeouts_init (http_receive->http_cerver, &timeouts);
+
+	// a request in progress is completed even if the cerver is being drained
+	while (cr->socket->sock_fd > -1) {
+		if (!cerver_receive_http_deadline_check (cr, http_receive, &timeouts)) {
+			http_receive->diagnostics.timed_out = true;
+			break;
+		}
+
+		if (cerver_receive_http_actual (cr, http_receive, buffer, buffer_size)) break;
+	}
+
+	// an idle connection or an expired deadline
+	if (http_receive->diagnostics.timed_out && (cr->socket->sock_fd > -1)) {
+		http_receive_handle_timeout (http_receive, (http_receive->received > 0));
+	}
+
+}
+
+// the connection of a client that could not get the memory of its receive is closed
+static void cerver_receive_http_unavailable (CerverReceive *cr) {
+
+	cerver_log (
+		LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
+		"cerver_receive_http () - "
+		"Failed to create the receive of the connection with sock fd <%d>!",
+		cr->connection->socket->sock_fd
+	);
+
+	connection_drop (cr->cerver, cr->connection);
+
+	cerver_receive_delete (cr);
+
+}
+
+// a cerver closes the connection after its request, so one request is expected:
+// the socket is read until the request ends, then the request is logged and counted,
+// and the connection is dropped or handed to its WebSocket
+static void *cerver_receive_http (void *cerver_receive_ptr) {
+
+	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+	// the receive and the data of its request use the memory of the thread, if it is available
+	HandlerThreadContext *context = handler_context_get (cr->cerver->receive_buffer_size);
+	HttpReceive *http_receive = cerver_receive_http_create (cr, &context);
+	if (!http_receive) {
+		cerver_receive_http_unavailable (cr);
+		return NULL;
+	}
+
+	#ifdef HANDLER_DEBUG
+	const i32 sock_fd = cr->socket->sock_fd;
+	#endif
 
 	// check that the fd still belongs to the accepted connection
 	// before reading from it (another thread may have closed it)
@@ -2522,28 +2417,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	}
 	#endif
 
-	// the socket's timeout is set by the first deadline check,
-	// so the thread never waits for data longer than the idle timeout
-	HttpReceiveDeadlines deadlines = { 0, 0, 0, 0 };
-	cerver_receive_http_deadlines_init (http_receive->http_cerver, &deadlines);
-
-	// a request in progress is completed even if the cerver is being drained
 	const size_t buffer_size = cr->cerver->receive_buffer_size;
 	char *buffer = context ? context->buffer : (char *) calloc (buffer_size, sizeof (char));
 	if (buffer) {
-		while (cr->socket->sock_fd > -1) {
-			if (!cerver_receive_http_deadline_check (cr, http_receive, &deadlines)) {
-				diagnostics.timed_out = true;
-				break;
-			}
-
-			if (cerver_receive_http_actual (
-				cr, http_receive,
-				&total_received,
-				buffer, buffer_size,
-				&diagnostics
-			)) break;
-		}
+		cerver_receive_http_requests (cr, http_receive, buffer, buffer_size);
 
 		if (!context) free (buffer);
 	}
@@ -2557,11 +2434,6 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		);
 	}
 
-	// an idle connection or an expired deadline
-	if (diagnostics.timed_out && (cr->socket->sock_fd > -1)) {
-		http_receive_handle_timeout (http_receive, (total_received > 0));
-	}
-
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
@@ -2571,82 +2443,20 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	);
 	#endif
 
-	double process_time = timer_get_current_time () - start_time;
-
-	// log request summary
-	switch (http_receive->receive_status) {
-		// a response that failed is logged and counted in its route
-		// with the status that it tried to send
-		case HTTP_RECEIVE_STATUS_COMPLETED:
-		case HTTP_RECEIVE_STATUS_RESPONSE_FAILED: {
-			if (http_receive->type == HTTP_RECEIVE_TYPE_FILE) {
-				cerver_log_with_date (
-					LOG_TYPE_NONE, LOG_TYPE_NONE,
-					"%s -> [%s] %s - %zu -> %fs -> %u - %zu",
-					cr->connection->ip,
-					http_request_method_str (http_receive->request->method),
-					http_receive->served_file,
-					total_received,
-					process_time,
-					(unsigned int) http_receive->status, http_receive->sent
-				);
-			}
-
-			else {
-				cerver_receive_http_log_completed_route (
-					cr, http_receive, total_received, process_time
-				);
-			}
-		} break;
-
-		// no matching route to handle request
-		case HTTP_RECEIVE_STATUS_UNHANDLED: {
-			cerver_log_with_date (
-				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> [%s] %s - %zu -> %fs -> No matching route -> %u - %zu",
-				cr->connection->ip,
-				http_request_method_str (http_receive->request->method),
-				http_receive->request->url->str,
-				total_received,
-				process_time,
-				(unsigned int) http_receive->status, http_receive->sent
-			);
-
-			// update stats
-			CERVER_STATS_ADD (http_receive->http_cerver->n_unhandled_requests, 1);
-		} break;
-
-		// answered before the body was handled: a failed authentication,
-		// a limit that was exceeded or a file that could not be saved
-		case HTTP_RECEIVE_STATUS_REJECTED:
-		case HTTP_RECEIVE_STATUS_LIMIT:
-		case HTTP_RECEIVE_STATUS_UPLOAD_ERROR:
-			cerver_receive_http_log_rejected (cr, http_receive, total_received, process_time);
-			break;
-
-		// the request was not completed
-		default: {
-			cerver_log_with_date (
-				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> Bad request - fd %d - status %s - stage %s - received %zu - recvs %u"
-				" - last rc %zd - errno %d - parser %s - running %d - %fs",
-				cr->connection->ip, sock_fd,
-				http_receive_status_str (http_receive->receive_status),
-				http_stage_string (http_receive->stage),
-				total_received, diagnostics.n_recvs,
-				diagnostics.last_rc, diagnostics.last_errno,
-				llhttp_errno_name (llhttp_get_errno (&http_receive->parser)),
-				cerver_is_running (cr->cerver), process_time
-			);
-
-			cerver_receive_http_count_incomplete (http_receive);
-		} break;
-	}
+	// the request is logged and counted before its data is released
+	http_access_request (http_receive);
 
 	// the connection has ended, or it belongs to its WebSocket now
 	if (!http_web_socket_start (cr, http_receive)) {
 		connection_drop (cr->cerver, cr->connection);
 	}
+
+	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
+	cerver_log_debug (
+		"cerver_receive_http () ended in %f seconds",
+		timer_get_current_time () - http_receive->start_time
+	);
+	#endif
 
 	http_receive_delete (http_receive);
 
@@ -2654,13 +2464,6 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	if (context) arena_reset (context->arena);
 
 	cerver_receive_delete (cr);
-
-	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
-	cerver_log_debug (
-		"cerver_receive_http () ended in %f seconds",
-		timer_get_current_time () - start_time
-	);
-	#endif
 
 	return NULL;
 
@@ -2691,6 +2494,8 @@ static void handler_context_delete (void *context_ptr) {
 		str_delete (context->field_buffer);
 		str_delete (context->value_buffer);
 
+		free (context->http_receive);
+
 		free (context);
 	}
 
@@ -2712,9 +2517,12 @@ static HandlerThreadContext *handler_context_create (void) {
 		context->field_buffer = str_new (NULL);
 		context->value_buffer = str_new (NULL);
 
+		context->http_receive = (HttpReceive *) calloc (1, sizeof (HttpReceive));
+
 		if (
 			!context->arena
 			|| !context->url_buffer || !context->field_buffer || !context->value_buffer
+			|| !context->http_receive
 			|| pthread_setspecific (handler_context_key, context)
 		) {
 			handler_context_delete (context);

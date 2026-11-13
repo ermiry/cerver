@@ -32,6 +32,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/timer.h"
 #include "cerver/version.h"
 
 #include "cerver/threads/worker.h"
@@ -3848,11 +3849,78 @@ HttpReceive *http_receive_new (void) {
 
 }
 
+// what belongs to a request: every request of a connection starts with these values
+static void http_receive_request_init (HttpReceive *http_receive) {
+
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
+
+	http_receive->keep_alive_requested = false;
+	http_receive->unparsed = 0;
+
+	http_receive->mpart_parser = NULL;
+	(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
+
+	http_receive->request = NULL;
+
+	http_receive->type = HTTP_RECEIVE_TYPE_NONE;
+	http_receive->dispatch = HTTP_RECEIVE_DISPATCH_NONE;
+	http_receive->node = NULL;
+	http_receive->endpoint = NULL;
+	http_receive->route = NULL;
+	http_receive->served_file = NULL;
+
+	http_receive->head = false;
+	http_receive->max_body_size = 0;
+
+	http_receive->status = HTTP_STATUS_NONE;
+	http_receive->sent = 0;
+
+	http_receive->is_multi_part = false;
+	http_receive->file_stats = NULL;
+
+	http_receive->upload_sequence = 0;
+	http_receive->upload_directory_created = false;
+
+	http_receive->header_size = 0;
+	http_receive->n_headers = 0;
+	http_receive->body_size = 0;
+	http_receive->n_parts = 0;
+
+	http_receive->responded = false;
+	http_receive->framed = false;
+
+	http_receive->stream.state = HTTP_STREAM_STATE_NONE;
+	http_receive->stream.chunked = false;
+
+	http_receive->start_time = 0;
+	http_receive->received = 0;
+
+	http_receive->diagnostics.last_rc = 0;
+	http_receive->diagnostics.last_errno = 0;
+	http_receive->diagnostics.n_recvs = 0;
+	http_receive->diagnostics.timed_out = false;
+
+	http_receive->headers_deadline = 0;
+	http_receive->request_deadline = 0;
+
+	http_receive->stage = HTTP_STAGE_QUEUED;
+	http_receive->abort_reason = HTTP_ABORT_REASON_CLOSED;
+
+	http_receive->response_failed = false;
+	http_receive->response_error = 0;
+
+	http_receive->send_deadline.tv_sec = 0;
+	http_receive->send_deadline.tv_nsec = 0;
+	http_receive->send_deadline_set = false;
+
+	http_receive->web_socket = NULL;
+
+}
+
+// what belongs to the connection, and the values of its first request
 static void http_receive_init (HttpReceive *http_receive) {
 
 	if (http_receive) {
-		http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
-
 		http_receive->cr = NULL;
 
 		http_receive->keep_alive = false;
@@ -3864,86 +3932,128 @@ static void http_receive_init (HttpReceive *http_receive) {
 		(void) memset (&http_receive->parser, 0, sizeof (llhttp_t));
 		llhttp_settings_init (&http_receive->settings);
 
-		http_receive->keep_alive_requested = false;
-		http_receive->unparsed = 0;
-
-		http_receive->mpart_parser = NULL;
-		(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
-
-		http_receive->request = NULL;
-
-		http_receive->type = HTTP_RECEIVE_TYPE_NONE;
-		http_receive->dispatch = HTTP_RECEIVE_DISPATCH_NONE;
-		http_receive->node = NULL;
-		http_receive->endpoint = NULL;
-		http_receive->route = NULL;
-		http_receive->served_file = NULL;
-
-		http_receive->head = false;
-		http_receive->max_body_size = 0;
-
-		http_receive->status = HTTP_STATUS_NONE;
-		http_receive->sent = 0;
-
-		http_receive->is_multi_part = false;
-		http_receive->file_stats = NULL;
-
-		http_receive->upload_sequence = 0;
-		http_receive->upload_directory_created = false;
-
 		http_receive->url_buffer = NULL;
 		http_receive->field_buffer = NULL;
 		http_receive->value_buffer = NULL;
 
-		http_receive->header_size = 0;
-		http_receive->n_headers = 0;
-		http_receive->body_size = 0;
-		http_receive->n_parts = 0;
-
-		http_receive->responded = false;
-
-		http_receive->stream.state = HTTP_STREAM_STATE_NONE;
-		http_receive->stream.chunked = false;
-
 		http_receive->arena = NULL;
 		http_receive->borrowed_buffers = false;
 
-		http_receive->stage = HTTP_STAGE_QUEUED;
-		http_receive->abort_reason = HTTP_ABORT_REASON_CLOSED;
+		http_receive->sock_fd = -1;
 
-		http_receive->response_failed = false;
-		http_receive->response_error = 0;
-
-		http_receive->send_deadline.tv_sec = 0;
-		http_receive->send_deadline.tv_nsec = 0;
-		http_receive->send_deadline_set = false;
-
-		http_receive->web_socket = NULL;
 		http_receive->upgraded = false;
 
 		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
+
+		http_receive_request_init (http_receive);
 	}
 
 }
 
 static void http_receive_parser_init (HttpReceive *http_receive);
 
+static const double http_receive_milliseconds_per_second = 1000.0;
+static const double http_receive_nanoseconds_per_second = 1000000000.0;
+
+static double http_receive_monotonic_time (void) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return (double) now.tv_sec + ((double) now.tv_nsec / http_receive_nanoseconds_per_second);
+
+}
+
+// a deadline in monotonic secs after the milliseconds of a timeout, 0 when it is disabled
+static double http_receive_deadline (const double now, const unsigned int timeout) {
+
+	return timeout ? now + ((double) timeout / http_receive_milliseconds_per_second) : 0;
+
+}
+
+// the clock and the deadlines of a request start when its receive is ready for it
+static void http_receive_request_begin (HttpReceive *http_receive) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	http_receive->start_time = timer_get_current_time ();
+
+	if (http_cerver) {
+		const double now = http_receive_monotonic_time ();
+
+		http_receive->headers_deadline = http_receive_deadline (now, http_cerver->headers_timeout);
+		http_receive->request_deadline = http_receive_deadline (now, http_cerver->request_timeout);
+	}
+
+}
+
+// creates the request and the stats of its uploads,
+// in the arena that was lent to the receive or allocated
+// returns 0 on success, 1 on error
+static u8 http_receive_request_create (HttpReceive *http_receive) {
+
+	u8 retval = 1;
+
+	Arena *arena = http_receive->arena;
+
+	HttpRequest *request = arena ? http_request_new_arena (arena) : http_request_new ();
+	HttpRouteFileStats *file_stats = arena ?
+		(HttpRouteFileStats *) arena_alloc (arena, sizeof (HttpRouteFileStats)) :
+		http_route_file_stats_new ();
+
+	if (request && file_stats) {
+		request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
+
+		// the stats in an arena are released with it
+		if (arena) http_route_file_stats_init (file_stats);
+
+		http_receive->request = request;
+		http_receive->file_stats = file_stats;
+
+		retval = 0;
+	}
+
+	else if (!arena) {
+		if (request) http_request_delete (request);
+		if (file_stats) http_route_file_stats_delete (file_stats);
+	}
+
+	return retval;
+
+}
+
+// what a receive takes from its connection: its cerver receive, its cerver,
+// its fd and the parser of its requests
+static void http_receive_connection_set (
+	HttpReceive *http_receive, CerverReceive *cerver_receive
+) {
+
+	http_receive->cr = cerver_receive;
+
+	http_receive->handler = http_receive_handle;
+
+	http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
+
+	http_receive->sock_fd = cerver_receive->socket ? cerver_receive->socket->sock_fd : -1;
+
+	http_receive_parser_init (http_receive);
+
+}
+
 HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
 	HttpReceive *http_receive = http_receive_new ();
 	if (http_receive) {
-		http_receive->cr = cerver_receive;
+		http_receive_connection_set (http_receive, cerver_receive);
 
-		http_receive->handler = http_receive_handle;
+		if (!http_receive_request_create (http_receive)) {
+			http_receive_request_begin (http_receive);
+		}
 
-		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
-
-		http_receive_parser_init (http_receive);
-
-		http_receive->request = http_request_new ();
-		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
-
-		http_receive->file_stats = http_route_file_stats_new ();
+		else {
+			free (http_receive);
+			http_receive = NULL;
+		}
 	}
 
 	return http_receive;
@@ -3957,44 +4067,43 @@ static void http_receive_borrow_buffer (String **destination, String *buffer) {
 
 }
 
-// creates the receive (with its parser) and its request in the arena of the thread
-HttpReceive *http_receive_create_arena (
-	CerverReceive *cerver_receive, Arena *arena,
-	String *url_buffer, String *field_buffer, String *value_buffer
+static bool http_receive_resources_are_complete (const HttpReceiveResources *resources) {
+
+	return resources && resources->arena
+		&& resources->url_buffer && resources->field_buffer && resources->value_buffer;
+
+}
+
+// the receive is not in the arena of its request, so the arena can be released
+// after each one of them while the receive stays with its connection
+u8 http_receive_prepare (
+	HttpReceive *http_receive,
+	CerverReceive *cerver_receive, const HttpReceiveResources *resources
 ) {
 
-	HttpReceive *http_receive = (HttpReceive *) arena_alloc (arena, sizeof (HttpReceive));
-	HttpRequest *request = http_request_new_arena (arena);
-	HttpRouteFileStats *file_stats = (HttpRouteFileStats *) arena_alloc (arena, sizeof (HttpRouteFileStats));
+	u8 retval = 1;
 
-	if (http_receive && request && file_stats && url_buffer && field_buffer && value_buffer) {
+	if (http_receive && cerver_receive && http_receive_resources_are_complete (resources)) {
 		http_receive_init (http_receive);
-		http_receive->arena = arena;
 
-		http_receive->cr = cerver_receive;
-		http_receive->handler = http_receive_handle;
-		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
-
-		http_receive_parser_init (http_receive);
-
-		http_receive->request = request;
-		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
-
-		// the stats of the uploads of the request live in the arena too
-		http_route_file_stats_init (file_stats);
-		http_receive->file_stats = file_stats;
+		http_receive->arena = resources->arena;
 
 		http_receive->borrowed_buffers = true;
-		http_receive_borrow_buffer (&http_receive->url_buffer, url_buffer);
-		http_receive_borrow_buffer (&http_receive->field_buffer, field_buffer);
-		http_receive_borrow_buffer (&http_receive->value_buffer, value_buffer);
+		http_receive_borrow_buffer (&http_receive->url_buffer, resources->url_buffer);
+		http_receive_borrow_buffer (&http_receive->field_buffer, resources->field_buffer);
+		http_receive_borrow_buffer (&http_receive->value_buffer, resources->value_buffer);
+
+		http_receive_connection_set (http_receive, cerver_receive);
+
+		retval = http_receive_request_create (http_receive);
+
+		if (!retval) http_receive_request_begin (http_receive);
+
+		// what a request that could not be created left in the arena
+		else arena_reset (resources->arena);
 	}
 
-	else {
-		http_receive = NULL;
-	}
-
-	return http_receive;
+	return retval;
 
 }
 
@@ -4085,33 +4194,74 @@ static void http_receive_uploads_release (HttpReceive *http_receive) {
 
 }
 
+// what a request leaves when it ends: its uploads, the place of its upgrade,
+// the request with its data, the stats of its uploads and the parser of its parts
+static void http_receive_request_end (HttpReceive *http_receive) {
+
+	http_receive_uploads_release (http_receive);
+
+	http_receive_web_socket_release (http_receive);
+
+	http_request_delete (http_receive->request);
+	http_receive->request = NULL;
+
+	http_receive->node = NULL;
+	http_receive->endpoint = NULL;
+	http_receive->route = NULL;
+
+	// the stats in an arena are released with it
+	if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
+	http_receive->file_stats = NULL;
+
+	if (http_receive->mpart_parser) {
+		multipart_parser_free (http_receive->mpart_parser);
+		http_receive->mpart_parser = NULL;
+	}
+
+}
+
+u8 http_receive_reset (HttpReceive *http_receive) {
+
+	u8 retval = 1;
+
+	if (http_receive) {
+		http_receive_request_end (http_receive);
+
+		// the data of the request that ended is released all at once
+		if (http_receive->arena) arena_reset (http_receive->arena);
+
+		http_receive_request_init (http_receive);
+
+		// the parser keeps its type and its lenient flags,
+		// and the callbacks that a request changed are the ones of a new request
+		http_receive_settings_init (&http_receive->settings);
+		llhttp_reset (&http_receive->parser);
+
+		http_receive_buffer_reset (http_receive->url_buffer);
+		http_receive_buffer_reset (http_receive->field_buffer);
+		http_receive_buffer_reset (http_receive->value_buffer);
+
+		retval = http_receive_request_create (http_receive);
+
+		if (!retval) http_receive_request_begin (http_receive);
+	}
+
+	return retval;
+
+}
+
 void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
-		http_receive_uploads_release (http_receive);
-
-		http_receive_web_socket_release (http_receive);
+		http_receive_request_end (http_receive);
 
 		http_receive->cr = NULL;
 
 		http_receive->http_cerver = NULL;
 
-		http_request_delete (http_receive->request);
-
-		http_receive->node = NULL;
-		http_receive->endpoint = NULL;
-		http_receive->route = NULL;
-
-		// the stats in an arena are released with it
-		if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
-		http_receive->file_stats = NULL;
-
-		if (http_receive->mpart_parser)
-			multipart_parser_free (http_receive->mpart_parser);
-
 		http_receive_delete_buffers (http_receive);
 
-		// the receive in an arena is released with it
+		// a receive that was prepared lives in the memory of its owner
 		if (!http_receive->arena) free (http_receive);
 	}
 

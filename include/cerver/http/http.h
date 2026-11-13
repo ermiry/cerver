@@ -1148,6 +1148,39 @@ typedef enum HttpReceiveDispatch {
 
 } HttpReceiveDispatch;
 
+// what the owner of a receive lends to it: the arena where the data of each request lives
+// and the buffers of the tokens that the parser gives in pieces
+// they are used by one request at a time and they are never released by the receive
+struct _HttpReceiveResources {
+
+	struct Arena *arena;
+
+	String *url_buffer;
+	String *field_buffer;
+	String *value_buffer;
+
+};
+
+typedef struct _HttpReceiveResources HttpReceiveResources;
+
+// keeps track of the recv () calls of a request
+// to explain why it ended before being completed
+struct _HttpReceiveDiagnostics {
+
+	ssize_t last_rc;
+	int last_errno;
+	unsigned int n_recvs;
+
+	// the last recv () timed out or a deadline expired
+	bool timed_out;
+
+};
+
+typedef struct _HttpReceiveDiagnostics HttpReceiveDiagnostics;
+
+// what belongs to the connection (its cerver receive, the parser, the resources
+// of its owner, the state of its client) stays for all its requests,
+// and what belongs to a request is started again by http_receive_reset ()
 struct _HttpReceive {
 
 	HttpReceiveStatus receive_status;
@@ -1228,15 +1261,38 @@ struct _HttpReceive {
 	// after its handler, a request without one is answered with 500
 	bool responded;
 
+	// the response that was sent has an end that its client can find without the close
+	// of the connection: it has a Content-Length, its status has no body (1xx, 204, 304),
+	// it answers a HEAD or it is a chunked stream that sent its last chunk
+	// a connection can only take another request after a response like that
+	bool framed;
+
 	// the response that the handler sends in pieces
 	HttpStream stream;
 
-	// the arena of the thread that handles the request,
-	// the receive, its parser and its request are released with it
+	// the arena that the owner of the receive lends to it, the data of its request
+	// lives there and it is released all at once when the request ends,
+	// NULL in a receive that allocates the memory of its request
 	struct Arena *arena;
 
-	// the token buffers belong to the thread and they are reused between requests
+	// the token buffers belong to the owner of the receive and they are reused between requests
 	bool borrowed_buffers;
+
+	// the fd of the connection when the receive was created, for the log after it is closed
+	int sock_fd;
+
+	// when the request started, to know the time that it took
+	double start_time;
+
+	// the bytes of the request that were received
+	size_t received;
+
+	// the recv () calls of the request, to explain why it ended before being completed
+	HttpReceiveDiagnostics diagnostics;
+
+	// the deadlines of the request, in monotonic secs, 0 when disabled
+	double headers_deadline;
+	double request_deadline;
 
 	// the stage that the request has reached
 	HttpStage stage;
@@ -1268,17 +1324,31 @@ typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
-// creates the receive, its parser and its request in the arena of the thread
-// the token buffers are reused, they are emptied but never deleted
-CERVER_PRIVATE HttpReceive *http_receive_create_arena (
-	CerverReceive *cerver_receive, struct Arena *arena,
-	String *url_buffer, String *field_buffer, String *value_buffer
+// prepares a receive that lives in the memory of its owner (a worker thread, a connection)
+// with the resources that it lends: the data of each request lives in the arena
+// and the token buffers are reused, they are emptied but never deleted
+// the receive is ended with http_receive_delete (), that does not release it nor its resources
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_receive_prepare (
+	HttpReceive *http_receive,
+	CerverReceive *cerver_receive, const HttpReceiveResources *resources
 );
 
+// creates a receive that allocates its own memory and the one of its request
 CERVER_PRIVATE HttpReceive *http_receive_create (
 	CerverReceive *cerver_receive
 );
 
+// ends the request of the receive (its uploads, its data, the arena that was lent)
+// and starts a new one in the same connection: the parser, the clock, the deadlines,
+// the stage and the counters of the request start again
+// and what belongs to the connection is kept
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_receive_reset (
+	HttpReceive *http_receive
+);
+
+// ends the request of the receive, a receive that was created is released
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
 );
