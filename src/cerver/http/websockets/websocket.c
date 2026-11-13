@@ -857,6 +857,16 @@ static u8 http_web_socket_send_close_frame (
 
 }
 
+bool http_web_socket_close_is_valid (const u16 code, const char *reason) {
+
+	const size_t length = reason ? strlen (reason) : 0;
+
+	return http_web_socket_close_code_is_valid (code)
+		&& (length <= HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE)
+		&& http_web_socket_text_check (reason, length);
+
+}
+
 u8 http_web_socket_close (
 	HttpWebSocket *web_socket, const u16 code, const char *reason
 ) {
@@ -864,12 +874,7 @@ u8 http_web_socket_close (
 	u8 retval = 1;
 
 	const size_t length = reason ? strlen (reason) : 0;
-	if (
-		web_socket
-		&& http_web_socket_close_code_is_valid (code)
-		&& (length <= HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE)
-		&& http_web_socket_text_check (reason, length)
-	) {
+	if (web_socket && http_web_socket_close_is_valid (code, reason)) {
 		const HttpWebSocketState state = http_web_socket_get_state (web_socket);
 		if ((state == HTTP_WEB_SOCKET_STATE_OPEN) || (state == HTTP_WEB_SOCKET_STATE_CLOSING)) {
 			(void) http_web_socket_send_close_frame (web_socket, code, reason, length);

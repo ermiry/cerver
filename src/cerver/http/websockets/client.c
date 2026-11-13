@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -97,6 +98,10 @@ static const char *http_web_socket_client_extensions_name = { "Sec-WebSocket-Ext
 
 // a fraction of the wait between reconnections is random, so many clients do not come back together
 #define HTTP_WEB_SOCKET_CLIENT_JITTER_DIVISOR			4
+
+// the wait between reconnections is doubled after each failure, up to the timeout that a poll () takes
+#define HTTP_WEB_SOCKET_CLIENT_BACKOFF_FACTOR			2
+#define HTTP_WEB_SOCKET_CLIENT_BACKOFF_LIMIT			((unsigned int) INT_MAX)
 
 // an attempt waits for its socket and for the wake up of a client that is stopping
 #define HTTP_WEB_SOCKET_CLIENT_WAIT_FDS					2
@@ -581,6 +586,35 @@ static bool http_web_socket_client_url_is_visible (const char *url) {
 
 }
 
+// the host, the port and the path of the url that a client connects to
+typedef struct HttpWebSocketClientTarget {
+
+	char host[HTTP_WEB_SOCKET_CLIENT_HOST_SIZE];
+	u16 port;
+	char path[HTTP_WEB_SOCKET_CLIENT_PATH_SIZE];
+
+} HttpWebSocketClientTarget;
+
+static void http_web_socket_client_target_get (
+	const HttpWebSocketClient *client, HttpWebSocketClientTarget *target
+) {
+
+	(void) memcpy (target->host, client->host, HTTP_WEB_SOCKET_CLIENT_HOST_SIZE);
+	target->port = client->port;
+	(void) memcpy (target->path, client->path, HTTP_WEB_SOCKET_CLIENT_PATH_SIZE);
+
+}
+
+static void http_web_socket_client_target_set (
+	HttpWebSocketClient *client, const HttpWebSocketClientTarget *target
+) {
+
+	(void) memcpy (client->host, target->host, HTTP_WEB_SOCKET_CLIENT_HOST_SIZE);
+	client->port = target->port;
+	(void) memcpy (client->path, target->path, HTTP_WEB_SOCKET_CLIENT_PATH_SIZE);
+
+}
+
 u8 http_web_socket_client_set_url (
 	HttpWebSocketClient *client, const char *url
 ) {
@@ -593,12 +627,41 @@ u8 http_web_socket_client_set_url (
 	) {
 		const size_t length = strlen (url);
 
+		// a url that is rejected in any of its parts does not change the client
+		HttpWebSocketClientTarget previous;
+		http_web_socket_client_target_get (client, &previous);
+
 		size_t position = http_web_socket_client_url_host (client, url, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH, length);
 		if (position) position = http_web_socket_client_url_port (client, url, position, length);
 		if (position) retval = http_web_socket_client_url_path (client, url, position, length);
+
+		if (retval) http_web_socket_client_target_set (client, &previous);
 	}
 
 	return retval;
+
+}
+
+// the headers of the handshake are written by the client, they can not be added again
+static bool http_web_socket_client_header_is_reserved (const char *name) {
+
+	bool reserved = false;
+
+	switch (http_header_type_by_string (name)) {
+		case HTTP_HEADER_HOST:
+		case HTTP_HEADER_UPGRADE:
+		case HTTP_HEADER_CONNECTION:
+		case HTTP_HEADER_SEC_WEBSOCKET_KEY:
+		case HTTP_HEADER_SEC_WEBSOCKET_VERSION:
+		case HTTP_HEADER_SEC_WEBSOCKET_PROTOCOL:
+		case HTTP_HEADER_SEC_WEBSOCKET_EXTENSIONS:
+			reserved = true;
+			break;
+
+		default: break;
+	}
+
+	return reserved;
 
 }
 
@@ -608,10 +671,13 @@ u8 http_web_socket_client_add_header (
 
 	u8 retval = 1;
 
-	// a header that breaks the request is never sent
+	// a header that breaks the request is never sent: its name is a token, its value has no line end
+	// and it is not one of the headers of the handshake
 	if (
 		client && name && value
-		&& !strpbrk (name, http_web_socket_client_line_end) && !strpbrk (value, http_web_socket_client_line_end)
+		&& http_header_name_is_valid (name, strlen (name))
+		&& http_header_value_is_valid (value, strlen (value))
+		&& !http_web_socket_client_header_is_reserved (name)
 	) {
 		const size_t size = strlen (name) + strlen (value) + HTTP_WEB_SOCKET_CLIENT_VALUES_SEPARATOR_LENGTH + 1;
 		char *header = (char *) malloc (size);
@@ -1174,7 +1240,9 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 			// a synchronous connect () returns with an open connection
 			http_web_socket_opened (web_socket);
 
-			client->n_failures = 0;
+			// the failures are forgotten when the connection lasts, not when it opens:
+			// a server that accepts and closes at once is not reconnected without a wait
+			socket_deadline_create_milliseconds (&client->stable_deadline, client->reconnect_max);
 			(void) __atomic_add_fetch (&client->n_connections, 1, __ATOMIC_SEQ_CST);
 
 			(void) pthread_mutex_lock (&client->mutex);
@@ -1203,6 +1271,11 @@ static void http_web_socket_client_run (HttpWebSocketClient *client, HttpWebSock
 
 	http_web_socket_run (web_socket);
 
+	// a connection that lasted the longest wait between reconnections was stable,
+	// one that ended before is another failure for the wait of the next attempt
+	if (socket_deadline_remaining (&client->stable_deadline)) client->n_failures += 1;
+	else client->n_failures = 0;
+
 	http_web_socket_client_socket_end (web_socket);
 
 	(void) pthread_mutex_lock (&client->mutex);
@@ -1213,22 +1286,41 @@ static void http_web_socket_client_run (HttpWebSocketClient *client, HttpWebSock
 
 }
 
+unsigned int http_web_socket_client_backoff_delay (
+	const unsigned int min, const unsigned int max,
+	const unsigned int n_failures, const unsigned int random
+) {
+
+	// the wait is the timeout of a poll (), an int
+	const unsigned int limit = (max < HTTP_WEB_SOCKET_CLIENT_BACKOFF_LIMIT) ? max : HTTP_WEB_SOCKET_CLIENT_BACKOFF_LIMIT;
+
+	unsigned int delay = (min < limit) ? min : limit;
+	for (unsigned int i = 0; (i < n_failures) && (delay < limit); i++) {
+		// a wait that can not be doubled is already the last one
+		delay = (delay > (limit / HTTP_WEB_SOCKET_CLIENT_BACKOFF_FACTOR)) ?
+			limit : (delay * HTTP_WEB_SOCKET_CLIENT_BACKOFF_FACTOR);
+	}
+
+	// the jitter never takes the wait above the last one
+	const unsigned int jitter = delay / HTTP_WEB_SOCKET_CLIENT_JITTER_DIVISOR;
+	const unsigned int added = jitter ? (random % jitter) : 0;
+
+	return (added > (limit - delay)) ? limit : (delay + added);
+
+}
+
 // waits before the next attempt, doubled after each failure, with jitter
 // returns false when the client stopped while it waited
 static bool http_web_socket_client_backoff (HttpWebSocketClient *client, unsigned int *seed) {
 
-	unsigned int delay = client->reconnect_min;
-	for (unsigned int i = 0; (i < client->n_failures) && (delay < client->reconnect_max); i++) delay *= 2;
-	if (delay > client->reconnect_max) delay = client->reconnect_max;
-
-	const unsigned int jitter = delay / HTTP_WEB_SOCKET_CLIENT_JITTER_DIVISOR;
-	if (jitter) delay += (unsigned int) rand_r (seed) % jitter;
+	const unsigned int delay = http_web_socket_client_backoff_delay (
+		client->reconnect_min, client->reconnect_max, client->n_failures, (unsigned int) rand_r (seed)
+	);
 
 	struct pollfd pfd = { client->wake_fd, POLLIN, 0 };
 	(void) poll (&pfd, 1, (int) delay);
 
-	u64 value = 0;
-	while (read (client->wake_fd, &value, sizeof (u64)) > 0);
+	http_web_socket_client_wake_drain (client);
 
 	return !http_web_socket_client_is_stopping (client);
 
@@ -1399,7 +1491,8 @@ u8 http_web_socket_client_close (
 
 	u8 retval = 1;
 
-	if (client) {
+	// a close that can not be sent does not stop the client nor its reconnections
+	if (client && http_web_socket_close_is_valid (code, reason)) {
 		__atomic_store_n (&client->stopping, true, __ATOMIC_SEQ_CST);
 
 		// the wait between reconnections ends now
