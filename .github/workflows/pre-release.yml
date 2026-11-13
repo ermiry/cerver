@@ -23,6 +23,7 @@ jobs:
           case "${{ github.ref_name }}" in
             http-beta)    echo "title=HTTP Beta"    >> "$GITHUB_OUTPUT"; echo "moving=beta"         >> "$GITHUB_OUTPUT" ;;
             nightly-beta) echo "title=Nightly Beta" >> "$GITHUB_OUTPUT"; echo "moving=nightly-beta" >> "$GITHUB_OUTPUT" ;;
+            labs-beta)    echo "title=Labs Beta"    >> "$GITHUB_OUTPUT"; echo "moving=labs-beta"    >> "$GITHUB_OUTPUT" ;;
             beta)         echo "title=Beta"         >> "$GITHUB_OUTPUT"; echo "moving=core-beta"    >> "$GITHUB_OUTPUT" ;;
             *)            echo "title=Beta"         >> "$GITHUB_OUTPUT"; echo "moving="             >> "$GITHUB_OUTPUT" ;;
           esac
