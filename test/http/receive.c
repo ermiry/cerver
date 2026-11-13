@@ -2566,6 +2566,138 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 
 }
 
+#define TEST_RECEIVE_REPEATED_HEADERS			100
+#define TEST_RECEIVE_REPEATED_VALUE_SIZE		64
+#define TEST_RECEIVE_REPEATED_LINE_SIZE			128
+#define TEST_RECEIVE_REPEATED_REQUEST_SIZE		(1 << 14)
+
+// the most bytes of the arena for each byte of a header that is repeated
+#define TEST_RECEIVE_REPEATED_ARENA_FACTOR		4
+
+// the spaces and tabs after the value of a header are not part of it
+static void test_receive_header_values (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "header values with spaces after them",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Content-Type: application/json \t\r\n"
+		"Accept: text/plain  \r\n"
+		"X-Custom: custom  value \t \r\n"
+		"\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.content_type, "application/json"));
+	test_receive_expect (!strcmp (observed.accept, "text/plain"));
+	test_receive_expect (!strcmp (observed.custom, "custom  value"));
+
+	// a value of only spaces is an empty one
+	test_receive_whole_case (
+		cerver, "a header value of spaces",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nAccept: \t \r\nX-Custom:   \r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.accept, ""));
+	test_receive_expect (!strcmp (observed.custom, ""));
+
+}
+
+// a header that is repeated is joined in memory that grows by a factor:
+// the joined value was copied again for every repetition, so the arena of a request
+// used hundreds of times the bytes of its headers
+static void test_receive_repeated_header (Cerver *cerver) {
+
+	char *request = (char *) calloc (TEST_RECEIVE_REPEATED_REQUEST_SIZE, sizeof (char));
+	test_check_ptr (request);
+
+	char value[TEST_RECEIVE_REPEATED_VALUE_SIZE + 1] = { 0 };
+	(void) memset (value, 'a', TEST_RECEIVE_REPEATED_VALUE_SIZE);
+
+	size_t length = (size_t) snprintf (
+		request, TEST_RECEIVE_REPEATED_REQUEST_SIZE,
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+	);
+
+	for (unsigned int i = 0; i < TEST_RECEIVE_REPEATED_HEADERS; i++) {
+		length += (size_t) snprintf (
+			request + length, TEST_RECEIVE_REPEATED_LINE_SIZE, "Accept: %s\r\n", value
+		);
+	}
+
+	length += (size_t) snprintf (request + length, TEST_RECEIVE_REPEATED_LINE_SIZE, "\r\n");
+
+	current_case = "a header repeated many times";
+	test_receive_feed_whole (cerver, request, length);
+
+	test_receive_expect (test_receive_status_is ("200"));
+
+	// every value is in the header, with the separators between them
+	const size_t joined = (TEST_RECEIVE_REPEATED_HEADERS * TEST_RECEIVE_REPEATED_VALUE_SIZE)
+		+ ((TEST_RECEIVE_REPEATED_HEADERS - 1) * strlen (HTTP_HEADER_VALUES_SEPARATOR));
+
+	test_receive_expect (observed.accept_len == joined);
+
+	if (receive_arena) {
+		test_receive_expect (observed.arena_used < (length * TEST_RECEIVE_REPEATED_ARENA_FACTOR));
+	}
+
+	free (request);
+
+}
+
+// a target in absolute form is routed by its path, as a proxy sends it (RFC 9112 section 3.2.2),
+// and a fragment is not part of the path nor of the query: both went to the catch all
+static void test_receive_targets (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "a target in absolute form",
+		"POST http://localhost:8080/test/echo?key=value HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, "key=value"));
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+	test_receive_whole_case (
+		cerver, "a target in absolute form with another scheme",
+		"POST HTTPS://example.com/test/echo HTTP/1.1\r\nHost: example.com\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, ""));
+
+	test_receive_whole_case (
+		cerver, "a target with a fragment",
+		"POST /test/echo?key=value#fragment HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+	test_receive_whole_case (
+		cerver, "a path with a fragment",
+		"POST /test/echo#fragment HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	// a path that only looks like a scheme is a path
+	test_receive_whole_case (
+		cerver, "a path with the separator of a scheme",
+		"POST /test/echo?next=http://example.com/a HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.query, "next=http://example.com/a"));
+
+}
+
 // the query and the values of a form are split by their separators and then each piece is decoded:
 // they were decoded first, so an escaped separator (%26, %3D) made another value
 static void test_receive_escaped_separators (Cerver *cerver) {
@@ -4004,6 +4136,9 @@ void http_tests_receive (void) {
 	test_receive_groups (cerver);
 	test_receive_method_not_allowed (cerver);
 	test_receive_trailing_slash (cerver);
+	test_receive_repeated_header (cerver);
+	test_receive_header_values (cerver);
+	test_receive_targets (cerver);
 	test_receive_escaped_separators (cerver);
 	test_receive_cors_preflight (cerver);
 
