@@ -661,15 +661,20 @@ u8 http_web_socket_send_begin (
 	u8 retval = 1;
 
 	if (web_socket && http_web_socket_is_data_type (type)) {
-		// held until http_web_socket_send_end ()
 		(void) pthread_mutex_lock (&web_socket->message_mutex);
 
-		web_socket->streaming = true;
-		web_socket->stream_type = (u8) type;
-		web_socket->stream_started = false;
-		web_socket->stream_compressed = (web_socket->deflate != NULL);
+		// held until http_web_socket_send_end ()
+		if (http_web_socket_can_send_data (web_socket)) {
+			web_socket->streaming = true;
+			web_socket->stream_type = (u8) type;
+			web_socket->stream_started = false;
+			web_socket->stream_compressed = (web_socket->deflate != NULL);
 
-		retval = http_web_socket_can_send_data (web_socket) ? 0 : 1;
+			retval = 0;
+		}
+
+		// a stream that does not begin holds nothing, so there is nothing to end
+		else (void) pthread_mutex_unlock (&web_socket->message_mutex);
 	}
 
 	return retval;
@@ -692,14 +697,18 @@ static u8 http_web_socket_send_stream_frame (
 
 	(void) pthread_mutex_lock (&web_socket->send_mutex);
 
-	const u8 retval = http_web_socket_can_send_data (web_socket) ?
+	// a connection that already sent its close does not take the frame: that is an error of the send,
+	// not a failure of the connection, that keeps closing with its handshake
+	const bool attempted = http_web_socket_can_send_data (web_socket);
+
+	const u8 retval = attempted ?
 		http_web_socket_write_frame (web_socket, fin, rsv1, opcode, payload, size, &deadline) : 1;
 
 	(void) pthread_mutex_unlock (&web_socket->send_mutex);
 
 	web_socket->stream_started = true;
 
-	if (retval) http_web_socket_fail (web_socket, HTTP_WEB_SOCKET_ERROR_SEND);
+	if (attempted && retval) http_web_socket_fail (web_socket, HTTP_WEB_SOCKET_ERROR_SEND);
 
 	return retval;
 

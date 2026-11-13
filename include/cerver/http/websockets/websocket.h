@@ -263,6 +263,10 @@ CERVER_EXPORT u8 http_web_socket_send_binary (
 
 // starts a message that is sent in pieces, until http_web_socket_send_end (),
 // the other messages of the connection wait for it, the control frames do not
+// a stream that does not begin (the connection is closing or it has ended) holds nothing:
+// it must not be ended, and its pieces and its end return an error
+// a stream that began is always ended with http_web_socket_send_end (), also when a piece failed:
+// a piece that the connection did not take because it is closing is an error that does not abort it
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_web_socket_send_begin (
 	HttpWebSocket *web_socket, const HttpWebSocketOpcode type
