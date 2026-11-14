@@ -1,14 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-
 #include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <cerver/threads/thread.h>
 
-#include "threads.h"
-
 #include "../test.h"
+#include "threads.h"
 
 static void *test_thread (void *data_ptr) {
 

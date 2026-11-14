@@ -1,15 +1,14 @@
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/crypto/random.h>
 
-#include "crypto.h"
-
 #include "../test.h"
+#include "crypto.h"
 
 // the bytes of a session id or of a request id
 #define CRYPTO_TEST_RANDOM_SMALL			32

@@ -1,12 +1,12 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <cerver/serializer.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/collections/arena.h>
+
+#include <cerver/packets/serializer.h>
 
 // an object from the network, decoded with each schema of cerver:
 // the first byte selects the schema and the rest is the object

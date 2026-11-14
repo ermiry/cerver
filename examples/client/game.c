@@ -1,16 +1,19 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-
 #include <time.h>
-#include <signal.h>
+
 #include <unistd.h>
 
 #include <cerver/version.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/packets.h>
+
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/connection.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/game/game.h>
 #include <cerver/game/lobby.h>

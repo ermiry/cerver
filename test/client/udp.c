@@ -1,16 +1,18 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
-
-#include <app/app.h>
-#include <app/auth.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/app.h>
+#include <app/auth.h>
 
 // the client of test/cerver/udp.c: it authenticates when it connects,
 // gets the cerver info, its session id and its datagram token,

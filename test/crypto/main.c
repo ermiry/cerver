@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-
-#include "crypto.h"
+#include <stdlib.h>
 
 #include "../test.h"
+#include "crypto.h"
 
 int main (void) {
 

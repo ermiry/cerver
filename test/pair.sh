@@ -57,11 +57,6 @@ case "$PAIR" in
 		PORTS=($TCP_PORT)
 		CLIENT="test/bin/client/${PAIR#cerver/}"
 		;;
-	handler)
-		SERVERS=("test/bin/handler/cerver")
-		PORTS=($TCP_PORT)
-		CLIENT="test/bin/handler/client"
-		;;
 	examples/handlers)
 		example_servers "handlers -t q"
 		;;

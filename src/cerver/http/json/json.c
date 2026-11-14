@@ -5,18 +5,17 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <stdint.h>
-
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <pthread.h>
 #include <unistd.h>
 

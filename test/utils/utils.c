@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-
-#include "utils.h"
+#include <stdlib.h>
 
 #include "../test.h"
+#include "utils.h"
 
 int main (void) {
 

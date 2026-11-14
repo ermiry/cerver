@@ -7,13 +7,14 @@
 
 #include <pthread.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
-#include "cerver/network.h"
+
+#include "cerver/network/network.h"
 
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"

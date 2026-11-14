@@ -1,10 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
-
-#include "balancer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "../../test.h"
+#include "balancer.h"
 
 // clients leave while their slow requests are still in the services:
 // the balancer drops the responses of the connections that closed and keeps working,

@@ -1,18 +1,16 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <errno.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <sys/socket.h>
-
 #include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 // a WebSocket load generator without dependencies: each connection upgrades once
 // and sends its messages one after the other, waiting for the echo of each one,

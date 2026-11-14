@@ -1,13 +1,14 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #include <pthread.h>
-#include <signal.h>
 
 #include <cerver/version.h>
-#include <cerver/cerver.h>
+
+#include <cerver/core/cerver.h>
 
 #include <cerver/http/websockets/client.h>
 #include <cerver/http/websockets/websocket.h>

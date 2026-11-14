@@ -1,13 +1,15 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <cerver/files.h>
-#include <cerver/packets.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/types/string.h>
+
+#include <cerver/files/cerver.h>
+#include <cerver/files/files.h>
+#include <cerver/files/send.h>
+#include <cerver/packets/packets.h>
 
 // a FileHeader from the network: the decode from the data of a packet, its validation,
 // and the search of its filename in the paths of a files cerver

@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "fuzz.h"
 

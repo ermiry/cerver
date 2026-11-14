@@ -1,9 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/events.h>
+#include <cerver/client/client.h>
+#include <cerver/client/events.h>
+#include <cerver/core/cerver.h>
+#include <cerver/handler/events.h>
 
 #include <cerver/utils/log.h>
 

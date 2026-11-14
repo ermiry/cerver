@@ -1,16 +1,15 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <curl/curl.h>
 
-#include <cerver/http/status.h>
+#include <cerver/http/responses/status.h>
 
 #include <cerver/utils/log.h>
 
-#include "curl.h"
-
 #include "../../address.h"
+#include "curl.h"
 
 #define AUTHORIZATION_HEADER_SIZE		1024
 

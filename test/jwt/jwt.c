@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-
-#include "jwt.h"
+#include <stdlib.h>
 
 #include "../test.h"
+#include "jwt.h"
 
 int main (void) {
 

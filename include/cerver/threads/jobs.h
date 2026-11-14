@@ -2,9 +2,9 @@
 #define _CERVER_THREADS_JOBS_H_
 
 #include <stdbool.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include "cerver/types/types.h"
 

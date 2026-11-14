@@ -1,15 +1,14 @@
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/crypto/hash.h>
 
-#include "crypto.h"
-
 #include "../test.h"
+#include "crypto.h"
 
 // the hex characters of a SHA-1 digest
 #define CRYPTO_TEST_SHA1_HEX_LENGTH			(CERVER_CRYPTO_SHA1_SIZE * 2)

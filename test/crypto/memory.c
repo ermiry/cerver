@@ -1,15 +1,14 @@
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/crypto/memory.h>
 
-#include "crypto.h"
-
 #include "../test.h"
+#include "crypto.h"
 
 // the size of a secret, like the material of a key
 #define CRYPTO_TEST_MEMORY_SIZE				(1 << 10)

@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,13 +6,15 @@
 #include <time.h>
 
 #include <pthread.h>
-#include <signal.h>
 
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/connection/connection.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/utils/log.h>
 

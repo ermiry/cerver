@@ -1,14 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/http/websockets/handshake.h>
 
 #include "../test.h"
-
 #include "websocket.h"
 
 #define HANDSHAKE_TEST_GENERATED_KEYS		(1 << 6)

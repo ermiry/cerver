@@ -1,10 +1,10 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <cerver/network.h>
+#include <cerver/network/network.h>
 
 // an address from a config or a peer: an IPv4, an IPv6 with its zone or anything else,
 // a valid one is written back to text and parsed again into the same address

@@ -2,13 +2,13 @@
 #define _CERVER_THREADS_THPOOL_H_
 
 #include <stdbool.h>
-#include <pthread.h>
-
 #include <time.h>
 
-#include "cerver/config.h"
+#include <pthread.h>
 
 #include "cerver/types/types.h"
+
+#include "cerver/config.h"
 
 #define THPOOL_NAME_SIZE					64
 

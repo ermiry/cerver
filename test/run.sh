@@ -30,9 +30,7 @@ run ./test/bin/client/files
 
 run ./test/bin/connection
 
-run ./test/bin/balancer
-
-run ./test/bin/routing
+run ./test/bin/load
 
 run ./test/bin/collections --quiet
 
@@ -40,19 +38,15 @@ run ./test/bin/files
 
 run ./test/bin/game
 
+run ./test/bin/handler
+
 run ./test/bin/network
 
 run ./test/bin/packets
 
-run ./test/bin/receive
-
-run ./test/bin/socket
-
 run ./test/bin/system
 
 run ./test/bin/threads
-
-run ./test/bin/udp
 
 run ./test/bin/utils
 

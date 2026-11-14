@@ -1,7 +1,7 @@
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-#include <errno.h>
 #include <sys/random.h>
 #include <sys/types.h>
 

@@ -1,12 +1,12 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include <cerver/client.h>
-#include <cerver/packets.h>
-
-#include <app/app.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/app.h>
 
 #define REQUESTS			64
 

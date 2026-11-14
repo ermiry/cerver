@@ -5,9 +5,9 @@
 
 #include <pthread.h>
 
-#include "cerver/config.h"
-
 #include "cerver/types/types.h"
+
+#include "cerver/config.h"
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/worker.h"

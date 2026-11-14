@@ -1,14 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/http/websockets/text.h>
 
 #include "../test.h"
-
 #include "websocket.h"
 
 // the last code point and the range of the surrogates

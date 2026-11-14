@@ -1,34 +1,40 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
-
 #include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/network.h>
 #include <cerver/version.h>
 
-#include <cerver/http/compression.h>
-#include <cerver/http/conditional.h>
-#include <cerver/http/date.h>
-#include <cerver/http/headers.h>
-#include <cerver/http/http.h>
-#include <cerver/http/metrics.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
-#include <cerver/http/stream.h>
-#include <cerver/http/tree.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/network/network.h>
+
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/metrics.h>
+#include <cerver/http/core/public.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/headers/buffer.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/compression.h>
+#include <cerver/http/responses/conditional.h>
+#include <cerver/http/responses/date.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/responses/stream.h>
+#include <cerver/http/routes/tree.h>
 
 #include "../test.h"
-
 #include "http.h"
 
 // a real web cerver with the headers that cerver adds to every response
@@ -128,7 +134,7 @@ static void features_listed_handler (
 	(void) http_response_add_content_length_header (response, features_json_length);
 	(void) http_response_add_header (response, HTTP_HEADER_CACHE_CONTROL, FEATURES_TEST_CACHE_CONTROL);
 	(void) http_response_add_header (response, HTTP_HEADER_DATE, FEATURES_TEST_OWN_DATE);
-	(void) http_response_header_add_by_name (response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	(void) http_response_header_add_with_name (response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
 	(void) http_response_set_data_ref (response, features_json, features_json_length);
 	(void) http_response_send (response, http_receive);
 	http_response_return (response);
@@ -267,7 +273,7 @@ static void features_cookies_handler (
 	HttpResponse *response = http_response_get ();
 	http_response_set_status (response, HTTP_STATUS_OK);
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_first_cookie), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, features_trace_name, features_trace_value), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, features_trace_name, features_trace_value), 0, NULL);
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_second_cookie), 0, NULL);
 	(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
 	(void) http_response_add_content_length_header (response, strlen (features_stream_first));

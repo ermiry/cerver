@@ -1,13 +1,15 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/request.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 // the registration of arbitrary paths and the match of arbitrary urls:
 // the input is split in lines, the lines before the first empty one are paths

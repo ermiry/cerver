@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "../measure.h"
-
 #include "backend.h"
 
 static const char *json_module = { "json" };

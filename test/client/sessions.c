@@ -1,18 +1,19 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include <cerver/client.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/data.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/threads/thread.h>
 
+#include "../test.h"
 #include <app/app.h>
 #include <app/auth.h>
-
 #include "client.h"
-
-#include "../test.h"
 
 #define MAIN_REQUESTS			64
 #define SECOND_REQUESTS			32

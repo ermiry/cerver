@@ -8,12 +8,11 @@
 #ifndef _CERVER_HTTP_JSON_H_
 #define _CERVER_HTTP_JSON_H_
 
-#include <stdlib.h>
-#include <stdio.h>
-
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "cerver/config.h"
 

@@ -1,11 +1,11 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
-#include <ctype.h>
+#include <strings.h>
 
 #ifdef CERVER_ZLIB
 #include <zlib.h>

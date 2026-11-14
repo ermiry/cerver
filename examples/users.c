@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <time.h>
 
 #include <cerver/types/string.h>
@@ -10,8 +9,8 @@
 
 #include <cerver/http/json/json.h>
 
-#include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
+#include <cerver/utils/utils.h>
 
 #include "users.h"
 

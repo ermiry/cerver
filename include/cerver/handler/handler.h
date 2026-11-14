@@ -1,0 +1,412 @@
+#ifndef _CERVER_HANDLER_H_
+#define _CERVER_HANDLER_H_
+
+#include <stdlib.h>
+
+#include "cerver/types/types.h"
+
+#include "cerver/collections/freelist.h"
+
+#include "cerver/config.h"
+
+#include "cerver/client/client.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/receive.h"
+#include "cerver/packets/packets.h"
+
+#include "cerver/game/lobby.h"
+
+#include "cerver/threads/jobs.h"
+
+#include "cerver/utils/histogram.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct _Socket;
+
+struct _Admin;
+struct _Cerver;
+struct _Client;
+struct _Connection;
+struct _Lobby;
+
+struct _Packet;
+
+#pragma region handler
+
+typedef enum HandlerType {
+
+	HANDLER_TYPE_NONE         = 0,
+
+	HANDLER_TYPE_CERVER       = 1,
+	HANDLER_TYPE_CLIENT       = 2,
+	HANDLER_TYPE_ADMIN        = 3,
+
+} HandlerType;
+
+// the strcuture that will be passed to the handler
+typedef struct HandlerData {
+
+	int handler_id;
+
+	void *data;                     // handler's own data
+	struct _Packet *packet;         // the packet to handle
+
+} HandlerData;
+
+// the packets that a handler handled, added from the threads that run it
+typedef struct HandlerStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} HandlerStats;
+
+struct _Handler {
+
+	HandlerType type;
+
+	// added every time a new handler gets created
+	int unique_id;
+
+	int id;
+	pthread_t thread_id;
+
+	// set when its thread was started and has not been joined yet
+	bool joinable;
+
+	// unique handler data
+	// will be passed to jobs alongside any job specific data as the args
+	void *data;
+
+	// must return a newly allocated handler unique data
+	// will be executed when the handler starts
+	void *(*data_create) (void *args);
+	void *data_create_args;
+
+	// deletes the handler's data once, when its thread ends,
+	// or when the handler is deleted if it never had a thread
+	// if no method is set, it won't be deleted
+	Action data_delete;
+
+	// the method that this handler will execute to handle packets
+	Action handler;
+
+	// used to avoid pushing job to the queue and instead handle
+	// the packet directly in the same thread
+	// this option is set to false as default
+	// pros - inmediate handle with no delays
+	//      - handler method can be called from multiple threads
+	// neutral - the handler method gets the Packet, without the handler's data
+	// cons - calling thread will be busy until handler method is done
+	bool direct_handle;
+
+	// the jobs (packets) that are waiting to be handled
+	// passed as args to the handler method
+	JobQueue *job_queue;
+
+	struct _Cerver *cerver;     // the cerver this handler belongs to
+	struct _Client *client;     // the client this handler belongs to
+
+	HandlerStats stats;
+
+};
+
+typedef struct _Handler Handler;
+
+CERVER_PRIVATE void handler_delete (void *handler_ptr);
+
+// creates a new handler
+// handler method is your actual app packet handler
+CERVER_EXPORT Handler *handler_create (Action handler_method);
+
+// creates a new handler that will be used for
+// cerver's multiple app handlers configuration
+// it should be registered to the cerver before it starts
+// the user is responsible for setting the unique id,
+// which will be used to match
+// incoming packets
+// handler method is your actual app packet handler
+CERVER_EXPORT Handler *handler_create_with_id (
+	int id, Action handler_method
+);
+
+// sets the handler's data directly
+// a handler with a queue passes it to the handler method
+// in a HandlerData structure, a direct handler only gets the Packet
+CERVER_EXPORT void handler_set_data (
+	Handler *handler, void *data
+);
+
+// set a method to create the handler's data in its thread, before it handles any packet,
+// it is passed to the handler method in a HandlerData structure
+// a direct handler does not have a thread, so it is never called
+CERVER_EXPORT void handler_set_data_create (
+	Handler *handler,
+	void *(*data_create) (void *args), void *data_create_args
+);
+
+// set the method to be used to delete the handler's data,
+// it is called once, when the thread of the handler ends,
+// or when the handler is deleted if it never had a thread
+CERVER_EXPORT void handler_set_data_delete (
+	Handler *handler, Action data_delete
+);
+
+// used to avoid pushing job to the queue and instead handle
+// the packet directly in the same thread
+// pros     - inmediate handle with no delays
+//          - handler method can be called from multiple threads
+// neutral  - the handler method gets the Packet, without the handler's data
+// cons     - calling thread will be busy until handler method is done
+CERVER_EXPORT void handler_set_direct_handle (
+	Handler *handler, bool direct_handle
+);
+
+// copies the stats of the packets that the handler handled
+CERVER_EXPORT void handler_get_stats (
+	const Handler *handler, HandlerStats *stats
+);
+
+// prints the stats of the handler with the cerver log
+CERVER_EXPORT void handler_stats_print (const Handler *handler);
+
+// starts the new handler by creating a dedicated thread for it
+// called by internal cerver methods
+CERVER_PRIVATE int handler_start (Handler *handler);
+
+// wakes the handler's thread until it sees that its owner stopped and joins it,
+// it is called after the cerver / client stopped running
+CERVER_PRIVATE void handler_stop (Handler *handler);
+
+// passes the packet to the handler of its type, directly or by its job queue,
+// a direct handler releases it after it returns only if delete_packet is set,
+// and the packet is always released when there is no handler or it can not be queued
+// owner_name and handler_name are only used in the logs
+CERVER_PRIVATE void handler_packet_dispatch (
+	Handler *handler, struct _Packet *packet, const bool delete_packet,
+	const char *owner_name, const char *handler_name
+);
+
+#pragma endregion
+
+#pragma region handlers
+
+#define CERVER_HANDLER_ERROR_MAP(XX)											\
+	XX(0,	NONE,			None,				No handler error)				\
+	XX(1,	PACKET,			Bad Packet,			Packet check failed)			\
+	XX(2,	DROPPED,		Dropped Connection, The connection has been ended)
+
+typedef enum CerverHandlerError {
+
+	#define XX(num, name, string, description) CERVER_HANDLER_ERROR_##name = num,
+	CERVER_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} CerverHandlerError;
+
+CERVER_PUBLIC const char *cerver_handler_error_to_string (
+	const CerverHandlerError error
+);
+
+CERVER_PUBLIC const char *cerver_handler_error_description (
+	const CerverHandlerError error
+);
+
+// handles a request from a client to get a file
+CERVER_PRIVATE void cerver_request_get_file (
+	struct _Packet *packet
+);
+
+// handles a request from a client to upload a file
+CERVER_PRIVATE void cerver_request_send_file (
+	struct _Packet *packet
+);
+
+// sends back a test packet to the client!
+CERVER_PRIVATE void cerver_test_packet_handler (
+	struct _Packet *packet
+);
+
+// handles a packet of type PACKET_TYPE_CLIENT that was received outside the packet handler,
+// like the ones that the load balancer receives
+CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
+	struct _Packet *packet
+);
+
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection,
+// the client, request and cerver packets of a peer are handled by its peers (udp.c)
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
+
+#pragma endregion
+
+#pragma region context
+
+struct Arena;
+struct _HttpReceive;
+
+// the memory that a worker thread reuses between requests
+// the data of a request lives in the arena only while it is handled
+typedef struct HandlerThreadContext {
+
+	struct Arena *arena;
+
+	char *buffer;
+	size_t buffer_size;
+
+	String *url_buffer;
+	String *field_buffer;
+	String *value_buffer;
+
+	// the receive of the HTTP connection that the thread handles,
+	// it uses the arena and the buffers of the thread
+	struct _HttpReceive *http_receive;
+
+} HandlerThreadContext;
+
+// returns the context of the current thread with a receive buffer of at least buffer_size,
+// it is created the first time and it is released when the thread exits
+// returns NULL if it can not be used, then every request allocates its own memory
+CERVER_PRIVATE HandlerThreadContext *handler_context_get (const size_t buffer_size);
+
+#pragma endregion
+
+#pragma region receive
+
+// the deleted receives that are kept to be reused
+#define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
+// default cerver receive handler
+CERVER_PRIVATE void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+);
+
+typedef struct CerverReceive {
+
+	ReceiveType type;
+
+	struct _Cerver *cerver;
+
+	struct _Socket *socket;
+	struct _Connection *connection;
+	struct _Client *client;
+	struct _Admin *admin;
+
+	struct _Lobby *lobby;
+
+	// the next deleted receive that waits to be reused
+	struct CerverReceive *recycle_next;
+
+} CerverReceive;
+
+CERVER_PRIVATE void cerver_receive_delete (void *ptr);
+
+CERVER_PRIVATE CerverReceive *cerver_receive_create (
+	ReceiveType receive_type,
+	struct _Cerver *cerver,
+	const i32 sock_fd
+);
+
+CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
+	ReceiveType receive_type,
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
+// handles a failed receive from a connection associatd with a client
+// ends the connection to prevent seg faults or signals for bad sock fd
+CERVER_PRIVATE void cerver_receive_handle_failed (
+	CerverReceive *cr
+);
+
+CERVER_PRIVATE void cerver_receive_internal (
+	CerverReceive *cr,
+	char *packet_buffer, const size_t packet_buffer_size
+);
+
+#pragma endregion
+
+#pragma region register
+
+// a new connection that no handler could take is taken out of the cerver with its new client,
+// the client is unregistered while it still has the connection, so its sock fd leaves the maps,
+// and the connection is left for its caller to drop
+CERVER_PRIVATE void cerver_new_connection_release (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
+// select how client connection will be handled based on cerver's handler type
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
+// select how a connection will be handled
+// based on cerver's handler type
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_handler_register_connection (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
+#pragma endregion
+
+#pragma region poll
+
+// reallocs main cerver poll fds
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_realloc_main_poll_fds (
+	struct _Cerver *cerver
+);
+
+// get a free index in the main cerver poll strcuture
+CERVER_PRIVATE i32 cerver_poll_get_free_idx (
+	struct _Cerver *cerver
+);
+
+// get the idx of the connection sock fd in the cerver poll fds
+CERVER_PRIVATE i32 cerver_poll_get_idx_with_sock_fd (
+	struct _Cerver *cerver, i32 sock_fd
+);
+
+// regsiters a client connection to the cerver's mains poll structure
+// and maps the sock fd to the client
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_poll_register_connection (
+	struct _Cerver *cerver, struct _Connection *connection
+);
+
+// removes a sock fd from the cerver's main poll array
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_poll_unregister_sock_fd (
+	struct _Cerver *cerver, const i32 sock_fd
+);
+
+// unregsiters a client connection from the cerver's main poll structure
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_poll_unregister_connection (
+	struct _Cerver *cerver, struct _Connection *connection
+);
+
+// server poll loop to handle events in the registered socket's fds
+CERVER_PRIVATE u8 cerver_poll (struct _Cerver *cerver);
+
+#pragma endregion
+
+#pragma region threads
+
+// handle new connections in dedicated threads
+CERVER_PRIVATE u8 cerver_threads (struct _Cerver *cerver);
+
+#pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

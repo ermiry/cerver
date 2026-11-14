@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-#include "dlist.h"
+#include "cerver/collections/dlist.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -5,9 +5,9 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/http/headers.h"
-
+#include "cerver/http/headers/fields.h"
 #include "cerver/http/websockets/deflate.h"
+#include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/settings.h"
 
 const char *http_web_socket_error_to_string (const HttpWebSocketError error) {
@@ -39,7 +39,7 @@ static bool http_web_socket_upgrade_header_is_reserved (const char *name) {
 
 	bool reserved = false;
 
-	switch (http_header_type_by_string (name)) {
+	switch (http_header_type_with_string (name)) {
 		case HTTP_HEADER_SERVER:
 		case HTTP_HEADER_UPGRADE:
 		case HTTP_HEADER_CONNECTION:
@@ -69,7 +69,7 @@ u8 http_web_socket_upgrade_add_header (
 		&& !http_web_socket_upgrade_header_is_reserved (name)
 	) {
 		// the name must be a token and the value can not have the end of a line
-		retval = http_headers_add_by_name (
+		retval = http_headers_add_with_name (
 			upgrade->headers, name, strlen (name), value, strlen (value)
 		);
 	}
