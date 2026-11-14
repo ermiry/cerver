@@ -1,16 +1,16 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
-#include <cerver/http/auth.h>
-#include <cerver/http/http.h>
+#include <cerver/http/core/http.h>
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/jwt/jwt.h>
 #include <cerver/http/jwt/key.h>
+#include <cerver/http/security/auth.h>
 
-#include "../test.h"
-#include "http.h"
+#include "../../test.h"
+#include "../http.h"
 
 static HttpJwt *test_http_jwt_new (void) {
 

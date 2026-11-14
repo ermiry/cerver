@@ -1,10 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/origin.h>
+#include <cerver/http/security/origin.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *domain_1 = { "https://ermiry.com" };
 static const char *domain_2 = { "https://cerver.ermiry.com" };
