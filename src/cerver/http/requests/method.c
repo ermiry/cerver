@@ -1,6 +1,6 @@
 #include <stdbool.h>
 
-#include "cerver/http/method.h"
+#include "cerver/http/requests/method.h"
 
 static const char *request_method_undefined = { "Undefined" };
 

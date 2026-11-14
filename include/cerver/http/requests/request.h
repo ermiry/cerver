@@ -8,14 +8,15 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
-#include "cerver/network.h"
 
-#include "cerver/http/content.h"
-#include "cerver/http/custom.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/method.h"
-#include "cerver/http/multipart.h"
-#include "cerver/http/utils.h"
+#include "cerver/network/network.h"
+
+#include "cerver/http/core/custom.h"
+#include "cerver/http/core/utils.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/requests/content.h"
+#include "cerver/http/requests/method.h"
+#include "cerver/http/requests/multipart.h"
 
 #define REQUEST_DIRNAME_SIZE			512
 

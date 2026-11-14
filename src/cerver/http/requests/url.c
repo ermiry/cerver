@@ -1,9 +1,8 @@
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <ctype.h>
-
-#include "cerver/http/url.h"
+#include "cerver/http/requests/url.h"
 
 static const char hex[] = "0123456789abcdef";
 

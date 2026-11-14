@@ -105,15 +105,15 @@ CERVER_PUBLIC const char *http_content_type_mime (
 	const ContentType content_type
 );
 
-CERVER_PUBLIC ContentType http_content_type_by_mime (
+CERVER_PUBLIC ContentType http_content_type_with_mime (
 	const char *mime_string
 );
 
-CERVER_PUBLIC ContentType http_content_type_by_extension (
+CERVER_PUBLIC ContentType http_content_type_with_extension (
 	const char *extension_string
 );
 
-CERVER_PUBLIC const char *http_content_type_mime_by_extension (
+CERVER_PUBLIC const char *http_content_type_mime_with_extension (
 	const char *extension_string
 );
 

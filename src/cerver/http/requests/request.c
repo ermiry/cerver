@@ -1,15 +1,14 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-
+#include <ctype.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
 #include <strings.h>
 
-#include <ctype.h>
-
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/arena.h"
 
@@ -17,14 +16,16 @@
 
 #include "cerver/crypto/random.h"
 
-#include "cerver/http/content.h"
-#include "cerver/http/custom.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/http.h"
-#include "cerver/http/recycle.h"
-#include "cerver/http/request.h"
-#include "cerver/http/url.h"
-#include "cerver/http/utils.h"
+#include "cerver/http/core/custom.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
+#include "cerver/http/core/pairs.h"
+#include "cerver/http/core/recycle.h"
+#include "cerver/http/core/utils.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/requests/content.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/requests/url.h"
 
 #include "cerver/utils/utils.h"
 
@@ -526,7 +527,7 @@ const char *http_request_get_custom_header (
 		// a header that became part of the HTTP headers map is still found by its name
 		else {
 			const String *known = http_request_get_header (
-				http_request, http_header_type_by_string (header)
+				http_request, http_header_type_with_string (header)
 			);
 
 			if (known) value = known->str;
@@ -542,7 +543,7 @@ ContentType http_request_get_content_type (
 ) {
 
 	return http_request->headers[HTTP_HEADER_CONTENT_TYPE] ?
-		http_content_type_by_mime (
+		http_content_type_with_mime (
 			http_request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		) : HTTP_CONTENT_TYPE_NONE;
 

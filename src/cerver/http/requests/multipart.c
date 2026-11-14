@@ -1,17 +1,18 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <stdarg.h>
-
 #include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <unistd.h>
 
-#include "cerver/files.h"
+#include "cerver/files/files.h"
 
-#include "cerver/http/http.h"
-#include "cerver/http/multipart.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/pairs.h"
+#include "cerver/http/headers/header.h"
+#include "cerver/http/requests/multipart.h"
 
 #pragma region parts
 
