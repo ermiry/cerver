@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-
-#include "json.h"
+#include <stdlib.h>
 
 #include "../test.h"
+#include "json.h"
 
 int main (void) {
 

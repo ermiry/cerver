@@ -1,11 +1,11 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/http/json/json.h>
 
-#include "json.h"
 #include "errors.h"
+#include "json.h"
 
 static void test_sprintf () {
 	json_t *s = json_sprintf ("foo bar %d", 42);
