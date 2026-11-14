@@ -6,20 +6,20 @@
 #include <poll.h>
 #include <pthread.h>
 
-#include "cerver/config.h"
-
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
 
-#include "cerver/cerver.h"
-#include "cerver/packets.h"
-#include "cerver/serializer.h"
+#include "cerver/config.h"
 
-#include "cerver/game/player.h"
+#include "cerver/core/cerver.h"
+#include "cerver/packets/packets.h"
+#include "cerver/packets/serializer.h"
+
 #include "cerver/game/lobby.h"
+#include "cerver/game/player.h"
 
 #define GAME_DEFAULT_PLAYER_TIMEOUT		30
 #define GAME_DEFAULT_FPS				20

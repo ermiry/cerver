@@ -1,12 +1,14 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #include "cerver/types/string.h"
-#include "cerver/game/gametype.h"
+
 #include "cerver/collections/dlist.h"
 
-GameType *game_type_get_by_name (DoubleList *game_types, const char *name);
+#include "cerver/game/types.h"
+
+GameType *game_type_get_with_name (DoubleList *game_types, const char *name);
 
 GameType *game_type_new (void) {
 
@@ -162,7 +164,7 @@ int game_type_unregister (DoubleList *game_types, const char *name) {
 }
 
 // gets a registered game type by its name
-GameType *game_type_get_by_name (DoubleList *game_types, const char *name) {
+GameType *game_type_get_with_name (DoubleList *game_types, const char *name) {
 
 	GameType *found = NULL;
 
