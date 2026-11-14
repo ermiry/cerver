@@ -1,8 +1,8 @@
 #ifndef _COLLECTIONS_POOL_H_
 #define _COLLECTIONS_POOL_H_
 
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
