@@ -1,17 +1,17 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include <sys/socket.h>
 
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/errors.h"
-#include "cerver/handler.h"
-#include "cerver/packets.h"
-#include "cerver/receive.h"
-#include "cerver/socket.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/errors.h"
+#include "cerver/handler/handler.h"
+#include "cerver/handler/receive.h"
+#include "cerver/network/socket.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/game/lobby.h"
 

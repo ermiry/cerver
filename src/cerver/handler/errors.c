@@ -1,17 +1,16 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/errors.h"
-#include "cerver/packets.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/errors.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/threads/thread.h"
 

@@ -1,56 +1,65 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include "cerver/config.h"
-
 #include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
 #include <fcntl.h>
 #include <pthread.h>
-#include <time.h>
-#include <unistd.h>
-
-#include <sys/prctl.h>
 #include <sys/poll.h>
+#include <sys/prctl.h>
+#include <unistd.h>
 
 #include "cerver/types/types.h"
 
 #include "cerver/collections/arena.h"
 #include "cerver/collections/htab.h"
 
-#include "cerver/admin.h"
-#include "cerver/auth.h"
-#include "cerver/balancer.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/errors.h"
-#include "cerver/events.h"
-#include "cerver/files.h"
-#include "cerver/handler.h"
-#include "cerver/network.h"
-#include "cerver/packets.h"
-#include "cerver/receive.h"
-#include "cerver/socket.h"
-#include "cerver/timer.h"
+#include "cerver/config.h"
 
-#include "cerver/threads/jobs.h"
-#include "cerver/threads/thread.h"
-
-#include "cerver/http/access.h"
-#include "cerver/http/http.h"
-
-#include "cerver/http/websockets/internal.h"
-#include "cerver/http/websockets/websocket.h"
+#include "cerver/admin/admin.h"
+#include "cerver/admin/handler.h"
+#include "cerver/admin/poll.h"
+#include "cerver/auth/auth.h"
+#include "cerver/auth/hold.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/connection/data.h"
+#include "cerver/connection/end.h"
+#include "cerver/connection/registry.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/end.h"
+#include "cerver/core/start.h"
+#include "cerver/files/cerver.h"
+#include "cerver/files/files.h"
+#include "cerver/files/send.h"
+#include "cerver/handler/errors.h"
+#include "cerver/handler/events.h"
+#include "cerver/handler/handler.h"
+#include "cerver/handler/receive.h"
+#include "cerver/load/balancer.h"
+#include "cerver/load/route.h"
+#include "cerver/network/network.h"
+#include "cerver/network/socket.h"
+#include "cerver/packets/packets.h"
+#include "cerver/system/timer.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
+#include "cerver/http/core/access.h"
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/responses/response.h"
+#include "cerver/http/websockets/internal.h"
+#include "cerver/http/websockets/websocket.h"
+
+#include "cerver/threads/jobs.h"
+#include "cerver/threads/thread.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
-
-#include "cerver/http/response.h"
 
 // the fd that is kept open to accept and close connections when the process runs out of fds
 static const char *HANDLER_RESERVE_FD_PATH = "/dev/null";
@@ -726,7 +735,7 @@ static CerverHandlerError cerver_client_packet_handler (
 			// the player of the client leaves its lobby
 			game_connection_end (packet->cerver, packet->client, packet->connection);
 
-			switch (client_remove_connection_by_sock_fd (
+			switch (client_remove_connection_with_sock_fd (
 				packet->cerver,
 				packet->client, packet->connection->socket->sock_fd
 			)) {
@@ -1560,9 +1569,9 @@ static inline void cerver_receive_create_normal (
 	Cerver *cerver, const i32 sock_fd
 ) {
 
-	cr->client = client_get_by_sock_fd (cerver, sock_fd);
+	cr->client = client_get_with_sock_fd (cerver, sock_fd);
 	if (cr->client) {
-		cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
+		cr->connection = connection_get_with_sock_fd_from_client (cr->client, sock_fd);
 		if (cr->connection) {
 			cr->socket = socket_reference (cr->connection->socket);
 		}
@@ -1594,7 +1603,7 @@ static inline void cerver_receive_create_on_hold (
 	Cerver *cerver, const i32 sock_fd
 ) {
 
-	cr->connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+	cr->connection = connection_get_with_sock_fd_from_on_hold (cerver, sock_fd);
 	if (cr->connection) {
 		cr->socket = socket_reference (cr->connection->socket);
 	}
@@ -1621,10 +1630,10 @@ static inline void cerver_receive_create_admin (
 	Cerver *cerver, const i32 sock_fd
 ) {
 
-	cr->admin = admin_get_by_sock_fd (cerver->admin, sock_fd);
+	cr->admin = admin_get_with_sock_fd (cerver->admin, sock_fd);
 	if (cr->admin) {
 		cr->client = cr->admin->client;
-		cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
+		cr->connection = connection_get_with_sock_fd_from_client (cr->client, sock_fd);
 		if (cr->connection) {
 			cr->socket = socket_reference (cr->connection->socket);
 		}
@@ -1735,7 +1744,7 @@ void cerver_receive_handle_failed (CerverReceive *cr) {
 		if (cr->socket->sock_fd > -1) {
 			switch (cr->type) {
 				case RECEIVE_TYPE_NORMAL: {
-					(void) client_remove_connection_by_sock_fd (
+					(void) client_remove_connection_with_sock_fd (
 						cr->cerver, cr->client, cr->socket->sock_fd
 					);
 				} break;
@@ -1745,7 +1754,7 @@ void cerver_receive_handle_failed (CerverReceive *cr) {
 				} break;
 
 				case RECEIVE_TYPE_ADMIN: {
-					(void) admin_remove_connection_by_sock_fd (
+					(void) admin_remove_connection_with_sock_fd (
 						cr->cerver->admin, cr->admin, cr->socket->sock_fd
 					);
 				} break;
@@ -2055,7 +2064,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 	// check if the connection has already ended
 	if (cr->socket->sock_fd > -1) {
-		client_remove_connection_by_sock_fd (
+		client_remove_connection_with_sock_fd (
 			cr->cerver, cr->client, cr->socket->sock_fd
 		);
 	}
@@ -2090,7 +2099,7 @@ static void cerver_receive_threads_reject (void *cerver_receive_ptr) {
 	CERVER_STATS_ADD (cr->cerver->stats->total_rejected_connections, 1);
 
 	if (cr->socket->sock_fd > -1) {
-		client_remove_connection_by_sock_fd (
+		client_remove_connection_with_sock_fd (
 			cr->cerver, cr->client, cr->socket->sock_fd
 		);
 	}
@@ -3325,7 +3334,7 @@ i32 cerver_poll_get_free_idx (Cerver *cerver) {
 }
 
 // get the idx of the connection sock fd in the cerver poll fds
-i32 cerver_poll_get_idx_by_sock_fd (Cerver *cerver, i32 sock_fd) {
+i32 cerver_poll_get_idx_with_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 	if (cerver) {
 		for (u32 i = 0; i < cerver->max_n_fds; i++)
@@ -3463,7 +3472,7 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 		pthread_mutex_lock (cerver->poll_lock);
 
 		// get the idx of the sock fd in the cerver poll fds
-		i32 idx = cerver_poll_get_idx_by_sock_fd (cerver, sock_fd);
+		i32 idx = cerver_poll_get_idx_with_sock_fd (cerver, sock_fd);
 		if (idx > -1) {
 			cerver->fds[idx].fd = -1;
 			cerver->fds[idx].events = 0;
