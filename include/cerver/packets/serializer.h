@@ -1,14 +1,14 @@
 #ifndef _CERVER_SERIALIZER_H_
 #define _CERVER_SERIALIZER_H_
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/config.h"
-
 #include "cerver/collections/arena.h"
+
+#include "cerver/config.h"
 
 #ifdef __cplusplus
 extern "C" {
