@@ -2,10 +2,10 @@
 #define _CERVER_UDP_H_
 
 #include <stdbool.h>
-#include <pthread.h>
 #include <time.h>
 
 #include <netinet/in.h>
+#include <pthread.h>
 
 #include "cerver/types/types.h"
 
@@ -13,8 +13,9 @@
 #include "cerver/collections/htab.h"
 
 #include "cerver/config.h"
-#include "cerver/network.h"
-#include "cerver/packets.h"
+
+#include "cerver/network/network.h"
+#include "cerver/packets/packets.h"
 
 // a peer of an UDP cerver that does not send anything in these secs is removed
 #define CERVER_UDP_DEFAULT_PEER_TIMEOUT		16

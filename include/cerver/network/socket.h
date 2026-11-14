@@ -5,17 +5,17 @@
 #include <time.h>
 
 #include <pthread.h>
-
 #include <sys/types.h>
 #include <sys/uio.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
-#include "cerver/config.h"
-#include "cerver/receive.h"
-
 #include "cerver/collections/freelist.h"
+
+#include "cerver/config.h"
+
+#include "cerver/core/cerver.h"
+#include "cerver/handler/receive.h"
 
 // the deleted sockets that are kept to be reused
 #define SOCKET_RECYCLE_LIMIT			FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)

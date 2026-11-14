@@ -1,19 +1,17 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
 #include <ctype.h>
-
-#include <netdb.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
-
 #include <sys/socket.h>
 #include <sys/time.h>
 
-#include "cerver/network.h"
+#include "cerver/network/network.h"
 
 // the base of a zone given as an interface index (fe80::1%2)
 #define NETWORK_ZONE_INDEX_BASE			10
