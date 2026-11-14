@@ -1,13 +1,11 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
-#include <stdarg.h>
-
 #include <errno.h>
 #include <signal.h>
-#include <pthread.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include <pthread.h>
 #include <sys/prctl.h>
 
 #include "cerver/types/types.h"

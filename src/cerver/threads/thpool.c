@@ -1,16 +1,14 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
-#include <time.h>
 #include <errno.h>
-#include <poll.h>
 #include <stdint.h>
-#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-#include <sys/eventfd.h>
-
+#include <poll.h>
 #include <pthread.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
