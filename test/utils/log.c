@@ -1,18 +1,16 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
 #include <time.h>
-#include <unistd.h>
-#include <dirent.h>
 
+#include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <cerver/utils/log.h>
 
-#include "utils.h"
-
 #include "../test.h"
+#include "utils.h"
 
 #define LOG_TEST_PATH_FORMAT			"/tmp/cerver-log-%d"
 #define LOG_TEST_PATH_SIZE				64
