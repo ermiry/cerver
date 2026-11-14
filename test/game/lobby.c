@@ -398,6 +398,9 @@ static void test_lobbies_summary (void) {
 	packet_delete (packet);
 	free (summary);
 
+	// a NULL lobby has no summary
+	test_check_null_ptr (lobby_summary_packet_create (NULL, GAME_PACKET_TYPE_LOBBY_UPDATE, false));
+
 	// the players with an id are added to a scoreboard
 	ScoreBoard *scores = game_score_create (LOBBIES_CLIENTS, 1, LOBBIES_SCORE);
 	test_check_ptr (scores);
