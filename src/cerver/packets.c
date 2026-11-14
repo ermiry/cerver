@@ -1070,7 +1070,8 @@ u8 packet_append_data (
 
 	u8 retval = 1;
 
-	if (packet && data) {
+	// the new size of the data must fit in a size_t
+	if (packet && data && (data_size <= (SIZE_MAX - packet->data_size))) {
 		// append the data to the end if the packet already has data
 		if (packet->data) {
 			size_t new_size = packet->data_size + data_size;
@@ -1175,6 +1176,9 @@ u8 packet_set_packet (
 			if (packet->packet) free (packet->packet);
 		}
 
+		// the copy belongs to the packet, also after a reference
+		packet->packet_ref = false;
+
 		packet->packet_size = data_size;
 		packet->packet = malloc (packet->packet_size);
 		if (packet->packet) {
@@ -1217,7 +1221,7 @@ u8 packet_set_packet_ref (
 // returns 0 on sucess, 1 on error
 u8 packet_generate (Packet *packet) {
 
-	u8 retval = 0;
+	u8 retval = 1;
 
 	if (packet) {
 		// a request packet references its own header
@@ -1916,11 +1920,17 @@ u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
 ) {
 
-	return packet_send_internal (
-		packet, flags, total_sent,
-		raw, false, false,
-		packet->cerver, packet->client, packet->connection, packet->lobby
-	);
+	u8 retval = 1;
+
+	if (packet) {
+		retval = packet_send_internal (
+			packet, flags, total_sent,
+			raw, false, false,
+			packet->cerver, packet->client, packet->connection, packet->lobby
+		);
+	}
+
+	return retval;
 
 }
 
@@ -1961,11 +1971,17 @@ u8 packet_send_unsafe (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
 ) {
 
-	return packet_send_internal (
-		packet, flags, total_sent,
-		raw, false, true,
-		packet->cerver, packet->client, packet->connection, packet->lobby
-	);
+	u8 retval = 1;
+
+	if (packet) {
+		retval = packet_send_internal (
+			packet, flags, total_sent,
+			raw, false, true,
+			packet->cerver, packet->client, packet->connection, packet->lobby
+		);
+	}
+
+	return retval;
 
 }
 
@@ -2000,11 +2016,17 @@ u8 packet_send_split (
 	const Packet *packet, int flags, size_t *total_sent
 ) {
 
-	return packet_send_internal (
-		packet, flags, total_sent,
-		false, true, false,
-		packet->cerver, packet->client, packet->connection, packet->lobby
-	);
+	u8 retval = 1;
+
+	if (packet) {
+		retval = packet_send_internal (
+			packet, flags, total_sent,
+			false, true, false,
+			packet->cerver, packet->client, packet->connection, packet->lobby
+		);
+	}
+
+	return retval;
 
 }
 
@@ -2061,7 +2083,7 @@ u8 packet_send_pieces (
 
 	u8 retval = 1;
 
-	if (packet && pieces && sizes) {
+	if (packet && packet->connection && packet->connection->socket && pieces && sizes) {
 		(void) pthread_mutex_lock (packet->connection->socket->write_mutex);
 
 		size_t actual_sent = 0;
@@ -2110,7 +2132,7 @@ u8 packet_send_to_socket (
 	Socket *socket, int flags, size_t *total_sent, bool raw
 ) {
 
-	u8 retval = 0;
+	u8 retval = 1;
 
 	if (packet && socket) {
 		u8 header[PACKET_HEADER_SIZE];
