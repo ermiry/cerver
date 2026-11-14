@@ -1,22 +1,21 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-
 #include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/handler.h"
+#include "cerver/handler/handler.h"
+
+#include "cerver/http/core/http.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/security/auth.h"
 
 #include "cerver/threads/thread.h"
-
-#include "cerver/http/auth.h"
-#include "cerver/http/http.h"
-#include "cerver/http/route.h"
-#include "cerver/http/request.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"

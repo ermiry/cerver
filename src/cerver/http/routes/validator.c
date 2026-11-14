@@ -1,10 +1,9 @@
-#include <stdlib.h>
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <ctype.h>
-
-#include "cerver/http/validator.h"
+#include "cerver/http/routes/validator.h"
 
 static const char http_param_validator_negative = '-';
 static const char http_param_validator_uuid_separator = '-';

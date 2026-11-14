@@ -2,7 +2,7 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/http/middleware.h"
+#include "cerver/http/routes/middleware.h"
 
 const char *http_middleware_result_to_string (
 	const HttpMiddlewareResult result

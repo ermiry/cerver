@@ -1,26 +1,25 @@
-#include <stdlib.h>
+#include <ctype.h>
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <stdarg.h>
-#include <ctype.h>
-
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/http/auth.h"
-#include "cerver/http/compatibility.h"
-#include "cerver/http/http.h"
-#include "cerver/http/middleware.h"
-#include "cerver/http/request.h"
-#include "cerver/http/route.h"
-#include "cerver/http/tree.h"
-#include "cerver/http/validator.h"
-
+#include "cerver/http/core/http.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/compatibility.h"
+#include "cerver/http/routes/middleware.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/tree.h"
+#include "cerver/http/routes/validator.h"
+#include "cerver/http/security/auth.h"
+#include "cerver/http/websockets/internal.h"
 
 #include "cerver/utils/log.h"
 
