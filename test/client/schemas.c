@@ -1,14 +1,15 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/client.h>
-#include <cerver/packets.h>
-#include <cerver/serializer.h>
-
-#include <app/report.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/requests.h>
+#include <cerver/packets/packets.h>
+#include <cerver/packets/serializer.h>
 
 #include "../test.h"
+#include <app/report.h>
 
 // the older peer: it sends reports without the field that the cerver added,
 // and reads the answers that have it, ignoring it

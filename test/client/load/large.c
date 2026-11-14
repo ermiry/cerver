@@ -1,12 +1,11 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include <cerver/packets.h>
-
-#include "balancer.h"
+#include <cerver/packets/packets.h>
 
 #include "../../test.h"
+#include "balancer.h"
 
 // big packets go through the balancer to a service and back, with their content checked,
 // up to the biggest one that the balancer takes,

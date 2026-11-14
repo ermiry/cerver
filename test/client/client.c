@@ -1,11 +1,11 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/client.h>
+#include <cerver/client/client.h>
+#include <cerver/client/events.h>
 
 #include "../test.h"
-
 #include "client.h"
 
 char client_session_id[CLIENT_TEST_SESSION_ID_SIZE] = { 0 };

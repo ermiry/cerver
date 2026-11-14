@@ -1,19 +1,21 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <unistd.h>
-#include <pthread.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/client/requests.h>
+#include <cerver/connection/connection.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
 
