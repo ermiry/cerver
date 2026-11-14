@@ -432,10 +432,10 @@ Client *client_create_with_connection (
 
 }
 
-// sets the client's name
+// sets the client's name, a NULL name keeps the current one
 void client_set_name (Client *client, const char *name) {
 
-	if (client) {
+	if (client && name) {
 		(void) strncpy (client->name, name, CLIENT_NAME_SIZE - 1);
 	}
 
@@ -1170,7 +1170,7 @@ Client *client_get_by_session_id (
 
 	Client *client = NULL;
 
-	if (session_id) {
+	if (cerver && session_id) {
 		// create our search query
 		Client *client_query = client_new ();
 		if (client_query) {
