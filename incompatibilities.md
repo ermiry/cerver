@@ -3,6 +3,57 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-2 (from 3.0b-1)
+
+The structure of the tree: every header changes its path and the functions with `_by_` are named with `_with_`;
+the rest of the symbols of `libcerver.so` are the same. The table with every old and new path is in `roadmap.md`
+§11.
+
+- **Every include changes:** the headers are in folders by domain (`core/`, `admin/`, `auth/`, `client/`,
+  `connection/`, `files/`, `handler/`, `load/`, `network/`, `packets/`, `system/`; `http/core/`, `http/headers/`,
+  `http/requests/`, `http/responses/`, `http/routes/`, `http/security/`), e.g. `cerver/client.h` is
+  `cerver/client/client.h`, `cerver/auth.h` is `cerver/auth/auth.h`, `cerver/http/request.h` is
+  `cerver/http/requests/request.h`, `cerver/http/headers.h` is `cerver/http/headers/fields.h` and
+  `cerver/game/gametype.h` is `cerver/game/types.h`; `cerver/config.h` and `cerver/version.h` stay on top. There are
+  no headers with the old paths
+- **The big headers are split in parts,** and the main header of a module does not include its parts: a program
+  that used `cerver_start ()` with `cerver/cerver.h` now includes `cerver/core/start.h` (or the umbrella). The parts
+  are `cerver/core/{types,info,data,handler,start,update,end,report,serialization}.h`,
+  `cerver/admin/{cerver,stats,lifecycle,handler,poll}.h`, `cerver/auth/hold.h`,
+  `cerver/client/{events,connect,requests,handler}.h`,
+  `cerver/connection/{stats,data,lifecycle,end,registry,update,send}.h`,
+  `cerver/files/{cerver,images,send,receive}.h`, `cerver/load/{stats,service,start,route,end}.h`,
+  `cerver/packets/header.h`, `cerver/http/core/{pairs,public,routes,uploads,limits,settings,stats,admin,handler}.h`
+  and `cerver/http/headers/{types,header,buffer}.h`
+- **`<cerver/cerver.h>` is now the umbrella of the core** and **`<cerver/http/http.h>` the one of HTTP**: each one
+  includes every public header of its part. The `Cerver` is declared in `cerver/core/cerver.h` and the
+  `HttpCerver` in `cerver/http/core/http.h`; a program that included `cerver/cerver.h` or `cerver/http/http.h`
+  still compiles, with more headers
+- **The functions with `_by_` are named with `_with_`:** `admin_comparator_with_id ()`,
+  `admin_get_with_session_id ()`, `admin_get_with_sock_fd ()`, `admin_remove_connection_with_sock_fd ()`,
+  `cerver_poll_get_idx_with_sock_fd ()`, `client_get_with_session_id ()`, `client_get_with_sock_fd ()`,
+  `client_remove_connection_with_sock_fd ()`, `connection_get_with_sock_fd_from_admin ()`,
+  `connection_get_with_sock_fd_from_client ()`, `connection_get_with_sock_fd_from_on_hold ()`,
+  `dlist_merge_two_with_condition ()`, `dlist_remove_with_condition ()`, `dlist_split_with_condition ()`,
+  `file_send_with_fd ()`, `files_image_get_type_with_extension ()`, `game_type_get_with_name ()`,
+  `http_cerver_add_responses_header_with_name ()`, `http_content_type_with_extension ()`,
+  `http_content_type_with_mime ()`, `http_content_type_mime_with_extension ()`, `http_header_type_with_string ()`,
+  `http_headers_{add,count,find,remove,set}_with_name ()`, `http_response_header_{add,count,get,remove,set}_with_name ()`,
+  `lobby_search_with_id ()`, `player_comparator_with_id ()` and `player_get_with_sock_fd_list ()`
+- **Headers that are not installed anymore:** `cerver/http/access.h`, `cerver/http/admin.h`,
+  `cerver/http/compatibility.h` and `cerver/http/recycle.h` (their functions are `CERVER_PRIVATE`, still exported);
+  the `CERVER_PRIVATE` declarations of `cerver/http/custom.h` (`http_custom_header_create ()`,
+  `http_custom_header_set_value ()`), the `CERVER_HIDDEN` ones of `cerver/http/websockets/settings.h` and
+  `http_response_send_pieces_status ()` of `cerver/http/response.h` moved to the internal headers of `src/`
+- `HttpAdminFileSystemStats` and the admin methods of the old `cerver/http/admin.h` are internal
+  (`src/cerver/http/core/internal.h`); the public `cerver/http/core/admin.h` has the admin settings of the
+  `HttpCerver`
+- The header guards follow the paths (`_CERVER_CORE_CERVER_H_`, `_CERVER_CLIENT_CLIENT_H_`,
+  `_CERVER_HTTP_HEADERS_FIELDS_H_`, …); `_CERVER_H_` and `_CERVER_HTTP_H_` are the umbrellas
+- The tests binaries follow the folders: `test/bin/connection`, `handler`, `load` (balancer and routing) and
+  `network` (network, socket and udp) replace `test/bin/{receive,balancer,routing,socket,udp}`; the handler pair is
+  `cerver/handler`
+
 ## 3.0b-1 (from 2.1b-13)
 
 The first beta of the 3.0 line (`labs`), born from the 2.1b-13 of `nightly`: the line, its license and the base
