@@ -4,16 +4,16 @@
 #include <sys/stat.h>
 #include <sys/uio.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
-#include "cerver/handler.h"
+#include "cerver/handler/handler.h"
 
-#include "cerver/http/content.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/origin.h"
-#include "cerver/http/status.h"
-#include "cerver/http/utils.h"
+#include "cerver/http/core/utils.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/requests/content.h"
+#include "cerver/http/responses/status.h"
+#include "cerver/http/security/origin.h"
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
@@ -177,28 +177,28 @@ CERVER_EXPORT const char *http_response_header_get (
 // works like http_response_header_set () with the name of any header,
 // the name must be a token, and it is compared without case
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_response_header_set_by_name (
+CERVER_EXPORT u8 http_response_header_set_with_name (
 	HttpResponse *response, const char *name, const char *value
 );
 
 // works like http_response_header_add () with the name of any header
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_response_header_add_by_name (
+CERVER_EXPORT u8 http_response_header_add_with_name (
 	HttpResponse *response, const char *name, const char *value
 );
 
 // works like http_response_header_remove () with the name of any header
-CERVER_EXPORT unsigned int http_response_header_remove_by_name (
+CERVER_EXPORT unsigned int http_response_header_remove_with_name (
 	HttpResponse *response, const char *name
 );
 
 // works like http_response_header_count () with the name of any header
-CERVER_EXPORT unsigned int http_response_header_count_by_name (
+CERVER_EXPORT unsigned int http_response_header_count_with_name (
 	const HttpResponse *response, const char *name
 );
 
 // works like http_response_header_get () with the name of any header
-CERVER_EXPORT const char *http_response_header_get_by_name (
+CERVER_EXPORT const char *http_response_header_get_with_name (
 	const HttpResponse *response, const char *name,
 	const unsigned int position, size_t *value_length
 );
@@ -366,13 +366,6 @@ CERVER_PRIVATE u8 http_response_send_not_modified_header (
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 http_response_send_pieces (
 	const struct _HttpReceive *http_receive, struct iovec *parts, const int n_parts
-);
-
-// works as http_response_send_pieces () for a complete response that is not compiled,
-// it is counted with its status, like a 101 of an upgrade
-CERVER_HIDDEN u8 http_response_send_pieces_status (
-	const struct _HttpReceive *http_receive, const http_status status,
-	struct iovec *parts, const int n_parts
 );
 
 // sends a response to the connection's socket

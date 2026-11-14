@@ -1,48 +1,50 @@
+#include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <stdio.h>
-#include <strings.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
 #include <time.h>
 
+#include <fcntl.h>
+#include <poll.h>
+#include <strings.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/arena.h"
 #include "cerver/collections/pool.h"
 
-#include "cerver/cerver.h"
-#include "cerver/errors.h"
-#include "cerver/files.h"
 #include "cerver/version.h"
 
-#include "cerver/http/compression.h"
-#include "cerver/http/conditional.h"
-#include "cerver/http/content.h"
-#include "cerver/http/date.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/http.h"
-#include "cerver/http/origin.h"
-#include "cerver/http/recycle.h"
-#include "cerver/http/request.h"
-#include "cerver/http/response.h"
-#include "cerver/http/status.h"
-#include "cerver/http/stream.h"
-#include "cerver/http/tree.h"
-#include "cerver/http/utils.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/start.h"
+#include "cerver/files/files.h"
+#include "cerver/handler/errors.h"
 
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/recycle.h"
+#include "cerver/http/core/utils.h"
+#include "cerver/http/headers/buffer.h"
+#include "cerver/http/headers/fields.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
+#include "cerver/http/requests/content.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/responses/compression.h"
+#include "cerver/http/responses/conditional.h"
+#include "cerver/http/responses/date.h"
+#include "cerver/http/responses/internal.h"
+#include "cerver/http/responses/response.h"
+#include "cerver/http/responses/status.h"
+#include "cerver/http/responses/stream.h"
+#include "cerver/http/routes/tree.h"
+#include "cerver/http/security/origin.h"
 
 #include "cerver/utils/utils.h"
 
@@ -346,14 +348,14 @@ const char *http_response_header_get (
 
 }
 
-u8 http_response_header_set_by_name (
+u8 http_response_header_set_with_name (
 	HttpResponse *response, const char *name, const char *value
 ) {
 
 	u8 retval = 1;
 
 	if (response && name && value) {
-		retval = http_headers_set_by_name (
+		retval = http_headers_set_with_name (
 			&response->headers, name, strlen (name), value, strlen (value)
 		);
 
@@ -364,14 +366,14 @@ u8 http_response_header_set_by_name (
 
 }
 
-u8 http_response_header_add_by_name (
+u8 http_response_header_add_with_name (
 	HttpResponse *response, const char *name, const char *value
 ) {
 
 	u8 retval = 1;
 
 	if (response && name && value) {
-		retval = http_headers_add_by_name (
+		retval = http_headers_add_with_name (
 			&response->headers, name, strlen (name), value, strlen (value)
 		);
 
@@ -382,14 +384,14 @@ u8 http_response_header_add_by_name (
 
 }
 
-unsigned int http_response_header_remove_by_name (
+unsigned int http_response_header_remove_with_name (
 	HttpResponse *response, const char *name
 ) {
 
 	unsigned int removed = 0;
 
 	if (response && name) {
-		removed = http_headers_remove_by_name (&response->headers, name, strlen (name));
+		removed = http_headers_remove_with_name (&response->headers, name, strlen (name));
 
 		if (removed) http_response_headers_changed (response);
 	}
@@ -398,23 +400,23 @@ unsigned int http_response_header_remove_by_name (
 
 }
 
-unsigned int http_response_header_count_by_name (
+unsigned int http_response_header_count_with_name (
 	const HttpResponse *response, const char *name
 ) {
 
 	return (response && name) ?
-		http_headers_count_by_name (&response->headers, name, strlen (name)) : 0;
+		http_headers_count_with_name (&response->headers, name, strlen (name)) : 0;
 
 }
 
-const char *http_response_header_get_by_name (
+const char *http_response_header_get_with_name (
 	const HttpResponse *response, const char *name,
 	const unsigned int position, size_t *value_length
 ) {
 
 	return http_response_header_field_value (
 		response,
-		(response && name) ? http_headers_find_by_name (
+		(response && name) ? http_headers_find_with_name (
 			&response->headers, name, strlen (name), position
 		) : NULL,
 		value_length
@@ -786,7 +788,7 @@ static bool http_response_default_applies (
 
 	return (field->type != HTTP_HEADER_UNDEFINED) ?
 		!http_headers_count (headers, field->type) :
-		!http_headers_count_by_name (headers, name, name_length);
+		!http_headers_count_with_name (headers, name, name_length);
 
 }
 
@@ -1215,13 +1217,13 @@ typedef struct HttpResponseMessage {
 
 } HttpResponseMessage;
 
-static void http_response_extra_add_by_name (
+static void http_response_extra_add_with_name (
 	HttpHeaders *extra,
 	const char *name, const size_t name_length,
 	const char *value, const size_t value_length
 ) {
 
-	if (http_headers_add_by_name (extra, name, name_length, value, value_length)) {
+	if (http_headers_add_with_name (extra, name, name_length, value, value_length)) {
 		cerver_log_warning (
 			"http_response_send () - The %.*s header could not be added to the response",
 			(int) name_length, name
@@ -1309,13 +1311,13 @@ static bool http_response_message_find_in_lists (
 	const HttpHeaders *owner = message->headers;
 	const HttpHeaderField *field = known ?
 		http_headers_find (owner, type, 0) :
-		http_headers_find_by_name (owner, name, name_length, 0);
+		http_headers_find_with_name (owner, name, name_length, 0);
 
 	if (!field) {
 		owner = message->defaults;
 		field = known ?
 			http_headers_find (owner, type, 0) :
-			http_headers_find_by_name (owner, name, name_length, 0);
+			http_headers_find_with_name (owner, name, name_length, 0);
 	}
 
 	if (field && !http_response_message_keeps (message, owner, field)) field = NULL;
@@ -1445,7 +1447,7 @@ static void http_response_extra_vary (
 			http_response_vary_name, sizeof (http_response_vary_name) - 1, NULL, NULL
 		)
 	) {
-		http_response_extra_add_by_name (
+		http_response_extra_add_with_name (
 			&message->extra,
 			http_response_vary_name, sizeof (http_response_vary_name) - 1,
 			vary, strlen (vary)
@@ -2614,7 +2616,7 @@ static ContentType http_response_handle_video_content (
 	);
 
 	if (ext) {
-		content_type = http_content_type_by_extension (ext);
+		content_type = http_content_type_with_extension (ext);
 	}
 
 	return content_type;

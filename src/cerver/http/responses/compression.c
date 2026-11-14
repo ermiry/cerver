@@ -1,9 +1,9 @@
+#include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
-#include <ctype.h>
+#include <strings.h>
 
 #ifdef CERVER_ZLIB
 #include <zlib.h>
@@ -11,7 +11,7 @@
 
 #include "cerver/collections/arena.h"
 
-#include "cerver/http/compression.h"
+#include "cerver/http/responses/compression.h"
 
 static const char http_compression_gzip_name[] = { HTTP_COMPRESSION_ENCODING };
 static const size_t http_compression_gzip_name_length = 4;
