@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+
 #include <strings.h>
 
 #include "cerver/types/types.h"
@@ -8,9 +9,9 @@
 #include "cerver/crypto/hash.h"
 #include "cerver/crypto/random.h"
 
-#include "cerver/utils/base64.h"
-
 #include "cerver/http/websockets/handshake.h"
+
+#include "cerver/utils/base64.h"
 
 #define HTTP_WEB_SOCKET_GUID_LENGTH					(sizeof (HTTP_WEB_SOCKET_GUID) - 1)
 
