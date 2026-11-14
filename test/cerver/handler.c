@@ -1,19 +1,19 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
-#include <cerver/cerver.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
 
 #include <cerver/utils/log.h>
 
-#include <app/handler.h>
-
 #include "../test.h"
+#include <app/handler.h>
 
 static const char *cerver_name = "test-cerver";
 static const char *welcome_message = "Hello there!";

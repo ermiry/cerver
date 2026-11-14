@@ -1,15 +1,15 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/client.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/utils/log.h>
 
-#include <app/app.h>
-
 #include "../test.h"
+#include <app/app.h>
 
 #define HANDLER_CLIENT_PACKETS			100
 #define HANDLER_CLIENT_HANDLER_ID		10
