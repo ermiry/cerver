@@ -630,7 +630,7 @@ int sock_set_timeout (int sock_fd, time_t timeout) {
 		sock_fd,
 		SOL_SOCKET, SO_RCVTIMEO,
 		(const char *) &tv, sizeof (struct timeval)
-	);
+	) ? 1 : 0;
 
 }
 
