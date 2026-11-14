@@ -1,24 +1,32 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <unistd.h>
+
 #include <pthread.h>
-
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/balancer.h>
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/errors.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/connection.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/report.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/errors.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/load/balancer.h>
+#include <cerver/load/end.h>
+#include <cerver/load/service.h>
+#include <cerver/load/start.h>
+#include <cerver/packets/packets.h>
 
-#include "test.h"
+#include "../test.h"
+#include "load.h"
 
 // a load balancer and its services in the same process, with cerver clients:
 // - round robin uses every service, handler id uses the one in the header
@@ -984,12 +992,7 @@ static void test_routing_discarded_response (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
-
-	(void) argc;
-	(void) argv;
-
-	test_output_init ();
+void routing_tests (void) {
 
 	(void) printf ("Testing BALANCER routing...\n");
 
@@ -1012,7 +1015,5 @@ int main (int argc, char **argv) {
 	test_routing_discarded_response ();
 
 	(void) printf ("Done with BALANCER routing tests!\n\n");
-
-	return 0;
 
 }
