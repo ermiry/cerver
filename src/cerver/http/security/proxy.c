@@ -1,19 +1,18 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <ctype.h>
-#include <pthread.h>
-
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
-#include "cerver/network.h"
+#include "cerver/network/network.h"
 
-#include "cerver/http/headers.h"
-#include "cerver/http/http.h"
-#include "cerver/http/proxy.h"
-#include "cerver/http/request.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/security/proxy.h"
 
 #define HTTP_PROXY_IPV4_SIZE				4
 #define HTTP_PROXY_IPV4_BITS				32

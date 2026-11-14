@@ -1,23 +1,22 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/pool.h"
 
-#include "cerver/http/auth.h"
-#include "cerver/http/http.h"
+#include "cerver/files/files.h"
 
+#include "cerver/http/core/http.h"
 #include "cerver/http/json/json.h"
-
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
+#include "cerver/http/security/auth.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -740,3 +739,136 @@ void http_jwt_end_pool (void) {
 	http_jwt_pool = NULL;
 
 }
+
+#pragma region auth
+
+// loads a key from a filename that can be used for jwt
+// returns a newly allocated c string on success, NULL on error
+char *http_cerver_auth_load_key (
+	const char *filename, size_t *keylen
+) {
+
+	char *key = NULL;
+
+	if (filename && keylen) {
+		key = file_read (filename, keylen);
+	}
+
+	return key;
+
+}
+
+// the algorithms of the tokens of a cerver always sign them
+static bool http_cerver_auth_jwt_algorithm_is_valid (const jwt_alg_t jwt_alg) {
+
+	return (jwt_alg > JWT_ALG_NONE) && (jwt_alg < JWT_ALG_INVAL);
+
+}
+
+// sets the jwt algorithm used for encoding & decoding jwt tokens
+// the default value is JWT_ALG_HS256, JWT_ALG_NONE is not accepted
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_set_jwt_algorithm (
+	HttpCerver *http_cerver, const jwt_alg_t jwt_alg
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && http_cerver_auth_jwt_algorithm_is_valid (jwt_alg)) {
+		http_cerver->jwt_alg = jwt_alg;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// a setter called again replaces the value it set before
+static void http_cerver_auth_set_string (
+	String **destination, const char *value
+) {
+
+	str_delete (*destination);
+
+	*destination = value ? str_new (value) : NULL;
+
+}
+
+// sets the filename from where the jwt private key will be loaded
+void http_cerver_auth_set_jwt_priv_key_filename (
+	HttpCerver *http_cerver, const char *filename
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_key_name, filename);
+	}
+
+}
+
+// sets the filename from where the jwt public key will be loaded
+void http_cerver_auth_set_jwt_pub_key_filename (
+	HttpCerver *http_cerver, const char *filename
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_opt_pub_key_name, filename);
+	}
+
+}
+
+// sets the longest bearer token that is decoded,
+// a longer one is rejected without decoding it
+// the default value is HTTP_CERVER_DEFAULT_JWT_MAX_SIZE, 0 has no limit
+void http_cerver_auth_set_jwt_max_size (
+	HttpCerver *http_cerver, const size_t max_size
+) {
+
+	if (http_cerver) http_cerver->jwt_max_size = max_size;
+
+}
+
+// sets if a token without "exp" is rejected
+// the default value is HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION
+void http_cerver_auth_set_jwt_require_expiration (
+	HttpCerver *http_cerver, const bool require
+) {
+
+	if (http_cerver) http_cerver->jwt_require_expiration = require;
+
+}
+
+// sets the seconds of clock skew that are accepted in "exp" and "nbf"
+// the default value is HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS
+void http_cerver_auth_set_jwt_leeway_seconds (
+	HttpCerver *http_cerver, const unsigned int leeway_seconds
+) {
+
+	if (http_cerver) http_cerver->jwt_leeway_seconds = leeway_seconds;
+
+}
+
+// sets the "iss" that every token must have, NULL accepts any
+void http_cerver_auth_set_jwt_issuer (
+	HttpCerver *http_cerver, const char *issuer
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_issuer, issuer);
+	}
+
+}
+
+// sets the "aud" that every token must have, as its value or in its array,
+// NULL accepts any
+void http_cerver_auth_set_jwt_audience (
+	HttpCerver *http_cerver, const char *audience
+) {
+
+	if (http_cerver) {
+		http_cerver_auth_set_string (&http_cerver->jwt_audience, audience);
+	}
+
+}
+
+#pragma endregion
