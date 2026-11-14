@@ -70,11 +70,39 @@ static void test_http_origin_reset (void) {
 
 }
 
+// an origin that was not zeroed, followed by more bytes that are not a '\0'
+typedef struct TestOriginGuard {
+
+	HttpOrigin origin;
+	char after[HTTP_ORIGIN_VALUE_SIZE];
+
+} TestOriginGuard;
+
+// a value that does not fit is truncated and ends inside the origin
+static void test_http_origin_init_truncated (void) {
+
+	char long_value[HTTP_ORIGIN_VALUE_SIZE * 2] = { 0 };
+	(void) memset (long_value, 'a', sizeof (long_value) - 1);
+
+	TestOriginGuard guard;
+	(void) memset (&guard, 'x', sizeof (TestOriginGuard));
+	guard.after[HTTP_ORIGIN_VALUE_SIZE - 1] = '\0';
+
+	http_origin_init (&guard.origin, long_value);
+
+	test_check_int_eq (
+		http_origin_get_len (&guard.origin), HTTP_ORIGIN_VALUE_SIZE - 1,
+		"a truncated origin does not end inside its value"
+	);
+
+}
+
 void http_tests_origins (void) {
 
 	(void) printf ("Testing HTTP origins...\n");
 
 	test_http_origin_init ();
+	test_http_origin_init_truncated ();
 	test_http_origin_reset ();
 
 	(void) printf ("Done!\n");

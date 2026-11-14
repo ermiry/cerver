@@ -197,6 +197,27 @@ static void test_http_multi_part_set_generated_filename (void) {
 
 }
 
+// a generated filename that does not fit is truncated and its length is the one that was kept
+static void test_http_multi_part_set_generated_filename_truncated (void) {
+
+	char long_filename[HTTP_MULTI_PART_GENERATED_FILENAME_SIZE * 2] = { 0 };
+	(void) memset (long_filename, 'a', sizeof (long_filename) - 1);
+
+	MultiPart *mpart = test_http_multi_part_new ();
+	test_check_ptr (mpart);
+
+	http_multi_part_set_generated_filename (mpart, "%s", long_filename);
+
+	test_check_int_eq (
+		http_multi_part_get_generated_filename_len (mpart),
+		(int) strlen (http_multi_part_get_generated_filename (mpart)),
+		"the length of a truncated generated filename is not the one that was kept"
+	);
+
+	http_multi_part_delete (mpart);
+
+}
+
 static void test_http_multi_part_get_n_reads (void) {
 
 	MultiPart *mpart = test_http_multi_part_new ();
@@ -294,6 +315,7 @@ void http_tests_multiparts (void) {
 
 	test_http_multi_part_get_filename ();
 	test_http_multi_part_set_generated_filename ();
+	test_http_multi_part_set_generated_filename_truncated ();
 	test_http_multi_part_get_n_reads ();
 	test_http_multi_part_get_total_wrote ();
 	// test_http_multi_part_get_saved_filename ();
