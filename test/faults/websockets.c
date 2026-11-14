@@ -1,22 +1,22 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
-#include <poll.h>
-#include <pthread.h>
-#include <unistd.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/tree.h>
-
+#include <cerver/http/core/http.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/client.h>
 #include <cerver/http/websockets/frame.h>
 #include <cerver/http/websockets/handshake.h>
@@ -25,9 +25,7 @@
 
 #include "../address.h"
 #include "../test.h"
-
 #include "../websockets/raw.h"
-
 #include "faults.h"
 #include "websockets.h"
 

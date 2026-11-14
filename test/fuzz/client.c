@@ -1,18 +1,19 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <unistd.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <sys/socket.h>
-
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/network.h>
+#include <unistd.h>
 
 #include <cerver/collections/dlist.h>
+
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/registry.h>
+#include <cerver/network/network.h>
 
 // the stream that a cerver sends to a client, read with client_connection_get_next_packet ():
 // it is written to a socket pair and every packet is read until the stream ends,

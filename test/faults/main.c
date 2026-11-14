@@ -1,11 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
-
 #include <signal.h>
-
-#include "websockets.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "../test.h"
+#include "websockets.h"
 
 int main (void) {
 

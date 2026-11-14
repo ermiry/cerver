@@ -1,25 +1,26 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
-#include <sys/socket.h>
+#include <cerver/types/string.h>
 
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/registry.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/game/game.h>
-#include <cerver/game/gametype.h>
 #include <cerver/game/lobby.h>
-
-#include <cerver/types/string.h>
+#include <cerver/game/types.h>
 
 // the game requests of a client to a game cerver that is not started:
 // the input is a sequence of requests, each one a byte with its request type,
