@@ -1,11 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/htab.h>
 
 #include "../test.h"
-
 #include "data.h"
 
 static Htab *test_htab_create (void) {

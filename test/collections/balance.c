@@ -1,11 +1,10 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #include <cerver/collections/avl.h>
 
 #include "../test.h"
-
 #include "data.h"
 
 // bugs that this suite pinned:

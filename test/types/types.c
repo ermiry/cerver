@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-
-#include "types.h"
+#include <stdlib.h>
 
 #include "../test.h"
+#include "types.h"
 
 int main (void) {
 

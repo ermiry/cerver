@@ -1,15 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <cerver/utils/log.h>
 
-#include "collections.h"
-
 #include "../test.h"
+#include "collections.h"
 
 int main (int argc, char **argv) {
 
