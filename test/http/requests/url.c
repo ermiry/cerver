@@ -1,10 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/url.h>
+#include <cerver/http/requests/url.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 // bugs these tests fixed:
 // - a NULL string was passed to strlen () by http_url_encode () and http_url_decode ()

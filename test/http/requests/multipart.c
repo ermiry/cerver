@@ -1,11 +1,11 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/multipart.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/requests/multipart.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static void test_http_multi_part_fields (MultiPart *mpart) {
 

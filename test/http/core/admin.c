@@ -2,13 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
 
-#include <cerver/http/admin.h>
-#include <cerver/http/http.h>
-#include <cerver/http/response.h>
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/http.h>
+#include "cerver/http/core/internal.h"
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/responses/response.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *uploads_file_system = { "/var/uploads" };
 

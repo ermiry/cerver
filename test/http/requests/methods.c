@@ -1,10 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/method.h>
+#include <cerver/http/requests/method.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 // the values of the parser (llhttp) that are not methods of a request
 #define TEST_METHODS_PRI				34

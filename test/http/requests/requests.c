@@ -1,18 +1,16 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/version.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/method.h>
-#include <cerver/http/request.h>
-
+#include <cerver/http/core/http.h>
 #include <cerver/http/json/json.h>
+#include <cerver/http/requests/method.h>
+#include <cerver/http/requests/request.h>
 
-#include "data.h"
-
-#include "../test.h"
+#include "../../test.h"
+#include "../data.h"
 
 static const char *base_dir = { "/var/uploads" };
 static const char *basic_dir = { "hola" };

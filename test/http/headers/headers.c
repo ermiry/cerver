@@ -1,12 +1,12 @@
-#include <stdlib.h>
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <ctype.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/headers/header.h>
 
-#include <cerver/http/headers.h>
-
-#include "../test.h"
+#include "../../test.h"
 
 static const char *HEADER_ACCEPT = { "Accept" };
 static const char *HEADER_ACCEPT_CHARSET = { "Accept-Charset" };
@@ -95,45 +95,45 @@ static void test_http_headers_get_string (void) {
 
 static void test_http_headers_get_type_by_string (void) {
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ACCEPT), HTTP_HEADER_ACCEPT, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ACCEPT_CHARSET), HTTP_HEADER_ACCEPT_CHARSET, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ACCEPT_ENCODING), HTTP_HEADER_ACCEPT_ENCODING, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ACCEPT_LANGUAGE), HTTP_HEADER_ACCEPT_LANGUAGE, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT), HTTP_HEADER_ACCEPT, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_CHARSET), HTTP_HEADER_ACCEPT_CHARSET, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_ENCODING), HTTP_HEADER_ACCEPT_ENCODING, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_LANGUAGE), HTTP_HEADER_ACCEPT_LANGUAGE, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_AUTHORIZATION), HTTP_HEADER_AUTHORIZATION, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_AUTHORIZATION), HTTP_HEADER_AUTHORIZATION, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_CACHE_CONTROL), HTTP_HEADER_CACHE_CONTROL, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_CACHE_CONTROL), HTTP_HEADER_CACHE_CONTROL, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_CONNECTION), HTTP_HEADER_CONNECTION, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONNECTION), HTTP_HEADER_CONNECTION, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_CONTENT_LENGTH), HTTP_HEADER_CONTENT_LENGTH, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_CONTENT_TYPE), HTTP_HEADER_CONTENT_TYPE, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONTENT_LENGTH), HTTP_HEADER_CONTENT_LENGTH, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONTENT_TYPE), HTTP_HEADER_CONTENT_TYPE, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_COOKIE), HTTP_HEADER_COOKIE, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_COOKIE), HTTP_HEADER_COOKIE, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_DATE), HTTP_HEADER_DATE, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_DATE), HTTP_HEADER_DATE, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_EXPECT), HTTP_HEADER_EXPECT, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_EXPECT), HTTP_HEADER_EXPECT, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_HOST), HTTP_HEADER_HOST, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_HOST), HTTP_HEADER_HOST, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_ORIGIN), HTTP_HEADER_ORIGIN, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_ORIGIN), HTTP_HEADER_ORIGIN, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_PROXY_AUTHORIZATION), HTTP_HEADER_PROXY_AUTHORIZATION, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_PROXY_AUTHORIZATION), HTTP_HEADER_PROXY_AUTHORIZATION, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_UPGRADE), HTTP_HEADER_UPGRADE, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_UPGRADE), HTTP_HEADER_UPGRADE, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_USER_AGENT), HTTP_HEADER_USER_AGENT, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_USER_AGENT), HTTP_HEADER_USER_AGENT, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_WEB_SOCKET_KEY), HTTP_HEADER_SEC_WEBSOCKET_KEY, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_WEB_SOCKET_VERSION), HTTP_HEADER_SEC_WEBSOCKET_VERSION, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_WEB_SOCKET_KEY), HTTP_HEADER_SEC_WEBSOCKET_KEY, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_WEB_SOCKET_VERSION), HTTP_HEADER_SEC_WEBSOCKET_VERSION, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_OTHER), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("hola"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("adios"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("erick"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (HEADER_OTHER), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("hola"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("adios"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("erick"), HTTP_HEADER_UNDEFINED, NULL);
 
 }
 
@@ -228,24 +228,24 @@ static void test_http_header_type_by_string_hash (void) {
 			char swapped[TEST_HEADERS_NAME_SIZE] = { 0 };										\
 			(void) snprintf (swapped, TEST_HEADERS_NAME_SIZE, "%s", #string);					\
 			test_http_headers_swap_case (swapped);												\
-			test_check_unsigned_eq (http_header_type_by_string (#string), HTTP_HEADER_##name, NULL);	\
-			test_check_unsigned_eq (http_header_type_by_string (swapped), HTTP_HEADER_##name, NULL);	\
+			test_check_unsigned_eq (http_header_type_with_string (#string), HTTP_HEADER_##name, NULL);	\
+			test_check_unsigned_eq (http_header_type_with_string (swapped), HTTP_HEADER_##name, NULL);	\
 		}
 	HTTP_HEADERS_MAP(XX)
 	#undef XX
 
 	// the new headers of the map
-	test_check_unsigned_eq (http_header_type_by_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("etag"), HTTP_HEADER_ETAG, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("x-real-ip"), HTTP_HEADER_REAL_IP, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("etag"), HTTP_HEADER_ETAG, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("x-real-ip"), HTTP_HEADER_REAL_IP, NULL);
 
 	// a prefix, a longer name or an unknown one is not a header of the map
-	test_check_unsigned_eq (http_header_type_by_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("Content-Types"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("X-Custom"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (""), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_by_string (NULL), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("Content-Types"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string ("X-Custom"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (""), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_with_string (NULL), HTTP_HEADER_UNDEFINED, NULL);
 
 }
 
@@ -311,7 +311,7 @@ static void list_fill (HttpHeaders *headers) {
 
 	test_check_unsigned_eq (http_headers_add (headers, HTTP_HEADER_CONTENT_TYPE, list_json, strlen (list_json)), 0, NULL);
 	test_check_unsigned_eq (http_headers_add (headers, HTTP_HEADER_SET_COOKIE, list_first_cookie, strlen (list_first_cookie)), 0, NULL);
-	test_check_unsigned_eq (http_headers_add_by_name (headers, list_trace_name, strlen (list_trace_name), list_trace_value, strlen (list_trace_value)), 0, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (headers, list_trace_name, strlen (list_trace_name), list_trace_value, strlen (list_trace_value)), 0, NULL);
 	test_check_unsigned_eq (http_headers_add (headers, HTTP_HEADER_SET_COOKIE, list_second_cookie, strlen (list_second_cookie)), 0, NULL);
 	test_check_unsigned_eq (http_headers_add (headers, HTTP_HEADER_CONTENT_LENGTH, list_length, strlen (list_length)), 0, NULL);
 
@@ -444,7 +444,7 @@ static void test_http_headers_list_remove (void) {
 	test_check_unsigned_eq (http_headers_remove (&headers, HTTP_HEADER_CONTENT_LENGTH), 1, NULL);
 	list_check_lines (&headers, "X-Trace: abc-123\r\n");
 
-	test_check_unsigned_eq (http_headers_remove_by_name (&headers, "x-trace", strlen ("x-trace")), 1, NULL);
+	test_check_unsigned_eq (http_headers_remove_with_name (&headers, "x-trace", strlen ("x-trace")), 1, NULL);
 	test_check_unsigned_eq (headers.count, 0, NULL);
 	list_check_lines (&headers, "");
 
@@ -463,34 +463,34 @@ static void test_http_headers_list_names (void) {
 	HttpHeaders headers;
 	http_headers_init (&headers);
 
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, "X-Trace", strlen ("X-Trace"), "one", strlen ("one")), 0, NULL);
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, "x-trace", strlen ("x-trace"), "two", strlen ("two")), 0, NULL);
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, "X-Tracer", strlen ("X-Tracer"), "other", strlen ("other")), 0, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, "X-Trace", strlen ("X-Trace"), "one", strlen ("one")), 0, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, "x-trace", strlen ("x-trace"), "two", strlen ("two")), 0, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, "X-Tracer", strlen ("X-Tracer"), "other", strlen ("other")), 0, NULL);
 
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "X-TRACE", strlen ("X-TRACE")), 2, NULL);
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "X-Tracer", strlen ("X-Tracer")), 1, NULL);
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "X-Trac", strlen ("X-Trac")), 0, NULL);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "X-TRACE", strlen ("X-TRACE")), 2, NULL);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "X-Tracer", strlen ("X-Tracer")), 1, NULL);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "X-Trac", strlen ("X-Trac")), 0, NULL);
 
 	// each one keeps the name it was added with
-	list_check_field (&headers, http_headers_find_by_name (&headers, "x-TRACE", strlen ("x-TRACE"), 0), HTTP_HEADER_UNDEFINED, "X-Trace", "one");
-	list_check_field (&headers, http_headers_find_by_name (&headers, "x-TRACE", strlen ("x-TRACE"), 1), HTTP_HEADER_UNDEFINED, "x-trace", "two");
-	test_check_null_ptr (http_headers_find_by_name (&headers, "x-TRACE", strlen ("x-TRACE"), 2));
+	list_check_field (&headers, http_headers_find_with_name (&headers, "x-TRACE", strlen ("x-TRACE"), 0), HTTP_HEADER_UNDEFINED, "X-Trace", "one");
+	list_check_field (&headers, http_headers_find_with_name (&headers, "x-TRACE", strlen ("x-TRACE"), 1), HTTP_HEADER_UNDEFINED, "x-trace", "two");
+	test_check_null_ptr (http_headers_find_with_name (&headers, "x-TRACE", strlen ("x-TRACE"), 2));
 
 	// a name that is not ended with '\0'
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "X-Tracer", strlen ("X-Trace")), 2, NULL);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "X-Tracer", strlen ("X-Trace")), 2, NULL);
 
 	// a known name gets its type and its name as cerver writes it
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, "content-type", strlen ("content-type"), list_json, strlen (list_json)), 0, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, "content-type", strlen ("content-type"), list_json, strlen (list_json)), 0, NULL);
 	list_check_field (&headers, http_headers_find (&headers, HTTP_HEADER_CONTENT_TYPE, 0), HTTP_HEADER_CONTENT_TYPE, "Content-Type", list_json);
-	list_check_field (&headers, http_headers_find_by_name (&headers, "CONTENT-TYPE", strlen ("CONTENT-TYPE"), 0), HTTP_HEADER_CONTENT_TYPE, "Content-Type", list_json);
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "Content-Type", strlen ("Content-Type")), 1, NULL);
+	list_check_field (&headers, http_headers_find_with_name (&headers, "CONTENT-TYPE", strlen ("CONTENT-TYPE"), 0), HTTP_HEADER_CONTENT_TYPE, "Content-Type", list_json);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "Content-Type", strlen ("Content-Type")), 1, NULL);
 
 	// a set by name replaces the ones with the name, known or not
-	test_check_unsigned_eq (http_headers_set_by_name (&headers, "X-TRACE", strlen ("X-TRACE"), "three", strlen ("three")), 0, NULL);
-	test_check_unsigned_eq (http_headers_count_by_name (&headers, "x-trace", strlen ("x-trace")), 1, NULL);
-	list_check_field (&headers, http_headers_find_by_name (&headers, "x-trace", strlen ("x-trace"), 0), HTTP_HEADER_UNDEFINED, "X-TRACE", "three");
+	test_check_unsigned_eq (http_headers_set_with_name (&headers, "X-TRACE", strlen ("X-TRACE"), "three", strlen ("three")), 0, NULL);
+	test_check_unsigned_eq (http_headers_count_with_name (&headers, "x-trace", strlen ("x-trace")), 1, NULL);
+	list_check_field (&headers, http_headers_find_with_name (&headers, "x-trace", strlen ("x-trace"), 0), HTTP_HEADER_UNDEFINED, "X-TRACE", "three");
 
-	test_check_unsigned_eq (http_headers_set_by_name (&headers, "Content-type", strlen ("Content-type"), "text/plain", strlen ("text/plain")), 0, NULL);
+	test_check_unsigned_eq (http_headers_set_with_name (&headers, "Content-type", strlen ("Content-type"), "text/plain", strlen ("text/plain")), 0, NULL);
 	test_check_unsigned_eq (http_headers_count (&headers, HTTP_HEADER_CONTENT_TYPE), 1, NULL);
 	list_check_field (&headers, http_headers_find (&headers, HTTP_HEADER_CONTENT_TYPE, 0), HTTP_HEADER_CONTENT_TYPE, "Content-Type", "text/plain");
 
@@ -502,11 +502,11 @@ static void test_http_headers_list_names (void) {
 	);
 
 	// the name of the undefined header is like any other name
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, "Undefined", strlen ("Undefined"), "value", strlen ("value")), 0, NULL);
-	list_check_field (&headers, http_headers_find_by_name (&headers, "undefined", strlen ("undefined"), 0), HTTP_HEADER_UNDEFINED, "Undefined", "value");
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, "Undefined", strlen ("Undefined"), "value", strlen ("value")), 0, NULL);
+	list_check_field (&headers, http_headers_find_with_name (&headers, "undefined", strlen ("undefined"), 0), HTTP_HEADER_UNDEFINED, "Undefined", "value");
 
-	test_check_unsigned_eq (http_headers_remove_by_name (&headers, "X-Tracer", strlen ("X-Tracer")), 1, NULL);
-	test_check_unsigned_eq (http_headers_remove_by_name (&headers, "content-TYPE", strlen ("content-TYPE")), 1, NULL);
+	test_check_unsigned_eq (http_headers_remove_with_name (&headers, "X-Tracer", strlen ("X-Tracer")), 1, NULL);
+	test_check_unsigned_eq (http_headers_remove_with_name (&headers, "content-TYPE", strlen ("content-TYPE")), 1, NULL);
 	test_check_unsigned_eq (headers.count, 2, NULL);
 
 	http_headers_reset (&headers);
@@ -525,8 +525,8 @@ static void test_http_headers_list_invalid (void) {
 
 	for (size_t idx = 0; idx < (sizeof (bad_names) / sizeof (bad_names[0])); idx++) {
 		test_check (!http_header_name_is_valid (bad_names[idx], strlen (bad_names[idx])), bad_names[idx]);
-		test_check_unsigned_eq (http_headers_add_by_name (&headers, bad_names[idx], strlen (bad_names[idx]), "value", strlen ("value")), 1, NULL);
-		test_check_unsigned_eq (http_headers_set_by_name (&headers, bad_names[idx], strlen (bad_names[idx]), "value", strlen ("value")), 1, NULL);
+		test_check_unsigned_eq (http_headers_add_with_name (&headers, bad_names[idx], strlen (bad_names[idx]), "value", strlen ("value")), 1, NULL);
+		test_check_unsigned_eq (http_headers_set_with_name (&headers, bad_names[idx], strlen (bad_names[idx]), "value", strlen ("value")), 1, NULL);
 	}
 
 	// a NUL inside the name
@@ -539,7 +539,7 @@ static void test_http_headers_list_invalid (void) {
 	(void) memset (long_name, 'a', sizeof (long_name));
 	test_check (http_header_name_is_valid (long_name, HTTP_HEADER_NAME_MAX), NULL);
 	test_check (!http_header_name_is_valid (long_name, HTTP_HEADER_NAME_MAX + 1), NULL);
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, long_name, HTTP_HEADER_NAME_MAX + 1, "value", strlen ("value")), 1, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, long_name, HTTP_HEADER_NAME_MAX + 1, "value", strlen ("value")), 1, NULL);
 
 	static const char *bad_values[] = {
 		"value\r\nSet-Cookie: stolen=1", "value\nother", "value\rother", "\r\n", "value\r\n"
@@ -549,7 +549,7 @@ static void test_http_headers_list_invalid (void) {
 		test_check (!http_header_value_is_valid (bad_values[idx], strlen (bad_values[idx])), NULL);
 		test_check_unsigned_eq (http_headers_add (&headers, HTTP_HEADER_LOCATION, bad_values[idx], strlen (bad_values[idx])), 1, NULL);
 		test_check_unsigned_eq (http_headers_set (&headers, HTTP_HEADER_LOCATION, bad_values[idx], strlen (bad_values[idx])), 1, NULL);
-		test_check_unsigned_eq (http_headers_add_by_name (&headers, "X-Trace", strlen ("X-Trace"), bad_values[idx], strlen (bad_values[idx])), 1, NULL);
+		test_check_unsigned_eq (http_headers_add_with_name (&headers, "X-Trace", strlen ("X-Trace"), bad_values[idx], strlen (bad_values[idx])), 1, NULL);
 	}
 
 	// a NUL inside the value
@@ -569,7 +569,7 @@ static void test_http_headers_list_invalid (void) {
 
 	test_check_unsigned_eq (http_headers_add (NULL, HTTP_HEADER_LOCATION, "value", strlen ("value")), 1, NULL);
 	test_check_unsigned_eq (http_headers_add (&headers, HTTP_HEADER_LOCATION, NULL, 0), 1, NULL);
-	test_check_unsigned_eq (http_headers_add_by_name (&headers, NULL, 0, "value", strlen ("value")), 1, NULL);
+	test_check_unsigned_eq (http_headers_add_with_name (&headers, NULL, 0, "value", strlen ("value")), 1, NULL);
 	test_check_unsigned_eq (http_headers_count (NULL, HTTP_HEADER_LOCATION), 0, NULL);
 	test_check_null_ptr (http_headers_get (NULL, 0));
 
