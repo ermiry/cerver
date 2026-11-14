@@ -1,17 +1,16 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/packets.h>
-#include <cerver/receive.h>
-#include <cerver/socket.h>
+#include <cerver/handler/receive.h>
+#include <cerver/network/socket.h>
+#include <cerver/packets/packets.h>
 
-#include "test.h"
+#include "../test.h"
 
 static void test_receive_error_to_string (void) {
 
