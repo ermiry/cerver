@@ -6,19 +6,19 @@
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/cerver.h"
 #include "cerver/version.h"
 
-#include "cerver/threads/thpool.h"
+#include "cerver/core/cerver.h"
 
-#include "cerver/http/http.h"
-#include "cerver/http/metrics.h"
-#include "cerver/http/request.h"
-#include "cerver/http/route.h"
-#include "cerver/http/tree.h"
-
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/metrics.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/tree.h"
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
+
+#include "cerver/threads/thpool.h"
 
 #define HTTP_METRICS_HEADER_FORMAT				"# HELP %s %s\n# TYPE %s %s\n"
 

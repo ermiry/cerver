@@ -3,22 +3,22 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
-#include "cerver/connection.h"
-#include "cerver/handler.h"
-#include "cerver/timer.h"
+#include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/handler.h"
+#include "cerver/system/timer.h"
 
-#include "cerver/http/access.h"
-#include "cerver/http/http.h"
-#include "cerver/http/method.h"
-#include "cerver/http/request.h"
-#include "cerver/http/route.h"
-#include "cerver/http/tree.h"
-
+#include "cerver/http/core/access.h"
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
 #include "cerver/http/parser/api.h"
+#include "cerver/http/requests/method.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/tree.h"
 
 #include "cerver/utils/log.h"
 

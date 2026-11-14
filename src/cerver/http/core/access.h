@@ -1,9 +1,9 @@
 #ifndef _CERVER_HTTP_ACCESS_H_
 #define _CERVER_HTTP_ACCESS_H_
 
-#include "cerver/connection.h"
-
 #include "cerver/config.h"
+
+#include "cerver/connection/connection.h"
 
 // the address of the client and the one of the proxy that forwarded its request
 #define HTTP_ACCESS_CLIENT_SIZE			((2 * CONNECTION_IP_SIZE) + 8)
