@@ -1,27 +1,35 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <signal.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
 #include <dirent.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <unistd.h>
 #include <pthread.h>
+#include <unistd.h>
 
-#include <cerver/admin.h>
-#include <cerver/auth.h>
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
-
-#include <app/auth.h>
+#include <cerver/admin/admin.h>
+#include <cerver/admin/cerver.h>
+#include <cerver/auth/auth.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/connection/end.h>
+#include <cerver/connection/lifecycle.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/handler.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/auth.h>
 
 // a TCP cerver in the same process, with cerver clients:
 // - the app, app error and custom packets reach their handlers, with POLL and THREADS

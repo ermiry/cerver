@@ -1,16 +1,21 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
-#include <cerver/admin.h>
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/events.h>
-#include <cerver/errors.h>
-#include <cerver/sessions.h>
+#include <cerver/admin/admin.h>
+#include <cerver/admin/cerver.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/report.h>
+#include <cerver/core/serialization.h>
+#include <cerver/handler/errors.h>
+#include <cerver/handler/events.h>
 
 #include "../test.h"
 
