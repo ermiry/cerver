@@ -155,6 +155,7 @@ struct _Connection {
 	// how long a connect () to each resolved address can take, in milliseconds
 	u32 connect_timeout;
 
+	// read and written with __atomic, the end of a connection takes it
 	bool active;
 
 	// the connection has a thread in connection_update (), set before the thread is created
@@ -300,6 +301,17 @@ CERVER_PUBLIC ConnectionState connection_get_state (
 CERVER_PRIVATE void connection_set_state (
 	Connection *connection, const ConnectionState state
 );
+
+// returns whether the connection is active, read with __atomic,
+// a client teardown and the reconnection thread read it at the same time
+CERVER_HIDDEN bool connection_is_active (const Connection *connection);
+
+// sets whether the connection is active, written with __atomic
+CERVER_HIDDEN void connection_set_active (Connection *connection, const bool active);
+
+// takes the end of an active connection: it sets it inactive and returns whether it was active,
+// so two threads that end the same connection never both end it
+CERVER_HIDDEN bool connection_take_end (Connection *connection);
 
 // sets the connection max sleep (wait time) to try to connect to the cerver
 CERVER_EXPORT void connection_set_max_sleep (
