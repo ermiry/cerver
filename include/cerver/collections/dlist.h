@@ -74,7 +74,7 @@ extern int dlist_delete_if_empty (void *dlist_ptr);
 extern int dlist_delete_if_not_empty (void *dlist_ptr);
 
 // creates a new double list (double linked list)
-// destroy is the method used to free up the data, NULL to use the default free
+// destroy is the method used to free up the data, NULL keeps the data when it is removed or the list is deleted
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern DoubleList *dlist_init (
 	void (*destroy)(void *data),
