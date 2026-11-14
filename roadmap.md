@@ -9,12 +9,12 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 implementada (3.0b-1, §4.0), en validación |
+> | **Estado** | L0 publicada (3.0b-1, PR #418); L0.1, la estructura (3.0b-2, §4.0.1), en implementación |
 
 **Las citas `archivo:línea`:**
 
 - son relativas a `src/cerver/` salvo que se indique otra cosa;
-- corresponden a `nightly` en la 2.1b-13;
+- corresponden a `nightly` en la 2.1b-13, con las rutas de antes de la 3.0b-2 (la tabla de §11 da las nuevas);
 - cada fase mueve las líneas, así que se re-verifican antes de tocar cada zona.
 
 ---
@@ -151,15 +151,17 @@ puede ocupar varias.
 | Fase | Beta | Contenido | Prerrequisito |
 |---|---|---|---|
 | **L0** | 3.0b-1 | La línea, Apache-2.0, `cerver/crypto`, la inyección de fallos, el arnés de competidores | 2.1b-13 publicada |
-| **L1** | 3.0b-2 | El JSON propio | L0 |
-| **L2** | 3.0b-3 | El JWT propio | L1 |
-| **L3** | 3.0b-4 | El parser HTTP/1.1 propio | L0 |
-| **L4** | 3.0b-5 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
-| **L5** | 3.0b-6 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-7 | SHA-1, SHA-256, base64 y deflate propios | L0 |
-| **L7** | 3.0b-8 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-9 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-10 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **L0.1** | 3.0b-2 | La estructura: subcarpetas, archivos partidos, headers internos en `src/`, paraguas | L0 |
+| **L0.2** | 3.0b-3 | La documentación de los headers: Doxygen con sintaxis Javadoc y su gate | L0.1 |
+| **L1** | 3.0b-4 | El JSON propio | L0.2 |
+| **L2** | 3.0b-5 | El JWT propio | L1 |
+| **L3** | 3.0b-6 | El parser HTTP/1.1 propio | L0.2 |
+| **L4** | 3.0b-7 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
+| **L5** | 3.0b-8 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-9 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-10 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-11 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-12 | WebSocket sobre el I/O nuevo | L4, L5 |
 | **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
@@ -224,6 +226,67 @@ pasa a una 3.x. La auth asíncrona de F7 llega por la API de L5 (un cliente HTTP
     - la rama `labs` de py-cerver nace de su `nightly` cuando esa rama tenga commits, con la versión 2.0b1, solo
       como tag de GitHub;
     - si todavía no los tiene, espera a L1: la 3.0b-1 no cambia nada que pycerver use.
+
+### 4.0.1 L0.1 — La estructura (3.0b-2)
+
+Antes de que L1–L9 agreguen archivos, el árbol se ordena por dominio. **El único cambio de símbolos** es que las
+funciones con `_by_` pasan a `_with_` (`client_get_with_sock_fd ()`, `http_headers_find_with_name ()`, …); fuera de
+eso `nm -D` de `libcerver.so` es el de la 3.0b-1. La 1.9b-3 de `core` adopta después la parte del core tal cual,
+para que los ports entre líneas sigan siendo directos.
+
+1. **Las carpetas** (archivos de una palabra; la tabla completa en §11):
+   - arriba, solo `config.h`, `version.h` y el paraguas `cerver.h`;
+   - el core: `core/` (el `Cerver`), `admin/`, `auth/` (la autenticación, las conexiones *on hold* y las sesiones),
+     `client/`, `connection/`, `files/`, `handler/`, `load/` (el balancer), `network/`, `packets/` y `system/`, más
+     `collections/`, `crypto/`, `game/` (con `types` en lugar de `gametype`), `threads/`, `types/` y `utils/`;
+   - HTTP: `http/core/` (el `HttpCerver` y lo transversal), `http/headers/`, `http/requests/`, `http/responses/`,
+     `http/routes/` y `http/security/`, más `json/`, `jwt/`, `parser/` y `websockets/`, que no cambian.
+2. **Los archivos grandes se parten por sus regiones,** el `.c` y el `.h`: `cerver` (en `core/`), `http` (en
+   `http/core/`), `admin`, `auth`, `client`, `connection`, `files`, `balancer` (en `load/`), `packets` y `headers`
+   (en `http/headers/`). El header principal de cada módulo tiene sus tipos y sus partes lo incluyen; los includes
+   van siempre al inicio de cada archivo, así que el header principal no incluye a sus partes y cada archivo incluye
+   las partes que usa. Una función `static` que pasa a usarse desde otra parte se declara `CERVER_HIDDEN` en el
+   `internal.h` de su carpeta.
+3. **Los paraguas:** `<cerver/cerver.h>` incluye todo el core y `<cerver/http/http.h>` todo HTTP, cada parte
+   incluida; no declaran nada.
+4. **Lo interno vive en `src/`, junto a su `.c`** (el modelo de curl y libuv); `include/` solo tiene lo que se instala:
+   - los headers que solo declaran funciones `CERVER_PRIVATE` (`access`, `recycle`, `compatibility`) se mueven a
+     `src/` con su nombre;
+   - las declaraciones internas de un header público pasan al `internal.h` de su carpeta en `src/`;
+   - un header interno nunca tiene la misma ruta relativa que uno público (`-I include -I src`);
+   - `http/json/` y `http/parser/` se quedan como están: L1 y L3 los borran, y `HttpReceive` embebe el `llhttp_t`.
+5. **Los includes:** dentro de la librería (`include/` y `src/`) con comillas, `"cerver/..."`, como antes; los
+   tests, los examples y los benchmarks, que la usan como un programa, con `<cerver/...>` (y comillas para los
+   internos que leen). Al inicio de cada archivo, en bloques separados por una línea en blanco y en orden alfabético
+   por la ruta dentro de cada bloque: la biblioteca estándar de C; el sistema (`pthread.h`, `sys/*`, …); las
+   bibliotecas especializadas (OpenSSL, zlib, curl); `cerver/types/`; `cerver/collections/`; los archivos de arriba
+   (`config.h`, `version.h`); el core de cerver; un bloque por paquete (`crypto`, `game`, `http` con todas sus
+   carpetas, `threads`); `cerver/utils/`; y al final lo local de los tests y los examples.
+6. **Los tests en espejo de `src/`:** los unit tests sueltos pasan a la carpeta de su módulo, con un binario por carpeta
+   (`test/bin/network` corre `network`, `socket` y `udp`); `test/http/` en subcarpetas con un solo `test/bin/http`;
+   `test/version.c` sigue en la raíz, como `version.h`. Los pares de integración, la app, los fuzzers, los examples y
+   los benchmarks solo cambian sus includes.
+7. **Lo que no cambia:** los nombres de los símbolos salvo `_by_` → `_with_` (el prefijo es por módulo, §10) y los
+   nombres de archivo con abreviaturas, que se renombran con su módulo.
+8. **El gate:** el de `labs` completo (§6), más `nm -D` igual al de la 3.0b-1 salvo los renombres; `make install`
+   en un contenedor limpio y un programa que solo incluye los paraguas, sin `-I src`; cada header instalado compila
+   solo; ningún header interno instalado; guards únicos; pycerver `labs` con las rutas y los nombres nuevos.
+9. **pycerver:** la rama `labs` de py-cerver nace de su `nightly` (1.2b-1) con la 2.0b1.
+
+### 4.0.2 L0.2 — La documentación de los headers (3.0b-3)
+
+- **Doxygen con sintaxis Javadoc** en los headers públicos: `/** */`, `@brief`, `@param[in|out]`, `@return`,
+  `@retval`, `@note`, `@warning`, `@since`, `@deprecated`, y el alias `@threadsafety` para el contrato de hilos.
+- **Qué se documenta:** la API estable completa (core, collections, threads, utils, crypto, websockets, game); lo que
+  L1–L5 reemplazan nace documentado en su fase.
+- Los `.c` siguen con `//` para el porqué; los headers internos con `@internal`; en los headers, `#pragma region`
+  pasa a grupos de Doxygen (`@defgroup`, `@{ @}`). En inglés.
+- Un `Doxyfile`, `make docs`, y la guía de comentarios en `CLAUDE.md`.
+- **El gate:** Doxygen sin warnings (`WARN_AS_ERROR = FAIL_ON_WARNINGS`, `WARN_NO_PARAMDOC = YES`) y `clang
+  -Wdocumentation -Wdocumentation-unknown-command` en el job de clang con `WERROR=1`. Desde esta beta, un símbolo
+  público sin documentar no entra.
+- **La referencia** se genera en el CI como artifact y se publica con el release 3.0. El wiki (`docs/`) no se toca
+  hasta el release.
 
 ### 4.1 L1 — El JSON propio
 
@@ -488,6 +551,7 @@ nunca en producción.
     comparte;
   - lo que `labs` ya reemplazó no recibe ports, pero el arreglo se revisa contra el código nuevo y, si aplica, su
     test entra a la suite;
+  - desde la 3.0b-2 las rutas de `labs` son otras: cada archivo se traduce con la tabla de §11;
   - el port no tiene beta propia.
 - **De `labs` a `nightly`:**
   - un módulo propio **madura** cuando pasa el gate de `labs` y no pierde en ninguna métrica contra el que
@@ -530,5 +594,70 @@ nunca en producción.
 - **Cada bug se arregla con su test**, visto fallar contra una copia de la beta anterior.
 - **Los defaults nuevos son potencias de 2.**
 - **Cada ruptura de API o de ABI** va a `incompatibilities.md` con la beta que la trae.
+- **El prefijo `cerver_`** es la regla de todos los símbolos públicos, aplicada por módulo: los que se reescriben
+  (JSON, JWT, parser, request, response) nacen con él en su fase; los estables lo toman en su propia beta, con sus
+  archivos renombrados sin abreviaturas a la vez.
 - **Ningún archivo nombra ni copia nada de aplicaciones o servicios externos:** rutas, datos y configuraciones
   sintéticos.
+
+---
+
+## 11. Las rutas de la 3.0b-2
+
+**Para los ports** desde `nightly` (y hacia la 1.9b-3 de `core`). Cada fila vale para `include/cerver/` (`.h`) y para
+`src/cerver/` (`.c`); «partido» quiere decir que el archivo se divide en las partes que se nombran, con las regiones
+de antes entre paréntesis. Un arreglo de `nightly` en una función se porta a la parte que tiene su región.
+
+**El core:**
+
+| Antes | Después |
+|---|---|
+| `cerver` | `core/`: `cerver` (main, create), `types` (global, types), `info`, `data` (stats, requests), `handler` (handlers), `start` (init, start), `update`, `end`, `report`, `serialization`; `cerver.h` queda como el paraguas |
+| `admin` | `admin/`: `admin` (admin), `cerver` (main), `stats`, `lifecycle` (start, end), `handler`, `poll` |
+| `auth` | `auth/`: `auth` (errors, data, method, auth), `hold` (handler, connections, poll de *on hold*) |
+| `sessions` | `auth/sessions` |
+| `balancer` | `load/`: `balancer` (types, main), `stats`, `service` (services), `events`, `start`, `route`, `end` |
+| `client` | `client/`: `client` (main, stats, recycle, client), `events` (events, errors), `connect` (connect, start, end), `requests` (requests, files), `handler` |
+| `connection` | `connection/`: `connection` (states, main, setters), `stats`, `recycle`, `data` (auth data, datagram token), `lifecycle` (init, connect, reconnect, start), `end` (stop, reset, end, drop), `registry` (lookups, registers), `update` (receive, update thread), `send` |
+| `files` | `files/`: `files` (main), `cerver`, `images`, `send`, `receive` |
+| `handler`, `receive`, `events`, `errors` | `handler/` |
+| `network`, `socket`, `udp` | `network/` |
+| `packets` | `packets/`: `packets` (packets, recycle), `header` (protocol, version, types, header) |
+| `serializer` | `packets/serializer` |
+| `system`, `timer`, `input` | `system/` |
+| `version` | `version` (sigue arriba) |
+| `config` | sin cambio |
+| `game/gametype` | `game/types` |
+| `collections/`, `crypto/`, `threads/`, `types/`, `utils/` | sin cambio |
+
+**HTTP:**
+
+| Antes | Después |
+|---|---|
+| `http/http` | `http/core/`: `http` (main, http), `pairs` (kvp, query pairs), `public`, `routes`, `uploads`, `limits`, `settings` (headers, proxies, origins, data, responses), `stats`, `admin` (admin, junto con el `admin.c` de antes), `callbacks` (parser), `forms` (mpart), `handler`, `upgrade` (websocket); la región `auth` fue a `http/security/auth.c`; `http/http.h` queda como el paraguas |
+| `http/custom`, `http/metrics`, `http/utils` | `http/core/` |
+| `http/access`, `http/recycle` | `http/core/`, internos en `src/` |
+| `http/admin` (interno) | `http/core/admin.c`, sus declaraciones en `src/cerver/http/core/internal.h` |
+| `http/headers` | `http/headers/`: `fields` (la lista `HttpHeaders`), `types` (el mapa de los headers), `header` (`HttpHeader`), `buffer` (la búsqueda en un header compilado) |
+| `http/request`, `http/method`, `http/url`, `http/multipart`, `http/content` | `http/requests/` |
+| `http/response`, `http/status`, `http/stream`, `http/compression`, `http/conditional`, `http/date` | `http/responses/` |
+| `http/tree`, `http/route`, `http/middleware`, `http/validator` | `http/routes/` |
+| `http/compatibility` | `http/routes/compatibility`, interno en `src/` |
+| `http/auth`, `http/origin`, `http/proxy` | `http/security/` |
+| `http/json/`, `http/jwt/`, `http/parser/`, `http/websockets/` | sin cambio |
+
+**Los nombres:** cada función con `_by_` pasa a `_with_` (43, la lista en `incompatibilities.md`).
+
+**Los tests:**
+
+| Antes | Después | Binario |
+|---|---|---|
+| `test/connection.c` | `test/connection/` | `test/bin/connection` |
+| `test/network.c`, `test/socket.c`, `test/udp.c` | `test/network/` | `test/bin/network` |
+| `test/packets.c` | `test/packets/` | `test/bin/packets` |
+| `test/receive.c` | `test/handler/` | `test/bin/handler` |
+| `test/system.c` | `test/system/` | `test/bin/system` |
+| `test/files.c` | `test/files/` | `test/bin/files` |
+| `test/balancer.c`, `test/routing.c` | `test/load/` | `test/bin/load` |
+| `test/handler/{cerver,client}.c` (el par) | `test/cerver/handler.c`, `test/client/handler.c` | el par `cerver/handler` |
+| `test/http/*.c` | `test/http/{core, headers, requests, responses, routes, security}/` por su módulo | `test/bin/http` |
