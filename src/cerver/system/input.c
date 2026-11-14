@@ -3,7 +3,7 @@
 
 #include <termios.h>
 
-#include "cerver/input.h"
+#include "cerver/system/input.h"
 
 void input_clean_stdin (void) {
 
