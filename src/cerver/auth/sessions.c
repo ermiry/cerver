@@ -4,15 +4,15 @@
 
 #include "cerver/types/types.h"
 
+#include "cerver/auth/auth.h"
+#include "cerver/auth/sessions.h"
+#include "cerver/client/client.h"
+#include "cerver/packets/packets.h"
+
 #include "cerver/crypto/random.h"
 
-#include "cerver/auth.h"
-#include "cerver/client.h"
-#include "cerver/packets.h"
-#include "cerver/sessions.h"
-
-#include "cerver/utils/utils.h"
 #include "cerver/utils/sha256.h"
+#include "cerver/utils/utils.h"
 
 SessionData *session_data_new (
 	Packet *packet, AuthData *auth_data, Client *client
