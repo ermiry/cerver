@@ -1,23 +1,23 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <unistd.h>
-
-#include <sys/socket.h>
-#include <sys/time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
 
-#include <cerver/auth.h>
-#include <cerver/connection.h>
-#include <cerver/network.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
-#include <cerver/udp.h>
+#include <cerver/auth/auth.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/network/network.h>
+#include <cerver/network/udp.h>
+#include <cerver/packets/packets.h>
 
-#include "test.h"
+#include "../test.h"
+#include "network.h"
 
 // the datagrams of UDP: a single packet followed by nothing or by a token,
 // the token of a connection, the release of a packet, and the datagrams that packet_send () sends
@@ -368,12 +368,7 @@ static void test_udp_send (void) {
 
 }
 
-int main (int argc, char **argv) {
-
-	test_output_init ();
-
-	(void) argc;
-	(void) argv;
+void udp_tests (void) {
 
 	(void) printf ("Testing UDP...\n");
 
@@ -386,7 +381,5 @@ int main (int argc, char **argv) {
 	test_udp_send ();
 
 	(void) printf ("\nDone with UDP tests!\n\n");
-
-	return 0;
 
 }
