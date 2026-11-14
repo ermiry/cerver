@@ -8,8 +8,9 @@ STOP_SECONDS=32
 
 ALLOCATION_REQUESTS=1024
 ALLOCATION_BASE_REQUESTS=256
-ALLOCATION_SLACK=0
 ALLOCATION_CONCURRENCY=8
+ALLOCATIONS_PER_CONNECTION=3
+ALLOCATION_SLACK=$(( ALLOCATION_CONCURRENCY * ALLOCATIONS_PER_CONNECTION ))
 GET_MAX_ALLOCATIONS=0
 POST_MAX_ALLOCATIONS=14
 
@@ -72,34 +73,35 @@ load_succeeded () {
 	[ "$(field "$result" 200)" = "$requests" ] && [ "$(field "$result" failed)" = "0" ]
 }
 
-# the total allocations of the server after the requests,
-# nothing when the load or the server failed
-count_allocations () {
-	local requests="$1" method="$2" path="$3" body="$4"
-	local log="$LOGS/allocations.log"
+allocations_snapshot () {
+	local file="$1"
 
-	server_start "$log" $VALGRIND_READY_SECONDS valgrind --tool=memcheck --leak-check=no
-
-	local result=$(./benchmarks/bin/load $PORT $ALLOCATION_CONCURRENCY "$requests" $method "$path" "$body")
-	local loaded=0
-	load_succeeded "$result" "$requests" || loaded=1
-
-	server_stop || return 1
-	[ $loaded -eq 0 ] || { echo "the load of $requests requests failed: $result" >&2; return 1; }
-
-	grep "total heap usage" "$log" | sed -E 's/.*usage: ([0-9,]+) allocs.*/\1/' | tr -d ','
+	vgdb --pid=$SERVER_PID xtmemory "$file" > /dev/null 2>&1 || return 1
+	grep -m 1 "^totals:" "$file" | awk '{ print $5 }'
 }
 
-# the same server with a few requests and with many, so only the requests are counted:
-# the first requests of each thread create what it keeps between requests
+allocations_load () {
+	local concurrency="$1" requests="$2" method="$3" path="$4" body="$5"
+
+	local result=$(./benchmarks/bin/load $PORT $concurrency "$requests" $method "$path" "$body")
+	load_succeeded "$result" "$requests" || { echo "the load of $requests requests failed: $result" >&2; return 1; }
+}
+
 check_allocations () {
 	local method="$1" path="$2" body="$3" maximum="$4"
+	local log="$LOGS/allocations.log"
 
-	local base total
-	base=$(count_allocations $ALLOCATION_BASE_REQUESTS "$method" "$path" "$body")
-	total=$(count_allocations $(( ALLOCATION_BASE_REQUESTS + ALLOCATION_REQUESTS )) "$method" "$path" "$body")
+	server_start "$log" $VALGRIND_READY_SECONDS valgrind --tool=memcheck --leak-check=no --vgdb=yes --xtree-memory=full --xtree-memory-file="$LOGS/allocations-end.kcg"
 
-	if ! [[ "$base" =~ ^[0-9]+$ ]] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
+	local base total loaded=0
+	allocations_load $ALLOCATION_CONCURRENCY $ALLOCATION_BASE_REQUESTS $method "$path" "$body" || loaded=1
+	base=$(allocations_snapshot "$LOGS/allocations-base.kcg")
+	allocations_load $ALLOCATION_CONCURRENCY $ALLOCATION_REQUESTS $method "$path" "$body" || loaded=1
+	total=$(allocations_snapshot "$LOGS/allocations-total.kcg")
+
+	server_stop || loaded=1
+
+	if [ $loaded -ne 0 ] || ! [[ "$base" =~ ^[0-9]+$ ]] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
 		fail "$method $path allocations were not counted"
 		return
 	fi
