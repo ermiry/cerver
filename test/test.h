@@ -1,9 +1,9 @@
 #ifndef _CERVER_TESTS_H_
 #define _CERVER_TESTS_H_
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 // setvbuf () allocates the buffer with its default size
