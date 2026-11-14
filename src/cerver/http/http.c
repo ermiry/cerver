@@ -219,7 +219,7 @@ const String *key_value_pairs_get_value (
 		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kvp = (KeyValuePair *) le->data;
-			if (!strcmp (kvp->key->str, key)) {
+			if (kvp->key && !strcmp (kvp->key->str, key)) {
 				value = kvp->value;
 				break;
 			}
@@ -227,6 +227,15 @@ const String *key_value_pairs_get_value (
 	}
 
 	return value;
+
+}
+
+// what is printed for the key or the value that a pair does not have
+static const char *key_value_pair_missing = { "" };
+
+static inline const char *key_value_pair_string (const String *string) {
+
+	return string ? string->str : key_value_pair_missing;
 
 }
 
@@ -240,7 +249,7 @@ void key_value_pairs_print (const DoubleList *pairs) {
 
 			(void) printf (
 				"[%u] - %s = %s\n",
-				idx, kv->key->str, kv->value->str
+				idx, key_value_pair_string (kv->key), key_value_pair_string (kv->value)
 			);
 
 			idx++;
@@ -1252,7 +1261,8 @@ void http_cerver_set_uploads_path (
 }
 
 // works like http_cerver_set_uploads_path () but can generate
-// a custom path on the fly using variable arguments
+// a custom path on the fly using variable arguments,
+// its length is the one of the path that fits, an error leaves it empty
 void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 ) {
@@ -1261,10 +1271,14 @@ void http_cerver_generate_uploads_path (
 		va_list args;
 		va_start (args, format);
 
-		http_cerver->uploads_path_len = vsnprintf (
+		if (vsnprintf (
 			http_cerver->uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE - 1,
 			format, args
-		);
+		) < 0) {
+			http_cerver->uploads_path[0] = '\0';
+		}
+
+		http_cerver->uploads_path_len = (int) strlen (http_cerver->uploads_path);
 
 		va_end (args);
 	}
@@ -1883,7 +1897,7 @@ const void *http_cerver_get_custom_data (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_cerver->custom_data;
+	return http_cerver ? http_cerver->custom_data : NULL;
 
 }
 
@@ -1891,7 +1905,7 @@ void http_cerver_set_custom_data (
 	HttpCerver *http_cerver, void *custom_data
 ) {
 
-	http_cerver->custom_data = custom_data;
+	if (http_cerver) http_cerver->custom_data = custom_data;
 
 }
 
@@ -1899,7 +1913,7 @@ void http_cerver_set_delete_custom_data (
 	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
 ) {
 
-	http_cerver->delete_custom_data = delete_custom_data;
+	if (http_cerver) http_cerver->delete_custom_data = delete_custom_data;
 
 }
 
@@ -1907,7 +1921,7 @@ void http_cerver_set_default_delete_custom_data (
 	HttpCerver *http_cerver
 ) {
 
-	http_cerver->delete_custom_data = free;
+	if (http_cerver) http_cerver->delete_custom_data = free;
 
 }
 
@@ -2397,12 +2411,12 @@ void http_cerver_admin_set_origin (
 }
 
 // registers a new file system to be handled
-// when requesting for fs stats
+// when requesting for fs stats, a NULL path is not registered
 void http_cerver_register_admin_file_system (
 	HttpCerver *http_cerver, const char *path
 ) {
 
-	if (http_cerver) {
+	if (http_cerver && path) {
 		(void) dlist_insert_at_end_unsafe (
 			http_cerver->admin_file_systems_stats,
 			http_admin_file_system_stats_create (path)
@@ -4099,15 +4113,19 @@ const CerverReceive *http_receive_get_cerver_receive (
 	const HttpReceive *http_receive
 ) {
 
-	return http_receive->cr;
+	return http_receive ? http_receive->cr : NULL;
 
 }
+
+// the socket of a NULL receive
+static const int http_receive_no_sock_fd = -1;
 
 const int http_receive_get_sock_fd (
 	const HttpReceive *http_receive
 ) {
 
-	return http_receive->cr->connection->socket->sock_fd;
+	return http_receive ?
+		http_receive->cr->connection->socket->sock_fd : http_receive_no_sock_fd;
 
 }
 
@@ -4115,7 +4133,7 @@ const HttpCerver *http_receive_get_cerver (
 	const HttpReceive *http_receive
 ) {
 
-	return http_receive->http_cerver;
+	return http_receive ? http_receive->http_cerver : NULL;
 
 }
 
