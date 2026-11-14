@@ -1,20 +1,19 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/version.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/origin.h>
-#include <cerver/http/response.h>
-
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/settings.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/security/origin.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 #define TEST_HEADER_LEN		256
 #define TEST_COMPILED_LEN	2048
@@ -382,7 +381,7 @@ static void responses_check_value_by_name (
 ) {
 
 	size_t value_length = 0;
-	const char *value = http_response_header_get_by_name (response, name, position, &value_length);
+	const char *value = http_response_header_get_with_name (response, name, position, &value_length);
 
 	test_check_ptr (value);
 	test_check_unsigned_eq (value_length, strlen (expected), NULL);
@@ -477,15 +476,15 @@ static void test_http_response_header_by_name (void) {
 
 	HttpResponse *response = test_http_response_new ();
 
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "X-Trace", "one"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "x-trace", "two"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "Vary", "Accept"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "content-type", "text/plain"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "X-Trace", "one"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "x-trace", "two"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "Vary", "Accept"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "content-type", "text/plain"), 0, NULL);
 
-	test_check_unsigned_eq (http_response_header_count_by_name (response, "X-TRACE"), 2, NULL);
-	test_check_unsigned_eq (http_response_header_count_by_name (response, "Vary"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_count_by_name (response, "Content-Type"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_count_by_name (response, "X-Other"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_count_with_name (response, "X-TRACE"), 2, NULL);
+	test_check_unsigned_eq (http_response_header_count_with_name (response, "Vary"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_count_with_name (response, "Content-Type"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_count_with_name (response, "X-Other"), 0, NULL);
 
 	// the known name was added as the header of its type
 	test_check_unsigned_eq (http_response_header_count (response, HTTP_HEADER_CONTENT_TYPE), 1, NULL);
@@ -494,8 +493,8 @@ static void test_http_response_header_by_name (void) {
 	responses_check_value_by_name (response, "x-TRACE", 0, "one");
 	responses_check_value_by_name (response, "x-TRACE", 1, "two");
 	responses_check_value_by_name (response, "CONTENT-TYPE", 0, "text/plain");
-	test_check_null_ptr (http_response_header_get_by_name (response, "x-trace", 2, NULL));
-	test_check_null_ptr (http_response_header_get_by_name (response, "X-Other", 0, NULL));
+	test_check_null_ptr (http_response_header_get_with_name (response, "x-trace", 2, NULL));
+	test_check_null_ptr (http_response_header_get_with_name (response, "X-Other", 0, NULL));
 
 	responses_check_compiled (
 		response, "200 OK",
@@ -505,13 +504,13 @@ static void test_http_response_header_by_name (void) {
 		"Content-Type: text/plain\r\n"
 	);
 
-	test_check_unsigned_eq (http_response_header_set_by_name (response, "X-Trace", "three"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_count_by_name (response, "x-trace"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_set_with_name (response, "X-Trace", "three"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_count_with_name (response, "x-trace"), 1, NULL);
 	responses_check_value_by_name (response, "x-trace", 0, "three");
 
-	test_check_unsigned_eq (http_response_header_remove_by_name (response, "VARY"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_remove_by_name (response, "Content-type"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_remove_by_name (response, "X-Other"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_remove_with_name (response, "VARY"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_remove_with_name (response, "Content-type"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_remove_with_name (response, "X-Other"), 0, NULL);
 
 	responses_check_compiled (response, "200 OK", "X-Trace: three\r\n");
 
@@ -529,13 +528,13 @@ static void test_http_response_header_invalid (void) {
 	test_check_unsigned_eq (http_response_header_set (response, HTTP_HEADER_LOCATION, "/home\nX-Other: 1"), 1, NULL);
 	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_LOCATION, "/home\r"), 1, NULL);
 	test_check_unsigned_eq (http_response_add_custom_header (response, HTTP_HEADER_LOCATION, "/home%s", "\r\nX-Other: 1"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "X-Trace", "one\r\ntwo"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "X-Trace", "one\r\ntwo"), 1, NULL);
 	test_check_unsigned_eq (http_response_add_cors_header (response, "https://ermiry.com\r\nX-Other: 1"), 1, NULL);
 
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "X Trace", "one"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "X-Trace:", "one"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "", "one"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_set_by_name (response, "X-Trace\r\n", "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "X Trace", "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "X-Trace:", "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "", "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_set_with_name (response, "X-Trace\r\n", "one"), 1, NULL);
 
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
 	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
@@ -543,8 +542,8 @@ static void test_http_response_header_invalid (void) {
 
 	test_check_unsigned_eq (http_response_header_add (NULL, HTTP_HEADER_LOCATION, "/home"), 1, NULL);
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_LOCATION, NULL), 1, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, NULL, "one"), 1, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "X-Trace", NULL), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, NULL, "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "X-Trace", NULL), 1, NULL);
 	test_check_unsigned_eq (http_response_header_count (NULL, HTTP_HEADER_LOCATION), 0, NULL);
 	test_check_unsigned_eq (http_response_header_remove (NULL, HTTP_HEADER_LOCATION), 0, NULL);
 	test_check_null_ptr (http_response_header_get (NULL, HTTP_HEADER_LOCATION, 0, NULL));
@@ -640,7 +639,7 @@ static void test_http_response_header_defaults (void) {
 
 	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-cache"), 0, NULL);
 	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-store"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header_by_name (http_cerver, "X-Frame-Options", "DENY"), 0, NULL);
+	test_check_unsigned_eq (http_cerver_add_responses_header_with_name (http_cerver, "X-Frame-Options", "DENY"), 0, NULL);
 	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_LOCATION, "/home\r\nX-Other: 1"), 1, NULL);
 	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
 	test_check_unsigned_eq (http_cerver_add_responses_header (NULL, HTTP_HEADER_LOCATION, "/home"), 1, NULL);
@@ -665,7 +664,7 @@ static void test_http_response_header_defaults (void) {
 	// the header of the response is used instead of the one of the cerver
 	response = test_http_response_new ();
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_CACHE_CONTROL, "max-age=64"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_by_name (response, "x-frame-options", "SAMEORIGIN"), 0, NULL);
+	test_check_unsigned_eq (http_response_header_add_with_name (response, "x-frame-options", "SAMEORIGIN"), 0, NULL);
 	responses_check_compiled (
 		response, "200 OK",
 		"Cache-Control: max-age=64\r\nx-frame-options: SAMEORIGIN\r\n"

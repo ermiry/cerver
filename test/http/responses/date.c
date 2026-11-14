@@ -1,12 +1,11 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
 #include <time.h>
 
-#include <cerver/http/date.h>
+#include <cerver/http/responses/date.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 // the example of RFC 9110 section 5.6.7
 #define TEST_DATE_EXAMPLE_TIME			784111777

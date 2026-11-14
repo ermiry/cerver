@@ -1,20 +1,22 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/dlist.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/middleware.h>
-#include <cerver/http/request.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
-#include <cerver/http/validator.h>
-
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/routes.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/routes/middleware.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
+#include <cerver/http/routes/validator.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 #define TEST_TREE_PATH_SIZE					512
 
