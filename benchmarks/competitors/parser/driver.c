@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "../measure.h"
-
 #include "backend.h"
 
 static const char *parser_module = { "parser" };

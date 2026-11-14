@@ -1,9 +1,8 @@
 #include <stddef.h>
 
-#include "llhttp.h"
-
 #include "backend.h"
 #include "callbacks.h"
+#include "llhttp.h"
 
 const char *parser_backend_name = { "llhttp" };
 
