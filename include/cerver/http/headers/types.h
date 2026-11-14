@@ -1,7 +1,6 @@
-#ifndef _CERVER_HTTP_HEADERS_H_
-#define _CERVER_HTTP_HEADERS_H_
+#ifndef _CERVER_HTTP_HEADERS_TYPES_H_
+#define _CERVER_HTTP_HEADERS_TYPES_H_
 
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -9,33 +8,18 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define HTTP_HEADERS_MAX				63
 #define HTTP_HEADERS_SIZE				64
-
-// the fields that a list of headers keeps inside it, more of them are allocated
-#define HTTP_HEADERS_FIELDS_SIZE		32
-#define HTTP_HEADERS_FIELDS_MAX			256
-
-// the bytes of the lines that a list of headers keeps inside it, more of them are allocated
-#define HTTP_HEADERS_BUFFER_SIZE		512
-#define HTTP_HEADERS_BUFFER_MAX			16384
-
 // the longest name of a header that is not one of the known ones
 #define HTTP_HEADER_NAME_MAX			128
 
 // the open addressing table that finds a header type by its name,
 // a power of 2 bigger than twice the number of headers
 #define HTTP_HEADERS_TABLE_SIZE			128
-
-#define HTTP_HEADER_VALUE_SIZE			256
-
-#define HTTP_HEADER_TEMP_SIZE			128
-#define HTTP_HEADER_ACTUAL_SIZE			128
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define HTTP_HEADERS_MAP(XX)																																																																	\
 	/* Authentication */																																																																		\
 	XX(0,	AUTHENTICATE,      					WWW-Authenticate,					(Defines the authentication method that should be used to access a resource.))																																\
@@ -137,173 +121,8 @@ CERVER_PUBLIC const char *http_header_description (
 	const http_header header
 );
 
-CERVER_PUBLIC const http_header http_header_type_by_string (
+CERVER_PUBLIC const http_header http_header_type_with_string (
 	const char *header_type_string
-);
-
-struct _HttpHeader {
-
-	int len;
-	char value[HTTP_HEADER_VALUE_SIZE];
-
-};
-
-typedef struct _HttpHeader HttpHeader;
-
-CERVER_PRIVATE void http_header_reset (HttpHeader *header);
-
-CERVER_PRIVATE void http_header_set (
-	HttpHeader *header, const char *format, ...
-) CERVER_PRINTF_FORMAT (2, 3);
-
-CERVER_PUBLIC void http_header_print (
-	const HttpHeader *header
-);
-
-// finds a header in a compiled header ("Name: value\r\n" lines after its status line),
-// the name is compared without case and it stops at the empty line that ends the header
-// returns true if it was found, and sets its value without the surrounding spaces
-CERVER_PUBLIC bool http_headers_buffer_find (
-	const char *buffer, const size_t length,
-	const char *name, const size_t name_length,
-	const char **value, size_t *value_length
-);
-
-// a header of a list, its line "Name: value\r\n" is in the buffer of the list
-struct _HttpHeaderField {
-
-	// HTTP_HEADER_UNDEFINED when its name is not one of the known headers
-	http_header type;
-
-	unsigned int offset;
-
-	unsigned short name_length;
-	unsigned int value_length;
-
-};
-
-typedef struct _HttpHeaderField HttpHeaderField;
-
-// a list of headers in the order they were added, a name can be repeated,
-// its lines are kept one after the other, so they are sent as they are in HTTP/1.1
-// and a protocol that encodes its headers gets each name and value
-struct _HttpHeaders {
-
-	unsigned int count;
-
-	// the allocated fields, NULL while they fit inside the list
-	HttpHeaderField *fields;
-	unsigned int fields_size;
-
-	size_t length;
-
-	// the allocated lines, NULL while they fit inside the list
-	char *buffer;
-	size_t buffer_size;
-
-	HttpHeaderField inside_fields[HTTP_HEADERS_FIELDS_SIZE];
-	char inside_buffer[HTTP_HEADERS_BUFFER_SIZE];
-
-};
-
-typedef struct _HttpHeaders HttpHeaders;
-
-// a name must be a token (RFC 9110) of up to HTTP_HEADER_NAME_MAX bytes
-CERVER_PRIVATE bool http_header_name_is_valid (
-	const char *name, const size_t name_length
-);
-
-// a value can not have a CR, a LF or a NUL, as they would end its line
-CERVER_PRIVATE bool http_header_value_is_valid (
-	const char *value, const size_t value_length
-);
-
-CERVER_PRIVATE void http_headers_init (HttpHeaders *headers);
-
-// removes all the headers and releases the allocated memory
-CERVER_PRIVATE void http_headers_reset (HttpHeaders *headers);
-
-// adds a header at the end of the list, the ones with the same type are kept
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_headers_add (
-	HttpHeaders *headers, const http_header type,
-	const char *value, const size_t value_length
-);
-
-// works like http_headers_add () with any name,
-// the name of a known header is added with its type
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_headers_add_by_name (
-	HttpHeaders *headers,
-	const char *name, const size_t name_length,
-	const char *value, const size_t value_length
-);
-
-// adds a header after removing the ones with the same type
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_headers_set (
-	HttpHeaders *headers, const http_header type,
-	const char *value, const size_t value_length
-);
-
-// works like http_headers_set () with any name
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_headers_set_by_name (
-	HttpHeaders *headers,
-	const char *name, const size_t name_length,
-	const char *value, const size_t value_length
-);
-
-// returns the number of headers that were removed
-CERVER_PRIVATE unsigned int http_headers_remove (
-	HttpHeaders *headers, const http_header type
-);
-
-CERVER_PRIVATE unsigned int http_headers_remove_by_name (
-	HttpHeaders *headers, const char *name, const size_t name_length
-);
-
-CERVER_PRIVATE unsigned int http_headers_count (
-	const HttpHeaders *headers, const http_header type
-);
-
-CERVER_PRIVATE unsigned int http_headers_count_by_name (
-	const HttpHeaders *headers, const char *name, const size_t name_length
-);
-
-// returns the header with the type in the position between the ones that have it
-CERVER_PRIVATE const HttpHeaderField *http_headers_find (
-	const HttpHeaders *headers, const http_header type, const unsigned int position
-);
-
-CERVER_PRIVATE const HttpHeaderField *http_headers_find_by_name (
-	const HttpHeaders *headers,
-	const char *name, const size_t name_length, const unsigned int position
-);
-
-// returns the header in the index of the list, NULL after the last one
-CERVER_PRIVATE const HttpHeaderField *http_headers_get (
-	const HttpHeaders *headers, const unsigned int index
-);
-
-// the name of a header of the list, it does not end with '\0'
-CERVER_PRIVATE const char *http_headers_field_name (
-	const HttpHeaders *headers, const HttpHeaderField *field, size_t *name_length
-);
-
-// the value of a header of the list, it does not end with '\0'
-CERVER_PRIVATE const char *http_headers_field_value (
-	const HttpHeaders *headers, const HttpHeaderField *field, size_t *value_length
-);
-
-// the line "Name: value\r\n" of a header of the list
-CERVER_PRIVATE const char *http_headers_field_line (
-	const HttpHeaders *headers, const HttpHeaderField *field, size_t *line_length
-);
-
-// the lines "Name: value\r\n" of all the headers, in the order they were added
-CERVER_PRIVATE const char *http_headers_lines (
-	const HttpHeaders *headers, size_t *length
 );
 
 #ifdef __cplusplus

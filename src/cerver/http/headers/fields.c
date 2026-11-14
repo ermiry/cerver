@@ -1,219 +1,16 @@
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <stdio.h>
 
-#include <stdarg.h>
-#include <ctype.h>
 #include <pthread.h>
+#include <strings.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/http/headers.h"
-
-#pragma region types
-
-const char *http_header_string (
-	const http_header header
-) {
-
-	switch (header) {
-		#define XX(num, name, string, description) case HTTP_HEADER_##name: return #string;
-		HTTP_HEADERS_MAP(XX)
-		#undef XX
-	}
-
-	return http_header_string (HTTP_HEADER_UNDEFINED);
-
-}
-
-const char *http_header_description (
-	const http_header header
-) {
-
-	switch (header) {
-		#define XX(num, name, string, description) case HTTP_HEADER_##name: return #description;
-		HTTP_HEADERS_MAP(XX)
-		#undef XX
-	}
-
-	return http_header_description (HTTP_HEADER_UNDEFINED);
-
-}
-
-// FNV-1a of the lower case name, so the lookup does not depend on case
-static const unsigned int http_headers_hash_offset = 2166136261u;
-static const unsigned int http_headers_hash_prime = 16777619u;
-
-// a slot keeps the header type + 1, so 0 is an empty slot
-static unsigned char http_headers_table[HTTP_HEADERS_TABLE_SIZE] = { 0 };
-static pthread_once_t http_headers_table_once = PTHREAD_ONCE_INIT;
-
-static unsigned int http_headers_hash (const char *name) {
-
-	unsigned int hash = http_headers_hash_offset;
-	for (const char *ch = name; *ch; ch++) {
-		hash ^= (unsigned int) tolower ((unsigned char) *ch);
-		hash *= http_headers_hash_prime;
-	}
-
-	return hash;
-
-}
-
-static void http_headers_table_insert (const http_header type) {
-
-	unsigned int slot = http_headers_hash (http_header_string (type)) & (HTTP_HEADERS_TABLE_SIZE - 1);
-	while (http_headers_table[slot]) {
-		slot = (slot + 1) & (HTTP_HEADERS_TABLE_SIZE - 1);
-	}
-
-	http_headers_table[slot] = (unsigned char) (type + 1);
-
-}
-
-static void http_headers_table_init (void) {
-
-	#define XX(num, name, string, description) if (HTTP_HEADER_##name != HTTP_HEADER_UNDEFINED) http_headers_table_insert (HTTP_HEADER_##name);
-	HTTP_HEADERS_MAP(XX)
-	#undef XX
-
-}
-
-const http_header http_header_type_by_string (
-	const char *header_type_string
-) {
-
-	http_header found = HTTP_HEADER_UNDEFINED;
-
-	if (header_type_string) {
-		(void) pthread_once (&http_headers_table_once, http_headers_table_init);
-
-		unsigned int slot = http_headers_hash (header_type_string) & (HTTP_HEADERS_TABLE_SIZE - 1);
-		while (http_headers_table[slot]) {
-			const http_header candidate = (http_header) (http_headers_table[slot] - 1);
-			if (!strcasecmp (http_header_string (candidate), header_type_string)) {
-				found = candidate;
-				break;
-			}
-
-			slot = (slot + 1) & (HTTP_HEADERS_TABLE_SIZE - 1);
-		}
-	}
-
-	return found;
-
-}
-
-#pragma endregion
-
-#pragma region header
-
-void http_header_reset (HttpHeader *header) {
-
-	(void) memset (header, 0, sizeof (HttpHeader));
-
-}
-
-void http_header_set (
-	HttpHeader *header, const char *format, ...
-) {
-
-	va_list args;
-	va_start (args, format);
-
-	header->len = vsnprintf (
-		header->value, HTTP_HEADER_VALUE_SIZE,
-		format, args
-	);
-
-	va_end (args);
-
-}
-
-void http_header_print (const HttpHeader *header) {
-
-	(void) printf ("(%d) - %s\n", header->len, header->value);
-
-}
-
-#pragma endregion
-
-#pragma region buffer
-
-static const char http_headers_line_end[] = { "\r\n" };
-static const size_t http_headers_line_end_length = 2;
-static const char http_headers_name_separator = ':';
-
-// returns the line that starts at start, without its "\r\n"
-static size_t http_headers_buffer_line (
-	const char *start, const char *end
-) {
-
-	const char *line_end = start;
-	while (
-		((size_t) (end - line_end) >= http_headers_line_end_length)
-		&& memcmp (line_end, http_headers_line_end, http_headers_line_end_length)
-	) {
-		line_end += 1;
-	}
-
-	return ((size_t) (end - line_end) >= http_headers_line_end_length) ?
-		(size_t) (line_end - start) : (size_t) (end - start);
-
-}
-
-static void http_headers_buffer_value (
-	const char *line, const size_t line_length, const size_t name_length,
-	const char **value, size_t *value_length
-) {
-
-	const char *first = line + name_length + 1;
-	const char *last = line + line_length;
-
-	while ((first < last) && isspace ((unsigned char) *first)) first += 1;
-	while ((last > first) && isspace ((unsigned char) *(last - 1))) last -= 1;
-
-	if (value) *value = first;
-	if (value_length) *value_length = (size_t) (last - first);
-
-}
-
-bool http_headers_buffer_find (
-	const char *buffer, const size_t length,
-	const char *name, const size_t name_length,
-	const char **value, size_t *value_length
-) {
-
-	bool found = false;
-
-	if (buffer && name) {
-		const char *end = buffer + length;
-
-		// the status line is not a header
-		const char *line = buffer + http_headers_buffer_line (buffer, end) + http_headers_line_end_length;
-		while (!found && (line < end)) {
-			const size_t line_length = http_headers_buffer_line (line, end);
-			if (!line_length) break;
-
-			if (
-				(line_length > name_length)
-				&& (line[name_length] == http_headers_name_separator)
-				&& !strncasecmp (line, name, name_length)
-			) {
-				http_headers_buffer_value (line, line_length, name_length, value, value_length);
-				found = true;
-			}
-
-			line += line_length + http_headers_line_end_length;
-		}
-	}
-
-	return found;
-
-}
-
-#pragma endregion
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/headers/internal.h"
 
 #pragma region list
 
@@ -450,7 +247,7 @@ static http_header http_headers_name_type (
 	(void) memcpy (name_string, name, name_length);
 	name_string[name_length] = '\0';
 
-	return http_header_type_by_string (name_string);
+	return http_header_type_with_string (name_string);
 
 }
 
@@ -476,7 +273,7 @@ u8 http_headers_add (
 
 }
 
-u8 http_headers_add_by_name (
+u8 http_headers_add_with_name (
 	HttpHeaders *headers,
 	const char *name, const size_t name_length,
 	const char *value, const size_t value_length
@@ -588,7 +385,7 @@ u8 http_headers_set (
 
 }
 
-u8 http_headers_set_by_name (
+u8 http_headers_set_with_name (
 	HttpHeaders *headers,
 	const char *name, const size_t name_length,
 	const char *value, const size_t value_length
@@ -604,7 +401,7 @@ u8 http_headers_set_by_name (
 			headers, http_headers_name_type (name, name_length), name, name_length
 		);
 
-		retval = http_headers_add_by_name (headers, name, name_length, value, value_length);
+		retval = http_headers_add_with_name (headers, name, name_length, value, value_length);
 	}
 
 	return retval;
@@ -620,7 +417,7 @@ unsigned int http_headers_remove (
 
 }
 
-unsigned int http_headers_remove_by_name (
+unsigned int http_headers_remove_with_name (
 	HttpHeaders *headers, const char *name, const size_t name_length
 ) {
 
@@ -671,7 +468,7 @@ unsigned int http_headers_count (
 
 }
 
-unsigned int http_headers_count_by_name (
+unsigned int http_headers_count_with_name (
 	const HttpHeaders *headers, const char *name, const size_t name_length
 ) {
 
@@ -697,7 +494,7 @@ const HttpHeaderField *http_headers_find (
 
 }
 
-const HttpHeaderField *http_headers_find_by_name (
+const HttpHeaderField *http_headers_find_with_name (
 	const HttpHeaders *headers,
 	const char *name, const size_t name_length, const unsigned int position
 ) {
