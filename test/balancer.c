@@ -177,6 +177,15 @@ static void test_balancer_create_custom (void) {
 
 }
 
+// the getters of a NULL balancer and a NULL service return their none values
+static void test_balancer_getters_null (void) {
+
+	test_check_int_eq (balancer_get_type (NULL), BALANCER_TYPE_NONE, "the type of a NULL balancer");
+	test_check_int_eq (balancer_service_get_status (NULL), SERVICE_STATUS_NONE, "the status of a NULL service");
+	test_check_str_eq (balancer_service_get_status_string (NULL), none_string, "the status string of a NULL service");
+
+}
+
 static void test_balancer_create_round_robin (void) {
 
 	const BalancerType balancer_type = BALANCER_TYPE_ROUND_ROBIN;
@@ -377,6 +386,7 @@ int main (void) {
 	test_balancer_create_round_robin ();
 	test_balancer_create_handler_id ();
 	test_balancer_create_custom ();
+	test_balancer_getters_null ();
 
 	// routes
 	test_balancer_route_id ();
