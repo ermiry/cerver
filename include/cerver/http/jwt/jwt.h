@@ -10,7 +10,6 @@
 #define _CERVER_HTTP_JWT_H_
 
 #include <stdio.h>
-
 #include <time.h>
 
 #include "cerver/config.h"

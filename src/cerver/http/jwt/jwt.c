@@ -5,18 +5,16 @@
    License, v. 2.0. If a copy of the MPL was not distributed with this
    file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <openssl/crypto.h>
 
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
-
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
