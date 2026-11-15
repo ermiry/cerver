@@ -1,48 +1,23 @@
 ## General
-- Moved the cerver to core with its types, the start & its end
-- Moved the admin into its own folder with its stats & its poll
-- Moved the auth & the sessions into a folder with their hold
-- Moved the client into a folder with its connect & its events
-- Moved the connection into its own folder & split it by parts
-- Moved the files into a folder with images, sends & receives
-- Moved the handler, the receive, events & errors to a folder
-- Moved the balancer into load with its services & its routes
-- Moved the network, the sockets & the udp into their folder
-- Moved the packets & serializer into a folder with its header
-- Moved the system, the timers & the input to its own folder
-- Updated the includes of collections & types to their layout
-- Updated the includes of threads & game to the new layout
-- Updated the includes of the utils & their tests to the layout
-- Moved the tests of the pairs & the app to the layout's path
-- Updated the includes of the fuzzers to all the layout paths
-- Updated the examples & the benchmarks to the new paths
-- Updated the makefile with the folders & a test per module
-- Using the random bytes of the kernel of crypto in sessions
-- Changed the license to Apache-2.0, its notice & the others
-- Fixed arena_alloc () with sizes that wrap & a NULL avl tree
-- Keeping the real length of strings & their NULL arguments
-- Fixed the copies of C strings, converters & random ranges
-- Taking a NULL job in job_reset () & fixed bsem_wait () doc
-- Fixing a NULL game type config & a NULL lobby summary
-- Returning 1 when the receive timeout of a socket is not set
-- Checking NULL packets & the sizes of the appended data
-- Starting new receive handles with their received bytes at 0
-- Keeping the names & the ips of connections set with NULL
-- Keeping the client names & the session lookups with NULL
-- Fixed cerver_start () of a NULL cerver & the admin lookup
-- Fixed the type & the status of a NULL balancer & a service
-- Ending a connection only once, if two of the threads end it
-- Added Doxygen with make docs, its Dockerfile & its CI job
-- Added CLAUDE.md with the build, the tests & the modules
-- Added the changes of the 1.9b-1 to the incompatibility file
-
-## Documentation
-- Documented the core, the config & the version in Doxygen
-- Documented the clients & the connections in Doxygen too
-- Documented the packets, handler & network with Doxygen
-- Documented the auth, admin, files, load & system headers
-- Documented the collections & the types with Doxygen too
-- Documented the utils, threads, crypto & game in Doxygen
+- Added a bounded copy to the utils & fixed the limits of ints
+- Using localtime_r in the log & reentrant times in the timers
+- Removed the defines of glibc from config.h with an #error
+- Fixed the str_set that grows & str_split without a delimiter
+- Fixed the locks of the collections & their new safe variants
+- Fixed the requests of jobs, the semaphores & each worker
+- Added the references to the arguments of events & errors
+- Fixed the stop from a signal, the stats & the core handlers
+- Added the limits of the admins & its own check of packets
+- Fixed the drop of the poll of the clients & of their requests
+- Releasing the old received data that a connection replaces
+- Keeping the data of packets that can't grow & their copies
+- Rejecting uploads without a path & taking the plain names
+- Added the references of lobbies & the checks of the score
+- Using the bounded copy in sessions & in the load services
+- Updated CLAUDE.md with the analyzers & the faults tests
+- Added the changes of the 1.9b-2 to the incompatibility file
 
 ## Tests
-- Waiting for the client of an async connection to be running
+- Added the tests of the faults of allocations to the core too
+- Updated the fuzz job with one target per job & its recovery
+- Added the static analyzers with their suppressions & a job
