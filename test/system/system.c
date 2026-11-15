@@ -1,13 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
-#include <cerver/system.h>
+#include <cerver/system/system.h>
 
-#include "test.h"
+#include "../test.h"
 
 #define SYSTEM_TEST_PATH				"/"
 #define SYSTEM_TEST_MISSING_PATH		"/cerver-system-test-missing"

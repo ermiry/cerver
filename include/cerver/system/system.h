@@ -4,9 +4,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "cerver/config.h"
-
 #include "cerver/types/types.h"
+
+#include "cerver/config.h"
 
 #define MB		1048576
 #define GB		1073741824
