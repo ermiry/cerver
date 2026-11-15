@@ -24,6 +24,7 @@
 #include "cerver/connection/registry.h"
 #include "cerver/core/cerver.h"
 #include "cerver/core/end.h"
+#include "cerver/core/internal.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/handler/handler.h"
@@ -181,8 +182,7 @@ static u8 udp_client_register (
 	if (!connection_register_to_client (client, connection)) {
 		udp_session_insert (cerver, client);
 
-		CERVER_STATS_ADD (cerver->stats->total_n_clients, 1);
-		CERVER_STATS_ADD (cerver->stats->current_n_connected_clients, 1);
+		cerver_stats_count_client (cerver);
 
 		retval = 0;
 	}

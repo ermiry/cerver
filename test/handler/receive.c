@@ -15,7 +15,7 @@
 static void test_receive_error_to_string (void) {
 
 	test_check_str_eq (receive_error_to_string (RECEIVE_ERROR_NONE), "None", NULL);
-	test_check_str_eq (receive_error_to_string (RECEIVE_ERROR_TIMEOUT), "Timeoout", NULL);
+	test_check_str_eq (receive_error_to_string (RECEIVE_ERROR_TIMEOUT), "Timeout", NULL);
 	test_check_str_eq (receive_error_to_string (RECEIVE_ERROR_EMPTY), "Empty", NULL);
 	test_check_str_eq (receive_error_to_string (RECEIVE_ERROR_FAILED), "Failed", NULL);
 

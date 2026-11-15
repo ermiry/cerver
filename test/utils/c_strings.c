@@ -30,6 +30,37 @@ static void test_c_string_copy (void) {
 
 }
 
+#define STRING_BOUNDED_FILL		'z'
+
+// the destination always ends with its null byte, even when it was not zeroed,
+// and the result says whether the string was cut
+static void test_c_string_copy_bounded (void) {
+
+	char string[STRING_LEN];
+	(void) memset (string, STRING_BOUNDED_FILL, sizeof (string));
+
+	test_check_bool_eq (c_string_copy_bounded (string, "hola", STRING_LEN), false, NULL);
+	test_check_str_eq (string, "hola", NULL);
+
+	test_check_bool_eq (
+		c_string_copy_bounded (string, "holayadiosholayadiosholayadios1", STRING_LEN), false, NULL
+	);
+	test_check_int_eq ((int) strlen (string), STRING_LEN - 1, NULL);
+
+	(void) memset (string, STRING_BOUNDED_FILL, sizeof (string));
+	test_check_bool_eq (
+		c_string_copy_bounded (string, "holayadiosholayadiosholayadios12", STRING_LEN), true, "a cut copy was not reported"
+	);
+	test_check_str_eq (string, "holayadiosholayadiosholayadios1", NULL);
+
+	test_check_bool_eq (c_string_copy_bounded (string, NULL, STRING_LEN), false, NULL);
+	test_check_str_empty (string);
+
+	test_check_bool_eq (c_string_copy_bounded (NULL, "hola", STRING_LEN), false, NULL);
+	test_check_bool_eq (c_string_copy_bounded (string, "hola", 0), false, NULL);
+
+}
+
 static void test_c_string_n_copy (void) {
 
 	char string[STRING_LEN] = { 0 };
@@ -247,6 +278,19 @@ static void test_c_string_split (void) {
 
 }
 
+#define C_STRINGS_TEST_NO_COUNT			7
+
+// a string of only delimiters has no tokens and no array (it got one with a NULL token)
+static void test_c_string_split_only_delimiters (void) {
+
+	size_t count = C_STRINGS_TEST_NO_COUNT;
+	char **tokens = c_string_split (",,,", ',', &count);
+
+	test_check_null_ptr (tokens);
+	test_check_unsigned_eq ((unsigned int) count, 0, "a string of only delimiters has tokens");
+
+}
+
 static void test_c_string_reverse (void) {
 
 	char string[STRING_LEN] = { 0 };
@@ -298,6 +342,7 @@ void utils_tests_c_strings (void) {
 
 	test_c_string_copy ();
 	test_c_string_n_copy ();
+	test_c_string_copy_bounded ();
 	test_c_string_concat ();
 	test_c_string_concat_without_size ();
 	test_c_string_create_with_ptrs ();
@@ -310,6 +355,7 @@ void utils_tests_c_strings (void) {
 	test_c_string_remove_spaces_and_line_breaks ();
 	test_c_string_count_tokens ();
 	test_c_string_split ();
+	test_c_string_split_only_delimiters ();
 	test_c_string_reverse ();
 	test_c_string_remove_char ();
 	test_c_string_remove_sub ();

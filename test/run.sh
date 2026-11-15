@@ -58,4 +58,9 @@ run ./test/bin/json
 
 run ./test/bin/jwt
 
+# the faults binary defines the allocators: it is not built with a sanitizer and does not run under valgrind
+if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
+	run ./test/bin/faults
+fi
+
 run ./test/bin/version

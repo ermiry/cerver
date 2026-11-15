@@ -133,15 +133,12 @@ bool is_multipart (const char *content) {
 
 }
 
-static DoubleList *http_mpart_attributes_parse (char *str) {
-
-	DoubleList *attributes = dlist_init (key_value_pair_delete, NULL);
+// the attributes of a copy of the header, that is changed
+static void http_mpart_attributes_parse_copy (DoubleList *attributes, char *header_str) {
 
 	char *pair = NULL, *name = NULL, *value = NULL;
-	char *header_str = strdup (str);
-	char *original = header_str;
 
-	while (isspace (*header_str)) header_str++;
+	while (isspace ((unsigned char) *header_str)) header_str++;
 
 	while ((pair = strsep (&header_str, ";")) && pair != NULL) {
 		name = strsep (&pair, "=");
@@ -159,7 +156,17 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 		);
 	}
 
-	free (original);
+}
+
+// without memory for the copy of the header there are no attributes (it read a NULL copy)
+static DoubleList *http_mpart_attributes_parse (char *str) {
+
+	DoubleList *attributes = dlist_init (key_value_pair_delete, NULL);
+
+	char *header_str = strdup (str);
+	if (attributes && header_str) http_mpart_attributes_parse_copy (attributes, header_str);
+
+	free (header_str);
 
 	return attributes;
 

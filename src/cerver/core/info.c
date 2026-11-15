@@ -51,11 +51,7 @@ CerverInfo *cerver_info_new (void) {
 	if (cerver_info) {
 		(void) memset (cerver_info, 0, sizeof (CerverInfo));
 
-		(void) strncpy (
-			cerver_info->alias,
-			CERVER_DEFAULT_ALIAS,
-			CERVER_INFO_ALIAS_SIZE - 1
-		);
+		(void) c_string_copy_bounded (cerver_info->alias, CERVER_DEFAULT_ALIAS, CERVER_INFO_ALIAS_SIZE);
 
 		cerver_info->alias_len = strlen (cerver_info->alias);
 
@@ -78,9 +74,7 @@ void cerver_info_delete (CerverInfo *cerver_info) {
 
 void cerver_set_name (Cerver *cerver, const char *name) {
 
-	(void) strncpy (
-		cerver->info->name, name, CERVER_INFO_NAME_SIZE - 1
-	);
+	(void) c_string_copy_bounded (cerver->info->name, name, CERVER_INFO_NAME_SIZE);
 
 	cerver->info->name_len = strlen (cerver->info->name);
 
@@ -92,9 +86,7 @@ void cerver_set_name (Cerver *cerver, const char *name) {
 void cerver_set_alias (Cerver *cerver, const char *alias) {
 
 	if (cerver && alias) {
-		(void) strncpy (
-			cerver->info->alias, alias, CERVER_INFO_ALIAS_SIZE - 1
-		);
+		(void) c_string_copy_bounded (cerver->info->alias, alias, CERVER_INFO_ALIAS_SIZE);
 
 		cerver->info->alias_len = strlen (cerver->info->alias);
 	}
@@ -109,9 +101,7 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 	if (cerver && msg) {
 		if (cerver->info) {
-			(void) strncpy (
-				cerver->info->welcome, msg, CERVER_INFO_WELCOME_SIZE - 1
-			);
+			(void) c_string_copy_bounded (cerver->info->welcome, msg, CERVER_INFO_WELCOME_SIZE);
 
 			cerver->info->welcome_len = strlen (cerver->info->welcome);
 

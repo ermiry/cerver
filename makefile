@@ -14,6 +14,9 @@ ZLIB		:= 0
 
 WERROR		?= 0
 
+# gcc -fanalyzer (test/analyze.sh)
+ANALYZER	:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -103,6 +106,10 @@ ifeq ($(WERROR), 1)
 	COMMON += -Werror
 endif
 
+ifeq ($(ANALYZER), 1)
+	COMMON += -fanalyzer
+endif
+
 # main
 CFLAGS      := $(DEFINES)
 
@@ -162,7 +169,7 @@ endif
 INC         := -I $(INCDIR) -I $(SRCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR) -I $(SRCDIR)
 
-SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
+SOURCES     := $(shell find $(SRCDIR) -type f -name '*.$(SRCEXT)')
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
@@ -218,14 +225,14 @@ EXAFLAGS += $(COMMON) $(SANITIZERFLAGS)
 EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 
-EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
+EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name '*.$(SRCEXT)')
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
 # an example is compiled again when a header that it includes changes
 -include $(EXOBJS:.$(OBJEXT)=.$(DEPEXT))
 
 EXAPP		:= ./$(EXATARGET)/app/libapp.so
-EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
+EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name '*.$(SRCEXT)')
 
 EXAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
 
@@ -345,7 +352,7 @@ endif
 
 TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
-TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT) -not -path '$(TESTDIR)/fuzz/*')
+TESTS		:= $(shell find $(TESTDIR) -type f -name '*.$(SRCEXT)' -not -path '$(TESTDIR)/fuzz/*')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a test is compiled again when a header that it includes changes
@@ -354,7 +361,7 @@ TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
 TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
-TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
+TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name '*.$(SRCEXT)')
 
 TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
 
@@ -398,6 +405,9 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/network/*.o -o ./$(TESTTARGET)/network $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/crypto/*.o -o ./$(TESTTARGET)/crypto $(TESTLIBS)
+ifeq ($(SANITIZER),)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/faults/*.o -o ./$(TESTTARGET)/faults $(TESTLIBS)
+endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/http/*/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files/*.o -o ./$(TESTTARGET)/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/handler/*.o -o ./$(TESTTARGET)/handler $(TESTLIBS)
@@ -565,7 +575,7 @@ endif
 BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
-BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
+BENCHS		:= $(shell find $(BENCHDIR) -type f -name '*.$(SRCEXT)')
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a benchmark is compiled again when a header that it includes changes
@@ -616,7 +626,7 @@ ifeq ($(ZLIB), 1)
 	FUZZLIBS += $(ZLIBLIB)
 endif
 
-FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name *.$(SRCEXT) 2> /dev/null)
+FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name '*.$(SRCEXT)' 2> /dev/null)
 FUZZLIBOBJS		:= $(patsubst $(SRCDIR)/%,$(FUZZBUILD)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 fuzz: $(FUZZLIBOBJS)

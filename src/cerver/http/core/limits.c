@@ -165,8 +165,8 @@ void http_cerver_set_headers_timeout (
 	HttpCerver *http_cerver, const unsigned int headers_timeout
 ) {
 
+	// a timeout is not tuned in powers of 2 like the sizes (a request of 300 s warned)
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("headers_timeout", headers_timeout);
 		http_cerver->headers_timeout = http_cerver_timeout_milliseconds (headers_timeout);
 	}
 
@@ -185,7 +185,6 @@ void http_cerver_set_request_timeout (
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("request_timeout", request_timeout);
 		http_cerver->request_timeout = http_cerver_timeout_milliseconds (request_timeout);
 	}
 

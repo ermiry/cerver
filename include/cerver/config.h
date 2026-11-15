@@ -10,25 +10,26 @@
 #ifndef _CERVER_CONFIG_H_
 #define _CERVER_CONFIG_H_
 
+// cerver is C11 (and C++11), so va_copy always comes from stdarg.h:
+// the memcpy () that was used when this header came first copied
+// the pointer that a va_list parameter is in x86-64, not the list,
+// and every json_pack () and json_unpack () built with clang crashed
+#include <stdarg.h>
+
 /**
  * @defgroup config_features Feature test macros
- * @brief The GNU and POSIX extensions of the C library that cerver uses, defined before any system header.
+ * @brief The GNU and POSIX extensions of the C library that cerver uses.
+ *
+ * They only work before the first system header, and most headers of cerver include their system headers before
+ * this one: a program that includes cerver is built with `-D _GNU_SOURCE` (g++ defines it, gcc and clang do not,
+ * not even with their gnu dialects), and without it this header stops the build with an error that says so. The
+ * internal macros of glibc (`__USE_GNU`, `__USE_POSIX199309`) are never defined by hand.
  * @{
  */
 
 #ifndef _GNU_SOURCE
 	/** @brief Enables the GNU extensions of the C library, unless the build already defines it. */
 	#define _GNU_SOURCE
-#endif
-
-#ifndef __USE_GNU
-	/** @brief Enables the GNU declarations of the headers of glibc. */
-	#define __USE_GNU
-#endif
-
-#ifndef __USE_POSIX199309
-	/** @brief Enables the POSIX.1b declarations (the clocks and the timers). */
-	#define __USE_POSIX199309
 #endif
 
 #ifndef _XOPEN_SOURCE
@@ -39,6 +40,10 @@
 /** @} */
 
 #include <features.h>
+
+#if defined (__GLIBC__) && !defined (__USE_GNU)
+	#error "cerver needs _GNU_SOURCE before any system header: build with -D _GNU_SOURCE"
+#endif
 
 /**
  * @defgroup config_visibility Visibility
@@ -163,11 +168,5 @@
 #endif
 
 /** @} */
-
-// cerver is C11 (and C++11), so va_copy always comes from stdarg.h:
-// the memcpy () that was used when this header came first copied
-// the pointer that a va_list parameter is in x86-64, not the list,
-// and every json_pack () and json_unpack () built with clang crashed
-#include <stdarg.h>
 
 #endif

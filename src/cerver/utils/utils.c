@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -7,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "cerver/types/types.h"
 
 #include "cerver/utils/utils.h"
 
@@ -34,7 +37,11 @@ int clamp_int (
 
 int abs_int (const int value) {
 
-	return value > 0 ? value : (value * -1);
+	// INT_MIN has no positive int, the closest one is INT_MAX
+	int result = INT_MAX;
+	if (value != INT_MIN) result = value > 0 ? value : -value;
+
+	return result;
 
 }
 
@@ -65,20 +72,13 @@ void random_set_seed (const unsigned int seed) {
 
 int random_int_in_range (const int min, const int max) {
 
-	int low = 0, high = 0;
+	// the limits in the other order, or a single value, are the same inclusive range,
+	// in 64 bits so INT_MIN to INT_MAX has its size
+	const i64 low = (min < max) ? min : max;
+	const i64 high = (min < max) ? max : min;
+	const i64 span = high - low + 1;
 
-	if (min < max) {
-		low = min;
-		high = max + 1;
-	}
-
-	// the limits in the other order, or a single value, are the same inclusive range
-	else {
-		low = max;
-		high = min + 1;
-	}
-
-	return (rand () % (high - low)) + low;
+	return (int) (low + ((i64) rand () % span));
 
 }
 
@@ -114,24 +114,27 @@ int xtoi (char *hex_string) {
 char *itoa (int i, char *b) {
 
 	char const digit[] = "0123456789";
+	const u64 base = sizeof (digit) - 1;
 	char *p = b;
 
+	// the magnitude in 64 bits, so INT_MIN has its digits
+	u64 magnitude = (u64) i;
 	if (i < 0) {
 		*p++ = '-';
-		i *= -1;
+		magnitude = (u64) (-((i64) i));
 	}
 
-	int shifter = i;
+	u64 shifter = magnitude;
 	do { //Move to where representation ends
 		++p;
-		shifter = shifter / 10;
+		shifter = shifter / base;
 	} while (shifter);
 
 	*p = '\0';
 	do { //Move back, inserting digits as u go
-		*--p = digit [i % 10];
-		i = i / 10;
-	} while (i);
+		*--p = digit [magnitude % base];
+		magnitude = magnitude / base;
+	} while (magnitude);
 
 	return b;
 
@@ -170,6 +173,23 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 		if (!n) *(--to) = '\0';
 		else *to = '\0';
 	}
+
+}
+
+bool c_string_copy_bounded (char *to, const char *from, size_t size) {
+
+	bool truncated = false;
+
+	if (to && size) {
+		size_t length = from ? strlen (from) : 0;
+		truncated = (length >= size);
+		if (truncated) length = size - 1;
+
+		if (length) (void) memcpy (to, from, length);
+		to[length] = '\0';
+	}
+
+	return truncated;
 
 }
 
@@ -323,6 +343,36 @@ size_t c_string_count_tokens (
 
 }
 
+// the tokens of a copy of the string in an array with room for count of them,
+// a string of only delimiters has none and gets no array (it got one with a NULL token)
+static char **c_string_split_tokens (
+	char *string, const char delim, const size_t count, size_t *n_tokens
+) {
+
+	char **result = (char **) calloc (count, sizeof (char *));
+	if (result) {
+		const char delimiters[] = { delim, '\0' };
+
+		size_t idx = 0;
+		char *token = NULL;
+		char *rest = string;
+		while ((idx < count) && (token = __strtok_r (rest, delimiters, &rest))) {
+			result[idx] = strdup (token);
+			idx++;
+		}
+
+		if (!idx) {
+			free (result);
+			result = NULL;
+		}
+
+		if (n_tokens) *n_tokens = idx;
+	}
+
+	return result;
+
+}
+
 // splits a c string into tokens based on a delimiter
 // the original string won't be affected
 // this method is thread safe as it uses __strtok_r () instead of the regular strtok ()
@@ -337,25 +387,7 @@ char **c_string_split (
 			char *string = strdup (original);
 			if (string) {
 				size_t count = c_string_count_tokens (original, delim);
-				if (count) {
-					result = (char **) calloc (count, sizeof (char *));
-					if (result) {
-						if (n_tokens) *n_tokens = count;
-
-						size_t idx = 0;
-
-						char dlm[2];
-						dlm[0] = delim;
-						dlm[1] = '\0';
-
-						char *token = NULL;
-						char *rest = string;
-						while ((token = __strtok_r (rest, dlm, &rest))) {
-							result[idx] = strdup (token);
-							idx++;
-						}
-					}
-				}
+				if (count) result = c_string_split_tokens (string, delim, count, n_tokens);
 
 				free (string);
 			}
@@ -514,6 +546,16 @@ char *c_string_find_sub_in_len (
 
 }
 
+// a new string with the first len characters of from, NULL without memory
+static char *c_string_copy_length (const char *from, const size_t len) {
+
+	char *copy = (char *) calloc (len + 1, sizeof (char));
+	if (copy) (void) memcpy (copy, from, len);
+
+	return copy;
+
+}
+
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
 char *c_string_create_with_ptrs (char *first, char *last) {
@@ -567,15 +609,9 @@ char *c_string_remove_sub_after_token (
 		size_t sub_len = strlen (ptr);
 		size_t diff_len = str_len - sub_len;
 
-		if (sub) {
-			*sub = (char *) calloc (sub_len + 1, sizeof (char));
-			(void) memcpy (*sub, ptr, sub_len);
-			// *sub[sub_len] = '\0';
-		}
+		if (sub) *sub = c_string_copy_length (ptr, sub_len);
 
-		retval = (char *) calloc (diff_len + 1, sizeof (char));
-		(void) memcpy (retval, str, diff_len);
-		// retval[diff_len] = '\0';
+		retval = c_string_copy_length (str, diff_len);
 	}
 
 	return retval;
@@ -618,15 +654,9 @@ char *c_string_remove_sub_after_token_with_idx (
 		size_t sub_len = strlen (last_ptr);
 		size_t diff_len = str_len - sub_len;
 
-		if (sub) {
-			*sub = (char *) calloc (sub_len + 1, sizeof (char));
-			(void) memcpy (*sub, last_ptr, sub_len);
-			// *sub[sub_len] = '\0';
-		}
+		if (sub) *sub = c_string_copy_length (last_ptr, sub_len);
 
-		retval = (char *) calloc (diff_len + 1, sizeof (char));
-		(void) memcpy (retval, str, diff_len);
-		// retval[diff_len] = '\0';
+		retval = c_string_copy_length (str, diff_len);
 	}
 
 	return retval;

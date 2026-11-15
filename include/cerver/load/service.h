@@ -28,6 +28,7 @@ extern "C" {
  * @brief The size of the name of the connection of a service.
  *
  * @note cerver does not use it: the connection takes the name of the service.
+ * @deprecated It goes away in the 3.0.
  */
 #define SERVICE_CONNECTION_NAME_SIZE		64
 
@@ -35,6 +36,7 @@ extern "C" {
  * @brief The max sleep of the connection of a service.
  *
  * @note cerver does not use it: the connection makes a single attempt, see #SERVICE_CONNECT_MAX_SLEEP.
+ * @deprecated It goes away in the 3.0.
  */
 #define SERVICE_DEFAULT_MAX_SLEEP			30
 

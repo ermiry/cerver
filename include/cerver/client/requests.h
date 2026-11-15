@@ -30,9 +30,8 @@ extern "C" {
  * @param[in,out] client the client, already connected
  * @param[in,out] connection the connection
  * @param[in,out] request the request, its network values are set; the caller keeps it
- * @retval 0 the request was sent and a response was received
- * @retval 1 a NULL argument or the request could not be sent
- * @warning It returns 0 once the request was sent, even if receiving the response failed.
+ * @retval 0 the request was sent and its response was handled
+ * @retval 1 a NULL argument, the request could not be sent, or its response could not be received
  */
 CERVER_EXPORT unsigned int client_request_to_cerver (
 	Client *client, struct _Connection *connection,
@@ -152,10 +151,11 @@ CERVER_EXPORT u8 client_file_get (
  *
  * @param[in,out] client the client
  * @param[in,out] connection the connection
- * @param[in] filename the path of the file; the cerver gets the name after its last `/`
+ * @param[in] filename the path of the file; the cerver gets the name after its last `/`, or the whole filename
+ * when it has none (a file of the current directory)
  * @retval 0 the file was sent completely
- * @retval 1 a NULL argument, the file could not be opened, or it was not sent completely
- * @warning A filename without a `/` (like a file of the current directory) is rejected: use `./name`.
+ * @retval 1 a NULL argument, a filename that ends with `/`, the file could not be opened, or it was not sent
+ * completely
  */
 CERVER_EXPORT u8 client_file_send (
 	Client *client, struct _Connection *connection,

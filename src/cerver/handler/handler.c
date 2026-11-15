@@ -176,7 +176,12 @@ Handler *handler_create (Action handler_method) {
 
 		handler->handler = handler_method;
 
+		// a handler without its queue can not take jobs
 		handler->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+		if (!handler->job_queue) {
+			handler_delete (handler);
+			handler = NULL;
+		}
 	}
 
 	return handler;
@@ -1491,7 +1496,7 @@ static u8 cerver_packet_select_handler (
 			packet->connection = receive_handle->connection;
 			packet->client = receive_handle->admin->client;
 
-			packet->cerver->admin->stats->total_n_packets_received += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->total_n_packets_received, 1);
 
 			receive_handle->admin->client->stats->n_packets_received += 1;
 
@@ -1840,8 +1845,8 @@ static void cerver_receive_success (
 		} break;
 
 		case RECEIVE_TYPE_ADMIN: {
-			cr->cerver->admin->stats->total_n_receives_done += 1;
-			cr->cerver->admin->stats->total_bytes_received += received;
+			CERVER_STATS_ADD (cr->cerver->admin->stats->total_n_receives_done, 1);
+			CERVER_STATS_ADD (cr->cerver->admin->stats->total_bytes_received, received);
 
 			#ifdef CLIENT_STATS
 			cr->client->stats->n_receives_done += 1;
@@ -3774,7 +3779,8 @@ static struct pollfd *cerver_poll_copy_fds (
 	}
 
 	const u32 count = (cerver->max_n_fds < *polled_size) ? cerver->max_n_fds : *polled_size;
-	(void) memcpy (polled_fds, cerver->fds, sizeof (struct pollfd) * count);
+	// a first copy that could not be allocated has nothing to copy into
+	if (polled_fds) (void) memcpy (polled_fds, cerver->fds, sizeof (struct pollfd) * count);
 
 	for (u32 idx = count; idx < *polled_size; idx++) {
 		polled_fds[idx].fd = -1;

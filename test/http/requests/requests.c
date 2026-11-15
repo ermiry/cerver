@@ -386,6 +386,28 @@ static void test_http_request_set_full_dirname (void) {
 
 }
 
+#define TEST_DIRNAME_CHARACTER			'd'
+
+// a directory of REQUEST_DIRNAME_SIZE - 1 characters is kept whole (it lost its last one with a length that matched),
+// a longer one has a length that the cerver rejects
+static void test_http_request_set_dirname_limits (void) {
+
+	char longest[REQUEST_DIRNAME_SIZE + 1] = { 0 };
+	(void) memset (longest, TEST_DIRNAME_CHARACTER, REQUEST_DIRNAME_SIZE);
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_dirname (request, "%.*s", (int) (REQUEST_DIRNAME_SIZE - 1), longest);
+	test_check_int_eq (http_request_get_dirname_len (request), REQUEST_DIRNAME_SIZE - 1, NULL);
+	test_check_str_len (http_request_get_dirname (request), REQUEST_DIRNAME_SIZE - 1, "the directory lost a character");
+
+	http_request_set_dirname (request, "%s", longest);
+	test_check_int_eq (http_request_get_dirname_len (request), REQUEST_DIRNAME_SIZE, NULL);
+
+	http_request_delete (request);
+
+}
+
 static bool test_http_request_id_valid (const char *id) {
 
 	return http_request_id_is_valid (id, strlen (id));
@@ -550,6 +572,7 @@ void http_tests_requests (void) {
 	test_http_request_set_base_dirname ();
 	test_http_request_set_basic_dirname ();
 	test_http_request_set_full_dirname ();
+	test_http_request_set_dirname_limits ();
 
 	(void) printf ("Done!\n");
 

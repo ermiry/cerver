@@ -85,6 +85,23 @@ struct tm *timer_get_local_time (void) {
 
 }
 
+// the time goes to the struct of the caller, so many threads can ask for it at the same time
+struct tm *timer_get_gmt_time_r (struct tm *result) {
+
+	time_t rawtime = 0;
+	(void) time (&rawtime);
+	return result ? gmtime_r (&rawtime, result) : NULL;
+
+}
+
+struct tm *timer_get_local_time_r (struct tm *result) {
+
+	time_t rawtime = 0;
+	(void) time (&rawtime);
+	return result ? localtime_r (&rawtime, result) : NULL;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 

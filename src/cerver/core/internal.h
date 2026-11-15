@@ -22,6 +22,13 @@
 /** @internal @brief The first room for the sockets of a check that are shut down after the clients lock, it doubles. */
 #define CERVER_INACTIVE_SHUTDOWN_BATCH	256
 
+/** @internal @brief The read end of Cerver::stop_pipe. */
+#define CERVER_STOP_PIPE_READ			0
+/** @internal @brief The write end of Cerver::stop_pipe. */
+#define CERVER_STOP_PIPE_WRITE			1
+/** @internal @brief The ends of Cerver::stop_pipe. */
+#define CERVER_STOP_PIPE_ENDS			2
+
 /** @internal @brief The index of PACKET_TYPE_APP in the request stats and handlers. */
 #define CERVER_REQUEST_APP				0
 /** @internal @brief The index of PACKET_TYPE_APP_ERROR in the request stats and handlers. */
@@ -41,6 +48,48 @@ extern "C" {
  * @param[in] value the new value
  */
 CERVER_HIDDEN void cerver_set_running (Cerver *cerver, bool value);
+
+/**
+ * @internal
+ * @brief Creates the stop pipe of a new cerver, both ends close on exec and do not block.
+ *
+ * @param[out] cerver the cerver
+ */
+CERVER_HIDDEN void cerver_stop_pipe_create (Cerver *cerver);
+
+/**
+ * @internal
+ * @brief Closes the ends of the stop pipe of a cerver that is deleted.
+ *
+ * @param[in,out] cerver the cerver
+ */
+CERVER_HIDDEN void cerver_stop_pipe_close (Cerver *cerver);
+
+/**
+ * @internal
+ * @brief Sleeps the microseconds or until the cerver is stopped, waiting on its stop pipe.
+ *
+ * @param[in] cerver the cerver
+ * @param[in] microseconds the microseconds
+ */
+CERVER_HIDDEN void cerver_stop_wait (Cerver *cerver, i64 microseconds);
+
+/**
+ * @internal
+ * @brief Resets the counters of the stats of a cerver that grow when its threshold time passed.
+ *
+ * @param[in,out] cerver the cerver
+ */
+CERVER_HIDDEN void cerver_stats_threshold_check (Cerver *cerver);
+
+/**
+ * @internal
+ * @brief Counts a client that was registered: the total, the unique ones of the threshold time and the connected
+ * ones, after cerver_stats_threshold_check ().
+ *
+ * @param[in,out] cerver the cerver
+ */
+CERVER_HIDDEN void cerver_stats_count_client (Cerver *cerver);
 
 /**
  * @internal

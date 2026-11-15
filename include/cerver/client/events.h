@@ -85,6 +85,7 @@ struct _ClientEvent {
 	 * @brief The request that triggered the event, for custom events.
 	 *
 	 * @note cerver sets it to 0 and does not use it.
+	 * @deprecated It goes away in the 3.0.
 	 */
 	u32 request_type;
 	/** @brief The data that came with the response, set by client_event_set_response (). */

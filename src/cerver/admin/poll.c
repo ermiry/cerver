@@ -22,6 +22,7 @@
 #include "cerver/client/client.h"
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
 #include "cerver/core/end.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
@@ -82,8 +83,8 @@ u8 admin_cerver_poll_register_connection (
 			admin_cerver->fds[idx].events = POLLIN;
 			admin_cerver->current_n_fds++;
 
-			admin_cerver->stats->current_connections++;
-			admin_cerver->stats->total_admin_connections++;
+			CERVER_STATS_ADD (admin_cerver->stats->current_connections, 1);
+			CERVER_STATS_ADD (admin_cerver->stats->total_admin_connections, 1);
 
 			#ifdef ADMIN_DEBUG
 			cerver_log (
@@ -99,7 +100,7 @@ u8 admin_cerver_poll_register_connection (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %lu",
 				admin_cerver->cerver->info->name,
-				admin_cerver->stats->current_connections
+				CERVER_STATS_GET (admin_cerver->stats->current_connections)
 			);
 			#endif
 
@@ -140,7 +141,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			admin_cerver->fds[idx].events = -1;
 			admin_cerver->current_n_fds--;
 
-			admin_cerver->stats->current_connections--;
+			CERVER_STATS_SUBTRACT (admin_cerver->stats->current_connections, 1);
 
 			#ifdef ADMIN_DEBUG
 			cerver_log (
@@ -155,7 +156,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %lu",
 				admin_cerver->cerver->info->name,
-				admin_cerver->stats->current_connections
+				CERVER_STATS_GET (admin_cerver->stats->current_connections)
 			);
 			#endif
 
