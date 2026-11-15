@@ -29,6 +29,7 @@
 #include "cerver/http/core/connection.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/utils.h"
 #include "cerver/http/headers/buffer.h"
@@ -1504,13 +1505,21 @@ static bool http_response_client_needs_keep_alive (const HttpReceive *http_recei
 
 }
 
+// the connection is closed after the response: the cerver did not keep it, or the request was rejected
+// (a complete one that is rejected later, like an authentication that runs with its handler, was going to keep it)
+static bool http_response_closes_connection (const HttpReceive *http_receive) {
+
+	return !http_receive->keep_alive || !http_receive_was_handled (http_receive);
+
+}
+
 // what cerver knows about the connection when the response is sent: one that is closed after it says so,
 // one that is kept says nothing to an HTTP/1.1 client (it is its default) and "keep-alive" to an HTTP/1.0 one
 static void http_response_extra_connection_add (
 	const HttpReceive *http_receive, HttpResponseMessage *message
 ) {
 
-	if (!http_receive->keep_alive) {
+	if (http_response_closes_connection (http_receive)) {
 		http_response_extra_add_header (
 			&message->extra, HTTP_HEADER_CONNECTION,
 			HTTP_RESPONSE_CONNECTION_CLOSE, sizeof (HTTP_RESPONSE_CONNECTION_CLOSE) - 1
