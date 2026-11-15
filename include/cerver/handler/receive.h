@@ -4,7 +4,8 @@
 #include <stddef.h>
 
 #include "cerver/config.h"
-#include "cerver/packets.h"
+
+#include "cerver/packets/packets.h"
 
 #ifdef __cplusplus
 extern "C" {
