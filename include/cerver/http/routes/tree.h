@@ -472,6 +472,23 @@ CERVER_EXPORT void http_endpoint_set_compression (
 );
 
 /**
+ * @brief Sets the pool of threads that handles the requests of an endpoint (http/core/pool.h), with
+ * CERVER_HANDLER_TYPE_EVENTS: its handler, its middlewares and its custom authentication run in the threads of
+ * that pool.
+ *
+ * The pool is found when the cerver starts: a name that no pool of the cerver has is an error of the routes and
+ * the cerver does not start.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver. A name of more than
+ * #HTTP_POOL_NAME_SIZE - 1 bytes is an error of the routes
+ * @since 2.1b-17
+ */
+CERVER_EXPORT void http_endpoint_set_pool (
+	HttpEndpoint *endpoint, const char *name
+);
+
+/**
  * @brief Adds a before middleware to an endpoint, after the ones of its groups.
  *
  * @param[in,out] endpoint the endpoint
@@ -889,6 +906,17 @@ CERVER_EXPORT void http_group_set_compression (
 );
 
 /**
+ * @brief Sets the pool of threads that the endpoints of a group inherit, like http_endpoint_set_pool ().
+ *
+ * @param[in,out] group the group
+ * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver
+ * @since 2.1b-17
+ */
+CERVER_EXPORT void http_group_set_pool (
+	HttpGroup *group, const char *name
+);
+
+/**
  * @brief Adds a before middleware to a group; the ones of the outer groups run first.
  *
  * @param[in,out] group the group
@@ -1222,6 +1250,21 @@ CERVER_PRIVATE String *http_tree_path_join (
  */
 CERVER_PRIVATE u8 http_tree_insert (
 	HttpTree *tree, HttpEndpoint *endpoint, const bool compatibility
+);
+
+/**
+ * @brief Finds the pool of threads of an endpoint with the name of its resolved settings: the cerver of the tree
+ * must have it, an unknown name is an error of the tree.
+ *
+ * @param[in,out] tree the tree
+ * @param[in,out] endpoint the endpoint, with its resolved settings
+ * @retval 0 the pool was found, or the endpoint did not choose one
+ * @retval 1 no pool has the name (the cerver does not start)
+ * @note For the internal methods of cerver.
+ * @since 2.1b-17
+ */
+CERVER_PRIVATE u8 http_tree_resolve_pool (
+	HttpTree *tree, HttpEndpoint *endpoint
 );
 
 /**
