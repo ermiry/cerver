@@ -153,15 +153,16 @@ puede ocupar varias.
 | **L0** | 3.0b-1 | La línea, Apache-2.0, `cerver/crypto`, la inyección de fallos, el arnés de competidores | 2.1b-13 publicada |
 | **L0.1** | 3.0b-2 | La estructura: subcarpetas, archivos partidos, headers internos en `src/`, paraguas | L0 |
 | **L0.2** | 3.0b-3 | La documentación de los headers: Doxygen con sintaxis Javadoc y su gate | L0.1 |
-| **L1** | 3.0b-4 | El JSON propio | L0.2 |
-| **L2** | 3.0b-5 | El JWT propio | L1 |
-| **L3** | 3.0b-6 | El parser HTTP/1.1 propio | L0.2 |
-| **L4** | 3.0b-7 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
-| **L5** | 3.0b-8 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-9 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-10 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-11 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-12 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **L0.3** | 3.0b-4 | El backlog de la revisión: los fixes de la 1.9b-2 y de la 2.0b-75, lo sin uso quitado, el dueño del stream de WebSocket, los analizadores estáticos | L0.2 |
+| **L1** | 3.0b-5 | El JSON propio | L0.3 |
+| **L2** | 3.0b-6 | El JWT propio | L1 |
+| **L3** | 3.0b-7 | El parser HTTP/1.1 propio | L0.2 |
+| **L4** | 3.0b-8 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
+| **L5** | 3.0b-9 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-10 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-11 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-12 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-13 | WebSocket sobre el I/O nuevo | L4, L5 |
 | **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
@@ -296,6 +297,25 @@ para que los ports entre líneas sigan siendo directos.
   3.0b-2, `crypto/random`, `_by_` → `_with_`, la licencia y la misma documentación, y los archivos del core solo
   difieren en las partes web de `cerver` y `handler`, el paraguas y lo de OpenSSL de `crypto/`. Un arreglo del core
   se hace en las dos ramas.
+
+### 4.0.3 L0.3 — El backlog de la revisión (3.0b-4)
+
+- **El port de la 1.9b-2 de `core`:** el stop desde una señal con un pipe, los reemplazos que liberan, las variantes
+  seguras de collections, jobs y lobby, las referencias de los argumentos de los eventos, los límites del admin,
+  `config.h` sin `__USE_*`, `str_set ()` que crece, la copia acotada, `test/faults/core.c` y los analizadores
+  estáticos (`test/analyze.sh`, `.clang-tidy`, `test/suppressions.txt`, `Dockerfile.analyze`, el job `analyzers`).
+- **Lo de HTTP de la 2.0b-75:** el video con RFC 9110 (200, 206 inclusivo, 416), los custom data que liberan el
+  anterior, el pool de las respuestas y de los JWT, `http_request_set_dirname ()` con su último carácter, los
+  timeouts sin aviso, los pares sin memoria (`test/faults/http.c`) y el aviso MIT de multipart-parser-c (L3 lo
+  reemplaza).
+- **Lo sin uso se quita** (en `core` y `http` quedó deprecado): `cerver_set_sockets_pool_init ()` y
+  `CERVER_DEFAULT_SOCKETS_INIT`, `lobby_stats_set_threshold_time ()`, `lobby_get ()` y `lobby_search_with_id ()` (sin
+  referencia), `timer_get_gmt_time ()` y `timer_get_local_time ()`, `game_set_player_comparator ()` y su campo, los
+  `threshold_time` de las conexiones, los clientes, el admin y los lobbies, `CONNECTION_DEFAULT_BAD_PACKETS`,
+  `SERVICE_CONNECTION_NAME_SIZE`, `SERVICE_DEFAULT_MAX_SLEEP`, los `GAME_DEFAULT_*` y `ClientEvent::request_type`.
+- **El dueño del stream de WebSocket:** las piezas y el fin de un hilo que no empezó el stream son un error y no
+  sueltan el mutex del dueño (`test_server_foreign_stream`).
+- L1 y las fases siguientes se recorren una beta.
 
 ### 4.1 L1 — El JSON propio
 
