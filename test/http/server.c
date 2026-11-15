@@ -7,12 +7,15 @@
 #include <time.h>
 
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,6 +24,7 @@
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
+#include "cerver/events/internal.h"
 #include <cerver/network/network.h>
 
 #include <cerver/http/core/handler.h>
@@ -29,9 +33,12 @@
 #include <cerver/http/core/metrics.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/headers/fields.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/threads/thpool.h>
 
@@ -91,6 +98,9 @@
 #define SERVER_TEST_FILES_LIMIT				(1 << 5)
 #define SERVER_TEST_FILES_CONNECTIONS		(1 << 6)
 
+// the connections that a cerver with that limit can never hold
+#define SERVER_TEST_FILES_EXTRA				(SERVER_TEST_FILES_CONNECTIONS - SERVER_TEST_FILES_LIMIT)
+
 // a cerver that ran out of fds recovers once it closed what it could not handle,
 // that takes longer in a loaded machine, so its first request is tried again until then
 #define SERVER_TEST_RECOVER_SECONDS			16
@@ -127,6 +137,24 @@
 // milliseconds of all the sends of a response, and how much later it can end (also under valgrind)
 #define SERVER_TEST_RESPONSE_SEND_TIMEOUT	500
 #define SERVER_TEST_RESPONSE_SEND_TOLERANCE	(1 << 8)
+
+// a negative wait keeps the default of the cerver
+#define SERVER_TEST_DEFAULT_WAIT_TIMEOUT	(-1)
+
+// secs that a request of a cerver with event loops waits for a place in the thpool
+#define SERVER_TEST_WAIT_TIMEOUT			1
+
+// the name of a thread, with its end
+#define SERVER_TEST_THREAD_NAME_SIZE		16
+
+// the names of the threads of a thpool start with it, the ones of the event loops do not
+#define SERVER_TEST_POOL_THREAD_PREFIX		"thpool"
+
+// the requests that a cerver with two event loops gets: both loops accept some of them
+#define SERVER_TEST_LOOPS_REQUESTS			(1 << 6)
+
+#define SERVER_TEST_UPLOADS_PATH			"/tmp/cerver-server-uploads"
+#define SERVER_TEST_UPLOADS_MODE			0755
 
 #define SERVER_TEST_FILENAME_SIZE			256
 #define SERVER_TEST_FILE_TEMPLATE			"/tmp/cerver-server-XXXXXX.mp4"
@@ -356,6 +384,7 @@ static void server_test_block_handler (
 }
 
 static char *big_response = NULL;
+static unsigned int big_started = 0;
 static unsigned int big_sent = 0;
 static unsigned int big_failed = 0;
 
@@ -365,6 +394,8 @@ static void server_test_big_handler (
 ) {
 
 	(void) request;
+
+	(void) __atomic_add_fetch (&big_started, 1, __ATOMIC_SEQ_CST);
 
 	if (http_response_render_text (
 		http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE
@@ -628,6 +659,14 @@ typedef struct ServerTestOptions {
 	// milliseconds of all the sends of a response, 0 uses send_timeout
 	unsigned int response_send_timeout;
 
+	// what only a cerver with event loops uses:
+	// the secs that a request waits for a place in the thpool, a negative value keeps the default
+	int overload_wait_timeout;
+
+	// its I/O threads and its limit of connections, 0 keeps the defaults
+	unsigned int io_threads;
+	unsigned int max_connections;
+
 } ServerTestOptions;
 
 typedef struct ServerTest {
@@ -641,6 +680,10 @@ typedef struct ServerTest {
 
 } ServerTest;
 
+// how the cervers of the tests that run now handle their connections,
+// every test runs with a thread for each connection and with event loops
+static CerverHandlerType server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
 static ServerTestOptions server_test_options_default (void) {
 
 	ServerTestOptions options = {
@@ -649,8 +692,9 @@ static ServerTestOptions server_test_options_default (void) {
 		CERVER_DRAIN_POLICY_RUN, SERVER_TEST_DRAIN_TIMEOUT,
 		CERVER_DEFAULT_SEND_TIMEOUT,
 		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT,
-		CERVER_HANDLER_TYPE_THREADS,
-		0
+		server_test_handler_type,
+		0,
+		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, 0, 0
 	};
 
 	return options;
@@ -712,10 +756,110 @@ static void server_test_large_handler (
 
 }
 
+// the name of the thread that ran the last custom authentication and the last handler of /secure,
+// written by the threads of the cerver and read by the test
+static pthread_mutex_t server_test_names_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char server_test_authentication_thread[SERVER_TEST_THREAD_NAME_SIZE] = { 0 };
+static char server_test_handler_thread[SERVER_TEST_THREAD_NAME_SIZE] = { 0 };
+
+// keeps the name of the thread that calls it
+static void server_test_thread_name_take (char *destination) {
+
+	(void) pthread_mutex_lock (&server_test_names_mutex);
+	(void) prctl (PR_GET_NAME, destination);
+	(void) pthread_mutex_unlock (&server_test_names_mutex);
+
+}
+
+static void server_test_thread_name_clear (char *name) {
+
+	(void) pthread_mutex_lock (&server_test_names_mutex);
+	name[0] = '\0';
+	(void) pthread_mutex_unlock (&server_test_names_mutex);
+
+}
+
+static bool server_test_thread_name_is_empty (const char *name) {
+
+	(void) pthread_mutex_lock (&server_test_names_mutex);
+	const bool empty = (name[0] == '\0');
+	(void) pthread_mutex_unlock (&server_test_names_mutex);
+
+	return empty;
+
+}
+
+// returns whether the thread that was kept is one of a thpool
+static bool server_test_thread_name_is_pool (const char *name) {
+
+	(void) pthread_mutex_lock (&server_test_names_mutex);
+	const bool is_pool = !strncmp (name, SERVER_TEST_POOL_THREAD_PREFIX, strlen (SERVER_TEST_POOL_THREAD_PREFIX));
+	(void) pthread_mutex_unlock (&server_test_names_mutex);
+
+	return is_pool;
+
+}
+
+static const char *server_test_valid_authorization = { "Bearer server-test" };
+
+// the custom authentication of /secure: a method of the application that can wait
+static unsigned int server_test_authentication (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+
+	server_test_thread_name_take (server_test_authentication_thread);
+
+	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+
+	return (authorization && !strcmp (authorization->str, server_test_valid_authorization)) ? 0 : 1;
+
+}
+
+// GET /secure/ok
+static void server_test_secure_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	server_test_thread_name_take (server_test_handler_thread);
+
+	(void) http_response_send (oki_doki, http_receive);
+
+}
+
+// POST /upload, the files of its request are deleted when it ends
+static void server_test_upload_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) http_response_send (oki_doki, http_receive);
+
+}
+
 static void server_test_routes (HttpCerver *http_cerver) {
 
 	HttpRoute *ok_route = http_route_create (REQUEST_METHOD_GET, "ok", server_test_ok_handler);
 	http_cerver_route_register (http_cerver, ok_route);
+
+	HttpGroup *secure = http_cerver_group_create (http_cerver, "secure");
+	http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	http_group_set_authentication_handler (secure, server_test_authentication);
+	test_check_ptr (http_group_get (secure, "ok", server_test_secure_handler));
+	test_check_ptr (http_group_post (secure, "echo", server_test_echo_handler));
+
+	HttpGroup *files = http_cerver_group_create (http_cerver, "files");
+	HttpEndpoint *upload = http_group_post (files, "upload", server_test_upload_handler);
+	test_check_ptr (upload);
+	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+	http_cerver_set_uploads_path (http_cerver, SERVER_TEST_UPLOADS_PATH);
+	http_cerver_set_default_uploads_filename_generator (http_cerver);
+	http_cerver_set_uploads_delete_when_done (http_cerver, true);
 
 	HttpRoute *block_route = http_route_create (REQUEST_METHOD_GET, "block", server_test_block_handler);
 	http_cerver_route_register (http_cerver, block_route);
@@ -770,6 +914,13 @@ static Cerver *server_test_cerver_create (
 	cerver_set_drain_policy (cerver, options->drain_policy);
 	cerver_set_drain_timeout (cerver, options->drain_timeout);
 	cerver_set_send_timeout (cerver, options->send_timeout);
+
+	if (options->overload_wait_timeout >= 0) {
+		cerver_set_overload_wait_timeout (cerver, (u32) options->overload_wait_timeout);
+	}
+
+	cerver_set_io_threads (cerver, options->io_threads);
+	cerver_set_max_connections (cerver, options->max_connections);
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 	http_cerver_set_headers_timeout (http_cerver, options->headers_timeout);
@@ -1289,8 +1440,16 @@ static void test_server_send_timeout (void) {
 	test_check_ptr (big_response);
 	(void) memset (big_response, 'a', SERVER_TEST_BIG_RESPONSE_SIZE);
 
+	// the test runs once for each way of handling the connections
+	__atomic_store_n (&big_failed, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&big_started, 0, __ATOMIC_SEQ_CST);
+
 	int slow_reader = server_test_connect (server->port);
 	server_test_send (slow_reader, big_request);
+
+	// its handler has the only thread before the next request is sent: the event loops give the thread
+	// to the request that is complete first, not to the connection that was accepted first
+	test_check_unsigned_eq (test_wait_counter (&big_started, 1, TEST_WAIT_SECONDS), 1, NULL);
 
 	// the only thread is free again after the send timeout
 	server_test_request (server->port, ok_request, status_ok);
@@ -1921,6 +2080,19 @@ static bool server_test_is_closed (const int fd) {
 
 }
 
+// the connections that the cerver closed
+static unsigned int server_test_closed_count (const int *fds, const unsigned int n_fds) {
+
+	unsigned int closed = 0;
+
+	for (unsigned int i = 0; i < n_fds; i++) {
+		if (server_test_is_closed (fds[i])) closed += 1;
+	}
+
+	return closed;
+
+}
+
 // valgrind keeps its own fds, so the child can not start with the limit
 static bool server_test_files_limit_is_valid (void) {
 
@@ -1947,15 +2119,20 @@ static void test_server_out_of_fds (void) {
 		fds[i] = server_test_connect (port);
 	}
 
-	server_test_sleep (SERVER_TEST_SLOW_SLEEP);
+	// the connections that the cerver has no fds for are closed by it, instead of staying in the backlog;
+	// the wait is for them, a fixed sleep failed when the cerver of the child took longer to start
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
 
-	// the extra connections are closed by the cerver, instead of staying in the backlog
-	unsigned int closed = 0;
-	for (unsigned int i = 0; i < SERVER_TEST_FILES_CONNECTIONS; i++) {
-		if (server_test_is_closed (fds[i])) closed++;
+	unsigned int closed = server_test_closed_count (fds, SERVER_TEST_FILES_CONNECTIONS);
+	while ((closed < SERVER_TEST_FILES_EXTRA) && (test_wait_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+		closed = server_test_closed_count (fds, SERVER_TEST_FILES_CONNECTIONS);
 	}
 
-	test_check (closed > 0, "the cerver did not close the connections that it could not handle");
+	test_check (
+		closed >= SERVER_TEST_FILES_EXTRA, "the cerver did not close the connections that it could not handle"
+	);
 
 	for (unsigned int i = 0; i < SERVER_TEST_FILES_CONNECTIONS; i++) (void) close (fds[i]);
 
@@ -2173,21 +2350,703 @@ static void test_server_stop_before_start (void) {
 
 #pragma endregion
 
-void http_tests_server (void) {
+#pragma region events
 
-	(void) printf ("Testing HTTP server...\n");
+static const char *secure_request = {
+	"GET /secure/ok HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Authorization: Bearer server-test\r\n"
+	"\r\n"
+};
+
+static const char *secure_rejected_request = {
+	"GET /secure/ok HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Authorization: Bearer another\r\n"
+	"\r\n"
+};
+
+static const char *secure_body_headers = {
+	"POST /secure/echo HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Authorization: Bearer server-test\r\n"
+	"Content-Type: text/plain\r\n"
+	"Content-Length: 8\r\n"
+	"\r\n"
+};
+
+static const char *secure_rejected_body_headers = {
+	"POST /secure/echo HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Authorization: Bearer another\r\n"
+	"Content-Type: text/plain\r\n"
+	"Content-Length: 8\r\n"
+	"\r\n"
+};
+
+static const char *secure_body_request = {
+	"POST /secure/echo HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Authorization: Bearer server-test\r\n"
+	"Content-Type: text/plain\r\n"
+	"Content-Length: 8\r\n"
+	"\r\n"
+	"12345678"
+};
+
+static const char *missing_request = {
+	"GET /missing/path HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *options_request = {
+	"OPTIONS /group/large HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *upload_request = {
+	"POST /files/upload HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 151\r\n"
+	"\r\n"
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"file\"; filename=\"events.txt\"\r\n"
+	"Content-Type: text/plain\r\n"
+	"\r\n"
+	"the file of a request\r\n"
+	"--server-test--\r\n"
+};
+
+static const char *status_unauthorized = { "HTTP/1.1 401" };
+static const char *status_no_content = { "HTTP/1.1 204" };
+
+static void server_test_wait_parked (const Cerver *cerver, const unsigned int expected) {
+
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while ((event_loop_group_parked (cerver) != expected) && (test_wait_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	test_check_unsigned_eq (event_loop_group_parked (cerver), expected, NULL);
+
+}
+
+static void server_test_wait_connections (const Cerver *cerver, const unsigned int expected) {
+
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while ((event_loop_group_connections (cerver) != expected) && (test_wait_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	test_check_unsigned_eq (event_loop_group_connections (cerver), expected, NULL);
+
+}
+
+// the files that are left in the uploads directory of the cervers
+static unsigned int server_test_uploads_count (void) {
+
+	unsigned int count = 0;
+
+	DIR *directory = opendir (SERVER_TEST_UPLOADS_PATH);
+	if (directory) {
+		const struct dirent *entry = NULL;
+		while ((entry = readdir (directory))) {
+			if (entry->d_name[0] != '.') count += 1;
+		}
+
+		(void) closedir (directory);
+	}
+
+	return count;
+
+}
+
+// removes the files that a test left in the uploads directory of the cervers
+static void server_test_uploads_remove (void) {
+
+	DIR *directory = opendir (SERVER_TEST_UPLOADS_PATH);
+	if (directory) {
+		const struct dirent *entry = NULL;
+		while ((entry = readdir (directory))) {
+			if (entry->d_name[0] != '.') (void) unlinkat (dirfd (directory), entry->d_name, 0);
+		}
+
+		(void) closedir (directory);
+	}
+
+}
+
+// only a web cerver with a thpool can handle its connections with event loops
+static void test_server_events_requirements (void) {
+
+	Cerver *custom = cerver_create (
+		CERVER_TYPE_CUSTOM, "events-custom", (u16) server_test_port++, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE
+	);
+
+	test_check_ptr (custom);
+	cerver_set_handler_type (custom, CERVER_HANDLER_TYPE_EVENTS);
+	cerver_set_reusable_address_flags (custom, true);
+
+	test_check_unsigned_eq (cerver_start (custom), 1, NULL);
+	test_check_unsigned_eq (cerver_teardown (custom), 0, NULL);
+
+	ServerTestOptions options = server_test_options_default ();
+	options.threads = 0;
+
+	Cerver *web = server_test_cerver_create ((u16) server_test_port++, &options);
+
+	test_check_unsigned_eq (cerver_start (web), 1, NULL);
+	test_check_unsigned_eq (cerver_teardown (web), 0, NULL);
+
+}
+
+// the methods of the application run in the threads of the thpool, never in an event loop:
+// the custom authentication and the handler of a request without a body take a single job
+static void test_server_events_threads (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	ThpoolStats before;
+	thpool_get_stats (server->cerver->thpool, &before);
+
+	server_test_thread_name_clear (server_test_authentication_thread);
+	server_test_thread_name_clear (server_test_handler_thread);
+
+	server_test_request (server->port, secure_request, status_ok);
+
+	server_test_wait_connections (server->cerver, 0);
+
+	test_check (
+		server_test_thread_name_is_pool (server_test_authentication_thread),
+		"the custom authentication did not run in the thpool"
+	);
+
+	test_check (
+		server_test_thread_name_is_pool (server_test_handler_thread),
+		"the handler did not run in the thpool"
+	);
+
+	ThpoolStats after;
+	thpool_get_stats (server->cerver->thpool, &after);
+	test_check_unsigned_eq (after.total_jobs - before.total_jobs, 1, NULL);
+
+	// a rejected one is answered by the same job, its handler never runs
+	server_test_thread_name_clear (server_test_handler_thread);
+
+	server_test_request (server->port, secure_rejected_request, status_unauthorized);
+
+	server_test_wait_connections (server->cerver, 0);
+
+	test_check (
+		server_test_thread_name_is_empty (server_test_handler_thread),
+		"the handler of a rejected request ran"
+	);
+
+	server_test_stop (server);
+
+}
+
+// a request with a body is authenticated by a thread of the thpool before its body is received:
+// a rejected one is answered without it, an accepted one continues with the body that arrives later
+// or with the one that arrived with its headers
+static void test_server_events_authentication_body (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	int rejected = server_test_connect (server->port);
+	server_test_send (rejected, secure_rejected_body_headers);
+	server_test_expect (rejected, status_unauthorized);
+	(void) close (rejected);
+
+	server_test_wait_connections (server->cerver, 0);
+	server_test_wait_idle (server->cerver);
+
+	ThpoolStats before;
+	thpool_get_stats (server->cerver->thpool, &before);
+
+	int accepted = server_test_connect (server->port);
+	server_test_send (accepted, secure_body_headers);
+
+	// its authentication is a job, the body has not been sent
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	ThpoolStats stats;
+	thpool_get_stats (server->cerver->thpool, &stats);
+	while ((stats.completed_jobs < (before.completed_jobs + 1)) && (test_wait_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+		thpool_get_stats (server->cerver->thpool, &stats);
+	}
+
+	test_check_unsigned_eq (stats.completed_jobs - before.completed_jobs, 1, NULL);
+	test_check_false (server_test_has_response (accepted));
+
+	server_test_send (accepted, slow_body);
+	server_test_expect (accepted, status_ok);
+	(void) close (accepted);
+
+	// the authentication and the handler
+	server_test_wait_connections (server->cerver, 0);
+	thpool_get_stats (server->cerver->thpool, &stats);
+	test_check_unsigned_eq (stats.total_jobs - before.total_jobs, 2, NULL);
+
+	server_test_request (server->port, secure_body_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+// what cerver answers by itself does not wait for the thpool:
+// its only thread is busy and the routes without a handler are answered
+static void test_server_events_inline (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	server_test_wait_idle (server->cerver);
+
+	int working = server_test_connect (server->port);
+	server_test_send (working, block_request);
+	server_test_gate_wait_for (1);
+
+	ThpoolStats before;
+	thpool_get_stats (server->cerver->thpool, &before);
+
+	server_test_request (server->port, missing_request, status_ok);
+	server_test_request (server->port, options_request, status_no_content);
+
+	ThpoolStats after;
+	thpool_get_stats (server->cerver->thpool, &after);
+	test_check_unsigned_eq (after.total_jobs, before.total_jobs, NULL);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	(void) close (working);
+
+	server_test_stop (server);
+
+}
+
+// with the wait policy a request that finds the thpool full waits in its loop, without a thread,
+// and it is handled in its turn when there is a place
+static void test_server_events_parked (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	int first = server_test_connect (server->port);
+	server_test_send (first, ok_request);
+	server_test_wait_parked (server->cerver, 1);
+
+	int second = server_test_connect (server->port);
+	server_test_send (second, ok_request);
+	server_test_wait_parked (server->cerver, 2);
+
+	test_check_unsigned_eq (thpool_get_num_threads_alive (server->cerver->thpool), 1, NULL);
+	test_check_unsigned_eq (thpool_get_queued (server->cerver->thpool), 1, NULL);
+	test_check_false (server_test_has_response (first));
+
+	server_test_gate_open ();
+
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	server_test_expect (first, status_ok);
+	server_test_expect (second, status_ok);
+
+	(void) close (working);
+	(void) close (queued);
+	(void) close (first);
+	(void) close (second);
+
+	server_test_wait_parked (server->cerver, 0);
+
+	test_check (__atomic_load_n (&server->cerver->stats->total_rejected_connections, __ATOMIC_SEQ_CST) == 0, NULL);
+
+	server_test_stop (server);
+
+}
+
+// a request that waited for a place longer than the wait timeout is answered with 503,
+// the ones that have their place are still handled
+static void test_server_events_wait_timeout (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	options.overload_wait_timeout = SERVER_TEST_WAIT_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	const double start = server_test_now ();
+
+	int waiting = server_test_connect (server->port);
+	server_test_send (waiting, ok_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (waiting, response);
+	server_test_check_unavailable (response);
+	(void) close (waiting);
+
+	test_check ((server_test_now () - start) >= (double) SERVER_TEST_WAIT_TIMEOUT, "the request did not wait for a place");
+
+	test_check (__atomic_load_n (&server->cerver->stats->total_rejected_connections, __ATOMIC_SEQ_CST) == 1, NULL);
+	server_test_wait_parked (server->cerver, 0);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	(void) close (working);
+	(void) close (queued);
+
+	server_test_stop (server);
+
+}
+
+// a wait of 0 secs does not wait: the request is answered with 503 like with the reject policy
+static void test_server_events_wait_disabled (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	options.overload_wait_timeout = 0;
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	int rejected = server_test_connect (server->port);
+	server_test_send (rejected, ok_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (rejected, response);
+	server_test_check_unavailable (response);
+	(void) close (rejected);
+
+	test_check_unsigned_eq (event_loop_group_parked (server->cerver), 0, NULL);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	(void) close (working);
+	(void) close (queued);
+
+	server_test_stop (server);
+
+}
+
+// with the reject policy and a full thpool, a request with a body is rejected with its headers:
+// its 503 arrives before its body is sent
+static void test_server_events_reject_before_body (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	options.overload_policy = CERVER_OVERLOAD_POLICY_REJECT;
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	int rejected = server_test_connect (server->port);
+	server_test_send (rejected, slow_body_headers);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (rejected, response);
+	server_test_check_unavailable (response);
+	(void) close (rejected);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	(void) close (working);
+	(void) close (queued);
+
+	server_test_stop (server);
+
+}
+
+// the connections that server_test_fill () leaves in a cerver: one in its thread and one in its queue
+#define SERVER_TEST_FILL_CONNECTIONS		2
+
+// the files of a request that was complete but never got a place in the thpool are not kept:
+// its handler never saw them; the cerver keeps the files of the requests that it handles,
+// with a cerver that deletes them when they are done nothing tells the two apart
+static void test_server_events_rejected_uploads (void) {
+
+	server_test_gate_reset ();
+
+	(void) mkdir (SERVER_TEST_UPLOADS_PATH, SERVER_TEST_UPLOADS_MODE);
+
+	ServerTestOptions options = server_test_options_default ();
+	options.overload_wait_timeout = SERVER_TEST_WAIT_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
+	http_cerver_set_uploads_delete_when_done ((HttpCerver *) server->cerver->cerver_data, false);
+
+	// the file of a request that is handled stays
+	server_test_request (server->port, upload_request, status_ok);
+	server_test_wait_connections (server->cerver, 0);
+	test_check_unsigned_eq (server_test_uploads_count (), 1, NULL);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	// the whole request is read and its file is written while it waits for its place
+	int waiting = server_test_connect (server->port);
+	server_test_send (waiting, upload_request);
+	server_test_wait_parked (server->cerver, 1);
+	test_check_unsigned_eq (server_test_uploads_count (), 2, NULL);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (waiting, response);
+	server_test_check_unavailable (response);
+	(void) close (waiting);
+
+	server_test_wait_parked (server->cerver, 0);
+
+	// its connection ended: its file is gone, the one of the request that was handled is still there
+	server_test_wait_connections (server->cerver, SERVER_TEST_FILL_CONNECTIONS);
+	test_check_unsigned_eq (server_test_uploads_count (), 1, NULL);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	(void) close (working);
+	(void) close (queued);
+
+	server_test_wait_connections (server->cerver, 0);
+	test_check_unsigned_eq (server_test_uploads_count (), 1, NULL);
+
+	server_test_stop (server);
+
+	server_test_uploads_remove ();
+
+	(void) rmdir (SERVER_TEST_UPLOADS_PATH);
+
+}
+
+// at its limit of connections the cerver stops accepting: a new connection waits in the listen backlog
+// and it is handled when another one ends
+static void test_server_events_max_connections (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	options.max_connections = 2;
+	ServerTest *server = server_test_start (&options);
+
+	server_test_wait_connections (server->cerver, 0);
+
+	int first = server_test_connect (server->port);
+	int second = server_test_connect (server->port);
+	server_test_wait_connections (server->cerver, 2);
+
+	int waiting = server_test_connect (server->port);
+	server_test_send (waiting, ok_request);
+
+	test_check_false (server_test_has_response (waiting));
+	test_check_unsigned_eq (event_loop_group_connections (server->cerver), 2, NULL);
+
+	(void) close (first);
+
+	server_test_expect (waiting, status_ok);
+	(void) close (waiting);
+
+	(void) close (second);
+
+	server_test_wait_connections (server->cerver, 0);
+
+	// and it accepts again
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+// each I/O thread is an event loop with its own listening socket, the kernel shares the connections among them
+static void test_server_events_loops (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	options.io_threads = 2;
+	options.threads = 2;
+	ServerTest *server = server_test_start (&options);
+
+	for (unsigned int idx = 0; idx < SERVER_TEST_LOOPS_REQUESTS; idx++) {
+		server_test_request (server->port, ok_request, status_ok);
+	}
+
+	server_test_request (server->port, secure_body_request, status_ok);
+
+	server_test_wait_connections (server->cerver, 0);
+
+	const EventLoopGroup *group = server->cerver->event_loops;
+	test_check_ptr (group);
+	test_check_unsigned_eq (group->n_loops, 2, NULL);
+
+	u64 accepted = 0;
+	for (unsigned int idx = 0; idx < group->n_loops; idx++) {
+		const u64 loop_accepted = __atomic_load_n (&group->loops[idx]->n_accepted, __ATOMIC_SEQ_CST);
+		test_check (loop_accepted > 0, "an event loop did not accept any connection");
+		accepted += loop_accepted;
+	}
+
+	// the request that waited for the cerver to start, the ones of the test
+	test_check_unsigned_eq (accepted, SERVER_TEST_LOOPS_REQUESTS + 2, NULL);
+
+	server_test_stop (server);
+
+}
+
+// a request that waits for a place when the cerver is drained gets it and it is handled,
+// with the reject policy it is answered with 503 right away
+static void test_server_events_drain_parked (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	int parked = server_test_connect (server->port);
+	server_test_send (parked, ok_request);
+	server_test_wait_parked (server->cerver, 1);
+
+	ServerTestTeardown teardown = { server, false };
+	pthread_t thread_id;
+	test_check_int_eq (pthread_create (&thread_id, NULL, server_test_teardown_thread, &teardown), 0, NULL);
+
+	server_test_sleep (SERVER_TEST_SLOW_SLEEP);
+	test_check_false (__atomic_load_n (&teardown.done, __ATOMIC_SEQ_CST));
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+	server_test_expect (queued, status_ok);
+	server_test_expect (parked, status_ok);
+
+	(void) pthread_join (thread_id, NULL);
+
+	(void) close (working);
+	(void) close (queued);
+	(void) close (parked);
+
+}
+
+static void test_server_events_drain_parked_reject (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	options.drain_policy = CERVER_DRAIN_POLICY_REJECT;
+	ServerTest *server = server_test_start (&options);
+
+	int working = -1, queued = -1;
+	server_test_fill (server->cerver, server->port, &working, &queued);
+	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+
+	int parked = server_test_connect (server->port);
+	server_test_send (parked, ok_request);
+	server_test_wait_parked (server->cerver, 1);
+
+	// a connection that sent a part of its request, and one that sent nothing
+	int reading = server_test_connect (server->port);
+	test_check (send (reading, slow_headers_request, SERVER_TEST_SLOW_BODY_SIZE, MSG_NOSIGNAL) > 0, "send () failed");
+
+	int silent = server_test_connect (server->port);
+
+	server_test_wait_connections (server->cerver, 5);
+
+	ServerTestTeardown teardown = { server, false };
+	pthread_t thread_id;
+	test_check_int_eq (pthread_create (&thread_id, NULL, server_test_teardown_thread, &teardown), 0, NULL);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (parked, response);
+	server_test_check_unavailable (response);
+
+	(void) server_test_read (reading, response);
+	server_test_check_unavailable (response);
+
+	// closed without a response
+	test_check_unsigned_eq (server_test_read (silent, response), 0, NULL);
+
+	(void) server_test_read (queued, response);
+	server_test_check_unavailable (response);
+
+	server_test_gate_open ();
+	server_test_expect (working, status_ok);
+
+	(void) pthread_join (thread_id, NULL);
+
+	(void) close (working);
+	(void) close (queued);
+	(void) close (parked);
+	(void) close (reading);
+	(void) close (silent);
+
+}
+
+// what only a cerver with event loops does
+static void server_tests_events (void) {
+
+	(void) printf ("Events only\n");
+
+	server_test_handler_type = CERVER_HANDLER_TYPE_EVENTS;
+
+	(void) alarm (SERVER_TEST_ALARM);
+
+	test_run (test_server_events_requirements);
+	test_run (test_server_events_threads);
+	test_run (test_server_events_authentication_body);
+	test_run (test_server_events_inline);
+	test_run (test_server_events_parked);
+	test_run (test_server_events_wait_timeout);
+	test_run (test_server_events_wait_disabled);
+	test_run (test_server_events_reject_before_body);
+	test_run (test_server_events_rejected_uploads);
+	test_run (test_server_events_max_connections);
+	test_run (test_server_events_loops);
+	test_run (test_server_events_drain_parked);
+	test_run (test_server_events_drain_parked_reject);
+
+	(void) alarm (0);
+
+	server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
+}
+
+#pragma endregion
+
+// the tests of a cerver that handles its connections with a model: a thread for each one, or event loops
+static void server_tests_model (const CerverHandlerType handler_type) {
+
+	server_test_handler_type = handler_type;
+
+	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
 
 	// a hang fails the suite instead of blocking it forever
 	(void) alarm (SERVER_TEST_ALARM);
 
-	test_run (test_server_blocking);
-	test_run (test_server_reusable);
-	test_run (test_server_policies_strings);
-
 	test_run (test_server_ok);
 	test_run (test_server_routes_error);
 	test_run (test_server_large_response);
-	test_run (test_server_poll);
 	test_run (test_server_reset_during_response);
 	test_run (test_server_huge_body);
 	test_run (test_server_slowloris);
@@ -2217,6 +3076,29 @@ void http_tests_server (void) {
 	test_run (test_server_zero_fd);
 
 	(void) alarm (0);
+
+	server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
+}
+
+void http_tests_server (void) {
+
+	(void) printf ("Testing HTTP server...\n");
+
+	// what does not depend on how the connections are handled, or is of one model
+	(void) alarm (SERVER_TEST_ALARM);
+
+	test_run (test_server_blocking);
+	test_run (test_server_reusable);
+	test_run (test_server_policies_strings);
+	test_run (test_server_poll);
+
+	(void) alarm (0);
+
+	server_tests_model (CERVER_HANDLER_TYPE_THREADS);
+	server_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+
+	server_tests_events ();
 
 	(void) printf ("Done!\n");
 
