@@ -1,28 +1,25 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
 #include <time.h>
-#include <unistd.h>
 
+#include <fcntl.h>
+#include <linux/sockios.h>
+#include <poll.h>
 #include <pthread.h>
-
 #include <sys/ioctl.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
-
-#include <linux/sockios.h>
-
-#include "cerver/socket.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/handler.h"
+#include <unistd.h>
 
 #include "cerver/collections/freelist.h"
+
+#include "cerver/client/client.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/handler.h"
+#include "cerver/network/socket.h"
 
 #pragma region recycle
 

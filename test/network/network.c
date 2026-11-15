@@ -1,19 +1,18 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <fcntl.h>
-#include <unistd.h>
-
-#include <sys/socket.h>
-
 #include <net/if.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/network.h>
+#include <cerver/network/network.h>
 
-#include "test.h"
+#include "../test.h"
+#include "network.h"
 
 #define NETWORK_BAD_FD			-1
 
@@ -322,6 +321,8 @@ int main (int argc, char **argv) {
 	(void) argc;
 	(void) argv;
 
+	test_output_init ();
+
 	(void) printf ("Testing NETWORK...\n");
 
 	test_network_blocking ();
@@ -341,6 +342,10 @@ int main (int argc, char **argv) {
 	test_network_ipv6_only ();
 
 	(void) printf ("\nDone with NETWORK tests!\n\n");
+
+	socket_tests ();
+
+	udp_tests ();
 
 	return 0;
 

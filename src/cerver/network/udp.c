@@ -1,33 +1,35 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
-#include <poll.h>
-#include <pthread.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
+#include <poll.h>
+#include <pthread.h>
 #include <sys/random.h>
 #include <sys/socket.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 #include "cerver/collections/htab.h"
 
-#include "cerver/auth.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/errors.h"
-#include "cerver/events.h"
-#include "cerver/handler.h"
-#include "cerver/network.h"
-#include "cerver/packets.h"
-#include "cerver/sessions.h"
-#include "cerver/udp.h"
+#include "cerver/auth/auth.h"
+#include "cerver/auth/sessions.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/connection/data.h"
+#include "cerver/connection/registry.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/end.h"
+#include "cerver/handler/errors.h"
+#include "cerver/handler/events.h"
+#include "cerver/handler/handler.h"
+#include "cerver/network/network.h"
+#include "cerver/network/udp.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/utils/log.h"
 
@@ -378,7 +380,7 @@ static void udp_peer_remove (
 
 }
 
-static void udp_peer_remove_by_value (
+static void udp_peer_remove_with_value (
 	Cerver *cerver, const UdpPeer *peer, const CerverEventType event
 ) {
 
@@ -474,7 +476,7 @@ static void udp_peer_bad (Cerver *cerver, UdpPeer *peer) {
 			cerver->info->name, peer->key, (unsigned int) peer->connection->bad_packets
 		);
 
-		udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
+		udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
 	}
 
 }
@@ -566,7 +568,7 @@ static UdpPeer *udp_peer_connect (
 			}
 
 			else if (udp_peer_open (cerver, peer)) {
-				udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_NONE);
+				udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_NONE);
 				peer = NULL;
 			}
 		}
@@ -678,7 +680,7 @@ static void udp_auth_failed (Cerver *cerver, UdpPeer *peer, const char *message)
 			cerver->info->name, peer->key
 		);
 
-		udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_NONE);
+		udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_NONE);
 	}
 
 }
@@ -866,7 +868,7 @@ static void udp_client_packet (Cerver *cerver, UdpPeer *peer, const PacketHeader
 
 	switch (header->request_type) {
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION:
-			udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_CLIENT_CLOSE_CONNECTION);
+			udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_CLIENT_CLOSE_CONNECTION);
 			break;
 
 		case CLIENT_PACKET_TYPE_DISCONNECT:
@@ -890,7 +892,7 @@ static void udp_peer_packet_handle (Cerver *cerver, UdpPeer *peer, Packet *packe
 	(void) cerver_udp_packet_handle (packet);
 
 	if (udp_peer_reached_max_bad_packets (cerver, peer)) {
-		udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
+		udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
 	}
 
 }
@@ -1049,7 +1051,7 @@ static void udp_token_datagram (
 		}
 
 		else {
-			udp_peer_remove_by_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
+			udp_peer_remove_with_value (cerver, peer, CERVER_EVENT_CLIENT_DROPPED);
 		}
 	}
 
