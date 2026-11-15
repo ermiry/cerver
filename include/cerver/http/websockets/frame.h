@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/websockets/frame.h
+ * @brief The frames of RFC 6455: the opcodes, the close codes, the headers, the masks and the incremental parser.
+ */
+
 #ifndef _CERVER_HTTP_WEBSOCKETS_FRAME_H_
 #define _CERVER_HTTP_WEBSOCKETS_FRAME_H_
 
@@ -8,25 +13,38 @@
 
 #include "cerver/config.h"
 
-// the least and most bytes of the header of a frame (RFC 6455 section 5.2)
+/**
+ * @defgroup http_websockets_frame Frames
+ * @ingroup http_websockets
+ * @brief The frames of the WebSocket protocol and how they are parsed.
+ * @{
+ */
+
+/** @brief The least bytes of the header of a frame (RFC 6455 section 5.2). */
 #define HTTP_WEB_SOCKET_FRAME_HEADER_MIN_SIZE		2
+
+/** @brief The most bytes of the header of a frame. */
 #define HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE		14
 
+/** @brief The bytes of the mask of a frame. */
 #define HTTP_WEB_SOCKET_MASK_SIZE					4
 
-// the most bytes of the payload of a control frame
+/** @brief The most bytes of the payload of a control frame. */
 #define HTTP_WEB_SOCKET_CONTROL_MAX_SIZE			125
 
-// the bytes of the code of a close frame
+/** @brief The bytes of the code of a close frame. */
 #define HTTP_WEB_SOCKET_CLOSE_CODE_SIZE				2
 
-// the most bytes of the reason of a close frame
+/** @brief The most bytes of the reason of a close frame. */
 #define HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE		(HTTP_WEB_SOCKET_CONTROL_MAX_SIZE - HTTP_WEB_SOCKET_CLOSE_CODE_SIZE)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * @brief The X-macro table of the opcodes of RFC 6455: the number, the name and the string of each one.
+ */
 #define HTTP_WEB_SOCKET_OPCODE_MAP(XX)						\
 	XX(0x0,	CONTINUATION,	Continuation)					\
 	XX(0x1,	TEXT,			Text)							\
@@ -35,6 +53,9 @@ extern "C" {
 	XX(0x9,	PING,			Ping)							\
 	XX(0xA,	PONG,			Pong)
 
+/**
+ * @brief An opcode, one `HTTP_WEB_SOCKET_OPCODE_<name>` for each row of #HTTP_WEB_SOCKET_OPCODE_MAP.
+ */
 typedef enum HttpWebSocketOpcode {
 
 	#define XX(num, name, string) HTTP_WEB_SOCKET_OPCODE_##name = num,
@@ -43,17 +64,37 @@ typedef enum HttpWebSocketOpcode {
 
 } HttpWebSocketOpcode;
 
+/**
+ * @brief Returns the string of an opcode.
+ *
+ * @param[in] opcode the opcode
+ * @return the string of its row in #HTTP_WEB_SOCKET_OPCODE_MAP, or "Undefined" for a reserved opcode; a static
+ * string that must not be freed
+ */
 CERVER_PUBLIC const char *http_web_socket_opcode_to_string (
 	const HttpWebSocketOpcode opcode
 );
 
-// returns true for the opcodes of RFC 6455, the others are reserved
+/**
+ * @brief Returns whether an opcode is one of RFC 6455; the others are reserved.
+ *
+ * @param[in] opcode the opcode
+ * @return true for a known opcode
+ */
 CERVER_PUBLIC bool http_web_socket_opcode_is_known (const u8 opcode);
 
-// returns true for close, ping and pong
+/**
+ * @brief Returns whether an opcode is of a control frame: close, ping and pong.
+ *
+ * @param[in] opcode the opcode
+ * @return true for a control opcode
+ */
 CERVER_PUBLIC bool http_web_socket_opcode_is_control (const u8 opcode);
 
-// the status codes of a close frame (RFC 6455 section 7.4.1 and the IANA registry)
+/**
+ * @brief The X-macro table of the status codes of a close frame (RFC 6455 section 7.4.1 and the IANA registry):
+ * the number, the name, the string and the description of each one.
+ */
 #define HTTP_WEB_SOCKET_CLOSE_MAP(XX)																			\
 	XX(1000,	NORMAL,					Normal,					The purpose of the connection was fulfilled)	\
 	XX(1001,	GOING_AWAY,				Going Away,				The endpoint is going away)					\
@@ -71,6 +112,10 @@ CERVER_PUBLIC bool http_web_socket_opcode_is_control (const u8 opcode);
 	XX(1014,	BAD_GATEWAY,			Bad Gateway,			The gateway received an invalid response)		\
 	XX(1015,	TLS_HANDSHAKE,			TLS Handshake,			The TLS handshake failed)
 
+/**
+ * @brief A status code of a close frame, one `HTTP_WEB_SOCKET_CLOSE_<name>` for each row of
+ * #HTTP_WEB_SOCKET_CLOSE_MAP.
+ */
 typedef enum HttpWebSocketCloseCode {
 
 	#define XX(num, name, string, description) HTTP_WEB_SOCKET_CLOSE_##name = num,
@@ -79,15 +124,39 @@ typedef enum HttpWebSocketCloseCode {
 
 } HttpWebSocketCloseCode;
 
+/**
+ * @brief Returns the string of a close code.
+ *
+ * @param[in] code the code
+ * @return the string of its row in #HTTP_WEB_SOCKET_CLOSE_MAP, or "Undefined" for another code; a static string
+ * that must not be freed
+ */
 CERVER_PUBLIC const char *http_web_socket_close_code_to_string (const u16 code);
 
+/**
+ * @brief Returns the description of a close code.
+ *
+ * @param[in] code the code
+ * @return the description of its row in #HTTP_WEB_SOCKET_CLOSE_MAP, or "Undefined" for another code; a static
+ * string that must not be freed
+ */
 CERVER_PUBLIC const char *http_web_socket_close_code_description (const u16 code);
 
-// returns true for a code that can be sent in a close frame:
-// 1000 to 1003, 1007 to 1014, and 3000 to 4999 (registered and private)
-// 1005, 1006 and 1015 only report a close, they are never sent
+/**
+ * @brief Returns whether a code can be sent in a close frame: 1000 to 1003, 1007 to 1014, and 3000 to 4999
+ * (registered and private).
+ *
+ * 1005, 1006 and 1015 only report a close, they are never sent.
+ *
+ * @param[in] code the code
+ * @return true for a code that can be sent
+ */
 CERVER_PUBLIC bool http_web_socket_close_code_is_valid (const u16 code);
 
+/**
+ * @brief The X-macro table of the errors of a frame: the number, the name, the string and the description of each
+ * one.
+ */
 #define HTTP_WEB_SOCKET_FRAME_ERROR_MAP(XX)																	\
 	XX(0,	NONE,				None,				No error)												\
 	XX(1,	RESERVED_BITS,		Reserved Bits,		A reserved bit was set without an extension)			\
@@ -99,6 +168,10 @@ CERVER_PUBLIC bool http_web_socket_close_code_is_valid (const u16 code);
 	XX(7,	LENGTH,				Length,				The most significant bit of the length was set)		\
 	XX(8,	TOO_BIG,			Too Big,			The frame is larger than the limit)
 
+/**
+ * @brief The error of a frame, one `HTTP_WEB_SOCKET_FRAME_ERROR_<name>` for each row of
+ * #HTTP_WEB_SOCKET_FRAME_ERROR_MAP.
+ */
 typedef enum HttpWebSocketFrameError {
 
 	#define XX(num, name, string, description) HTTP_WEB_SOCKET_FRAME_ERROR_##name = num,
@@ -107,47 +180,89 @@ typedef enum HttpWebSocketFrameError {
 
 } HttpWebSocketFrameError;
 
+/**
+ * @brief Returns the string of a frame error.
+ *
+ * @param[in] error the error
+ * @return the string of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or the one of HTTP_WEB_SOCKET_FRAME_ERROR_NONE
+ * for a value out of the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_web_socket_frame_error_to_string (
 	const HttpWebSocketFrameError error
 );
 
+/**
+ * @brief Returns the description of a frame error.
+ *
+ * @param[in] error the error
+ * @return the description of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or the one of
+ * HTTP_WEB_SOCKET_FRAME_ERROR_NONE for a value out of the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_web_socket_frame_error_description (
 	const HttpWebSocketFrameError error
 );
 
-// the code of the close frame that answers the error, 1009 for a frame too big, 1002 for the rest
+/**
+ * @brief Returns the code of the close frame that answers a frame error.
+ *
+ * @param[in] error the error
+ * @return 1009 for a frame that is too big, 1002 for the rest
+ */
 CERVER_PUBLIC u16 http_web_socket_frame_error_close_code (
 	const HttpWebSocketFrameError error
 );
 
-// the side of the connection, a client masks its frames and a server never does
+/**
+ * @brief The side of a connection: a client masks its frames and a server never does.
+ */
 typedef enum HttpWebSocketRole {
 
+	/** @brief The server side, its frames are not masked. */
 	HTTP_WEB_SOCKET_ROLE_SERVER = 0,
+	/** @brief The client side, its frames are masked. */
 	HTTP_WEB_SOCKET_ROLE_CLIENT = 1
 
 } HttpWebSocketRole;
 
+/**
+ * @brief The header of a frame.
+ */
 typedef struct HttpWebSocketFrame {
 
+	/** @brief It is the last frame of its message. */
 	bool fin;
 
+	/** @brief The RSV1 bit, the compressed messages of permessage-deflate. */
 	bool rsv1;
+	/** @brief The RSV2 bit, reserved. */
 	bool rsv2;
+	/** @brief The RSV3 bit, reserved. */
 	bool rsv3;
 
+	/** @brief The opcode. */
 	u8 opcode;
 
+	/** @brief The payload is masked. */
 	bool masked;
+	/** @brief The mask of the payload. */
 	u8 mask[HTTP_WEB_SOCKET_MASK_SIZE];
 
+	/** @brief The bytes of the payload. */
 	u64 length;
 
 } HttpWebSocketFrame;
 
-// writes the header of a frame in header, that has HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE bytes,
-// always with the least bytes for the length, and with the mask when it is not NULL
-// returns the size of the header
+/**
+ * @brief Writes the header of a frame, always with the least bytes for the length.
+ *
+ * @param[out] header where the header is written, #HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE bytes
+ * @param[in] fin true for the last frame of a message
+ * @param[in] rsv1 true for a compressed message
+ * @param[in] opcode the opcode
+ * @param[in] length the bytes of the payload
+ * @param[in] mask the mask, NULL for a frame without one (of a server)
+ * @return the size of the header, 0 for a NULL header
+ */
 CERVER_PUBLIC size_t http_web_socket_frame_header (
 	u8 *header,
 	const bool fin, const bool rsv1,
@@ -155,83 +270,125 @@ CERVER_PUBLIC size_t http_web_socket_frame_header (
 	const u8 *mask
 );
 
-// applies the mask to the bytes, that are at offset from the start of the payload,
-// the same call masks and unmasks
+/**
+ * @brief Applies a mask to some bytes of a payload; the same call masks and unmasks.
+ *
+ * @param[in,out] data the bytes
+ * @param[in] size the number of bytes
+ * @param[in] mask the mask, #HTTP_WEB_SOCKET_MASK_SIZE bytes
+ * @param[in] offset where the bytes are from the start of the payload
+ */
 CERVER_PUBLIC void http_web_socket_mask (
 	u8 *data, const size_t size,
 	const u8 *mask, const u64 offset
 );
 
+/**
+ * @brief The state of the parser.
+ */
 typedef enum HttpWebSocketParserState {
 
+	/** @brief The parser waits for the bytes of a header. */
 	HTTP_WEB_SOCKET_PARSER_STATE_HEADER = 0,
+	/** @brief The parser takes the bytes of a payload. */
 	HTTP_WEB_SOCKET_PARSER_STATE_PAYLOAD = 1,
+	/** @brief A frame was invalid, the error of the parser says why; it is final. */
 	HTTP_WEB_SOCKET_PARSER_STATE_FAILED = 2
 
 } HttpWebSocketParserState;
 
 struct _HttpWebSocketParser;
 
-// the methods of the parser return 0 to continue, any other value stops it
+/**
+ * @brief The methods of the parser; they return 0 to continue, any other value stops it.
+ */
 typedef struct HttpWebSocketParserSettings {
 
-	// a header was parsed, before its payload
+	/** @brief A header was parsed, before its payload. */
 	int (*on_frame_begin)(struct _HttpWebSocketParser *parser, const HttpWebSocketFrame *frame);
 
-	// a piece of the payload, already unmasked, it can arrive in many pieces
+	/** @brief A piece of the payload, already unmasked; a payload can arrive in many pieces. */
 	int (*on_frame_data)(struct _HttpWebSocketParser *parser, u8 *data, size_t size);
 
-	// the whole payload was received
+	/** @brief The whole payload was received. */
 	int (*on_frame_end)(struct _HttpWebSocketParser *parser, const HttpWebSocketFrame *frame);
 
 } HttpWebSocketParserSettings;
 
-// an incremental parser of frames: the bytes of a frame can arrive in many calls,
-// and a call can have many frames
+/**
+ * @brief An incremental parser of frames: the bytes of a frame can arrive in many calls, and a call can have many
+ * frames.
+ */
 typedef struct _HttpWebSocketParser {
 
+	/** @brief The role of this side: the frames that are parsed are the ones of the other side. */
 	HttpWebSocketRole role;
 
-	// RSV1 is valid only when an extension that uses it was negotiated (permessage-deflate)
+	/** @brief RSV1 is valid only when an extension that uses it was negotiated (permessage-deflate). */
 	bool allow_rsv1;
 
-	// the most bytes of the payload of a frame
+	/** @brief The most bytes of the payload of a frame. */
 	u64 max_frame;
 
+	/** @brief The state of the parser. */
 	HttpWebSocketParserState state;
 
+	/** @brief The bytes of the header that were received. */
 	u8 header[HTTP_WEB_SOCKET_FRAME_HEADER_MAX_SIZE];
+	/** @brief The number of bytes of the header that were received. */
 	u8 header_size;
+	/** @brief The bytes that the header needs, known after its first two. */
 	u8 header_needed;
 
+	/** @brief The frame in progress. */
 	HttpWebSocketFrame frame;
 
-	// the bytes of the payload of the current frame that were parsed
+	/** @brief The bytes of the payload of the current frame that were parsed. */
 	u64 received;
 
+	/** @brief The error of a failed frame. */
 	HttpWebSocketFrameError error;
 
+	/** @brief The methods of the parser. */
 	const HttpWebSocketParserSettings *settings;
 
+	/** @brief The data of the methods. */
 	void *data;
 
 } HttpWebSocketParser;
 
-// prepares the parser for the frames of the other side of the role
+/**
+ * @brief Prepares a parser for the frames of the other side of a role.
+ *
+ * @param[out] parser the parser, it can be NULL
+ * @param[in] role the role of this side
+ * @param[in] max_frame the most bytes of the payload of a frame
+ * @param[in] settings the methods, they must live as long as the parser
+ * @param[in] data the data of the methods
+ */
 CERVER_PUBLIC void http_web_socket_parser_init (
 	HttpWebSocketParser *parser,
 	const HttpWebSocketRole role, const u64 max_frame,
 	const HttpWebSocketParserSettings *settings, void *data
 );
 
-// parses the bytes, the payloads are unmasked in place
-// returns the bytes that were parsed, fewer than size when a method stopped it
-// or when a frame was invalid (the state is HTTP_WEB_SOCKET_PARSER_STATE_FAILED and error is set)
-// a frame whose last bytes stopped the parser ends in the next call, that can have no bytes
-// a length that is not the shortest encoding of its value fails the frame (RFC 6455 section 5.2)
+/**
+ * @brief Parses some bytes; the payloads are unmasked in place.
+ *
+ * A frame whose last bytes stopped the parser ends in the next call, that can have no bytes; a length that is not
+ * the shortest encoding of its value fails the frame (RFC 6455 section 5.2).
+ *
+ * @param[in,out] parser the parser
+ * @param[in,out] data the bytes, NULL only when size is 0
+ * @param[in] size the number of bytes
+ * @return the bytes that were parsed: fewer than size when a method stopped it or when a frame was invalid (then
+ * the state is HTTP_WEB_SOCKET_PARSER_STATE_FAILED and error is set); 0 for a NULL parser or one without settings
+ */
 CERVER_PUBLIC size_t http_web_socket_parser_execute (
 	HttpWebSocketParser *parser, u8 *data, const size_t size
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

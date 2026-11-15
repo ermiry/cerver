@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/http.h
+ * @brief The umbrella header of HTTP: it includes the core of cerver and every part of HTTP, and declares nothing.
+ */
+
 #ifndef _CERVER_HTTP_H_
 #define _CERVER_HTTP_H_
 
@@ -51,5 +56,14 @@
 #include "cerver/http/websockets/settings.h"
 #include "cerver/http/websockets/text.h"
 #include "cerver/http/websockets/websocket.h"
+
+/**
+ * @defgroup http HTTP
+ * @brief The HTTP/1.1 server of cerver: the HttpCerver of a cerver of type CERVER_TYPE_WEB, its routes, its
+ * requests, its responses, its security and its WebSocket connections.
+ *
+ * A web cerver is created with cerver_create_web (), its HttpCerver is taken with http_cerver_get (), configured
+ * with the setters of HTTP and started with cerver_start ().
+ */
 
 #endif
