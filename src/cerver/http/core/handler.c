@@ -34,6 +34,7 @@
 
 #include "cerver/crypto/memory.h"
 
+#include "cerver/http/core/connection.h"
 #include "cerver/http/core/custom.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
@@ -54,6 +55,7 @@
 #include "cerver/http/requests/request.h"
 #include "cerver/http/requests/url.h"
 #include "cerver/http/responses/compression.h"
+#include "cerver/http/responses/internal.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/route.h"
@@ -280,6 +282,9 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 
 	http_receive->web_socket = NULL;
 
+	http_receive->pause = HTTP_RECEIVE_PAUSE_NONE;
+	http_receive->authorize_pending = false;
+
 }
 
 // what belongs to the connection, and the values of its first request
@@ -309,6 +314,8 @@ static void http_receive_init (HttpReceive *http_receive) {
 		http_receive->upgraded = false;
 
 		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
+
+		http_receive->connection = NULL;
 
 		http_receive_request_init (http_receive);
 	}
@@ -1380,6 +1387,28 @@ int http_receive_init_mpart_parser (
 
 }
 
+// the socket of a request that a thread reads is blocking, the one of an event loop never waits:
+// its bytes leave with the send of the responses, that also keeps what a full socket does not take
+// returns the bytes that were sent, -1 on error
+static ssize_t http_receive_send_continue (HttpReceive *http_receive) {
+
+	ssize_t sent = -1;
+
+	if (!http_receive->connection) {
+		sent = send (
+			http_receive->cr->connection->socket->sock_fd,
+			continue_response, continue_response_len, MSG_NOSIGNAL
+		);
+	}
+
+	else if (!http_response_send_interim (http_receive, continue_response, continue_response_len)) {
+		sent = (ssize_t) continue_response_len;
+	}
+
+	return sent;
+
+}
+
 // answers "100 Continue" to a client that waits for it before sending the body
 // returns 0 on success, 1 if the client is gone
 static int http_receive_handle_expect_continue (HttpReceive *http_receive) {
@@ -1388,10 +1417,7 @@ static int http_receive_handle_expect_continue (HttpReceive *http_receive) {
 
 	const String *expect = http_receive->request->headers[HTTP_HEADER_EXPECT];
 	if (expect && !strcasecmp (expect->str, expect_continue_value)) {
-		const ssize_t sent = send (
-			http_receive->cr->connection->socket->sock_fd,
-			continue_response, continue_response_len, MSG_NOSIGNAL
-		);
+		const ssize_t sent = http_receive_send_continue (http_receive);
 
 		if (sent != (ssize_t) continue_response_len) {
 			http_receive_client_left (http_receive, (sent < 0) ? errno : EPIPE);
@@ -1494,13 +1520,11 @@ static bool http_receive_handle_static_authenticate (
 	HttpReceive *http_receive, HttpRequest *request
 );
 
-// the url and the headers are complete (each header was saved with its value):
-// the route is selected and the request is authenticated before its body is received,
-// so the files of a rejected request are never saved
-// HTTP_RECEIVE_PARSER_STOP stops the parser (1 would only skip the body)
-static int http_receive_handle_headers_completed (llhttp_t *parser) {
+// the first part of the complete headers, only CPU: the method, the request's id and its client,
+// the route that answers it and the limit of its body
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *parser) {
 
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	HttpCerver *http_cerver = http_receive->http_cerver;
 	HttpRequest *request = http_receive->request;
 
@@ -1515,20 +1539,16 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 	http_receive_identify (http_receive);
 
 	if (http_receive_body_has_no_end (parser)) {
-		(void) http_receive_reject (
+		return http_receive_reject (
 			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
 		);
-
-		return HTTP_RECEIVE_PARSER_STOP;
 	}
 
 	// a method that the parser accepts but cerver does not know (RFC 9110 section 9.1)
 	if (!http_request_method_is_valid (request->method)) {
-		(void) http_receive_reject (
+		return http_receive_reject (
 			http_receive, not_implemented_error, HTTP_RECEIVE_STATUS_REJECTED
 		);
-
-		return HTTP_RECEIVE_PARSER_STOP;
 	}
 
 	#ifdef HTTP_DEBUG
@@ -1550,12 +1570,28 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 		endpoint->resolved.max_body_size : http_cerver->max_body_size;
 
 	if (http_receive_body_too_large (http_receive, parser)) {
-		(void) http_receive_reject (
+		return http_receive_reject (
 			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
 		);
-
-		return HTTP_RECEIVE_PARSER_STOP;
 	}
+
+	return 0;
+
+}
+
+// the second part of the complete headers, the one that can wait or run methods of the application:
+// the authentication, the upgrade, the directory of the uploads, the static path and "100 Continue"
+// it runs in the parser, or in a thread of the pool when the request is of an event loop
+// returns 0 on success, HTTP_RECEIVE_PARSER_STOP if the request was rejected or its client is gone
+int http_receive_headers_authorize (HttpReceive *http_receive) {
+
+	llhttp_t *parser = &http_receive->parser;
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	HttpRequest *request = http_receive->request;
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	http_receive->authorize_pending = false;
 
 	if (endpoint) {
 		// the authentication handler can use the request's endpoint
@@ -1589,6 +1625,65 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 
 	// a client that is gone stops the parser, without a response
 	return http_receive_parser_result (http_receive_handle_expect_continue (http_receive));
+
+}
+
+// a request has a body to wait for when it is chunked or its Content-Length is not 0
+static bool http_receive_has_body (const llhttp_t *parser) {
+
+	return (parser->flags & F_CHUNKED) || (parser->content_length > 0);
+
+}
+
+// what an I/O thread never runs for the request of an event loop: a custom authentication
+// (a method of the application that can wait) and the search of a file in the static paths
+static bool http_receive_authorize_is_deferred (const HttpReceive *http_receive) {
+
+	bool deferred = false;
+
+	if (http_receive->connection) {
+		const HttpEndpoint *endpoint = http_receive->endpoint;
+
+		deferred = endpoint ?
+			((endpoint->resolved.auth_type == HTTP_ROUTE_AUTH_TYPE_CUSTOM) && !endpoint->resolved.authentication_with_body) :
+			http_receive_is_static_file (http_receive, http_receive->request);
+	}
+
+	return deferred;
+
+}
+
+// the url and the headers are complete (each header was saved with its value):
+// the route is selected and the request is authenticated before its body is received,
+// so the files of a rejected request are never saved
+// HTTP_RECEIVE_PARSER_STOP stops the parser (1 would only skip the body)
+// the request of an event loop that a thread of the pool has to authorize pauses the parser
+// when its body follows; without a body it is authorized by the job that handles it
+static int http_receive_handle_headers_completed (llhttp_t *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	if (http_receive_headers_select (http_receive, parser)) return HTTP_RECEIVE_PARSER_STOP;
+
+	// the body of a request that an event loop would reject when it is complete is not received
+	if (
+		http_receive->connection && http_receive_has_body (parser)
+		&& http_connection_refuse (http_receive->connection)
+	) {
+		return HTTP_RECEIVE_PARSER_STOP;
+	}
+
+	if (http_receive_authorize_is_deferred (http_receive)) {
+		http_receive->authorize_pending = true;
+
+		if (!http_receive_has_body (parser)) return 0;
+
+		http_receive->pause = HTTP_RECEIVE_PAUSE_HEADERS;
+
+		return HPE_PAUSED;
+	}
+
+	return http_receive_headers_authorize (http_receive);
 
 }
 
@@ -1894,18 +1989,51 @@ static void http_receive_handle_unanswered (HttpReceive *http_receive) {
 
 }
 
-// the endpoint and its authentication were resolved in on_headers_complete,
-// now that the body is complete the request is handled
-static int http_receive_handle_message_completed (llhttp_t *parser) {
+// what cerver answers by itself with a short response, without a method of the application:
+// a redirect, an OPTIONS, a 405 and the routes of the requests that no endpoint handles
+static bool http_receive_dispatch_is_short (const HttpReceive *http_receive) {
 
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	const HttpCerver *http_cerver = http_receive->http_cerver;
 
-	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
-	http_receive->stage = HTTP_STAGE_HANDLER;
+	bool is_short = false;
 
-	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive),
-	// the connection is still closed after the response
-	http_receive->keep_alive_requested = llhttp_should_keep_alive (parser);
+	switch (http_receive->dispatch) {
+		case HTTP_RECEIVE_DISPATCH_ENDPOINT: break;
+
+		case HTTP_RECEIVE_DISPATCH_OPTIONS:
+		case HTTP_RECEIVE_DISPATCH_REDIRECT:
+			is_short = true;
+			break;
+
+		case HTTP_RECEIVE_DISPATCH_METHOD_NOT_ALLOWED:
+			is_short = !http_cerver->tree->method_not_allowed_handler;
+			break;
+
+		default:
+			is_short = http_cerver->not_found_handler ?
+				(http_cerver->not_found == http_receive_handle_not_found_route) :
+				(http_cerver->default_handler == http_receive_handle_default_route);
+			break;
+	}
+
+	return is_short;
+
+}
+
+bool http_receive_dispatch_is_inline (const HttpReceive *http_receive) {
+
+	return !http_receive->authorize_pending
+		&& (http_receive->type != HTTP_RECEIVE_TYPE_FILE)
+		&& http_receive_dispatch_is_short (http_receive);
+
+}
+
+// handles a complete request: a file of the static paths, its endpoint or the catch all handler,
+// and the request that its handler did not answer
+// the request of an event loop that was not authorized with its headers is authorized first
+void http_receive_dispatch (HttpReceive *http_receive) {
+
+	if (http_receive->authorize_pending && http_receive_headers_authorize (http_receive)) return;
 
 	switch (http_receive->type) {
 		case HTTP_RECEIVE_TYPE_FILE:
@@ -1923,6 +2051,25 @@ static int http_receive_handle_message_completed (llhttp_t *parser) {
 	if (http_receive->response_failed) {
 		http_receive->receive_status = HTTP_RECEIVE_STATUS_RESPONSE_FAILED;
 	}
+
+}
+
+// the endpoint and its authentication were resolved in on_headers_complete,
+// now that the body is complete the request is handled
+// the request of an event loop is not handled in the parser: its loop answers it or gives it to the pool
+static int http_receive_handle_message_completed (llhttp_t *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
+	http_receive->stage = HTTP_STAGE_HANDLER;
+
+	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive),
+	// the connection is still closed after the response
+	http_receive->keep_alive_requested = llhttp_should_keep_alive (parser);
+
+	if (http_receive->connection) http_receive->pause = HTTP_RECEIVE_PAUSE_MESSAGE;
+	else http_receive_dispatch (http_receive);
 
 	// only one request is handled by connection,
 	// the parser pauses here, so a pipelined request in the same buffer is never parsed
@@ -1992,7 +2139,7 @@ void http_receive_close (
 // a request that the parser could not parse is answered with 400,
 // unless a callback already answered it (a limit, a failed authentication, ...)
 // or it stopped the parser because the client is gone
-static void http_receive_handle_parser_error (
+void http_receive_parser_failed (
 	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
 	const size_t n_parsed, const ssize_t received
 ) {
@@ -2016,6 +2163,15 @@ static void http_receive_handle_parser_error (
 		);
 	}
 
+}
+
+static void http_receive_handle_parser_error (
+	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
+	const size_t n_parsed, const ssize_t received
+) {
+
+	http_receive_parser_failed (http_receive, parser_errno, n_parsed, received);
+
 	http_receive_close (http_receive, true);
 
 }
@@ -2029,8 +2185,8 @@ bool http_receive_is_receiving_headers (const HttpReceive *http_receive) {
 }
 
 // a request that did not arrive in time is answered with 408
-// if the client did not send anything, the connection is only closed
-void http_receive_handle_timeout (
+// if the client did not send anything, only its status changes
+void http_receive_timed_out (
 	HttpReceive *http_receive, const bool received
 ) {
 
@@ -2047,6 +2203,16 @@ void http_receive_handle_timeout (
 	else if (!http_receive->responded) {
 		http_receive->receive_status = HTTP_RECEIVE_STATUS_TIMEOUT;
 	}
+
+}
+
+// a request that did not arrive in time is answered with 408
+// if the client did not send anything, the connection is only closed
+void http_receive_handle_timeout (
+	HttpReceive *http_receive, const bool received
+) {
+
+	http_receive_timed_out (http_receive, received);
 
 	http_receive_close (http_receive, false);
 
@@ -2073,9 +2239,9 @@ static size_t http_receive_parsed_bytes (
 
 }
 
-void http_receive_handle (
+llhttp_errno_t http_receive_execute (
 	HttpReceive *http_receive,
-	ssize_t rc, char *packet_buffer
+	const char *buffer, const size_t length, size_t *n_parsed
 ) {
 
 	// the first bytes start the request line
@@ -2084,11 +2250,31 @@ void http_receive_handle (
 	}
 
 	const llhttp_errno_t parser_errno = llhttp_execute (
-		&http_receive->parser, packet_buffer, (size_t) rc
+		&http_receive->parser, buffer, length
 	);
 
-	const size_t n_parsed = http_receive_parsed_bytes (
-		http_receive, parser_errno, packet_buffer, (size_t) rc
+	*n_parsed = http_receive_parsed_bytes (http_receive, parser_errno, buffer, length);
+
+	return parser_errno;
+
+}
+
+void http_receive_resume (HttpReceive *http_receive) {
+
+	http_receive->pause = HTTP_RECEIVE_PAUSE_NONE;
+
+	llhttp_resume (&http_receive->parser);
+
+}
+
+void http_receive_handle (
+	HttpReceive *http_receive,
+	ssize_t rc, char *packet_buffer
+) {
+
+	size_t n_parsed = 0;
+	const llhttp_errno_t parser_errno = http_receive_execute (
+		http_receive, packet_buffer, (size_t) rc, &n_parsed
 	);
 
 	switch (parser_errno) {

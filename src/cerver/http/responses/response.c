@@ -26,6 +26,7 @@
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 
+#include "cerver/http/core/connection.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/recycle.h"
@@ -1039,6 +1040,26 @@ static void http_response_send_failed (
 
 }
 
+// how the bytes of a request leave: a thread that handles the request waits for a full socket
+// until the deadline of the response; the thread of an event loop never waits,
+// its connection keeps what the socket does not take and writes it later
+// returns 0 on success, 1 on error
+static u8 http_response_transport_send (
+	const HttpReceive *http_receive, struct iovec *parts, const int n_parts,
+	size_t *sent, int *error
+) {
+
+	HttpConnection *connection = http_receive->connection;
+
+	return (connection && http_connection_is_loop_owned (connection)) ?
+		http_connection_send (connection, parts, n_parts, sent, error) :
+		socket_send_vector_until (
+			http_receive->cr->connection->socket, parts, n_parts, 0,
+			http_response_send_deadline (http_receive), sent, error
+		);
+
+}
+
 // sends all the parts with as few system calls as the socket takes,
 // with the send of the core (MSG_NOSIGNAL, EINTR, and poll () on a full socket
 // until the deadline of the response)
@@ -1047,8 +1068,6 @@ static u8 http_response_send_vector (
 	const HttpReceive *http_receive, struct iovec *parts, int n_parts
 ) {
 
-	const Socket *socket = http_receive->cr->connection->socket;
-
 	http_response_mark_responded (http_receive);
 
 	size_t total = 0;
@@ -1056,10 +1075,7 @@ static u8 http_response_send_vector (
 
 	size_t sent = 0;
 	int error = 0;
-	const u8 retval = socket_send_vector_until (
-		socket, parts, n_parts, 0, http_response_send_deadline (http_receive),
-		&sent, &error
-	);
+	const u8 retval = http_response_transport_send (http_receive, parts, n_parts, &sent, &error);
 
 	if (retval) {
 		// the bytes that left before the failure are part of the response
@@ -1140,6 +1156,22 @@ u8 http_response_send_pieces_status (
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent (http_receive, status, total);
+
+	return retval;
+
+}
+
+u8 http_response_send_interim (
+	const HttpReceive *http_receive, const char *data, const size_t length
+) {
+
+	struct iovec part = { (void *) data, length };
+
+	size_t sent = 0;
+	int error = 0;
+	const u8 retval = http_response_transport_send (http_receive, &part, 1, &sent, &error);
+
+	if (retval) errno = error ? error : EPIPE;
 
 	return retval;
 
@@ -3421,6 +3453,18 @@ u8 http_response_send_service_unavailable (const int sock_fd) {
 	}
 
 	return retval;
+
+}
+
+u8 http_response_send_unavailable (const HttpReceive *http_receive) {
+
+	struct iovec part = {
+		(void *) http_response_service_unavailable, sizeof (http_response_service_unavailable) - 1
+	};
+
+	return http_response_send_pieces_status (
+		http_receive, HTTP_STATUS_SERVICE_UNAVAILABLE, &part, 1
+	);
 
 }
 

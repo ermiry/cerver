@@ -39,6 +39,35 @@ CERVER_HIDDEN u8 http_response_send_pieces_status (
 	struct iovec *parts, const int n_parts
 );
 
+/**
+ * @internal
+ * @brief Sends bytes that are not the response of the request, like "100 Continue": the request is not marked as
+ * answered and they are not counted as its response.
+ *
+ * A thread that handles the request waits for a full socket until the deadline of its response; the thread of an
+ * event loop never waits, its connection keeps what the socket does not take.
+ *
+ * @param[in] http_receive the receive of the request
+ * @param[in] data the bytes
+ * @param[in] length the number of bytes
+ * @retval 0 they were sent or kept
+ * @retval 1 they were not, errno tells why
+ */
+CERVER_HIDDEN u8 http_response_send_interim (
+	const struct _HttpReceive *http_receive, const char *data, const size_t length
+);
+
+/**
+ * @internal
+ * @brief Answers a request of an event loop that the cerver can not run with #HTTP_RESPONSE_SERVICE_UNAVAILABLE,
+ * and counts it with its status.
+ *
+ * @param[in] http_receive the receive of the request
+ * @retval 0 the response was sent
+ * @retval 1 it was not sent
+ */
+CERVER_HIDDEN u8 http_response_send_unavailable (const struct _HttpReceive *http_receive);
+
 #ifdef __cplusplus
 }
 #endif
