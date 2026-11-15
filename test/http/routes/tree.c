@@ -1005,6 +1005,44 @@ static void test_tree_fuzz (void) {
 
 }
 
+static unsigned int test_tree_deleted_data = 0;
+
+static void test_tree_count_delete_data (void *data) {
+
+	test_tree_deleted_data += 1;
+	free (data);
+
+}
+
+// a different custom data deletes the one that the endpoint or the group had, the same one is kept (it leaked)
+static void test_tree_custom_data_replaced (void) {
+
+	test_tree_deleted_data = 0;
+
+	HttpCerver *http_cerver = test_tree_cerver ();
+
+	HttpGroup *group = http_cerver_group_create (http_cerver, "replaced");
+	HttpEndpoint *endpoint = http_group_get (group, "data", test_tree_handler);
+
+	int *first = (int *) malloc (sizeof (int));
+	int *second = (int *) malloc (sizeof (int));
+	http_endpoint_set_custom_data (endpoint, first, test_tree_count_delete_data);
+	http_endpoint_set_custom_data (endpoint, first, test_tree_count_delete_data);
+	test_check_unsigned_eq (test_tree_deleted_data, 0, "the same custom data was deleted");
+	http_endpoint_set_custom_data (endpoint, second, test_tree_count_delete_data);
+	test_check_unsigned_eq (test_tree_deleted_data, 1, "the replaced custom data of the endpoint was not deleted");
+
+	int *group_first = (int *) malloc (sizeof (int));
+	int *group_second = (int *) malloc (sizeof (int));
+	http_group_set_custom_data (group, group_first, test_tree_count_delete_data);
+	http_group_set_custom_data (group, group_second, test_tree_count_delete_data);
+	test_check_unsigned_eq (test_tree_deleted_data, 2, "the replaced custom data of the group was not deleted");
+
+	http_cerver_delete (http_cerver);
+	test_check_unsigned_eq (test_tree_deleted_data, 4, NULL);
+
+}
+
 void http_tests_tree (void) {
 
 	(void) printf ("Testing HTTP routes tree...\n");
@@ -1024,6 +1062,7 @@ void http_tests_tree (void) {
 	test_tree_admin_groups ();
 	test_tree_json ();
 	test_tree_fuzz ();
+	test_tree_custom_data_replaced ();
 
 	(void) printf ("Done!\n");
 

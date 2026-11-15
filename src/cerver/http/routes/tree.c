@@ -123,7 +123,7 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 }
 
 // deletes the custom data that the settings own
-static void http_route_settings_end (HttpRouteSettings *settings) {
+static void http_route_settings_end_custom_data (HttpRouteSettings *settings) {
 
 	if (
 		(settings->set & HTTP_ROUTE_SETTING_CUSTOM_DATA)
@@ -134,7 +134,28 @@ static void http_route_settings_end (HttpRouteSettings *settings) {
 
 	settings->custom_data = NULL;
 
+}
+
+static void http_route_settings_end (HttpRouteSettings *settings) {
+
+	http_route_settings_end_custom_data (settings);
+
 	http_middlewares_end (&settings->middlewares);
+
+}
+
+// a different custom data deletes the one that the settings owned (it was lost), the same one is kept
+static void http_route_settings_replace_custom_data (
+	HttpRouteSettings *settings, void *custom_data, void (*delete_custom_data)(void *)
+) {
+
+	if (settings->custom_data != custom_data) {
+		http_route_settings_end_custom_data (settings);
+	}
+
+	settings->custom_data = custom_data;
+	settings->delete_custom_data = delete_custom_data;
+	settings->set |= HTTP_ROUTE_SETTING_CUSTOM_DATA;
 
 }
 
@@ -349,9 +370,7 @@ void http_endpoint_set_custom_data (
 ) {
 
 	if (endpoint) {
-		endpoint->settings.custom_data = custom_data;
-		endpoint->settings.delete_custom_data = delete_custom_data;
-		endpoint->settings.set |= HTTP_ROUTE_SETTING_CUSTOM_DATA;
+		http_route_settings_replace_custom_data (&endpoint->settings, custom_data, delete_custom_data);
 	}
 
 }
@@ -895,9 +914,7 @@ void http_group_set_custom_data (
 ) {
 
 	if (group) {
-		group->settings.custom_data = custom_data;
-		group->settings.delete_custom_data = delete_custom_data;
-		group->settings.set |= HTTP_ROUTE_SETTING_CUSTOM_DATA;
+		http_route_settings_replace_custom_data (&group->settings, custom_data, delete_custom_data);
 	}
 
 }
