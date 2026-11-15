@@ -1,3 +1,8 @@
+/**
+ * @file cerver/core/serialization.h
+ * @brief The summary of a cerver that it sends to its clients, with its schema.
+ */
+
 #ifndef _CERVER_CORE_SERIALIZATION_H_
 #define _CERVER_CORE_SERIALIZATION_H_
 
@@ -15,21 +20,34 @@ extern "C" {
 
 struct _Packet;
 
-#pragma region serialization
+/**
+ * @defgroup core_serialization Serialization
+ * @ingroup core
+ * @brief The summary of a cerver, encoded with the serializer.
+ * @{
+ */
 
+/** @brief The size of the name of a summary, like #CERVER_INFO_NAME_SIZE. */
 #define CERVER_SUMMARY_NAME_SIZE			128
+
+/** @brief The size of the welcome message of a summary, like #CERVER_INFO_WELCOME_SIZE. */
 #define CERVER_SUMMARY_WELCOME_SIZE			512
 
-// the bytes of the map, the version, the keys, the lengths and the values that are not texts
+/** @brief The bytes of the map, the version, the keys, the lengths and the values that are not texts. */
 #define CERVER_SUMMARY_ENCODING_OVERHEAD	64
 
-// the biggest encoded cerver summary
+/** @brief The biggest encoded summary. */
 #define CERVER_SUMMARY_MAX_ENCODED_SIZE		\
 	(CERVER_SUMMARY_NAME_SIZE + CERVER_SUMMARY_WELCOME_SIZE + CERVER_SUMMARY_ENCODING_OVERHEAD)
 
+/** @brief The version of the schema of the summary. */
 #define CERVER_SUMMARY_VERSION				1
 
-// the info of a cerver that it sends to its clients
+/**
+ * @brief The X-macro table of the fields of the summary: the info of a cerver that it sends to its clients.
+ *
+ * SERIALIZER_DECLARE () makes the struct CerverSummary and the schema cerver_summary_schema from it.
+ */
 #define CERVER_SUMMARY_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)								\
 	ENUM(T, 1, type, SERIALIZER_REQUIRED, CERVER_TYPE_NONE, CERVER_TYPE_NONE, CERVER_TYPE_BALANCER)		\
 	STRING(T, 2, TEXT, name, CERVER_SUMMARY_NAME_SIZE, SERIALIZER_REQUIRED)								\
@@ -42,17 +60,30 @@ struct _Packet;
 
 SERIALIZER_DECLARE (CerverSummary, cerver_summary, CERVER_SUMMARY_FIELDS)
 
-// the summary comes from the network already validated by its schema
+/**
+ * @brief Creates the report of a summary.
+ *
+ * @param[in] summary the summary, that comes from the network already validated by its schema
+ * @return the new report, released with cerver_report_delete (); NULL for a NULL summary or if it could not be
+ * allocated
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE CerverReport *cerver_deserialize (
 	const CerverSummary *summary
 );
 
-// creates a cerver info packet ready to be sent
+/**
+ * @brief Creates the info packet of a cerver, with its summary, ready to be sent.
+ *
+ * @param[in] cerver the cerver
+ * @return the new packet, NULL for a NULL cerver or if it could not be created
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE struct _Packet *cerver_packet_generate (
 	Cerver *cerver
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
