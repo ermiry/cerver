@@ -1,15 +1,15 @@
 #include <stdlib.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/http/compatibility.h"
-#include "cerver/http/middleware.h"
-#include "cerver/http/request.h"
-#include "cerver/http/route.h"
-#include "cerver/http/tree.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/compatibility.h"
+#include "cerver/http/routes/middleware.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/tree.h"
 
 static const char *http_compatibility_root_path = { "/" };
 
