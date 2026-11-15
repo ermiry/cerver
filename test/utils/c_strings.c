@@ -55,6 +55,64 @@ static void test_c_string_n_copy (void) {
 	test_check_int_eq ((int) strlen (string), 10, NULL);
 	test_check_str_eq (string, "1234567890", NULL);
 
+	// a copy of 0 bytes never writes before the destination
+	char guarded[STRING_LEN] = { 'x', 'y', 0 };
+	c_string_n_copy (guarded + 1, "hola", 0);
+	test_check (guarded[0] == 'x', "a copy of 0 bytes wrote before the destination");
+	test_check (guarded[1] == 'y', "a copy of 0 bytes changed the destination");
+
+}
+
+// the concat does not need the size of the result
+static void test_c_string_concat_without_size (void) {
+
+	char *result = c_string_concat ("hola", "adios", NULL);
+	test_check_str_eq (result, "holaadios", NULL);
+	free (result);
+
+}
+
+// the string between two pointers includes both of them
+static void test_c_string_create_with_ptrs (void) {
+
+	char string[] = "hola_y_adios";
+
+	char *result = c_string_create_with_ptrs (string + 4, string + 6);
+	test_check_str_eq (result, "_y_", NULL);
+	test_check_int_eq ((int) strlen (result), 3, NULL);
+	free (result);
+
+}
+
+// a string without the token has nothing to remove after it
+static void test_c_string_remove_sub_after_token_with_idx (void) {
+
+	char string[] = "/home/ermiry/Documents";
+
+	char *sub = NULL;
+	char *result = c_string_remove_sub_after_token_with_idx (string, '/', &sub, -1);
+	test_check_str_eq (result, "/home/ermiry/", NULL);
+	test_check_str_eq (sub, "Documents", NULL);
+	free (result);
+	free (sub);
+
+	char without[] = "Documents";
+	sub = NULL;
+	test_check_null_ptr (c_string_remove_sub_after_token_with_idx (without, '/', &sub, -1));
+	test_check_null_ptr (sub);
+
+}
+
+// the converters take a NULL string
+static void test_converters_null (void) {
+
+	test_check_false (bool_value_from_string (NULL));
+	test_check_true (bool_value_from_string ("TRUE"));
+
+	test_check_int_eq (xtoi (NULL), 0, NULL);
+	char hex[] = "0x1F";
+	test_check_int_eq (xtoi (hex), 31, NULL);
+
 }
 
 static void test_c_string_concat (void) {
@@ -241,6 +299,10 @@ void utils_tests_c_strings (void) {
 	test_c_string_copy ();
 	test_c_string_n_copy ();
 	test_c_string_concat ();
+	test_c_string_concat_without_size ();
+	test_c_string_create_with_ptrs ();
+	test_c_string_remove_sub_after_token_with_idx ();
+	test_converters_null ();
 	test_c_string_concat_safe ();
 	test_c_string_create ();
 	test_c_string_remove_spaces ();
