@@ -297,8 +297,9 @@ CERVER_EXPORT u8 http_web_socket_send_binary (
  * @param[in] type HTTP_WEB_SOCKET_OPCODE_TEXT or HTTP_WEB_SOCKET_OPCODE_BINARY
  * @retval 0 the stream began
  * @retval 1 it did not begin
- * @warning The stream holds the mutex of the messages of the connection from its begin to its end: the three calls
- * are made by the same thread.
+ * @note The stream holds the mutex of the messages of the connection from its begin to its end, so its thread owns
+ * it: a piece or an end from another thread returns 1 and changes nothing (since 3.0b-4; it unlocked the mutex of
+ * the owner).
  */
 CERVER_EXPORT u8 http_web_socket_send_begin (
 	HttpWebSocket *web_socket, const HttpWebSocketOpcode type
@@ -312,7 +313,7 @@ CERVER_EXPORT u8 http_web_socket_send_begin (
  * @param[in] data the piece, NULL only when size is 0
  * @param[in] size the bytes of the piece
  * @retval 0 the piece was sent (or kept by the compressor)
- * @retval 1 a stream that did not begin, or the piece was not sent
+ * @retval 1 a stream that did not begin, a thread that did not begin it, or the piece was not sent
  */
 CERVER_EXPORT u8 http_web_socket_send_write (
 	HttpWebSocket *web_socket, const void *data, const size_t size
@@ -323,7 +324,8 @@ CERVER_EXPORT u8 http_web_socket_send_write (
  *
  * @param[in,out] web_socket the connection
  * @retval 0 the end of the message was sent
- * @retval 1 a stream that did not begin, or the end was not sent (the stream is ended anyway)
+ * @retval 1 a stream that did not begin, a thread that did not begin it (the stream goes on), or the end was not
+ * sent (the stream is ended anyway)
  */
 CERVER_EXPORT u8 http_web_socket_send_end (HttpWebSocket *web_socket);
 

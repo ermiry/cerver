@@ -700,6 +700,7 @@ u8 http_web_socket_send_begin (
 		// held until http_web_socket_send_end ()
 		if (http_web_socket_can_send_data (web_socket)) {
 			web_socket->streaming = true;
+			web_socket->stream_owner = pthread_self ();
 			web_socket->stream_type = (u8) type;
 			web_socket->stream_started = false;
 			web_socket->stream_compressed = (web_socket->deflate != NULL);
@@ -749,13 +750,20 @@ static u8 http_web_socket_send_stream_frame (
 
 }
 
+// the stream is written and ended by the thread that began it, the one that holds the mutex of the messages
+static bool http_web_socket_stream_owned (const HttpWebSocket *web_socket) {
+
+	return web_socket && web_socket->streaming && pthread_equal (web_socket->stream_owner, pthread_self ());
+
+}
+
 u8 http_web_socket_send_write (
 	HttpWebSocket *web_socket, const void *data, const size_t size
 ) {
 
 	u8 retval = 1;
 
-	if (web_socket && web_socket->streaming && (data || !size)) {
+	if (http_web_socket_stream_owned (web_socket) && (data || !size)) {
 		const u8 *payload = (const u8 *) data;
 		size_t payload_size = size;
 
@@ -778,7 +786,7 @@ u8 http_web_socket_send_end (HttpWebSocket *web_socket) {
 
 	u8 retval = 1;
 
-	if (web_socket && web_socket->streaming) {
+	if (http_web_socket_stream_owned (web_socket)) {
 		const u8 *payload = NULL;
 		size_t payload_size = 0;
 
