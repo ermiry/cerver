@@ -26,7 +26,7 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/status.h"
+#include "cerver/http/responses/status.h"
 
 #define HTTP_PARSER_VERSION_MAJOR   2
 #define HTTP_PARSER_VERSION_MINOR   9

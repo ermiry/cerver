@@ -19,16 +19,16 @@
  * IN THE SOFTWARE.
  */
 #include <assert.h>
-#include <stddef.h>
 #include <ctype.h>
-#include <string.h>
 #include <limits.h>
+#include <stddef.h>
+#include <string.h>
 
 #include "cerver/config.h"
 
-#include "cerver/http/status.h"
-#include "cerver/http/method.h"
-#include "cerver/http/http_parser.h"
+#include "cerver/http/parser/http_parser.h"
+#include "cerver/http/requests/method.h"
+#include "cerver/http/responses/status.h"
 
 static uint32_t max_header_size = HTTP_MAX_HEADER_SIZE;
 
