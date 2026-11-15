@@ -208,8 +208,8 @@ CERVER_EXPORT void http_response_delete (void *res_ptr);
 /**
  * @brief Takes a response from the pool of the responses, ready to be used.
  *
- * @return the response, given back with http_response_return (); NULL if the pool could not produce one
- * @warning The pool exists while an HTTP cerver is running (http_responses_init ()).
+ * @return the response, given back with http_response_return (); NULL if the pool could not produce one, or
+ * without the pool, which exists while an HTTP cerver is running (http_responses_init ())
  */
 CERVER_EXPORT HttpResponse *http_response_get (void);
 
@@ -217,6 +217,7 @@ CERVER_EXPORT HttpResponse *http_response_get (void);
  * @brief Resets a response that was taken with http_response_get () and gives it back to the pool.
  *
  * @param[in] response the response, it can be NULL
+ * @note Without the pool, or when the pool can not take it, the response is released.
  */
 CERVER_EXPORT void http_response_return (HttpResponse *response);
 
@@ -708,17 +709,20 @@ CERVER_EXPORT u8 http_response_render_json (
  */
 
 /**
- * @brief Sends the piece of a video that the Range of the request asks for, with 206 Partial Content.
+ * @brief Sends a video with the Range of the request, as RFC 9110 says.
  *
- * A range without an end sends at most #HTTP_RESPONSE_VIDEO_CHUNK_SIZE bytes; the content type comes from the
- * extension of the file (MP4 without one).
+ * Without a Range (or with an invalid one, like `bytes=9-1`) the whole video goes with 200; a range that starts
+ * inside the video goes with 206 Partial Content and its Content-Range: `bytes=N-M` includes M and ends with the
+ * video, a range without an end (`bytes=N-`) sends at most #HTTP_RESPONSE_VIDEO_CHUNK_SIZE bytes, and `bytes=-N` the
+ * last N; a range that starts after the end of the video gets 416 with a Content-Range of the unsatisfied range
+ * (`bytes`, an asterisk, a slash and the size of the video). The content type comes from the extension of the file
+ * (MP4 without one).
  *
  * @param[in] http_receive the receive of the request
  * @param[in] filename the path of the video
- * @retval 0 the piece was sent
- * @retval 1 the video was not found, it could not be opened or the piece was not sent
- * @warning A request without a Range also gets a 206, with an end of -1 in its Content-Range, and the ranges are
- * not checked against the size of the file (no 416).
+ * @retval 0 the response was sent
+ * @retval 1 the video was not found, it could not be opened, or the response could not be created or sent
+ * @since 2.0b-75 (the 200 and the 416)
  */
 CERVER_EXPORT u8 http_response_handle_video (
 	const struct _HttpReceive *http_receive,
