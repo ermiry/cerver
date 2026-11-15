@@ -3,7 +3,56 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
-## The next beta (from 2.1b-13)
+## 2.1b-15 (from 2.1b-14)
+
+The event loop (F3 of `roadmap.md` §4.3): `CERVER_HANDLER_TYPE_EVENTS`, a new handler type that is opt-in and only
+for a web cerver. A cerver that keeps `CERVER_HANDLER_TYPE_THREADS` or `POLL` behaves like in the 2.1b-14; what can
+break is the size of two structs and, for a cerver that chooses EVENTS, where some methods of the application run.
+
+- **`Cerver` and `HttpReceive` are bigger:** `Cerver` ends with `n_io_threads`, `max_connections`,
+  `overload_wait_timeout`, `stop_fd` and `event_loops`, and `HttpReceive` with `connection`, `pause` (the new enum
+  `HttpReceivePause`) and `authorize_pending`. The fields of before keep their offsets; a binary of the 2.1b-14 that
+  allocates one of them by itself has to be built again
+- **`CERVER_HANDLER_TYPE_MAP` has a fourth row,** `CERVER_HANDLER_TYPE_EVENTS` = 3, with
+  `cerver_set_io_threads ()` (`CERVER_DEFAULT_IO_THREADS`, 1), `cerver_set_max_connections ()`
+  (`CERVER_DEFAULT_MAX_CONNECTIONS`, 2^14) and `cerver_set_overload_wait_timeout ()`
+  (`CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT`, 2^5 secs); the other handler types ignore the three. `cerver_start ()`
+  fails with EVENTS in a cerver that is not `CERVER_TYPE_WEB` or that has no thpool threads
+
+**Only with `CERVER_HANDLER_TYPE_EVENTS`** (what is different from THREADS in the same cerver):
+
+- **The methods of the application that run in an I/O thread:** `decode_data` of a route with a Bearer token, and
+  the uploads filename and dirname generators. While one runs its loop reads no other connection, so they must not
+  wait. The custom authentication, the handlers, the middlewares and the static files run in the thpool, like before
+- **`CERVER_OVERLOAD_POLICY_WAIT` does not stop the accept:** a request without a place in the thpool waits in its
+  loop, in the order that it arrived, up to `cerver_set_overload_wait_timeout ()`; then it is answered with 503 and
+  `Retry-After` (with THREADS it waits in the listen backlog without a limit). With 0 seconds it is answered at once
+- **`CERVER_OVERLOAD_POLICY_REJECT`** answers 503 when the request is complete and the thpool has no place; a request
+  with a body is answered when its headers are complete, and its body is not received
+- **The limit of connections:** at `cerver_set_max_connections ()` the cerver stops accepting until one ends, the new
+  ones wait in the listen backlog
+- **The requests go to the thpool in the order that they are complete,** not in the order that their connections
+  were accepted: a connection that was accepted first and sends its request later is handled later (with THREADS
+  each connection takes its place in the queue of the thpool when it is accepted)
+- **A custom authentication of a request without a body** runs in the same job as its handler; with a body it runs
+  before the body is received, like with THREADS, and the body is read by the loop while no thread waits for it
+- **A request whose job the thpool dropped** (a drain that rejects) is answered with 503 by its loop, and the files
+  that it uploaded are removed: no handler saw them
+- **`SO_REUSEPORT`** is set in the listening sockets when the cerver has more than one I/O thread, also when the
+  application did not ask for it with `cerver_set_reusable_port ()`
+- **A WebSocket** leaves its loop after the 101 and gets its own thread, like with THREADS
+- The connection still closes after its response (`Connection: close`); keep-alive is the next phase
+
+**Tests and scripts:**
+
+- The web servers of the tests take their handler type from `CERVER_TEST_HANDLER` (`threads` by default, `events`)
+  and their I/O threads from `CERVER_TEST_IO_THREADS`; `test/integration.sh` and `test/nginx/run.sh` run the web
+  pairs once per handler (`HANDLERS`), so they take twice as long
+- `benchmarks/bin/server` takes the handler type and the I/O threads after the threads of its pool
+- `test/performance.sh` also fails when EVENTS is below 90 % of the req/s of THREADS
+- `nightly` does not merge `http` anymore: its fixes are applied by hand (`roadmap.md` §4)
+
+## 2.1b-14 (from 2.1b-13)
 
 The structure, the documentation and the license of the 3.0b-3 of `labs`, seeded here: the code of `nightly` and of
 `labs` is the same until `labs` replaces a module. The entries «3.0b-1 (from 2.1b-13)», «3.0b-2 (from 3.0b-1)» and
