@@ -32,6 +32,7 @@
 #include "cerver/core/internal.h"
 #include "cerver/core/serialization.h"
 #include "cerver/core/start.h"
+#include "cerver/events/internal.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
@@ -53,6 +54,10 @@
 #include "cerver/utils/utils.h"
 
 #pragma region init
+
+static bool cerver_network_shares_port (const Cerver *cerver);
+
+static i32 cerver_network_create_socket (const Cerver *cerver);
 
 // every address of the cerver's family
 static void cerver_network_init_address_any (Cerver *cerver) {
@@ -135,7 +140,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 		}
 	}
 
-	if (cerver->reusable_port) {
+	if (cerver_network_shares_port (cerver)) {
 		if (sock_set_reusable_port (cerver->sock)) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
@@ -166,7 +171,41 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 
 }
 
-// set cerver's socket blocking property based on cerver handler type
+// sets the socket to non blocking mode
+// returns 0 on success, 1 on error
+static u8 cerver_network_init_non_blocking (Cerver *cerver) {
+
+	u8 retval = 0;
+
+	if (sock_set_blocking (cerver->sock, false)) {
+		cerver->blocking = false;
+		#ifdef CERVER_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Cerver %s socket set to non blocking mode.",
+			cerver->info->name
+		);
+		#endif
+	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+			"Failed to set cerver %s socket to non blocking mode!",
+			cerver->info->name
+		);
+
+		cerver_close_socket (cerver);
+
+		retval = 1;     // error
+	}
+
+	return retval;
+
+}
+
+// set cerver's socket blocking property based on cerver handler type:
+// the poll and the event loops accept from a socket that never waits
 static u8 cerver_network_init_block_socket (Cerver *cerver) {
 
 	u8 retval = 0;
@@ -174,31 +213,10 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 	switch (cerver->handler_type) {
 		case CERVER_HANDLER_TYPE_NONE: break;
 
-		case CERVER_HANDLER_TYPE_POLL: {
-			// set the socket to non blocking mode
-			if (sock_set_blocking (cerver->sock, false)) {
-				cerver->blocking = false;
-				#ifdef CERVER_DEBUG
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-					"Cerver %s socket set to non blocking mode.",
-					cerver->info->name
-				);
-				#endif
-			}
-
-			else {
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-					"Failed to set cerver %s socket to non blocking mode!",
-					cerver->info->name
-				);
-
-				cerver_close_socket (cerver);
-
-				retval = 1;     // error
-			}
-		} break;
+		case CERVER_HANDLER_TYPE_POLL:
+		case CERVER_HANDLER_TYPE_EVENTS:
+			retval = cerver_network_init_non_blocking (cerver);
+			break;
 
 		case CERVER_HANDLER_TYPE_THREADS: break;
 
@@ -206,6 +224,59 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 	}
 
 	return retval;
+
+}
+
+// each event loop of a cerver with more than one listens in its own socket of the same address,
+// the kernel shares the new connections among them
+static bool cerver_network_shares_port (const Cerver *cerver) {
+
+	return cerver->reusable_port || (
+		(cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS) && (cerver->n_io_threads > 1)
+	);
+
+}
+
+// the options of a socket that listens in the address of the cerver and its bind
+// returns 0 on success, 1 on error
+static u8 cerver_network_socket_bind (const Cerver *cerver, const i32 sock) {
+
+	if (cerver->use_ipv6) (void) sock_set_ipv6_only (sock, cerver->ipv6_only);
+
+	if (cerver->reusable) (void) sock_set_reusable (sock);
+
+	(void) sock_set_reusable_port (sock);
+
+	return bind (
+		sock, (const struct sockaddr *) &cerver->address, sock_address_size (&cerver->address)
+	) ? 1 : 0;
+
+}
+
+// another socket that listens in the address of the cerver, for an event loop that is not the first:
+// non blocking, with SO_REUSEPORT like the socket of the cerver
+// returns the socket, -1 on error
+i32 cerver_network_listen_socket_create (const Cerver *cerver) {
+
+	i32 sock = cerver_network_create_socket (cerver);
+
+	if (sock >= 0) {
+		if (
+			!sock_set_blocking (sock, false)
+			|| cerver_network_socket_bind (cerver, sock)
+			|| listen (sock, cerver->connection_queue)
+		) {
+			cerver_log_error (
+				"Failed to create a listening socket of cerver %s - errno %d",
+				cerver->info->name, errno
+			);
+
+			(void) close (sock);
+			sock = -1;
+		}
+	}
+
+	return sock;
 
 }
 
@@ -1262,6 +1333,11 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 				);
 			}
 		} break;
+
+		// the event loops listen, accept and wait until the cerver is stopped
+		case CERVER_HANDLER_TYPE_EVENTS:
+			retval = event_loop_group_run (cerver);
+			break;
 
 		default: {
 			cerver_log (
