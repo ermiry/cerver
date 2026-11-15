@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CERVER_VERSION=3.0b-3
+CERVER_VERSION=3.0b-4
 
 # sudo apt-get update && sudo apt-get install -y make wget
 
