@@ -41,6 +41,10 @@
 
 #include "cerver/game/game.h"
 
+#include "cerver/http/core/http.h"
+#include "cerver/http/websockets/internal.h"
+#include "cerver/http/websockets/registry.h"
+
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
@@ -896,14 +900,15 @@ void cerver_set_update_interval (
 
 }
 
-// enables admin connections to cerver
+// enables admin connections to cerver,
+// a cerver that already has its admin cerver keeps it
 // returns 0 on success, 1 on error
 u8 cerver_set_admin_enable (Cerver *cerver) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver->admin = admin_cerver_create ();
+		if (!cerver->admin) cerver->admin = admin_cerver_create ();
 		if (cerver->admin) {
 			cerver->admin->cerver = cerver;
 			retval = 0;
