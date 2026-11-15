@@ -662,9 +662,8 @@ CERVER_EXPORT const char *http_request_get_dirname (
  * @param[in] http_request the request, NULL is ignored
  * @param[in] format the printf () format of the directory, NULL is ignored
  * @param[in] ... the arguments of the format
- * @warning The length is what the format needed, not what was kept: the cerver does not use a directory whose length
- * is #REQUEST_DIRNAME_SIZE or more, but one of REQUEST_DIRNAME_SIZE - 1 characters is truncated by one without being
- * detected.
+ * @note The length is what the format needed: a directory of REQUEST_DIRNAME_SIZE - 1 characters is kept whole, and
+ * the cerver does not use one whose length is #REQUEST_DIRNAME_SIZE or more (it was cut).
  */
 CERVER_PUBLIC void http_request_set_dirname (
 	const HttpRequest *http_request, const char *format, ...
