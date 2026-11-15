@@ -1,23 +1,21 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <dirent.h>
 #include <errno.h>
-#include <poll.h>
-#include <unistd.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <cerver/types/types.h>
 
 #include <cerver/http/websockets/frame.h>
 
 #include "../test.h"
-
 #include "raw.h"
 
 // milliseconds that a connect is retried until the cerver listens, and between each try

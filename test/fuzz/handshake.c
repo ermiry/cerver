@@ -1,5 +1,5 @@
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,7 +8,7 @@
 #include <cerver/http/websockets/client.h>
 #include <cerver/http/websockets/deflate.h>
 #include <cerver/http/websockets/handshake.h>
-#include <cerver/http/websockets/internal.h>
+#include "cerver/http/websockets/internal.h"
 
 // the text of a handshake: the first byte selects what parses the rest,
 // the response of a server for the client, an offer or a response of permessage-deflate,

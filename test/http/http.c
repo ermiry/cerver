@@ -1,16 +1,20 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/security/auth.h>
 
 #include <cerver/threads/worker.h>
 
-#include <cerver/http/auth.h>
-#include <cerver/http/http.h>
-
+#include "../test.h"
 #include "data.h"
 #include "http.h"
-
-#include "../test.h"
 
 const char *private_key = { "./test/http/keys/key.key" };
 const char *public_key = { "./test/http/keys/key.pub" };

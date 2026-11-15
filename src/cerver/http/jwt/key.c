@@ -1,9 +1,8 @@
+#include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <limits.h>
-
-#include <errno.h>
 
 #include <openssl/bio.h>
 #include <openssl/bn.h>

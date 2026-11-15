@@ -1,21 +1,22 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <time.h>
 #include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
 #include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/utils/log.h>
 
-#include "upstream.h"
-
 #include "../test.h"
+#include "upstream.h"
 
 // a service behind the balancer of the process pairs:
 // it echoes bodies of any size, tells its id, answers slowly, or stops when it is asked to

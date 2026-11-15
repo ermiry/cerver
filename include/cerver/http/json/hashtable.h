@@ -12,6 +12,12 @@
 
 #include "cerver/http/json/private.h"
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation"
+#pragma clang diagnostic ignored "-Wdocumentation-unknown-command"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -204,6 +210,10 @@ CERVER_HIDDEN void hashtable_iter_set (
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __clang__
+#pragma clang diagnostic pop
 #endif
 
 #endif

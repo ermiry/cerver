@@ -1,5 +1,5 @@
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
@@ -104,10 +104,10 @@ bool avl_is_empty (AVLTree *tree) {
 
 }
 
-// returns TRUE if the tree is NOT empty
+// returns TRUE if the tree is NOT empty, a NULL tree is empty
 bool avl_is_not_empty (AVLTree *tree) {
 
-	bool retval = true;
+	bool retval = false;
 
 	if (tree) {
 		(void) pthread_mutex_lock (tree->mutex);
@@ -258,7 +258,7 @@ unsigned int avl_clear_tree (
 
 }
 
-#pragma regigion internal
+#pragma region internal
 
 static AVLNode *avl_node_new (void *data) {
 

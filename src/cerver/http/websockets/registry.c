@@ -7,11 +7,10 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
+#include "cerver/core/cerver.h"
 
-#include "cerver/http/http.h"
-#include "cerver/http/tree.h"
-
+#include "cerver/http/core/http.h"
+#include "cerver/http/routes/tree.h"
 #include "cerver/http/websockets/frame.h"
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"

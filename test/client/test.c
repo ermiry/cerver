@@ -1,12 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
 #include <pthread.h>
 
-#include <cerver/client.h>
+#include <cerver/client/client.h>
 
 #include "../test.h"
 
@@ -37,6 +37,21 @@ static void test_client_base_configuration (void) {
 	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	client_delete (client);
+
+}
+
+// a NULL name keeps the name of the client, and a NULL cerver has no clients
+static void test_client_null_arguments (void) {
+
+	Client *client = test_client_create ();
+
+	client_set_name (client, client_name);
+	client_set_name (client, NULL);
+	test_check_str_eq (client->name, client_name, "a NULL name changed the name");
+
+	client_delete (client);
+
+	test_check_null_ptr (client_get_with_session_id (NULL, "session"));
 
 }
 
@@ -169,6 +184,7 @@ int main (void) {
 	(void) printf ("Testing CLIENT...\n");
 
 	test_client_base_configuration ();
+	test_client_null_arguments ();
 	test_client_session_id ();
 	test_client_session_id_threads ();
 	test_client_recycled ();

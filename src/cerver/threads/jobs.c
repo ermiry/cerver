@@ -1,9 +1,9 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include "cerver/collections/pool.h"
 
@@ -83,9 +83,11 @@ Job *job_get (JobQueue *job_queue) {
 
 void job_reset (Job *job) {
 
-	job->id = 0;
-	job->work = NULL;
-	job->args = NULL;
+	if (job) {
+		job->id = 0;
+		job->work = NULL;
+		job->args = NULL;
+	}
 
 }
 

@@ -1,10 +1,13 @@
-#include <stdint.h>
 #include <stddef.h>
-
-#include <cerver/collections/arena.h>
+#include <stdint.h>
 
 #include <cerver/types/string.h>
 
+#include <cerver/collections/arena.h>
+
+#include <cerver/connection/end.h>
+
+#include <cerver/http/core/handler.h>
 #include <cerver/http/parser/api.h>
 
 #include "fuzz.h"

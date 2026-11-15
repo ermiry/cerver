@@ -10,12 +10,17 @@
 #define _CERVER_HTTP_JWT_H_
 
 #include <stdio.h>
-
 #include <time.h>
 
 #include "cerver/config.h"
 
 #include "cerver/http/jwt/alg.h"
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation"
+#pragma clang diagnostic ignored "-Wdocumentation-unknown-command"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -941,6 +946,10 @@ CERVER_PUBLIC int jwt_valid_set_headers (
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __clang__
+#pragma clang diagnostic pop
 #endif
 
 #endif

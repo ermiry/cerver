@@ -1,13 +1,12 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #include <pthread.h>
 
 #include <cerver/collections/dlist.h>
 
 #include "../test.h"
-
 #include "check.h"
 #include "data.h"
 
@@ -372,17 +371,17 @@ static void test_invariants_conditions (void) {
 
 	DoubleList *dlist = invariants_dlist_create (INVARIANTS_SMALL_SIZE);
 
-	DoubleList *even = dlist_split_by_condition (dlist, data_value_is_even, NULL);
+	DoubleList *even = dlist_split_with_condition (dlist, data_value_is_even, NULL);
 	test_check_ptr (even);
 	collections_check_dlist (dlist, INVARIANTS_SMALL_SIZE / 2);
 	collections_check_dlist (even, INVARIANTS_SMALL_SIZE / 2);
 
-	DoubleList *merge = dlist_merge_two_by_condition (dlist, even, data_value_is_even, NULL);
+	DoubleList *merge = dlist_merge_two_with_condition (dlist, even, data_value_is_even, NULL);
 	test_check_ptr (merge);
 	collections_check_dlist (merge, INVARIANTS_SMALL_SIZE / 2);
 	collections_check_dlist (even, 0);
 
-	unsigned int removed = dlist_remove_by_condition (merge, data_value_is_even, NULL, true);
+	unsigned int removed = dlist_remove_with_condition (merge, data_value_is_even, NULL, true);
 	test_check_unsigned_eq (removed, INVARIANTS_SMALL_SIZE / 2, NULL);
 	collections_check_dlist (merge, 0);
 

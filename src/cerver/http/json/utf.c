@@ -5,10 +5,9 @@
  * it under the terms of the MIT license. See thirdparty.md for details.
  */
 
-#include <stdlib.h>
-
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "cerver/http/json/utf.h"
 

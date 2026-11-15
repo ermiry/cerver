@@ -3,6 +3,29 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## The next beta (from 2.1b-13)
+
+The structure, the documentation and the license of the 3.0b-3 of `labs`, seeded here: the code of `nightly` and of
+`labs` is the same until `labs` replaces a module. The entries «3.0b-1 (from 2.1b-13)», «3.0b-2 (from 3.0b-1)» and
+«3.0b-3 (from 3.0b-2)» of the `incompatibilities.md` of `labs` have the details.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`, `thirdparty.md`)
+- **Every include changes:** the headers are in folders by domain (`core/`, `admin/`, `auth/`, `client/`,
+  `connection/`, `files/`, `handler/`, `load/`, `network/`, `packets/`, `system/`; `http/core/`, `http/headers/`,
+  `http/requests/`, `http/responses/`, `http/routes/`, `http/security/`), the big headers are split in parts that the
+  main header does not include, `<cerver/cerver.h>` is the umbrella of the core and `<cerver/http/http.h>` the one of
+  HTTP; there are no headers with the old paths (the table in the `roadmap.md` of `labs` §11)
+- **The functions with `_by_` are named with `_with_`** (43, 35 of them exported)
+- **`cerver/crypto`:** the random bytes, SHA-1 and the cleanse go through the OpenSSL provider (`CRYPTO=openssl`, the
+  only one); the session ids and the WebSocket handshake use it
+- **The fixes of the documentation** (the NULL arguments, the lengths of the truncated values, `str_set ()`,
+  `str_split ()`, `arena_alloc ()`, `packet_append_data ()`, `http_response_set_data ()`, …): the list in the entry of
+  the 3.0b-3 of `labs`
+- The headers are documented with Doxygen (`make docs`, `Doxyfile`, `Dockerfile.docs`, the `docs` job of
+  `build.yml`), and every clang build adds `-Wdocumentation`
+- The tests binaries follow the folders (`test/bin/connection`, `handler`, `load`, `network`, …, `test/bin/crypto` and
+  `test/bin/faults`)
+
 ## 2.1b-13 (from 2.1b-12)
 
 The rest of the fixes of the review of the 2.1b-10, with the ones of the 2.0b-72 applied by hand, and the changes

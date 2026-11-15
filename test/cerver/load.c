@@ -1,23 +1,24 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
-#include <cerver/balancer.h>
-#include <cerver/cerver.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/network.h>
-
-#include <app/app.h>
-#include <app/handler.h>
-
-#include "cerver.h"
-#include "upstream.h"
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/load/balancer.h>
+#include <cerver/load/end.h>
+#include <cerver/load/service.h>
+#include <cerver/load/start.h>
+#include <cerver/network/network.h>
 
 #include "../test.h"
+#include <app/app.h>
+#include <app/handler.h>
+#include "cerver.h"
+#include "upstream.h"
 
 // a service that went down is tried again every second, so the pairs that stop one see it back quickly
 #define LOAD_RECONNECT_SECONDS		1

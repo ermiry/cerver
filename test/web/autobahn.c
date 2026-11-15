@@ -1,15 +1,16 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <signal.h>
-
 #include <cerver/version.h>
-#include <cerver/cerver.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/tree.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
 
+#include <cerver/http/core/http.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
