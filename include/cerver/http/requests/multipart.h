@@ -1,8 +1,8 @@
 #ifndef _CERVER_HTTP_MULTIPART_H_
 #define _CERVER_HTTP_MULTIPART_H_
 
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "cerver/types/string.h"
 
@@ -10,7 +10,8 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/headers.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/headers/header.h"
 
 #define HTTP_MULTI_PART_BOUNDARY_MAX_SIZE				128
 #define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE			16
