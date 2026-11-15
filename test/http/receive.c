@@ -1926,6 +1926,36 @@ static void test_receive_numbered_filenames (Cerver *cerver) {
 
 }
 
+// the cerver counts the bytes of the files that it wrote and the time that it took,
+// a value of a form is not a file
+static void test_receive_written_files (Cerver *cerver) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
+
+	const size_t bytes = CERVER_STATS_GET (http_cerver->uploads_write_bytes);
+	const size_t microseconds = CERVER_STATS_GET (http_cerver->uploads_write_microseconds);
+
+	test_receive_whole_case (cerver, "the bytes of the files that were written", multipart_request);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_files == 2);
+	test_receive_expect (
+		CERVER_STATS_GET (http_cerver->uploads_write_bytes)
+			== (bytes + strlen ("first-file-content") + strlen ("second-file-content"))
+	);
+
+	test_receive_expect (CERVER_STATS_GET (http_cerver->uploads_write_microseconds) >= microseconds);
+
+	// a request without files writes nothing
+	test_receive_whole_case (cerver, "a request without files writes nothing", echo_json_request);
+
+	test_receive_expect (
+		CERVER_STATS_GET (http_cerver->uploads_write_bytes)
+			== (bytes + strlen ("first-file-content") + strlen ("second-file-content"))
+	);
+
+}
+
 #define TEST_RECEIVE_UNSAFE_REQUEST_SIZE	(1 << 11)
 #define TEST_RECEIVE_ESCAPED_FILE			TEST_RECEIVE_ROOT_PATH "/escape.txt"
 
@@ -4056,9 +4086,11 @@ static void test_receive_manual_response (const int client_fd, const char *statu
 static void test_receive_manual_parked_forever (void) {
 
 	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
-	test_check_ptr (receive_loop->parked_head);
+	const EventLane *lane = &receive_loop->lanes[EVENT_LOOP_LANE_DEFAULT];
 
-	event_wheel_remove (&receive_loop->wheel, &receive_loop->parked_head->timer);
+	test_check_ptr (lane->parked_head);
+
+	event_wheel_remove (&receive_loop->wheel, &lane->parked_head->timer);
 
 }
 
@@ -5540,6 +5572,7 @@ void http_tests_receive (void) {
 	test_receive_custom_header_too_large (cerver);
 	test_receive_authentication_with_body (cerver);
 	test_receive_numbered_filenames (cerver);
+	test_receive_written_files (cerver);
 	test_receive_unsafe_filenames (cerver);
 	test_receive_dirname_without_uploads_path (cerver);
 	test_receive_dirname_with_uploads_path (cerver);
