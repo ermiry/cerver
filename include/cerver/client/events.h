@@ -1,3 +1,8 @@
+/**
+ * @file cerver/client/events.h
+ * @brief The events and the errors of a client: the actions that the application registers for them.
+ */
+
 #ifndef _CERVER_CLIENT_EVENTS_H_
 #define _CERVER_CLIENT_EVENTS_H_
 
@@ -9,8 +14,16 @@
 extern "C" {
 #endif
 
-#pragma region events
+/**
+ * @defgroup client_events Events
+ * @ingroup client
+ * @brief The actions that run when something happens to a client.
+ * @{
+ */
 
+/**
+ * @brief The X-macro table of the events of a client: the number, the name and the description of each one.
+ */
 #define CLIENT_EVENT_MAP(XX)																													\
 	XX(0,	NONE, 				No event)																										\
 	XX(1,	CONNECTED, 			Connected to cerver)																							\
@@ -34,6 +47,9 @@ extern "C" {
 	XX(19,	GAME_INIT, 			The game of the lobby was initialized)																			\
 	XX(20,	UNKNOWN, 			Unknown event)
 
+/**
+ * @brief The type of an event of a client, one `CLIENT_EVENT_<name>` for each row of #CLIENT_EVENT_MAP.
+ */
 typedef enum ClientEventType {
 
 	#define XX(num, name, description) CLIENT_EVENT_##name = num,
@@ -42,36 +58,68 @@ typedef enum ClientEventType {
 
 } ClientEventType;
 
-// get the description for the current error type
+/**
+ * @brief Returns the description of an event type.
+ *
+ * @param[in] type the event type
+ * @return the description of its row in #CLIENT_EVENT_MAP, or the one of CLIENT_EVENT_UNKNOWN for a value out of
+ * the table; a static string that must not be freed
+ */
 CERVER_EXPORT const char *client_event_type_description (
 	const ClientEventType type
 );
 
+/**
+ * @brief The action that the application registered for an event of a client.
+ */
 struct _ClientEvent {
 
-	ClientEventType type;         // the event we are waiting to happen
-	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once
+	/** @brief The event that triggers the action. */
+	ClientEventType type;
+	/** @brief The action runs in a thread of the event threads of the client, instead of the one that triggers it. */
+	bool create_thread;
+	/** @brief The action is unregistered after its first trigger. */
+	bool drop_after_trigger;
 
-	// the request that triggered the event
-	// this is usefull for custom events
+	/**
+	 * @brief The request that triggered the event, for custom events.
+	 *
+	 * @note cerver sets it to 0 and does not use it.
+	 */
 	u32 request_type;
-	void *response_data;                // data that came with the response
+	/** @brief The data that came with the response, set by client_event_set_response (). */
+	void *response_data;
+	/** @brief Releases #response_data when the event is deleted, NULL to keep it. */
 	Action delete_response_data;
 
-	Work work;                      	// the action to be triggered
-	void *work_args;                  // the action arguments
-	Action delete_action_args;          // how to get rid of the data
+	/** @brief The action, it gets a ClientEventData. */
+	Work work;
+	/** @brief The arguments of the action. */
+	void *work_args;
+	/** @brief Releases the arguments of the action when the event is deleted, NULL to keep them. */
+	Action delete_action_args;
 
 };
 
+/** @brief The action of an event of a client, see struct _ClientEvent. */
 typedef struct _ClientEvent ClientEvent;
 
-// registers an action to be triggered when the specified event occurs
-// if there is an existing action registered to an event, it will be overrided
-// a newly allocated ClientEventData structure will be passed to your method
-// that should be free using the client_event_data_delete () method
-// returns 0 on success, 1 on error
+/**
+ * @brief Registers an action to be triggered when an event occurs; an action that was registered for the event is
+ * replaced (and deleted).
+ *
+ * The action gets a newly allocated ClientEventData, that it releases with client_event_data_delete ().
+ *
+ * @param[in,out] client the client
+ * @param[in] event_type the event, below #CLIENT_MAX_EVENTS
+ * @param[in] work the action
+ * @param[in] work_args the arguments of the action
+ * @param[in] delete_action_args releases the arguments when the action is unregistered, NULL to keep them
+ * @param[in] create_thread true to run the action in its own thread
+ * @param[in] drop_after_trigger true to unregister the action after its first trigger
+ * @retval 0 the action was registered
+ * @retval 1 a NULL client, an event out of range, or it could not be allocated
+ */
 CERVER_EXPORT u8 client_event_register (
 	struct _Client *client,
 	const ClientEventType event_type,
@@ -79,64 +127,120 @@ CERVER_EXPORT u8 client_event_register (
 	bool create_thread, bool drop_after_trigger
 );
 
-// unregister the action associated with an event
-// deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error or if event is NOT registered
+/**
+ * @brief Unregisters the action of an event, deleting its arguments with its delete_action_args () if it has one.
+ *
+ * @param[in,out] client the client
+ * @param[in] event_type the event
+ * @retval 0 the action was unregistered
+ * @retval 1 a NULL client, an event out of range, or the event does not have an action
+ */
 CERVER_EXPORT u8 client_event_unregister (
 	struct _Client *client, const ClientEventType event_type
 );
 
+/**
+ * @brief Sets the response data of the action of an event, that the event owns from now on.
+ *
+ * @param[in,out] client the client
+ * @param[in] event_type the event, one without an action is ignored
+ * @param[in] response_data the data
+ * @param[in] delete_response_data releases the data when the event is deleted
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void client_event_set_response (
 	struct _Client *client,
 	const ClientEventType event_type,
 	void *response_data, Action delete_response_data
 );
 
-// triggers all the actions that are registred to an event
+/**
+ * @brief Triggers the action that is registered to an event, if it has one.
+ *
+ * @param[in] event_type the event
+ * @param[in] client the client
+ * @param[in] connection the connection of the event, it can be NULL
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void client_event_trigger (
 	const ClientEventType event_type,
 	const struct _Client *client, const struct _Connection *connection
 );
 
-// triggers the event with a response that only this trigger owns:
-// client_event_data_delete () releases it with delete_response (free () if NULL),
-// and it is released right away when the event has no action
+/**
+ * @brief Triggers the event with a response that only this trigger owns.
+ *
+ * client_event_data_delete () releases the response with delete_response (free () if it is NULL), and it is
+ * released right away when the event has no action.
+ *
+ * @param[in] event_type the event
+ * @param[in] client the client
+ * @param[in] connection the connection of the event, it can be NULL
+ * @param[in] response the response
+ * @param[in] delete_response releases the response
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void client_event_trigger_with_response (
 	const ClientEventType event_type,
 	const struct _Client *client, const struct _Connection *connection,
 	void *response, Action delete_response
 );
 
-// structure that is passed to the user registered method
+/**
+ * @brief What the action of an event gets, released with client_event_data_delete ().
+ */
 typedef struct ClientEventData {
 
+	/** @brief The client. */
 	const struct _Client *client;
+	/** @brief The connection of the event, it can be NULL. */
 	const struct _Connection *connection;
 
-	void *response_data;                // data that came with the response
+	/** @brief The data that came with the response. */
+	void *response_data;
+	/** @brief Releases #response_data when #owns_response_data. */
 	Action delete_response_data;
 
-	// client_event_data_delete () releases the response of this event only,
-	// like the LobbySummary of the lobby events
+	/**
+	 * @brief client_event_data_delete () releases the response of this event only, like the LobbySummary of the
+	 * lobby events.
+	 */
 	bool owns_response_data;
 
-	void *action_args;                  // the action arguments
+	/** @brief The arguments of the action. */
+	void *action_args;
+	/** @brief Releases #action_args when #owns_action_args. */
 	Action delete_action_args;
 
-	// the event was dropped after this trigger, so client_event_data_delete ()
-	// releases the action arguments with delete_action_args ()
+	/**
+	 * @brief The event was dropped after this trigger, so client_event_data_delete () releases the action
+	 * arguments with #delete_action_args.
+	 */
 	bool owns_action_args;
 
 } ClientEventData;
 
+/**
+ * @brief Releases what the action of an event got: the response and the arguments that it owns, and the data.
+ *
+ * @param[in] event_data the data, it can be NULL
+ */
 CERVER_PUBLIC void client_event_data_delete (
 	ClientEventData *event_data
 );
 
-#pragma endregion
+/** @} */
 
-#pragma region errors
+/**
+ * @defgroup client_errors Errors
+ * @ingroup client
+ * @brief The actions that run when a client gets an error.
+ * @{
+ */
 
+/**
+ * @brief The X-macro table of the errors of a client: the number, the name and the description of each one.
+ */
 #define CLIENT_ERROR_MAP(XX)													\
 	XX(0,	NONE, 				No error)										\
 	XX(1,	CERVER_ERROR, 		The cerver had an internal error)				\
@@ -154,6 +258,9 @@ CERVER_PUBLIC void client_event_data_delete (
 	XX(13,	DESTROY_LOBBY, 		The lobby could not be destroyed)				\
 	XX(14,	UNKNOWN, 			Unknown error)
 
+/**
+ * @brief The type of an error of a client, one `CLIENT_ERROR_<name>` for each row of #CLIENT_ERROR_MAP.
+ */
 typedef enum ClientErrorType {
 
 	#define XX(num, name, description) CLIENT_ERROR_##name = num,
@@ -162,30 +269,57 @@ typedef enum ClientErrorType {
 
 } ClientErrorType;
 
-// get the description for the current error type
+/**
+ * @brief Returns the description of an error type.
+ *
+ * @param[in] type the error type
+ * @return the description of its row in #CLIENT_ERROR_MAP, or the one of CLIENT_ERROR_UNKNOWN for a value out of
+ * the table; a static string that must not be freed
+ */
 CERVER_EXPORT const char *client_error_type_description (
 	const ClientErrorType type
 );
 
+/**
+ * @brief The action that the application registered for an error of a client.
+ */
 struct _ClientError {
 
+	/** @brief The error that triggers the action. */
 	ClientErrorType type;
-	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once
+	/** @brief The action runs in a thread of the event threads of the client, instead of the one that triggers it. */
+	bool create_thread;
+	/** @brief The action is unregistered after its first trigger. */
+	bool drop_after_trigger;
 
-	Work work;                      	// the action to be triggered
-	void *work_args;                  // the action arguments
-	Action delete_action_args;          // how to get rid of the data
+	/** @brief The action, it gets a ClientErrorData. */
+	Work work;
+	/** @brief The arguments of the action. */
+	void *work_args;
+	/** @brief Releases the arguments of the action when the error is deleted, NULL to keep them. */
+	Action delete_action_args;
 
 };
 
+/** @brief The action of an error of a client, see struct _ClientError. */
 typedef struct _ClientError ClientError;
 
-// registers an action to be triggered when the specified error occurs
-// if there is an existing action registered to an error, it will be overrided
-// a newly allocated ClientErrorData structure will be passed to your method
-// that should be free using the client_error_data_delete () method
-// returns 0 on success, 1 on error
+/**
+ * @brief Registers an action to be triggered when an error occurs; an action that was registered for the error is
+ * replaced (and deleted).
+ *
+ * The action gets a newly allocated ClientErrorData, that it releases with client_error_data_delete ().
+ *
+ * @param[in,out] client the client
+ * @param[in] error_type the error, below #CLIENT_MAX_ERRORS
+ * @param[in] work the action
+ * @param[in] work_args the arguments of the action
+ * @param[in] delete_action_args releases the arguments when the action is unregistered, NULL to keep them
+ * @param[in] create_thread true to run the action in its own thread
+ * @param[in] drop_after_trigger true to unregister the action after its first trigger
+ * @retval 0 the action was registered
+ * @retval 1 a NULL client, an error out of range, or it could not be allocated
+ */
 CERVER_EXPORT u8 client_error_register (
 	struct _Client *client,
 	const ClientErrorType error_type,
@@ -193,55 +327,97 @@ CERVER_EXPORT u8 client_error_register (
 	bool create_thread, bool drop_after_trigger
 );
 
-// unregisters the action associated with the error types
-// deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error or if error is NOT registered
+/**
+ * @brief Unregisters the action of an error, deleting its arguments with its delete_action_args () if it has one.
+ *
+ * @param[in,out] client the client
+ * @param[in] error_type the error
+ * @retval 0 the action was unregistered
+ * @retval 1 a NULL client, an error out of range, or the error does not have an action
+ */
 CERVER_EXPORT u8 client_error_unregister (
 	struct _Client *client, const ClientErrorType error_type
 );
 
-// triggers all the actions that are registred to an error
-// returns 0 on success, 1 on error
+/**
+ * @brief Triggers the action that is registered to an error, if it has one.
+ *
+ * @param[in] error_type the error
+ * @param[in] client the client
+ * @param[in] connection the connection of the error, it can be NULL
+ * @param[in] error_message the message of the error, copied
+ * @retval 0 the action ran, or its thread was created
+ * @retval 1 a NULL client, an error out of range, an error without an action, or its thread could not be created
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE u8 client_error_trigger (
 	const ClientErrorType error_type,
 	const struct _Client *client, const struct _Connection *connection,
 	const char *error_message
 );
 
-// structure that is passed to the user registered method
+/**
+ * @brief What the action of an error gets, released with client_error_data_delete ().
+ */
 typedef struct ClientErrorData {
 
+	/** @brief The client. */
 	const struct _Client *client;
+	/** @brief The connection of the error, it can be NULL. */
 	const struct _Connection *connection;
 
-	void *action_args;                  // the action arguments set by the user
+	/** @brief The arguments of the action. */
+	void *action_args;
 
-	// the error was dropped after this trigger, so client_error_data_delete ()
-	// releases the action arguments with delete_action_args ()
+	/**
+	 * @brief Releases #action_args when #owns_action_args: the error was dropped after this trigger, so
+	 * client_error_data_delete () releases the arguments.
+	 */
 	Action delete_action_args;
+	/** @brief The data owns the arguments of the action. */
 	bool owns_action_args;
 
+	/** @brief The message of the error. */
 	String *error_message;
 
 } ClientErrorData;
 
+/**
+ * @brief Releases what the action of an error got: its message, the arguments that it owns, and the data.
+ *
+ * @param[in] error_data the data, it can be NULL
+ */
 CERVER_PUBLIC void client_error_data_delete (
 	ClientErrorData *error_data
 );
 
-// creates an error packet ready to be sent
+/**
+ * @brief Creates an error packet, with the type and the message, ready to be sent.
+ *
+ * @param[in] type the error type
+ * @param[in] msg the message
+ * @return the new packet, NULL if it could not be created
+ */
 CERVER_PUBLIC struct _Packet *client_error_packet_generate (
 	const ClientErrorType type, const char *msg
 );
 
-// creates and send a new error packet
-// returns 0 on success, 1 on error
+/**
+ * @brief Creates an error packet and sends it to a connection.
+ *
+ * @param[in] type the error type
+ * @param[in] msg the message
+ * @param[in] client the client of the connection
+ * @param[in] connection the connection
+ * @retval 0 the packet was sent
+ * @retval 1 the packet could not be created or sent
+ */
 CERVER_PUBLIC u8 client_error_packet_generate_and_send (
 	const ClientErrorType type, const char *msg,
 	Client *client, struct _Connection *connection
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
