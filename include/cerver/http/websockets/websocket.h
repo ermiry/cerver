@@ -3,16 +3,17 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-
-#include <pthread.h>
 #include <time.h>
 
-#include "cerver/types/types.h"
+#include <pthread.h>
+
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/config.h"
-#include "cerver/connection.h"
-#include "cerver/socket.h"
+
+#include "cerver/connection/connection.h"
+#include "cerver/network/socket.h"
 
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"

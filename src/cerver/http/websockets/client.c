@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -5,36 +6,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-
-#include <ctype.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <pthread.h>
 #include <time.h>
-#include <unistd.h>
 
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-
+#include <poll.h>
+#include <pthread.h>
+#include <strings.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/network.h"
-#include "cerver/socket.h"
+#include "cerver/network/network.h"
+#include "cerver/network/socket.h"
 
-#include "cerver/utils/log.h"
-
-#include "cerver/http/headers.h"
-
+#include "cerver/http/headers/fields.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
-
 #include "cerver/http/websockets/client.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/handshake.h"
@@ -43,6 +37,8 @@
 #include "cerver/http/websockets/websocket.h"
 
 #include "cerver/threads/thread.h"
+
+#include "cerver/utils/log.h"
 
 #define HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH			(sizeof (HTTP_WEB_SOCKET_CLIENT_SCHEME) - 1)
 #define HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME_LENGTH		(sizeof (HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME) - 1)
@@ -647,7 +643,7 @@ static bool http_web_socket_client_header_is_reserved (const char *name) {
 
 	bool reserved = false;
 
-	switch (http_header_type_by_string (name)) {
+	switch (http_header_type_with_string (name)) {
 		case HTTP_HEADER_HOST:
 		case HTTP_HEADER_UPGRADE:
 		case HTTP_HEADER_CONNECTION:

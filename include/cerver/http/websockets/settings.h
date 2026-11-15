@@ -8,8 +8,7 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/status.h"
-
+#include "cerver/http/responses/status.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"
 
@@ -189,54 +188,6 @@ typedef struct HttpWebSocketSettings {
 	unsigned int send_timeout;
 
 } HttpWebSocketSettings;
-
-// the defaults, nothing set
-CERVER_HIDDEN void http_web_socket_settings_init (HttpWebSocketSettings *settings);
-
-// releases what the settings own
-CERVER_HIDDEN void http_web_socket_settings_end (HttpWebSocketSettings *settings);
-
-// takes from source the settings that were not set in resolved,
-// resolved only keeps references
-CERVER_HIDDEN void http_web_socket_settings_inherit (
-	HttpWebSocketSettings *resolved, const HttpWebSocketSettings *source
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_handlers (
-	HttpWebSocketSettings *settings, const HttpWebSocketHandlers *handlers
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_max_message (
-	HttpWebSocketSettings *settings, const size_t max_message
-);
-
-// copies the protocols, at most HTTP_WEB_SOCKET_MAX_PROTOCOLS
-// returns 0 on success, 1 on error
-CERVER_HIDDEN u8 http_web_socket_settings_set_protocols (
-	HttpWebSocketSettings *settings,
-	const char * const *protocols, const unsigned int n_protocols
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_compression (
-	HttpWebSocketSettings *settings, const HttpWebSocketDeflateOptions *compression
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_origin_check (
-	HttpWebSocketSettings *settings, const bool origin_check
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_ping_milliseconds (
-	HttpWebSocketSettings *settings,
-	const unsigned int ping_interval, const unsigned int pong_timeout
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_close_timeout_milliseconds (
-	HttpWebSocketSettings *settings, const unsigned int close_timeout
-);
-
-CERVER_HIDDEN void http_web_socket_settings_set_send_timeout_milliseconds (
-	HttpWebSocketSettings *settings, const unsigned int send_timeout
-);
 
 #ifdef __cplusplus
 }

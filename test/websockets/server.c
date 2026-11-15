@@ -1,33 +1,34 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
-#include <pthread.h>
-#include <unistd.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <pthread.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/metrics.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
-
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/metrics.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/deflate.h>
 #include <cerver/http/websockets/frame.h>
-#include <cerver/http/websockets/internal.h>
+#include "cerver/http/websockets/internal.h"
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
 #include "../test.h"
-
 #include "raw.h"
 #include "websocket.h"
 

@@ -8,19 +8,20 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-
-#include <pthread.h>
 #include <time.h>
 
-#include "cerver/types/types.h"
+#include <pthread.h>
+
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
-#include "cerver/connection.h"
-#include "cerver/network.h"
-#include "cerver/socket.h"
+
+#include "cerver/connection/connection.h"
+#include "cerver/network/network.h"
+#include "cerver/network/socket.h"
 
 #include "cerver/http/websockets/client.h"
 #include "cerver/http/websockets/deflate.h"
@@ -40,6 +41,58 @@ struct _HttpCerver;
 struct _HttpEndpoint;
 struct _HttpReceive;
 struct CerverReceive;
+
+#pragma region settings
+
+// the defaults, nothing set
+CERVER_HIDDEN void http_web_socket_settings_init (HttpWebSocketSettings *settings);
+
+// releases what the settings own
+CERVER_HIDDEN void http_web_socket_settings_end (HttpWebSocketSettings *settings);
+
+// takes from source the settings that were not set in resolved,
+// resolved only keeps references
+CERVER_HIDDEN void http_web_socket_settings_inherit (
+	HttpWebSocketSettings *resolved, const HttpWebSocketSettings *source
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_handlers (
+	HttpWebSocketSettings *settings, const HttpWebSocketHandlers *handlers
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_max_message (
+	HttpWebSocketSettings *settings, const size_t max_message
+);
+
+// copies the protocols, at most HTTP_WEB_SOCKET_MAX_PROTOCOLS
+// returns 0 on success, 1 on error
+CERVER_HIDDEN u8 http_web_socket_settings_set_protocols (
+	HttpWebSocketSettings *settings,
+	const char * const *protocols, const unsigned int n_protocols
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_compression (
+	HttpWebSocketSettings *settings, const HttpWebSocketDeflateOptions *compression
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_origin_check (
+	HttpWebSocketSettings *settings, const bool origin_check
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_ping_milliseconds (
+	HttpWebSocketSettings *settings,
+	const unsigned int ping_interval, const unsigned int pong_timeout
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_close_timeout_milliseconds (
+	HttpWebSocketSettings *settings, const unsigned int close_timeout
+);
+
+CERVER_HIDDEN void http_web_socket_settings_set_send_timeout_milliseconds (
+	HttpWebSocketSettings *settings, const unsigned int send_timeout
+);
+
+#pragma endregion
 
 #pragma region connection
 
