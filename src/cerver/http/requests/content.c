@@ -47,47 +47,57 @@ const char *http_content_type_mime (
 
 }
 
+// a NULL mime is not found
 ContentType http_content_type_with_mime (
 	const char *mime_string
 ) {
 
-	#define XX(num, name, extension, description, mime) if (!strcmp (#mime, mime_string)) return HTTP_CONTENT_TYPE_##name;
-	HTTP_CONTENT_TYPE_MAP(XX)
-	#undef XX
+	if (mime_string) {
+		#define XX(num, name, extension, description, mime) if (!strcmp (#mime, mime_string)) return HTTP_CONTENT_TYPE_##name;
+		HTTP_CONTENT_TYPE_MAP(XX)
+		#undef XX
+	}
 
 	return HTTP_CONTENT_TYPE_NONE;
 
 }
 
+// a NULL extension is not found
 ContentType http_content_type_with_extension (
 	const char *extension_string
 ) {
 
-	#define XX(num, name, extension, description, mime) if (!strcmp (#extension, extension_string)) return HTTP_CONTENT_TYPE_##name;
-	HTTP_CONTENT_TYPE_MAP(XX)
-	#undef XX
+	if (extension_string) {
+		#define XX(num, name, extension, description, mime) if (!strcmp (#extension, extension_string)) return HTTP_CONTENT_TYPE_##name;
+		HTTP_CONTENT_TYPE_MAP(XX)
+		#undef XX
+	}
 
 	return HTTP_CONTENT_TYPE_NONE;
 
 }
 
+// a NULL extension is not found
 const char *http_content_type_mime_with_extension (
 	const char *extension_string
 ) {
 
-	#define XX(num, name, extension, description, mime) if (!strcmp (#extension, extension_string)) return #mime;
-	HTTP_CONTENT_TYPE_MAP(XX)
-	#undef XX
+	if (extension_string) {
+		#define XX(num, name, extension, description, mime) if (!strcmp (#extension, extension_string)) return #mime;
+		HTTP_CONTENT_TYPE_MAP(XX)
+		#undef XX
+	}
 
 	return NULL;
 
 }
 
+// a NULL content type is not json
 bool http_content_type_is_json (
 	const char *description
 ) {
 
-	return !strcasecmp ("application/json", description);
+	return description && !strcasecmp ("application/json", description);
 
 }
 
