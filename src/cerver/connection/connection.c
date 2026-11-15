@@ -311,12 +311,12 @@ int connection_comparator (const void *a, const void *b) {
 
 }
 
-// sets the connection's name
+// sets the connection's name, a NULL name keeps the current one
 void connection_set_name (
 	Connection *connection, const char *name
 ) {
 
-	if (connection) {
+	if (connection && name) {
 		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
 	}
 
@@ -338,14 +338,14 @@ void connection_get_values (Connection *connection) {
 
 }
 
-// sets the connection's newtwork values
+// sets the connection's newtwork values, a NULL ip keeps the current one
 void connection_set_values (
 	Connection *connection,
 	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
 ) {
 
 	if (connection) {
-		(void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+		if (ip_address) (void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
 
 		connection->port = port;
 		connection->protocol = protocol;
