@@ -1,20 +1,22 @@
-#ifndef _CERVER_CONNECTION_H_
-#define _CERVER_CONNECTION_H_
+#ifndef _CERVER_CONNECTION_CONNECTION_H_
+#define _CERVER_CONNECTION_CONNECTION_H_
 
 #include <stdbool.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
-
-#include "cerver/cerver.h"
-#include "cerver/config.h"
-#include "cerver/handler.h"
-#include "cerver/network.h"
-#include "cerver/packets.h"
-#include "cerver/receive.h"
-#include "cerver/socket.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/freelist.h"
+
+#include "cerver/config.h"
+
+#include "cerver/connection/stats.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/handler.h"
+#include "cerver/handler/receive.h"
+#include "cerver/network/network.h"
+#include "cerver/network/socket.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
@@ -96,35 +98,6 @@ CERVER_PUBLIC const char *connection_state_string (
 
 CERVER_PUBLIC const char *connection_state_description (
 	const ConnectionState state
-);
-
-struct _ConnectionStats {
-
-	time_t threshold_time;                  // every time we want to reset the connection's stats
-
-	u64 n_receives_done;                    // n calls to recv ()
-
-	u64 total_bytes_received;               // total amount of bytes received from this connection
-	u64 total_bytes_sent;                   // total amount of bytes that have been sent to the connection
-
-	u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
-	u64 n_packets_sent;                     // total number of packets sent to this connection
-
-	// point to the storage below, so the stats of a connection are not extra allocations
-	struct _PacketsPerType *received_packets;
-	struct _PacketsPerType *sent_packets;
-
-	struct _PacketsPerType received_packets_storage;
-	struct _PacketsPerType sent_packets_storage;
-
-};
-
-typedef struct _ConnectionStats ConnectionStats;
-
-CERVER_PUBLIC ConnectionStats *connection_stats_new (void);
-
-CERVER_PUBLIC void connection_stats_print (
-	struct _Connection *connection
 );
 
 // a connection from a client
@@ -377,206 +350,12 @@ CERVER_PUBLIC void connection_set_send_queue (
 	Connection *connection, int flags
 );
 
-// pushes a packet to the connection's send queue,
-// the send thread sends it and deletes it;
-// the packet always belongs to the connection, one that can not be queued is deleted
-CERVER_PUBLIC void connection_send_packet (
-	Connection *connection, struct _Packet *packet
-);
-
-// sets the connection auth data to send whenever the cerver requires authentication
-// and a method to destroy it once the connection has ended,
-// if delete_auth_data is NULL, the auth data won't be deleted
-CERVER_PUBLIC void connection_set_auth_data (
-	Connection *connection,
-	void *auth_data, size_t auth_data_size, Action delete_auth_data,
-	bool admin_auth
-);
-
-// sets the credentials as an object of the auth schema of the cerver (cerver_set_auth_schema ()),
-// the object is encoded now, so it can be released after this
-// returns 0 on success, 1 if the object can not be encoded
-CERVER_PUBLIC u8 connection_set_auth_object (
-	Connection *connection,
-	const SerializerSchema *schema, const void *object,
-	bool admin_auth
-);
-
-// sets the session token that a cerver with sessions gave to the client,
-// to authenticate the connection with it instead of the credentials
-// returns 0 on success, 1 on error
-CERVER_PUBLIC u8 connection_set_auth_token (
-	Connection *connection, const char *token,
-	bool admin_auth
-);
-
-// removes the connection auth data using the connection's delete_auth_data method
-// if not such method, the data won't be deleted
-// the connection's auth data & delete method will be equal to NULL
-CERVER_PUBLIC void connection_remove_auth_data (
-	Connection *connection
-);
-
-// generates the connection auth packet to be send to the server
-// this is also generated automatically whenever the cerver ask for authentication
-// returns 0 on success, 1 on error
-CERVER_PUBLIC u8 connection_generate_auth_packet (
-	Connection *connection
-);
-
-// sets the token that an authenticated UDP connection sends after the packet in every datagram
-CERVER_PRIVATE void connection_set_datagram_token (
-	Connection *connection, const u8 *token
-);
-
-// copies the datagram token of the connection into token
-// returns true if the connection has one
-CERVER_PRIVATE bool connection_get_datagram_token (
-	const Connection *connection, u8 *token
-);
-
-// the connection sends its datagrams without a token again
-CERVER_PRIVATE void connection_clear_datagram_token (Connection *connection);
-
-// returns true if the connection sends a token in its datagrams (it authenticated)
-CERVER_PRIVATE bool connection_has_datagram_token (const Connection *connection);
-
 // sets the ability to attempt a reconnection when the cerver ends the connection
 // the update thread waits wait_time secs before each attempt,
 // until it connects again or the connection is ended by the client
 CERVER_PUBLIC void connection_set_attempt_reconnect (
 	Connection *connection, unsigned int wait_time
 );
-
-// sets up the new connection values
-CERVER_PRIVATE u8 connection_init (Connection *connection);
-
-// starts a connection -> connects to the specified ip and port
-// sets connection's state based on result
-// returns 0 on success, 1 on error
-CERVER_PRIVATE int connection_connect (Connection *connection);
-
-// asks the update thread of a connection with attempt reconnect
-// to close its socket and to connect again
-// returns 0 on success, 1 on error
-CERVER_PRIVATE unsigned int connection_reconnect (Connection *connection);
-
-// starts the threads of a connection that is connected,
-// like the send queue thread
-// returns 0 on success, 1 on error
-CERVER_PRIVATE unsigned int connection_start (Connection *connection);
-
-// waits until the send thread ends, the connection must not be active
-CERVER_PRIVATE void connection_stop_send (Connection *connection);
-
-// resets connection values to be able to connect it again,
-// the connection must not have an update thread
-CERVER_PRIVATE void connection_reset (Connection *connection);
-
-// ends a client connection
-CERVER_PRIVATE void connection_end (Connection *connection);
-
-CERVER_PRIVATE void connection_drop (
-	struct _Cerver *cerver, Connection *connection
-);
-
-// asks the cerver to drop the connection, it can be called from any packet handler:
-// the socket is shut down (the packets that were already sent still arrive),
-// and the receive loop ends and removes the connection when the handler returns,
-// like when the client closes it, so the connection must not be used after this call
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 connection_drop_request (Connection *connection);
-
-// gets the connection from the on hold connections map in cerver
-CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_on_hold (
-	struct _Cerver *cerver, const i32 sock_fd
-);
-
-// gets the connection from the client by its sock fd
-CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_client (
-	struct _Client *client, const i32 sock_fd
-);
-
-// gets the connection from the admin cerver by its sock fd
-CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_admin (
-	struct _AdminCerver *admin_cerver, const i32 sock_fd
-);
-
-// checks if the connection belongs to the client
-CERVER_PRIVATE bool connection_check_owner (
-	struct _Client *client, Connection *connection
-);
-
-// registers a new connection to a client without adding it to the cerver poll
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_register_to_client (
-	struct _Client *client, Connection *connection
-);
-
-// registers the client connection to the cerver's strcutures (like maps)
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_register_to_cerver (
-	struct _Cerver *cerver,
-	struct _Client *client, Connection *connection
-);
-
-// unregister the client connection from the cerver's structures (like maps)
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_unregister_from_cerver (
-	struct _Cerver *cerver, Connection *connection
-);
-
-// wrapper function for easy access
-// registers a client connection to the cerver poll array
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_register_to_cerver_poll (
-	struct _Cerver *cerver, Connection *connection
-);
-
-// wrapper function for easy access
-// unregisters a client connection from the cerver poll array
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_unregister_from_cerver_poll (
-	struct _Cerver *cerver, Connection *connection
-);
-
-// first adds the client connection to the cerver's poll array, and upon success,
-// adds the connection to the cerver's structures
-// this method is equivalent to call connection_register_to_cerver_poll () & connection_register_to_cerver
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_add_to_cerver (
-	struct _Cerver *cerver,
-	struct _Client *client,
-	Connection *connection
-);
-
-// removes the connection's sock fd from the cerver's poll array and then removes the connection
-// from the cerver's structures
-// this method is equivalent to call connection_unregister_from_cerver_poll () & connection_unregister_from_cerver ()
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 connection_remove_from_cerver (
-	struct _Cerver *cerver, Connection *connection
-);
-
-// starts listening and receiving data in the connection sock
-// the connection's updating value must be set before creating the thread
-CERVER_PRIVATE void *connection_update (void *ptr);
-
-// returns true if the current thread is the update thread of the connection,
-// like a packet handler with direct handle that runs in it
-CERVER_PRIVATE bool connection_is_update_thread (
-	const Connection *connection
-);
-
-// wakes up the update thread of the connection that is blocked in recv (),
-// the socket is shut down but it is only closed by connection_end (),
-// so its fd can not be reused while the update thread uses it
-// the connection's mutex must be held
-CERVER_PRIVATE void connection_wake_update (Connection *connection);
-
-// wakes up the connection that waits in the backoff of connection_connect (),
-// it stops waiting if its client was torn down
-CERVER_PRIVATE void connection_wake_connect (Connection *connection);
 
 #ifdef __cplusplus
 }
