@@ -25,6 +25,7 @@
 #include "cerver/threads/worker.h"
 
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 // the decimal status code, the key of the responses by status
 #define HTTP_ADMIN_STATUS_CODE_SIZE				8
@@ -54,7 +55,7 @@ HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 
 	HttpAdminFileSystemStats *stats = http_admin_file_system_stats_new ();
 	if (stats) {
-		(void) strncpy (stats->path, path, HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE - 1);
+		(void) c_string_copy_bounded (stats->path, path, HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE);
 		stats->path_len = strlen (stats->path);
 	}
 
