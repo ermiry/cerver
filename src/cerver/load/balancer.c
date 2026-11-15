@@ -140,7 +140,7 @@ void balancer_delete (void *balancer_ptr) {
 
 BalancerType balancer_get_type (const Balancer *balancer) {
 
-	return balancer->type;
+	return balancer ? balancer->type : BALANCER_TYPE_NONE;
 
 }
 
