@@ -1,10 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/method.h>
+#include <cerver/http/requests/method.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *DELETE = { "DELETE" };
 static const char *GET = { "GET" };

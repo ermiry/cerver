@@ -1,5 +1,10 @@
-#ifndef _CERVER_HTTP_METHOD_H_
-#define _CERVER_HTTP_METHOD_H_
+/**
+ * @file cerver/http/requests/method.h
+ * @brief The methods of a request, the ones of http_parser.
+ */
+
+#ifndef _CERVER_HTTP_REQUESTS_METHOD_H_
+#define _CERVER_HTTP_REQUESTS_METHOD_H_
 
 #include "cerver/config.h"
 
@@ -7,8 +12,26 @@
 extern "C" {
 #endif
 
+/**
+ * @defgroup http_requests Requests
+ * @ingroup http
+ * @brief A request: its method, its url, its content, its parts and what a handler gets of it.
+ */
+
+/**
+ * @defgroup http_requests_method Method
+ * @ingroup http_requests
+ * @brief The methods of a request.
+ * @{
+ */
+
+/** @brief The number of methods of #HTTP_METHOD_MAP, the first value that is not a method. */
 #define HTTP_METHOD_NONE			34
 
+/**
+ * @brief The X-macro table of the methods of a request: the number, the name and the string of each one, the ones of
+ * http_parser.
+ */
 #define HTTP_METHOD_MAP(XX)         \
 	XX(0,  DELETE,      DELETE)       \
 	XX(1,  GET,         GET)          \
@@ -53,6 +76,9 @@ extern "C" {
 	/* icecast */                     \
 	XX(33, SOURCE,      SOURCE)       \
 
+/**
+ * @brief The method of a request, one `HTTP_METHOD_<name>` for each row of #HTTP_METHOD_MAP.
+ */
 enum http_method {
 
 	#define XX(num, name, string) HTTP_METHOD_##name = num,
@@ -61,14 +87,28 @@ enum http_method {
 
 };
 
+/** @brief The method of a request, see enum http_method. */
 typedef enum http_method http_method;
 
+/**
+ * @brief The strings of the methods, indexed by their number.
+ *
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE const char *method_strings[];
 
-// returns a string version of the HTTP method
+/**
+ * @brief Returns the string of a method.
+ *
+ * @param[in] m the method
+ * @return the string of its row in #HTTP_METHOD_MAP, or `NONE` for a value out of the table; a static string that
+ * must not be freed
+ */
 CERVER_PUBLIC const char *http_method_str (
 	const enum http_method m
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

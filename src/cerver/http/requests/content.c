@@ -1,9 +1,9 @@
-#include <string.h>
 #include <stdbool.h>
+#include <string.h>
 
-#include "cerver/files.h"
+#include "cerver/files/files.h"
 
-#include "cerver/http/content.h"
+#include "cerver/http/requests/content.h"
 
 const char *http_content_type_extension (
 	const ContentType content_type
@@ -48,7 +48,7 @@ const char *http_content_type_mime (
 }
 
 // a NULL mime is not found
-ContentType http_content_type_by_mime (
+ContentType http_content_type_with_mime (
 	const char *mime_string
 ) {
 
@@ -63,7 +63,7 @@ ContentType http_content_type_by_mime (
 }
 
 // a NULL extension is not found
-ContentType http_content_type_by_extension (
+ContentType http_content_type_with_extension (
 	const char *extension_string
 ) {
 
@@ -78,7 +78,7 @@ ContentType http_content_type_by_extension (
 }
 
 // a NULL extension is not found
-const char *http_content_type_mime_by_extension (
+const char *http_content_type_mime_with_extension (
 	const char *extension_string
 ) {
 
@@ -110,6 +110,6 @@ ContentType http_content_type_from_filename (
 		filename, &ext_len
 	);
 
-	return ext ? http_content_type_by_extension (ext) : HTTP_CONTENT_TYPE_NONE;
+	return ext ? http_content_type_with_extension (ext) : HTTP_CONTENT_TYPE_NONE;
 
 }

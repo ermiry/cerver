@@ -1,4 +1,4 @@
-#include "cerver/http/method.h"
+#include "cerver/http/requests/method.h"
 
 static const char *http_method_none = { "NONE" };
 
