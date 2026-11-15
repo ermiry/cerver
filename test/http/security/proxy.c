@@ -1,15 +1,17 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/types/string.h>
 
-#include <cerver/http/headers.h>
-#include <cerver/http/http.h>
-#include <cerver/http/proxy.h>
-#include <cerver/http/request.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/security/proxy.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *test_proxy_nginx = { "172.18.0.5" };
 static const char *test_proxy_client = { "203.0.113.7" };

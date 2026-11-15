@@ -2,14 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/response.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/responses/response.h>
 
-#include "http.h"
-
-#include "../test.h"
+#include "../../test.h"
+#include "../http.h"
 
 static const char *domain_1 = { "https://ermiry.com" };
 static const char *domain_2 = { "https://cerver.ermiry.com" };

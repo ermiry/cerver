@@ -8,7 +8,7 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/http.h"
+#include "cerver/http/core/http.h"
 
 #define HTTP_JWT_POOL_INIT			32
 

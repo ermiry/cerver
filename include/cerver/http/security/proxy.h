@@ -7,7 +7,8 @@
 #include <arpa/inet.h>
 
 #include "cerver/config.h"
-#include "cerver/network.h"
+
+#include "cerver/network/network.h"
 
 // the longest IP address (an IPv6 with its zone) and its '\0'
 #define HTTP_CLIENT_IP_SIZE				NETWORK_ADDRESS_STRING_SIZE
