@@ -1,9 +1,9 @@
 #ifndef _CERVER_SESSIONS_H_
 #define _CERVER_SESSIONS_H_
 
-#include "cerver/client.h"
-#include "cerver/packets.h"
-#include "cerver/serializer.h"
+#include "cerver/client/client.h"
+#include "cerver/packets/packets.h"
+#include "cerver/packets/serializer.h"
 
 #ifdef __cplusplus
 extern "C" {
