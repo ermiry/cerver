@@ -1,5 +1,5 @@
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
@@ -986,7 +986,7 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 // comparator must return TRUE on match (item will be removed from the dlist)
 // this methods is thread safe
 // returns the number of elements that we removed from the dlist
-unsigned int dlist_remove_by_condition (
+unsigned int dlist_remove_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match,
@@ -1390,7 +1390,7 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 // comparator must return TRUE on match (item will be moved to new dlist)
 // this methods is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
-DoubleList *dlist_split_by_condition (
+DoubleList *dlist_split_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
@@ -1439,7 +1439,7 @@ void dlist_merge_two (DoubleList *one, DoubleList *two) {
 // that match the specified confition
 // elements from original dlists are moved directly to the new list
 // returns a newly allocated dlist with all the matches
-DoubleList *dlist_merge_two_by_condition (
+DoubleList *dlist_merge_two_with_condition (
 	DoubleList *one, DoubleList *two,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
