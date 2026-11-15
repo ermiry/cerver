@@ -1,3 +1,8 @@
+/**
+ * @file cerver/handler/events.h
+ * @brief The events of a cerver: the actions of the application that run when something happens.
+ */
+
 #ifndef _CERVER_EVENTS_H_
 #define _CERVER_EVENTS_H_
 
@@ -16,10 +21,19 @@ struct _Client;
 struct _Connection;
 struct _Lobby;
 
-#pragma region types
+/**
+ * @defgroup handler_events Events
+ * @ingroup handler
+ * @brief The events of a cerver and the actions registered to them.
+ * @{
+ */
 
+/** @brief The size of the array of the events of a cerver: a valid event type is below it. */
 #define CERVER_MAX_EVENTS				32
 
+/**
+ * @brief The X-macro table of the events of a cerver: the number, the name and the description of each one.
+ */
 #define CERVER_EVENT_MAP(XX)																		\
 	XX(0,	NONE, 						No event)													\
 	XX(1,	STARTED, 					The cerver has started)										\
@@ -47,6 +61,9 @@ struct _Lobby;
 	XX(24,	LOBBY_DESTROY, 				A lobby was destroyed)										\
 	XX(25,	UNKNOWN, 					Unknown event)
 
+/**
+ * @brief An event of a cerver, one `CERVER_EVENT_<name>` for each row of #CERVER_EVENT_MAP.
+ */
 typedef enum CerverEventType {
 
 	#define XX(num, name, description) CERVER_EVENT_##name = num,
@@ -55,35 +72,64 @@ typedef enum CerverEventType {
 
 } CerverEventType;
 
-// get the description for the current event type
+/**
+ * @brief Returns the description of an event.
+ *
+ * @param[in] type the event
+ * @return the description of its row in #CERVER_EVENT_MAP, or the one of CERVER_EVENT_UNKNOWN for a value out of the
+ * table; a static string that must not be freed
+ */
 CERVER_EXPORT const char *cerver_event_type_description (
 	const CerverEventType type
 );
 
-#pragma endregion
-
-#pragma region event
-
+/**
+ * @brief An action registered to an event.
+ */
 typedef struct CerverEvent {
 
-	CerverEventType type;			// the event we are waiting to happen
+	/** @brief The event that triggers the action. */
+	CerverEventType type;
 
-	bool create_thread;				// create a detachable thread to run action
-	bool drop_after_trigger;		// if we only want to trigger the event once
+	/** @brief The action runs in its own thread, that the teardown waits for. */
+	bool create_thread;
+	/** @brief The action is unregistered after its first trigger. */
+	bool drop_after_trigger;
 
-	Work work;						// the work to be triggered
-	void *work_args;				// the work arguments
-	Action delete_action_args;		// how to get rid of the data when deleting the events
+	/** @brief The action. */
+	Work work;
+	/** @brief The arguments of the action. */
+	void *work_args;
+	/** @brief Releases the arguments when the event is deleted. */
+	Action delete_action_args;
 
 } CerverEvent;
 
+/**
+ * @brief Releases an event and its arguments, with its delete_action_args.
+ *
+ * @param[in] event_ptr the event, it can be NULL
+ */
 CERVER_PUBLIC void cerver_event_delete (void *event_ptr);
 
-// registers an action to be triggered when the specified event occurs
-// if there is an existing action registered to an event, it will be overrided
-// a newly allocated CerverEventData structure will be passed to your method
-// that should be free using the cerver_event_data_delete () method
-// returns 0 on success, 1 on error
+/**
+ * @brief Registers an action to be triggered when an event happens; an action that was already registered to the
+ * event is replaced (and its arguments released).
+ *
+ * The action gets a new CerverEventData, that it must release with cerver_event_data_delete ().
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] event_type the event, below #CERVER_MAX_EVENTS
+ * @param[in] work the action
+ * @param[in] work_args the arguments of the action
+ * @param[in] delete_action_args releases the arguments, NULL to keep them
+ * @param[in] create_thread true to run the action in its own thread, false to run it in the thread of the event
+ * @param[in] drop_after_trigger true to unregister the action after its first trigger
+ * @retval 0 the action was registered
+ * @retval 1 a NULL cerver, an event out of range or it could not be allocated
+ * @warning Replacing or unregistering an action while a thread of a previous trigger still runs it releases the
+ * arguments that the thread uses (except with drop_after_trigger, whose arguments go with the data of the trigger).
+ */
 CERVER_EXPORT u8 cerver_event_register (
 	struct _Cerver *cerver,
 	const CerverEventType event_type,
@@ -91,14 +137,27 @@ CERVER_EXPORT u8 cerver_event_register (
 	bool create_thread, bool drop_after_trigger
 );
 
-// unregister the action associated with an event
-// deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error or if event is NOT registered
+/**
+ * @brief Unregisters the action of an event and releases its arguments with its delete_action_args.
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] event_type the event
+ * @retval 0 the action was unregistered
+ * @retval 1 a NULL cerver, an event out of range or one without an action
+ */
 CERVER_EXPORT u8 cerver_event_unregister (
 	struct _Cerver *cerver, const CerverEventType event_type
 );
 
-// triggers all the actions that are registred to an event
+/**
+ * @brief Triggers the action that is registered to an event.
+ *
+ * @param[in] event_type the event
+ * @param[in] cerver the cerver
+ * @param[in] client the client of the event, it can be NULL
+ * @param[in] connection the connection of the event, it can be NULL
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void cerver_event_trigger (
 	const CerverEventType event_type,
 	const struct _Cerver *cerver,
@@ -106,7 +165,16 @@ CERVER_PRIVATE void cerver_event_trigger (
 	const struct _Connection *connection
 );
 
-// triggers the actions of a lobby event, the event data keeps a reference to the lobby
+/**
+ * @brief Triggers the action of a lobby event; the event data keeps a reference to the lobby.
+ *
+ * @param[in] event_type the event
+ * @param[in] cerver the cerver
+ * @param[in] client the client of the event, it can be NULL
+ * @param[in] connection the connection of the event, it can be NULL
+ * @param[in] lobby the lobby
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void cerver_event_trigger_lobby (
 	const CerverEventType event_type,
 	const struct _Cerver *cerver,
@@ -115,36 +183,57 @@ CERVER_PRIVATE void cerver_event_trigger_lobby (
 	struct _Lobby *lobby
 );
 
-#pragma endregion
+/** @} */
 
-#pragma region data
+/**
+ * @defgroup handler_events_data Event data
+ * @ingroup handler
+ * @brief What the action of an event gets.
+ * @{
+ */
 
-// structure that is passed to the user registered method
+/**
+ * @brief What the action of an event gets.
+ */
 typedef struct CerverEventData {
 
+	/** @brief The cerver of the event. */
 	const struct _Cerver *cerver;
 
+	/** @brief The client of the event, NULL if it does not have one. */
 	const struct _Client *client;
+	/** @brief The connection of the event, NULL if it does not have one. */
 	const struct _Connection *connection;
 
-	// the lobby of the lobby events, NULL in the others;
-	// it stays valid until cerver_event_data_delete () releases its reference
+	/**
+	 * @brief The lobby of the lobby events, NULL in the others; it stays valid until cerver_event_data_delete ()
+	 * releases its reference.
+	 */
 	struct _Lobby *lobby;
 
-	void *action_args;                  // the action arguments
+	/** @brief The arguments of the action. */
+	void *action_args;
+	/** @brief Releases the arguments of the action. */
 	Action delete_action_args;
 
-	// the event was dropped after this trigger, so cerver_event_data_delete ()
-	// releases the action arguments with delete_action_args ()
+	/**
+	 * @brief The event was dropped after this trigger, so cerver_event_data_delete () releases the arguments of
+	 * the action with delete_action_args ().
+	 */
 	bool owns_action_args;
 
 } CerverEventData;
 
+/**
+ * @brief Releases the data of an event: its reference to the lobby, and the arguments of the action if it owns them.
+ *
+ * @param[in] event_data the data, it can be NULL
+ */
 CERVER_PUBLIC void cerver_event_data_delete (
 	CerverEventData *event_data
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
