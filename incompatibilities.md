@@ -3,6 +3,79 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-75 (from 2.0b-74)
+
+The fixes of the audit of the code, the ones of the core of the 1.9b-2 (`core`) and the ones of HTTP: the wire of
+HTTP changes for the videos (RFC 9110), some structs change their fields (a binary built with the 2.0b-74 is built
+again) and some functions change what they do.
+
+**HTTP**
+
+- **The videos follow RFC 9110:** `http_response_handle_video ()` answers a request without a Range (or with an
+  invalid one, like `bytes=9-1`) with 200 and the whole video (it answered 206 with an end of -1), the last byte of
+  `bytes=N-M` is included (it sent one byte less) and a range never goes after the end of the video, and a range that
+  starts after its end gets 416 with a Content-Range of the size of the video (it got a 206)
+- `http_endpoint_set_custom_data ()` and `http_group_set_custom_data ()` delete the custom data that they replace,
+  when it is another pointer
+- `http_response_get ()` is NULL without an HTTP cerver (it crashed), and `http_response_return ()` and
+  `http_cerver_auth_jwt_delete ()` release what the pool does not take (they lost it)
+- `http_request_set_dirname ()` keeps a directory of `REQUEST_DIRNAME_SIZE - 1` characters whole (it cut its last
+  one)
+- The timeouts of the HTTP cerver do not warn when they are not a power of 2 (a request timeout of 300 s warned)
+- A pair of a query or an attribute of a multipart header without memory is not added (they wrote in NULL)
+- `thirdparty.md` has multipart-parser-c (MIT), the base of the parser of `http/requests/multipart.c`
+
+**The core (the 1.9b-2 of `core`)**
+
+- **The structs change:** `Cerver` has `stop_pipe[2]` instead of `stop_mutex` / `stop_cond` (the stop wakes the
+  sleeps with a pipe, so `cerver_shutdown ()` can be called from a signal handler) and no `auth_packet` (it was not
+  used); `CerverStats` has `threshold_start`; `JobQueue` has `requests` instead of `waiting`, `requested_id` and
+  `requested_job` (each thread in `job_queue_request ()` has its own request); `CerverEvent`, `CerverEventData`,
+  `CerverErrorEvent` and `CerverErrorEventData` have `shared_args` at their end
+- **The admins have their limits:** `admin_cerver_register_admin ()` rejects an admin beyond `max_admins` or a client
+  with more than `max_admin_connections`, and **the default `ADMIN_CERVER_DEFAULT_MAX_ADMINS` is 1**: a second admin
+  is rejected unless `admin_cerver_set_max_admins ()` raises the limit (0 is no limit). The admin cerver checks the
+  packets of its admins with its own `admin_cerver_set_check_packets ()`, not with the one of the cerver
+- **Replacing frees:** `cerver_set_app_handlers ()`, `cerver_set_custom_handler ()`, the ones of the admin and of the
+  client and `connection_set_received_data ()` delete the handler (or the data) that they replace, when it is another
+  pointer; a program that kept the old one to delete it later deletes it twice
+- **The upload without an uploads path is rejected:** a files cerver without `file_cerver_set_uploads_path ()` sends
+  `CERVER_ERROR_SEND_FILE` and ends the connection (it read the bytes of the file as packets)
+- `client_unregister_connections_from_cerver_poll ()` does not drop the client, the caller does; `client_request_to_cerver ()`
+  returns the result of the response (it always returned 0 after the send); `file_send ()` and `client_file_send ()`
+  take a name without a `/` (they rejected it)
+- **`str_set ()` grows** a string of `str_new ()` / `str_create ()` (it did nothing without a max len); `str_split ()`
+  of a string without the delimiter gives 1 token, the whole string (it gave none)
+- **`config.h` needs `_GNU_SOURCE`:** it does not define the `__USE_*` of glibc; a program built without
+  `-D _GNU_SOURCE` stops with an `#error` that says so, even when it includes cerver first (48 of the 85 headers
+  of the core include their system headers before `config.h`); g++ defines it, gcc and clang do not
+- The text of `RECEIVE_ERROR_TIMEOUT` is `"Timeout"` (it was `"Timeoout"`)
+- **What fails without memory returns NULL:** `handler_create ()` without its job queue, `game_score_create ()` without
+  its table or its types, `dlist_init ()` and `avl_init ()` without their mutex, `packet_create ()` without the copy
+  of its data (it returned the packet empty); `bsem_init ()` leaves the semaphore without its mutex and its
+  condition, and its post and its wait do nothing; a cerver, an admin cerver or a client without the lock of its
+  handlers does not start them
+- **What fails without memory keeps what it had:** `str_copy ()`, `str_n_copy ()`, `str_replace_with ()` (it left
+  the String empty) and `str_n_replace_with ()` keep their characters, `packet_append_data ()` keeps the data of the
+  packet (it lost it)
+- `str_compare ()`, `str_comparator ()`, `str_copy ()` and `str_remove_char ()` take a String with NULL characters;
+  `worker_get_state ()`, the setters of a worker and `worker_push_job*` () take a NULL worker
+- `abs_int (INT_MIN)` is `INT_MAX`, `itoa ()` writes the digits of `INT_MIN`, `random_int_in_range ()` takes any two
+  limits; `c_string_split ()` of a string of only delimiters returns NULL with 0 tokens (it returned an array with a
+  NULL token)
+- `admin_remove_connection_with_sock_fd ()` only removes the only connection of an admin when it has the socket (it
+  removed it with any socket)
+- `CerverStats::threshold_time` and `unique_clients` work: every `threshold_time` seconds the counters that grow are
+  reset; `GameCerverStats::lobbys_created` and the stats of the admin cerver are written with `__atomic`
+- **New:** `c_string_copy_bounded ()`, `dlist_get_apply ()`, `htab_get_apply ()`, `avl_get_node_data_apply ()`,
+  `lobby_get_reference ()`, `lobby_search_with_id_reference ()`, `timer_get_gmt_time_r ()` and
+  `timer_get_local_time_r ()`
+- **Deprecated** (with `DEPRECATED ()`, they go away in the 3.0): `cerver_set_sockets_pool_init ()`,
+  `game_set_player_comparator ()`, `lobby_stats_set_threshold_time ()`, `lobby_get ()` and `lobby_search_with_id ()`
+  (they return a lobby without a reference), `timer_get_gmt_time ()` and `timer_get_local_time ()` (not reentrant);
+  the docs mark the `threshold_time` of the connections, the admins and the lobbies, `CONNECTION_DEFAULT_BAD_PACKETS`,
+  the `SERVICE_*` and `GAME_DEFAULT_*` macros and `ClientEvent::request_type`
+
 ## 2.0b-74 (from 2.0b-73)
 
 The structure, the documentation and the license of the other lines (`core` 1.9b-1, `labs` 3.0b-3): every header
