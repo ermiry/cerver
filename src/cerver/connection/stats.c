@@ -73,8 +73,6 @@ void connection_stats_print (Connection *connection) {
 
 	if (connection) {
 		if (connection->stats) {
-			cerver_log_msg ("Threshold time:            %ld", connection->stats->threshold_time);
-
 			cerver_log_msg ("N receives done:           %lu", connection->stats->n_receives_done);
 
 			cerver_log_msg ("Total bytes received:      %lu", connection->stats->total_bytes_received);

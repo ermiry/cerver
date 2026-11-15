@@ -75,13 +75,6 @@
 /** @brief The default authentication attempts of a connection. */
 #define CONNECTION_DEFAULT_MAX_AUTH_TRIES			2
 
-/**
- * @brief The bad packets of a connection.
- *
- * @note cerver does not use this value: the limits are the ones of the cerver (cerver_set_max_bad_packets ()).
- */
-#define CONNECTION_DEFAULT_BAD_PACKETS				4
-
 /** @brief The default flags that are passed to recv (). */
 #define CONNECTION_DEFAULT_RECEIVE_FLAGS			0
 
@@ -561,7 +554,8 @@ CERVER_EXPORT void connection_set_receive_buffer_size (
  * @param[in] data the data
  * @param[in] data_size the size of the data
  * @param[in] data_delete releases the data when the connection is deleted or reset, NULL to keep it
- * @warning Data that was already set is replaced without being released.
+ * @note Different data releases the data that was already set with its own delete method; the same data again is
+ * kept.
  */
 CERVER_EXPORT void connection_set_received_data (
 	Connection *connection,

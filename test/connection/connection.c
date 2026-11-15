@@ -159,6 +159,39 @@ static void test_connection_setters_null (void) {
 
 }
 
+#define CONNECTION_TEST_RECEIVED_SIZE			64
+
+static unsigned int received_data_deleted = 0;
+
+static void test_connection_received_data_delete (void *data) {
+
+	received_data_deleted += 1;
+
+	free (data);
+
+}
+
+// different received data releases the data that it replaces (a leak before), the same data again is kept
+static void test_connection_received_data_replaced (void) {
+
+	Connection *connection = test_connection_create ();
+
+	void *first = malloc (CONNECTION_TEST_RECEIVED_SIZE);
+	test_check_ptr (first);
+	connection_set_received_data (connection, first, CONNECTION_TEST_RECEIVED_SIZE, test_connection_received_data_delete);
+	connection_set_received_data (connection, first, CONNECTION_TEST_RECEIVED_SIZE, test_connection_received_data_delete);
+	test_check_unsigned_eq (received_data_deleted, 0, "the same data was released");
+
+	void *second = malloc (CONNECTION_TEST_RECEIVED_SIZE);
+	test_check_ptr (second);
+	connection_set_received_data (connection, second, CONNECTION_TEST_RECEIVED_SIZE, test_connection_received_data_delete);
+	test_check_unsigned_eq (received_data_deleted, 1, "the replaced data was not released");
+
+	connection_delete (connection);
+	test_check_unsigned_eq (received_data_deleted, 2, NULL);
+
+}
+
 #define CONNECTION_TEST_END_THREADS				2
 
 static void *test_connection_end_thread (void *connection_ptr) {
@@ -210,6 +243,8 @@ int main (void) {
 	test_connection_setters_invalid ();
 
 	test_connection_setters_null ();
+
+	test_connection_received_data_replaced ();
 
 	test_connection_storage ();
 

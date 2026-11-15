@@ -32,13 +32,6 @@ struct _Connection;
  */
 struct _ConnectionStats {
 
-	/**
-	 * @brief How often the stats should be reset.
-	 *
-	 * @warning It is only stored and printed: cerver does not reset the stats with it.
-	 */
-	time_t threshold_time;
-
 	/** @brief The calls to recv (). */
 	u64 n_receives_done;
 
