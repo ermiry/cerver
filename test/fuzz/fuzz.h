@@ -1,26 +1,29 @@
 #ifndef _CERVER_TESTS_FUZZ_H_
 #define _CERVER_TESTS_FUZZ_H_
 
-#include <stdlib.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/connection.h>
-#include <cerver/handler.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/end.h>
+#include <cerver/core/cerver.h>
+#include <cerver/handler/handler.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/response.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 // feeds bytes to http_receive_handle () like the receive loop does,
 // through a socket pair whose other end only collects the responses

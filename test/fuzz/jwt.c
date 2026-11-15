@@ -1,18 +1,16 @@
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
 #include <string.h>
 
-#include <cerver/http/auth.h>
-#include <cerver/http/http.h>
-
+#include <cerver/http/core/http.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
-
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/jwt/jwt.h>
 #include <cerver/http/jwt/key.h>
+#include <cerver/http/security/auth.h>
 
 // the first byte chooses how the rest is decoded:
 // the raw RS256 public key of the first API, an HS256 key that also encodes
