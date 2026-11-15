@@ -401,6 +401,12 @@ void cerver_set_running (Cerver *cerver, bool value) {
 
 }
 
+bool cerver_is_stopping (const Cerver *cerver) {
+
+	return cerver ? __atomic_load_n (&cerver->stop_requested, __ATOMIC_SEQ_CST) : false;
+
+}
+
 // sets whether cerver_start () ignores SIGPIPE when the process has not set a handler for it,
 // writing to a connection that the client reset raises SIGPIPE, that by default kills the process
 // the default value is CERVER_DEFAULT_IGNORE_SIGPIPE
