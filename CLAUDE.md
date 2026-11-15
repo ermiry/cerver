@@ -64,7 +64,7 @@ Coverage: `bash coverage.sh` (builds with `TYPE=test`, runs units, then `make co
 
 ## Architecture
 
-Headers live in `include/cerver/` and mirror `src/cerver/` one-to-one (`src/cerver/http/route.c` ↔ `include/cerver/http/route.h`). Public functions are marked `CERVER_EXPORT` (`config.h`) and declarations are wrapped in `extern "C"`. Enums and their string conversions are generated with X-macro `*_MAP(XX)` tables — extend the map rather than the enum directly.
+Headers live in `include/cerver/` and mirror `src/cerver/` one-to-one (`src/cerver/http/routes/route.c` ↔ `include/cerver/http/routes/route.h`). Since the session 47 (2026-11-13) `nightly` has the layout of `labs` 3.0b-2 and its documentation (3.0b-3): `include/`, `src/`, `test/`, `examples/` and `benchmarks/` were seeded from `labs` (with `crypto/`, the OpenSSL provider of the 3.0b-1), so the files of both lines are the same until `labs` replaces a module; the table of the old paths is in the `roadmap.md` of `labs` §11, and the `CLAUDE.md` of `labs` describes the layout (the folders by domain, `cerver.h` and `http/http.h` as umbrellas, the parts of the big files, the `internal.h` in `src/`, the includes at the start in blocks, `_with_` instead of `_by_`). Some paths of the sections below are still the old ones. Public functions are marked `CERVER_EXPORT` (`config.h`) and declarations are wrapped in `extern "C"`. Enums and their string conversions are generated with X-macro `*_MAP(XX)` tables — extend the map rather than the enum directly.
 
 Core flow:
 - `cerver.c` — `Cerver` lifecycle (create, configure, start, teardown) and its handler type: `CERVER_HANDLER_TYPE_POLL` (single thread with `poll()`) or `THREADS` (thread per connection). A thread pool is also used for handlers.
@@ -104,6 +104,7 @@ HTTP layer (`http/`), used when the cerver type is `CERVER_TYPE_WEB`:
 
 ## Conventions
 
+- Comments: the public headers are documented with Doxygen like in `labs` (its `CLAUDE.md`, Conventions): `@file`, a group per module and a subgroup per region, every parameter, return value and field, `@internal` in the headers of `src/`, and only what is verified in the code. `make docs` (`Doxyfile`, `Dockerfile.docs`, the `docs` job of `build.yml`) fails with any warning, and every clang build adds `-Wdocumentation`.
 - Code style: tabs, a space before call parentheses (`foo (bar)`) in every file, vendored code included, `#pragma region` blocks to group sections. Exceptions: a function-like macro name in its `#define NAME(x)` can not have a space, and the X-macro tables keep their existing form (`XX(...)` entries, `*_MAP(XX)` inside functions); X-macro arguments are stringified with `#`, so their text must not be changed.
 - No literal values inside functions: sizes, lengths, prefixes, separators and timeouts are named constants (`#define` in the header or a `static const` at the top of the source file), e.g. `HTTP_ERROR_BUFFER_SIZE` instead of `char error_buffer[64]`. Applied to new code now; the rest of the codebase is migrated later.
 - Keep `if` / `case` bodies short: when a branch needs its own variables or more than a couple of statements, move it to a dedicated `static` function and call it from the branch. Applied to new code now; the rest of the codebase is migrated later.
