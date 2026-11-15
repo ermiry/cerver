@@ -8,6 +8,8 @@
 #include <cerver/connection/end.h>
 
 #include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/parser/api.h>
 
 #include "fuzz.h"
@@ -85,7 +87,8 @@ static void pipeline_feed (
 	HttpReceive *http_receive = &pipeline_receive;
 	if (http_receive_prepare (http_receive, &cerver_receive, &resources)) abort ();
 
-	// the connection is not closed after a response
+	// a request that is rejected does not close the connection either:
+	// the receive is used again after every kind of request
 	http_receive->keep_alive = true;
 
 	const size_t step = piece_len ? piece_len : data_len;
@@ -109,6 +112,8 @@ static void pipeline_feed (
 			pipeline_drain_available (fds[FUZZ_CLIENT]);
 
 			if (http_receive_reset (http_receive)) abort ();
+
+			http_receive->keep_alive = true;
 
 			n_requests += 1;
 		}
@@ -134,6 +139,9 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 
 	fuzz_cerver_create ();
 	pipeline_resources_create ();
+
+	// the cerver keeps the connection after each request that it completes
+	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
 
 	pipeline_feed (data + 1, size - 1, (size_t) data[0]);
 

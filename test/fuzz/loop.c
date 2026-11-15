@@ -10,6 +10,9 @@
 #include <cerver/core/cerver.h>
 #include "cerver/events/internal.h"
 
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
+
 #include "fuzz.h"
 
 // raw bytes to a connection of an event loop: the loop reads them from its socket in pieces,
@@ -17,9 +20,12 @@
 // (the authentication of a request before its body, its handler), so every run is the same
 // the requests reach the pauses of the parser, the bytes that are kept between them,
 // the responses that the loop writes and the closes of each state
+// the cerver keeps its connections: the requests that follow one that was answered are handled too,
+// the ones that arrived behind it (pipelined) and the ones that an idle connection receives
 // the first byte selects the size of the pieces the bytes are split in
 
-// the steps that the loop takes at most to end a connection whose client is done
+// the steps that the loop takes at most to end a connection whose client is done,
+// and one more for each byte: every pipelined request that is left takes a step
 #define LOOP_STEPS_MAX					64
 
 static EventDispatcher loop_dispatcher;
@@ -37,6 +43,8 @@ static void loop_create (void) {
 
 	// a response that does not fit in the socket fails instead of waiting for its client
 	cerver_set_send_timeout (fuzz_cerver, FUZZ_SEND_TIMEOUT_SECONDS);
+
+	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
 
 	event_dispatcher_inline (&loop_dispatcher);
 
@@ -101,8 +109,8 @@ static void loop_feed (
 	(void) shutdown (fds[FUZZ_CLIENT], SHUT_WR);
 
 	for (
-		unsigned int steps = 0;
-		event_loop_connections (loop_events) && (steps < LOOP_STEPS_MAX);
+		size_t steps = 0;
+		event_loop_connections (loop_events) && (steps < (LOOP_STEPS_MAX + data_len));
 		steps++
 	) {
 		(void) event_loop_step (loop_events, 0);

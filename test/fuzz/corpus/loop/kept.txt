@@ -1,0 +1,15 @@
+POST /secure/items HTTP/1.1
+Host: localhost
+Authorization: a-token
+Content-Type: text/plain
+Content-Length: 5
+
+helloGET /api/users/16 HTTP/1.1
+Host: localhost
+
+POST /secure/items HTTP/1.1
+Host: localhost
+Authorization: a-token
+Content-Length: 4
+
+last
