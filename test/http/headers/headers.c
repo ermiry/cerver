@@ -196,6 +196,19 @@ static void test_http_header_set (void) {
 
 }
 
+// a value that does not fit is truncated and its length is the one that was kept
+static void test_http_header_set_truncated (void) {
+
+	char long_value[HTTP_HEADER_VALUE_SIZE * 2] = { 0 };
+	(void) memset (long_value, 'a', sizeof (long_value) - 1);
+
+	HttpHeader header;
+	http_header_set (&header, "%s", long_value);
+
+	test_check_int_eq (header.len, (int) strlen (header.value), "the length of a truncated header is not the one that was kept");
+
+}
+
 static void test_http_header_print (void) {
 
 	HttpHeader header;
@@ -752,6 +765,8 @@ void http_tests_headers (void) {
 	test_http_header_type_by_string ();
 
 	test_http_header_set ();
+
+	test_http_header_set_truncated ();
 
 	test_http_header_print ();
 
