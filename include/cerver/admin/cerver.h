@@ -1,3 +1,8 @@
+/**
+ * @file cerver/admin/cerver.h
+ * @brief The admin cerver: its struct, its setters, its broadcasts and the registry of its admins.
+ */
+
 #ifndef _CERVER_ADMIN_CERVER_H_
 #define _CERVER_ADMIN_CERVER_H_
 
@@ -10,225 +15,431 @@
 extern "C" {
 #endif
 
-#pragma region main
+/**
+ * @defgroup admin_main Admin cerver
+ * @ingroup admin
+ * @brief The struct of the admin cerver and its setters.
+ *
+ * The setters ignore a NULL admin cerver.
+ * @{
+ */
 
+/**
+ * @brief The admin cerver of a cerver.
+ */
 struct _AdminCerver {
 
-	struct _Cerver *cerver;				// the cerver this belongs to
+	/** @brief The cerver that the admin cerver belongs to. */
+	struct _Cerver *cerver;
 
-	DoubleList *admins;					// connected admins to the cerver
+	/** @brief The connected admins, with its own lock. */
+	DoubleList *admins;
 
-	delegate authenticate;				// authentication method
+	/** @brief The method that authenticates the admins, it returns 0 when the authentication succeeds. */
+	delegate authenticate;
 
-	u8 max_admins;						// the max numbers of admins allowed at any time
-	u8 max_admin_connections;			// the max number of connections allowed per admin
+	/**
+	 * @brief The max admins at the same time.
+	 *
+	 * @warning It is only stored: cerver does not enforce it.
+	 */
+	u8 max_admins;
+	/**
+	 * @brief The max connections of each admin.
+	 *
+	 * @warning It is only stored: cerver does not enforce it.
+	 */
+	u8 max_admin_connections;
 
-	// number of bad packets before ending connection
+	/** @brief The bad packets of an admin connection before it is dropped. */
 	u32 n_bad_packets_limit;
 
+	/** @brief The size in bytes of the buffer of the admin poll. */
 	size_t receive_buffer_size;
 
+	/** @brief The array of the admin poll. */
 	struct pollfd *fds;
-	u32 max_n_fds;                      // current max n fds in pollfd
-	u16 current_n_fds;                  // n of active fds in the pollfd array
+	/** @brief The size of the array of the admin poll. */
+	u32 max_n_fds;
+	/** @brief The active fds in the array of the admin poll. */
+	u16 current_n_fds;
+	/** @brief The timeout in milliseconds of the admin poll. */
 	u32 poll_timeout;
+	/** @brief Protects the array of the admin poll. */
 	pthread_mutex_t *poll_lock;
 
-	// custom admin packet handlers
-	// these handlers will only be accessible for authenticated admins
+	/** @brief The handler of the PACKET_TYPE_APP packets of the authenticated admins. */
 	struct _Handler *app_packet_handler;
+	/** @brief The handler of the PACKET_TYPE_APP_ERROR packets of the authenticated admins. */
 	struct _Handler *app_error_packet_handler;
+	/** @brief The handler of the PACKET_TYPE_CUSTOM packets of the authenticated admins. */
 	struct _Handler *custom_packet_handler;
 
-	unsigned int num_handlers_alive;       // handlers currently alive
-	unsigned int num_handlers_working;     // handlers currently working
+	/** @brief The handlers that are alive (ready to handle packets). */
+	unsigned int num_handlers_alive;
+	/** @brief The handlers that are handling a packet, counted with __atomic. */
+	unsigned int num_handlers_working;
+	/** @brief Protects #num_handlers_alive, created when the admin cerver starts. */
 	pthread_mutex_t *handlers_lock;
 
+	/** @brief The admin cerver deletes the PACKET_TYPE_APP packets after their handler. */
 	bool app_packet_handler_delete_packet;
+	/** @brief The admin cerver deletes the PACKET_TYPE_APP_ERROR packets after their handler. */
 	bool app_error_packet_handler_delete_packet;
+	/** @brief The admin cerver deletes the PACKET_TYPE_CUSTOM packets after their handler. */
 	bool custom_packet_handler_delete_packet;
 
-	bool check_packets;                     // enable / disbale packet checking
+	/**
+	 * @brief The packets of the admins are checked with packet_check ().
+	 *
+	 * @warning It is only stored: the admin handler checks the packets with the check_packets of the cerver.
+	 */
+	bool check_packets;
 
+	/** @brief The thread of the update method. */
 	pthread_t update_thread_id;
-	Action update;                          // method to be executed every tick
-	void *update_args;                      // args to pass to custom update method
-	void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
-	u8 update_ticks;                        // like fps
+	/** @brief The method that runs every tick, it gets a CerverUpdate with the cerver. */
+	Action update;
+	/** @brief The arguments of the update method. */
+	void *update_args;
+	/** @brief Releases the arguments of the update method when the cerver is torn down. */
+	void (*delete_update_args)(void *);
+	/** @brief The ticks per second of the update method. */
+	u8 update_ticks;
 
+	/** @brief The thread of the update interval method. */
 	pthread_t update_interval_thread_id;
-	Action update_interval;                 // the actual method to execute every x seconds
-	void *update_interval_args;             // args to pass to the update method
-	// method to delete update interval args at cerver teardown
+	/** @brief The method that runs every #update_interval_secs, it gets a CerverUpdate with the cerver. */
+	Action update_interval;
+	/** @brief The arguments of the update interval method. */
+	void *update_interval_args;
+	/** @brief Releases the arguments of the update interval method when the cerver is torn down. */
 	void (*delete_update_interval_args)(void *);
-	u32 update_interval_secs;               // the interval in seconds
+	/** @brief The seconds between two calls of the update interval method. */
+	u32 update_interval_secs;
 
+	/** @brief The stats of the admin cerver. */
 	struct _AdminCerverStats *stats;
 
 };
 
+/** @brief The admin cerver of a cerver, see struct _AdminCerver. */
 typedef struct _AdminCerver AdminCerver;
 
+/**
+ * @brief Allocates an admin cerver with the default values.
+ *
+ * @return the new admin cerver, NULL if it could not be allocated
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE AdminCerver *admin_cerver_new (void);
 
+/**
+ * @brief Releases an admin cerver: its admins, its poll, its handlers and its stats.
+ *
+ * @param[in] admin_cerver the admin cerver, it can be NULL
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE void admin_cerver_delete (AdminCerver *admin_cerver);
 
+/**
+ * @brief Creates an admin cerver with its list of admins and its stats.
+ *
+ * @return the new admin cerver, NULL if it could not be allocated
+ * @note For the internal methods of cerver: an application calls cerver_set_admin_enable ().
+ */
 CERVER_PRIVATE AdminCerver *admin_cerver_create (void);
 
-// sets the authentication methods to be used to successfully authenticate admin credentials
-// must return 0 on success, 1 on error
+/**
+ * @brief Sets the method that authenticates the credentials of the admins.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] authenticate the method, it gets an AuthMethod and returns 0 on success and 1 on error
+ */
 CERVER_EXPORT void admin_cerver_set_authenticate (
 	AdminCerver *admin_cerver, delegate authenticate
 );
 
-// sets the max numbers of admins allowed at any given time
+/**
+ * @brief Sets the max admins at the same time.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] max_admins the admins, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMINS
+ * @warning The value is only stored: cerver does not enforce it.
+ */
 CERVER_EXPORT void admin_cerver_set_max_admins (
 	AdminCerver *admin_cerver, u8 max_admins
 );
 
-// sets the max number of connections allowed per admin
+/**
+ * @brief Sets the max connections of each admin.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] max_admin_connections the connections, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS
+ * @warning The value is only stored: cerver does not enforce it.
+ */
 CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 	AdminCerver *admin_cerver, u8 max_admin_connections
 );
 
-// sets the max number of bad packets to tolerate before dropping an admin connection,
-// a bad packet fails packet_check () or has an unknown type, and its sender gets a CERVER_ERROR_PACKET_ERROR
-// 0 or less to use the default ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS
+/**
+ * @brief Sets the bad packets that an admin connection can send before it is dropped.
+ *
+ * A bad packet fails packet_check () or has an unknown type, and its sender gets a CERVER_ERROR_PACKET_ERROR.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] n_bad_packets_limit the packets, 0 or less uses #ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS
+ */
 CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
 	AdminCerver *admin_cerver, i32 n_bad_packets_limit
 );
 
-// sets the admin cerver's receive buffer size used for recv ()
+/**
+ * @brief Sets the size of the buffer of the admin poll.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] buffer_size the size in bytes, the default is #ADMIN_CERVER_DEFAULT_RECEIVE_BUFFER_SIZE
+ * @note Call it before cerver_start (): the buffer is allocated when the admin poll starts.
+ */
 CERVER_EXPORT void admin_cerver_set_receive_buffer_size (
 	AdminCerver *admin_cerver, const size_t buffer_size
 );
 
-// sets, before the cerver starts, the max number of poll fds for the admin cerver
-// (ADMIN_CERVER_DEFAULT_POLL_FDS), 0 and a call after the start are ignored
+/**
+ * @brief Sets the size of the array of the admin poll.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] max_n_fds the size, the default is #ADMIN_CERVER_DEFAULT_POLL_FDS; 0 is ignored
+ * @note Call it before cerver_start (): a call after the array was created is ignored.
+ */
 CERVER_EXPORT void admin_cerver_set_max_fds (
 	AdminCerver *admin_cerver, u32 max_n_fds
 );
 
-// sets a custom poll time out to use for admins
+/**
+ * @brief Sets the timeout of the admin poll.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] poll_timeout the milliseconds, the default is #ADMIN_CERVER_DEFAULT_POLL_TIMEOUT
+ */
 CERVER_EXPORT void admin_cerver_set_poll_timeout (
 	AdminCerver *admin_cerver, u32 poll_timeout
 );
 
-// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
+/**
+ * @brief Sets the handlers of the PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packets of the admins.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] app_handler the handler of the PACKET_TYPE_APP packets, the admin cerver owns it from now on; it can be
+ * NULL
+ * @param[in] app_error_handler the handler of the PACKET_TYPE_APP_ERROR packets, the admin cerver owns it from now
+ * on; it can be NULL
+ * @warning A handler that was already set is replaced without being deleted.
+ */
 CERVER_EXPORT void admin_cerver_set_app_handlers (
 	AdminCerver *admin_cerver,
 	struct _Handler *app_handler, struct _Handler *app_error_handler
 );
 
-// sets option to automatically delete PACKET_TYPE_APP packets after use
-// if set to false, user must delete the packets manualy
-// by the default, packets are deleted by cerver
+/**
+ * @brief Sets whether the admin cerver deletes the PACKET_TYPE_APP packets after their handler.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] delete_packet false so the handler deletes them; by default the admin cerver does it
+ */
 CERVER_EXPORT void admin_cerver_set_app_handler_delete (
 	AdminCerver *admin_cerver, bool delete_packet
 );
 
-// sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
-// if set to false, user must delete the packets manualy
-// by the default, packets are deleted by cerver
+/**
+ * @brief Sets whether the admin cerver deletes the PACKET_TYPE_APP_ERROR packets after their handler.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] delete_packet false so the handler deletes them; by default the admin cerver does it
+ */
 CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (
 	AdminCerver *admin_cerver, bool delete_packet
 );
 
-// sets a PACKET_TYPE_CUSTOM packet type handler
+/**
+ * @brief Sets the handler of the PACKET_TYPE_CUSTOM packets of the admins.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] custom_handler the handler, the admin cerver owns it from now on; it can be NULL
+ * @warning A handler that was already set is replaced without being deleted.
+ */
 CERVER_EXPORT void admin_cerver_set_custom_handler (
 	AdminCerver *admin_cerver, struct _Handler *custom_handler
 );
 
-// sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
-// if set to false, user must delete the packets manualy
-// by the default, packets are deleted by cerver
+/**
+ * @brief Sets whether the admin cerver deletes the PACKET_TYPE_CUSTOM packets after their handler.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] delete_packet false so the handler deletes them; by default the admin cerver does it
+ */
 CERVER_EXPORT void admin_cerver_set_custom_handler_delete (
 	AdminCerver *admin_cerver, bool delete_packet
 );
 
-// returns the total number of handlers currently alive (ready to handle packets)
+/**
+ * @brief Returns the number of handlers of the admin cerver that are alive (ready to handle packets).
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @return the handlers, 0 for a NULL admin cerver or one that has not started
+ * @threadsafety Safe from any thread, it reads the count with the lock of the handlers.
+ */
 CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_alive (
 	AdminCerver *admin_cerver
 );
 
-// returns the total number of handlers currently working (handling a packet)
+/**
+ * @brief Returns the number of handlers of the admin cerver that are handling a packet.
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @return the handlers, 0 for a NULL admin cerver
+ * @threadsafety Safe from any thread, the handlers count themselves with __atomic.
+ */
 CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_working (
 	AdminCerver *admin_cerver
 );
 
-// set whether to check or not incoming packets
-// check packet's header protocol id & version compatibility
-// if packets do not pass the checks, won't be handled and will be inmediately destroyed
-// packets size must be cheked in individual methods (handlers)
-// by default, this option is turned off
+/**
+ * @brief Sets whether the packets of the admins are checked with packet_check ().
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] check_packets true to check them, the default is #ADMIN_CERVER_DEFAULT_CHECK_PACKETS
+ * @warning The value is only stored: the admin handler checks the packets when the check_packets of the cerver
+ * (cerver_set_check_packets ()) is set.
+ */
 CERVER_EXPORT void admin_cerver_set_check_packets (
 	AdminCerver *admin_cerver, bool check_packets
 );
 
-// sets a custom update function to be executed every n ticks
-// a new thread will be created that will call your method each tick
-// the update args will be passed to your method as a CerverUpdate &
-// will only be deleted at cerver teardown if you set the delete_update_args ()
+/**
+ * @brief Sets a method that runs every tick in its own thread, started with the admin cerver.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] update the method, it gets a CerverUpdate with the cerver and the arguments
+ * @param[in] update_args the arguments of the method
+ * @param[in] delete_update_args releases the arguments in the teardown, NULL to keep them
+ * @param[in] fps the ticks per second, 0 runs it once per second
+ */
 CERVER_EXPORT void admin_cerver_set_update (
 	AdminCerver *admin_cerver,
 	Action update, void *update_args, void (*delete_update_args)(void *),
 	const u8 fps
 );
 
-// sets a custom update method to be executed every x seconds (in intervals)
-// a new thread will be created that will call your method every x seconds
-// the update args will be passed to your method as a CerverUpdate &
-// will only be deleted at cerver teardown if you set the delete_update_args ()
+/**
+ * @brief Sets a method that runs every some seconds in its own thread, started with the admin cerver.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] update the method, it gets a CerverUpdate with the cerver and the arguments
+ * @param[in] update_args the arguments of the method
+ * @param[in] delete_update_args releases the arguments in the teardown, NULL to keep them
+ * @param[in] interval the seconds between two calls
+ */
 CERVER_EXPORT void admin_cerver_set_update_interval (
 	AdminCerver *admin_cerver,
 	Action update, void *update_args, void (*delete_update_args)(void *),
 	const u32 interval
 );
 
-// returns the current number of connected admins
+/**
+ * @brief Returns the number of connected admins.
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @return the admins, 0 for a NULL admin cerver
+ */
 CERVER_EXPORT u8 admin_cerver_get_current_admins (
 	AdminCerver *admin_cerver
 );
 
-// broadcasts a packet to all connected admins in an admin cerver
-// returns 0 on success, 1 on error
+/**
+ * @brief Sends a packet to the first connection of every connected admin, with admin_send_packet ().
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @param[in,out] packet the packet
+ * @retval 0 the packet was sent to every admin
+ * @retval 1 a NULL argument, or the packet was not sent to some admin
+ * @threadsafety It takes the lock of the list of the admins.
+ */
 CERVER_EXPORT u8 admin_cerver_broadcast_to_admins (
 	AdminCerver *admin_cerver, struct _Packet *packet
 );
 
-// broadcasts a packet to all connected admins in an admin cerver using packet_send_to_split ()
-// returns 0 on success, 1 on error
+/**
+ * @brief Sends a packet to every connected admin with admin_send_packet_split ().
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @param[in] packet the packet
+ * @retval 0 the packet was sent to every admin
+ * @retval 1 a NULL argument, or the packet was not sent to some admin
+ * @threadsafety It takes the lock of the list of the admins.
+ */
 CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_split (
 	AdminCerver *admin_cerver, struct _Packet *packet
 );
 
-// broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
-// returns 0 on success, 1 on error
+/**
+ * @brief Sends a packet in pieces to every connected admin with admin_send_packet_pieces ().
+ *
+ * @param[in] admin_cerver the admin cerver
+ * @param[in,out] packet the packet
+ * @param[in] pieces the pieces
+ * @param[in] sizes the size in bytes of each piece
+ * @param[in] n_pieces the number of pieces
+ * @retval 0 the packet was sent to every admin
+ * @retval 1 a NULL argument, or the packet was not sent to some admin
+ * @threadsafety It takes the lock of the list of the admins.
+ */
 CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (
 	AdminCerver *admin_cerver, struct _Packet *packet,
 	void **pieces, size_t *sizes, u32 n_pieces
 );
 
-// registers a newly created admin to the admin cerver structures (internal & poll)
-// this will allow the admin cerver to start handling admin's packets
-// returns 0 on success, 1 on error
+/**
+ * @brief Registers a new admin: its first connection goes to the admin poll and the admin to the list, so the
+ * admin cerver handles its packets.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in,out] admin the admin, with at least one connection
+ * @retval 0 the admin was registered
+ * @retval 1 a NULL argument, or the admin poll is full
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE u8 admin_cerver_register_admin (
 	AdminCerver *admin_cerver, Admin *admin
 );
 
-// unregisters an existing admin from the admin cerver structures (internal & poll)
-// returns 0 on success, 1 on error
+/**
+ * @brief Unregisters an admin: it leaves the list and its connections leave the admin poll; it is not deleted.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in,out] admin the admin
+ * @retval 0 the admin was unregistered
+ * @retval 1 a NULL argument, or the admin was not in the list
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE u8 admin_cerver_unregister_admin (
 	AdminCerver *admin_cerver, Admin *admin
 );
 
-// unregisters an admin from the cerver & then deletes it
-// returns 0 on success, 1 on error
+/**
+ * @brief Unregisters an admin and deletes it.
+ *
+ * @param[in,out] admin_cerver the admin cerver
+ * @param[in] admin the admin, it is deleted even when it was not registered
+ * @retval 0 the admin was unregistered and deleted
+ * @retval 1 a NULL argument, or the admin was not in the list
+ * @note For the internal methods of cerver.
+ */
 CERVER_PRIVATE u8 admin_cerver_drop_admin (
 	AdminCerver *admin_cerver, Admin *admin
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
