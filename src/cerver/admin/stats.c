@@ -61,8 +61,7 @@ void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 void admin_cerver_stats_print (AdminCerverStats *stats) {
 
 	if (stats) {
-		cerver_log_msg ("\nAdmin stats:");
-		cerver_log_msg ("Threshold_time: %ld\n", stats->threshold_time);
+		cerver_log_msg ("\nAdmin stats:\n");
 
 		cerver_log_msg ("Total n receives done:                  %lu", stats->total_n_receives_done);
 		cerver_log_msg ("Total n packets received:               %lu", stats->total_n_packets_received);
