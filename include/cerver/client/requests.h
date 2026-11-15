@@ -1,3 +1,8 @@
+/**
+ * @file cerver/client/requests.h
+ * @brief The requests of a client to a cerver, and its files.
+ */
+
 #ifndef _CERVER_CLIENT_REQUESTS_H_
 #define _CERVER_CLIENT_REQUESTS_H_
 
@@ -9,53 +14,90 @@
 extern "C" {
 #endif
 
-#pragma region requests
+/**
+ * @defgroup client_requests Requests
+ * @ingroup client
+ * @brief The requests that a connected client makes to a cerver, and the files that it gets and sends.
+ * @{
+ */
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the response will be handled by the client's handlers
-// this is a blocking method, as it will wait until a complete cerver response has been received
-// the response will be handled using the client's packet handler
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// retruns 0 when the response has been handled, 1 on error
+/**
+ * @brief Sends a request to the cerver and handles its response with the packet handlers of the client.
+ *
+ * It blocks until a complete response arrives; it only works with a response of one packet. Neither the client
+ * nor the connection are stopped after the request, and the request packet is not deleted.
+ *
+ * @param[in,out] client the client, already connected
+ * @param[in,out] connection the connection
+ * @param[in,out] request the request, its network values are set; the caller keeps it
+ * @retval 0 the request was sent and a response was received
+ * @retval 1 a NULL argument or the request could not be sent
+ * @warning It returns 0 once the request was sent, even if receiving the response failed.
+ */
 CERVER_EXPORT unsigned int client_request_to_cerver (
 	Client *client, struct _Connection *connection,
 	struct _Packet *request
 );
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the response will be handled by the client's handlers
-// this method will NOT block
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// CLIENT_EVENT_CONNECTION_DATA is triggered when the response was handled,
-// or wait for it with client_requests_wait ()
-// returns 0 on success request, 1 on error
+/**
+ * @brief Sends a request to the cerver and receives its response in a new detachable thread, without blocking.
+ *
+ * It only works with a response of one packet; neither the client nor the connection are stopped after the
+ * request, and the request packet is not deleted. CLIENT_EVENT_CONNECTION_DATA is triggered when the response was
+ * handled, or wait for it with client_requests_wait ().
+ *
+ * @param[in,out] client the client, already connected
+ * @param[in,out] connection the connection
+ * @param[in,out] request the request, its network values are set; the caller keeps it
+ * @retval 0 the request was sent and the thread was created
+ * @retval 1 a NULL argument, the request could not be sent, or the thread could not be created
+ */
 CERVER_EXPORT unsigned int client_request_to_cerver_async (
 	Client *client, struct _Connection *connection,
 	struct _Packet *request
 );
 
-// waits until every async request and connect of the client has ended
-// it can not be called from the client's handlers, they run in those threads
+/**
+ * @brief Waits until every async request and connect of the client has ended.
+ *
+ * @param[in] client the client
+ * @warning It can not be called from the handlers of the client, they run in those threads.
+ */
 CERVER_EXPORT void client_requests_wait (Client *client);
 
-/*** files ***/
-
-// adds a new file path to take into account when getting a request for a file
-// returns 0 on success, 1 on error
+/**
+ * @brief Adds a path where the client searches the files that a cerver requests.
+ *
+ * @param[in,out] client the client
+ * @param[in] path the path, copied
+ * @retval 0 the path was added
+ * @retval 1 a NULL argument or the client already has #CLIENT_FILES_MAX_PATHS
+ */
 CERVER_EXPORT u8 client_files_add_path (
 	Client *client, const char *path
 );
 
-// sets the default uploads path to be used when receiving a file
+/**
+ * @brief Sets the path where the received files are placed; without it, the client rejects the files that a
+ * cerver sends.
+ *
+ * @param[in,out] client the client
+ * @param[in] uploads_path the path, copied; NULL keeps the current one
+ */
 CERVER_EXPORT void client_files_set_uploads_path (
 	Client *client, const char *uploads_path
 );
 
-// sets a custom method to be used to handle a file upload (receive)
-// in this method, file contents must be consumed from the sock fd
-// and return 0 on success and 1 on error
+/**
+ * @brief Sets a custom method that handles a file that a cerver sends (an upload to the client).
+ *
+ * The method consumes the contents of the file from the socket, after the ones that came with the packet
+ * (file_data), and returns 0 on success and 1 on error; by default the client saves the file in its uploads path.
+ *
+ * @param[in,out] client the client
+ * @param[in] file_upload_handler the method, it can set saved_filename to a string allocated with malloc (), that
+ * the client releases
+ */
 CERVER_EXPORT void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
@@ -66,7 +108,12 @@ CERVER_EXPORT void client_files_set_file_upload_handler (
 	)
 );
 
-// sets a callback to be executed after a file has been successfully received
+/**
+ * @brief Sets a callback that runs after a file was received.
+ *
+ * @param[in,out] client the client
+ * @param[in] file_upload_cb the callback, it gets the saved filename
+ */
 CERVER_EXPORT void client_files_set_file_upload_cb (
 	Client *client,
 	void (*file_upload_cb) (
@@ -75,28 +122,47 @@ CERVER_EXPORT void client_files_set_file_upload_cb (
 	)
 );
 
-// search for the requested file in the configured paths
-// returns the actual filename (path + directory) where it was found, NULL on error
+/**
+ * @brief Searches a file in the paths of the client, in the order they were added.
+ *
+ * @param[in] client the client
+ * @param[in] filename the name of the file
+ * @return the path and the name where it was found, a new String; NULL if it was not found or for a NULL argument
+ */
 CERVER_PUBLIC String *client_files_search_file (
 	Client *client, const char *filename
 );
 
-// requests a file from the cerver
-// the client's uploads_path should have been configured before calling this method
-// returns 0 on success sending request, 1 on failed to send request
+/**
+ * @brief Requests a file from the cerver.
+ *
+ * @param[in,out] client the client, with its uploads path (client_files_set_uploads_path ())
+ * @param[in,out] connection the connection
+ * @param[in] filename the name of the file
+ * @retval 0 the request was sent
+ * @retval 1 a NULL argument, a client without its uploads path, or the request could not be sent
+ */
 CERVER_EXPORT u8 client_file_get (
 	Client *client, struct _Connection *connection,
 	const char *filename
 );
 
-// sends a file to the cerver
-// returns 0 on success sending request, 1 on failed to send request
+/**
+ * @brief Sends a file to the cerver.
+ *
+ * @param[in,out] client the client
+ * @param[in,out] connection the connection
+ * @param[in] filename the path of the file; the cerver gets the name after its last `/`
+ * @retval 0 the file was sent completely
+ * @retval 1 a NULL argument, the file could not be opened, or it was not sent completely
+ * @warning A filename without a `/` (like a file of the current directory) is rejected: use `./name`.
+ */
 CERVER_EXPORT u8 client_file_send (
 	Client *client, struct _Connection *connection,
 	const char *filename
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
