@@ -1,17 +1,15 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <cerver/threads/jobs.h>
 #include <cerver/threads/manager.h>
 #include <cerver/threads/worker.h>
 
-#include "threads.h"
-
 #include "../test.h"
+#include "threads.h"
 
 #define MANAGER_TEST_NAME					"test-manager"
 #define MANAGER_TEST_MIN_WORKERS			1

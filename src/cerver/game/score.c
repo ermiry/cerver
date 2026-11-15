@@ -1,18 +1,18 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/types/types.h"
+
+#include "cerver/collections/avl.h"
+#include "cerver/collections/dlist.h"
+#include "cerver/collections/htab.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 #include "cerver/game/player.h"
 #include "cerver/game/score.h"
-
-#include "cerver/collections/avl.h"
-#include "cerver/collections/dlist.h"
-#include "cerver/collections/htab.h"
 
 // a score manager for any game: player name -> (score type -> value)
 // the names are keys with their '\0', every value is allocated and owned by its player's table
