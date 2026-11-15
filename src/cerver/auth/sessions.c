@@ -67,7 +67,7 @@ u8 session_token_encode (
 ) {
 
 	SessionToken token = { { 0 } };
-	(void) strncpy (token.token, session_id, TOKEN_SIZE - 1);
+	(void) c_string_copy_bounded (token.token, session_id, TOKEN_SIZE);
 
 	return (serializer_encode (
 		&session_token_schema, &token,
