@@ -223,7 +223,7 @@ extern void dlist_clear_and_delete (void *dlist_ptr);
  * @brief Removes every element of a list that is not empty, keeping their data; releases a list that is empty.
  *
  * @param[in] dlist_ptr the list, it can be NULL
- * @warning It reads the size without the mutex.
+ * @note It reads the size with the mutex.
  */
 extern void dlist_clear_or_delete (void *dlist_ptr);
 
@@ -453,9 +453,9 @@ extern void *dlist_remove_at (
  * @param[in,out] dlist the list
  * @param[in] compare gets the data of an element and the match, and returns true to remove it
  * @param[in] match the second argument of compare
- * @param[in] delete_data true to release the data that is removed with the destroy method of the list
+ * @param[in] delete_data true to release the data that is removed with the destroy method of the list, or with
+ * free () when the list has none
  * @return the elements that were removed
- * @warning Without a destroy method, the data that is removed is not released even with delete_data.
  */
 extern unsigned int dlist_remove_with_condition (
 	DoubleList *dlist,
@@ -474,7 +474,8 @@ extern unsigned int dlist_remove_with_condition (
  * @param[in] method_args the second argument of the method
  * @retval 0 the list was traversed
  * @retval 1 a NULL list or method
- * @warning The method runs with the mutex of the list: it must not call the methods of the same list.
+ * @note The method runs with the mutex of the list, which is recursive: it can read the same list, but it must not
+ * insert or remove elements while the list is traversed.
  */
 extern int dlist_traverse (
 	const DoubleList *dlist,
@@ -503,12 +504,33 @@ extern void *dlist_search (
  * @param[in] data the query
  * @param[in] compare returns 0 on a match, NULL to use the compare method of the list
  * @return the element, NULL if it was not found or there is no compare method
- * @warning The element is returned after the mutex is released: it is only valid while the list is not changed.
+ * @warning The element is returned after the mutex is released: it is only valid while the list is not changed;
+ * use dlist_get_apply () to use its data with the mutex.
  */
 extern ListElement *dlist_get_element (
 	const DoubleList *dlist,
 	const void *data,
 	int (*compare)(const void *one, const void *two)
+);
+
+/**
+ * @brief Searches the first element whose data is equal to a query and runs a method with its data while the mutex
+ * of the list is held, so another thread can not remove it in between.
+ *
+ * @param[in] dlist the list
+ * @param[in] data the query
+ * @param[in] compare returns 0 on a match, NULL to use the compare method of the list
+ * @param[in] method gets the data of the element and the method args; it can read the same list (the mutex is
+ * recursive) but must not change it
+ * @param[in] method_args the second argument of the method
+ * @retval 0 the element was found and the method ran
+ * @retval 1 it was not found, there is no compare method or an argument is NULL
+ * @since 1.9b-2
+ */
+extern int dlist_get_apply (
+	const DoubleList *dlist, const void *data,
+	int (*compare)(const void *one, const void *two),
+	void (*method)(void *list_element_data, void *method_args), void *method_args
 );
 
 /**
