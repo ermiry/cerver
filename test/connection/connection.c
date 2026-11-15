@@ -3,7 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <cerver/connection/connection.h>
+#include <cerver/connection/end.h>
 #include <cerver/connection/send.h>
 #include <cerver/packets/packets.h>
 
@@ -154,6 +159,46 @@ static void test_connection_setters_null (void) {
 
 }
 
+#define CONNECTION_TEST_END_THREADS				2
+
+static void *test_connection_end_thread (void *connection_ptr) {
+
+	connection_end ((Connection *) connection_ptr);
+
+	return NULL;
+
+}
+
+// two threads that end the same connection, like a client teardown and its reconnection thread,
+// agree on which one ends it (a data race of the active flag with TSan)
+static void test_connection_end_concurrent (void) {
+
+	Connection *connection = test_connection_create ();
+
+	int fds[CONNECTION_TEST_END_THREADS] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
+	connection->socket->sock_fd = fds[0];
+	connection_set_state (connection, CONNECTION_STATE_READY);
+	connection->active = true;
+
+	pthread_t threads[CONNECTION_TEST_END_THREADS];
+	for (unsigned int i = 0; i < CONNECTION_TEST_END_THREADS; i++) {
+		test_check_int_eq (pthread_create (&threads[i], NULL, test_connection_end_thread, connection), 0, NULL);
+	}
+
+	for (unsigned int i = 0; i < CONNECTION_TEST_END_THREADS; i++) {
+		(void) pthread_join (threads[i], NULL);
+	}
+
+	test_check_bool_eq (connection->active, false, "an ended connection is still active");
+	test_check_int_eq (connection->socket->sock_fd, -1, "the socket of an ended connection is open");
+	test_check_int_eq (connection_get_state (connection), CONNECTION_STATE_DISCONNECTED, NULL);
+
+	(void) close (fds[1]);
+	connection_delete (connection);
+
+}
+
 int main (void) {
 
 	test_output_init ();
@@ -169,6 +214,8 @@ int main (void) {
 	test_connection_storage ();
 
 	test_connection_recycle ();
+
+	test_connection_end_concurrent ();
 
 	(void) printf ("\nDone with CONNECTION tests!\n\n");
 
