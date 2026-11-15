@@ -1,14 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/utils/utils.h"
 
