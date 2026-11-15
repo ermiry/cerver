@@ -284,6 +284,31 @@ unsigned int client_connect_to_cerver_async (
 
 #pragma region start
 
+// the update thread owns its ClientConnection,
+// the one of a thread that could not be created is released here (it was lost)
+static int client_connection_start_update (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	ClientConnection *cc = client_connection_aux_new (client, connection);
+	if (cc) {
+		// set before the thread exists, so an end that arrives first waits for it
+		client_update_thread_started (client, connection, true);
+
+		if (!thread_create_detachable (&connection->update_thread_id, connection_update, cc)) {
+			retval = 0;
+		}
+
+		else {
+			client_update_thread_started (client, connection, false);
+			client_connection_aux_delete (cc);
+		}
+	}
+
+	return retval;
+
+}
+
 // after a client connection successfully connects to a server,
 // it will start the connection's update thread to enable the connection to
 // receive & handle packets in a dedicated thread
@@ -295,20 +320,9 @@ int client_connection_start (Client *client, Connection *connection) {
 	if (client && connection) {
 		if (connection_is_active (connection)) {
 			if (!client_start (client) && !connection_start (connection)) {
-				// set before the thread exists, so an end that arrives first waits for it
-				client_update_thread_started (client, connection, true);
+				retval = client_connection_start_update (client, connection);
 
-				if (!thread_create_detachable (
-					&connection->update_thread_id,
-					connection_update,
-					client_connection_aux_new (client, connection)
-				)) {
-					retval = 0;         // success
-				}
-
-				else {
-					client_update_thread_started (client, connection, false);
-
+				if (retval) {
 					cerver_log_error (
 						"client_connection_start () - Failed to create update thread for client %s",
 						client->name

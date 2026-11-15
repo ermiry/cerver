@@ -141,7 +141,6 @@ static ClientEvent *client_event_new (void) {
 		event->create_thread = false;
 		event->drop_after_trigger = false;
 
-		event->request_type = 0;
 		event->response_data = NULL;
 		event->delete_response_data = NULL;
 

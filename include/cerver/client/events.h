@@ -81,12 +81,6 @@ struct _ClientEvent {
 	/** @brief The action is unregistered after its first trigger. */
 	bool drop_after_trigger;
 
-	/**
-	 * @brief The request that triggered the event, for custom events.
-	 *
-	 * @note cerver sets it to 0 and does not use it.
-	 */
-	u32 request_type;
 	/** @brief The data that came with the response, set by client_event_set_response (). */
 	void *response_data;
 	/** @brief Releases #response_data when the event is deleted, NULL to keep it. */
