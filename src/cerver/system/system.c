@@ -1,16 +1,15 @@
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <dirent.h>
-#include <unistd.h>
-
 #include <sys/statvfs.h>
 #include <sys/sysinfo.h>
+#include <unistd.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/system.h"
+#include "cerver/system/system.h"
 
 #define SYSTEM_MEMINFO_PATH				"/proc/meminfo"
 #define SYSTEM_STAT_PATH				"/proc/stat"
