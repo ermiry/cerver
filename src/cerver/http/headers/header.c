@@ -20,6 +20,8 @@ void http_header_reset (HttpHeader *header) {
 
 }
 
+// a value that does not fit is truncated, its length is the one that was kept,
+// and a format that fails leaves it empty
 void http_header_set (
 	HttpHeader *header, const char *format, ...
 ) {
@@ -27,10 +29,14 @@ void http_header_set (
 	va_list args;
 	va_start (args, format);
 
-	header->len = vsnprintf (
+	if (vsnprintf (
 		header->value, HTTP_HEADER_VALUE_SIZE,
 		format, args
-	);
+	) < 0) {
+		header->value[0] = '\0';
+	}
+
+	header->len = (int) strlen (header->value);
 
 	va_end (args);
 
