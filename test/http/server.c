@@ -136,6 +136,7 @@
 // the last bytes of the file that a suffix range asks for: they start at a position
 // that is a multiple of the alphabet of the file, so they are checked like a whole body
 #define SERVER_TEST_SUFFIX_SIZE				52010
+#define SERVER_TEST_RANGE_SIZE				100
 
 static const char *ok_request = {
 	"GET /ok HTTP/1.1\r\n"
@@ -230,6 +231,37 @@ static const char *nonblocking_suffix_request = {
 	"\r\n"
 };
 
+// RFC 9110: without a Range the whole video with 200
+static const char *video_whole_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+// the last byte of a range is included, SERVER_TEST_RANGE_SIZE bytes
+static const char *video_range_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=0-99\r\n"
+	"\r\n"
+};
+
+// a last byte before the first one is not a range, the whole video
+static const char *video_invalid_range_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=9-1\r\n"
+	"\r\n"
+};
+
+// a range that starts after the end of the video, 416
+static const char *video_unsatisfiable_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=1099511627776-\r\n"
+	"\r\n"
+};
+
 static const char *deadline_big_request = {
 	"GET /deadline/big HTTP/1.1\r\n"
 	"Host: localhost\r\n"
@@ -262,6 +294,7 @@ static const char *unanswered_metric = { "cerver_http_requests_unanswered_total 
 
 static const char *status_ok = { "HTTP/1.1 200" };
 static const char *status_partial_content = { "HTTP/1.1 206" };
+static const char *status_range_not_satisfiable = { "HTTP/1.1 416" };
 static const char *status_server_error = { "HTTP/1.1 500" };
 static const char *status_payload_too_large = { "HTTP/1.1 413" };
 static const char *status_request_timeout = { "HTTP/1.1 408" };
@@ -1490,6 +1523,42 @@ static void server_test_nonblocking_response (
 
 }
 
+// the 416 has no body and says the size of the video in its Content-Range
+static void server_test_video_unsatisfiable (const u16 port) {
+
+	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+
+	char content_range[SERVER_TEST_RESPONSE_SIZE] = { 0 };
+	(void) snprintf (content_range, SERVER_TEST_RESPONSE_SIZE, "Content-Range: bytes */%d\r\n", SERVER_TEST_FILE_SIZE);
+
+	int fd = server_test_connect_small (port);
+	server_test_send (fd, video_unsatisfiable_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE] = { 0 };
+	(void) server_test_read_large (fd, response, SERVER_TEST_RESPONSE_SIZE - 1);
+	(void) close (fd);
+
+	test_check (server_test_starts_with (response, status_range_not_satisfiable), "a range after the video did not get 416");
+	test_check (strstr (response, content_range) != NULL, "the 416 does not have the size of the video");
+
+	server_test_wait_count (&nonblocking_done, done + 1);
+
+}
+
+// RFC 9110: 200 without a valid range, the last byte of a range included, 416 after the video
+// (every video got a 206, a range sent one byte less and nothing got a 416)
+static void server_test_video_ranges (const u16 port) {
+
+	server_test_nonblocking_response (port, video_whole_request, status_ok, SERVER_TEST_FILE_SIZE);
+
+	server_test_nonblocking_response (port, video_range_request, status_partial_content, SERVER_TEST_RANGE_SIZE);
+
+	server_test_nonblocking_response (port, video_invalid_range_request, status_ok, SERVER_TEST_FILE_SIZE);
+
+	server_test_video_unsatisfiable (port);
+
+}
+
 // a full non blocking socket buffer waits until the client reads,
 // before, send () and sendfile () gave up after a few retries and the response arrived truncated
 static void test_server_nonblocking (void) {
@@ -1515,6 +1584,8 @@ static void test_server_nonblocking (void) {
 	server_test_nonblocking_response (
 		server->port, nonblocking_suffix_request, status_partial_content, SERVER_TEST_SUFFIX_SIZE
 	);
+
+	server_test_video_ranges (server->port);
 
 	server_test_stop (server);
 

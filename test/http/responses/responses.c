@@ -114,6 +114,18 @@ static void test_http_responses_end (void) {
 
 }
 
+// without the pool of the responses (no HTTP cerver) a get is NULL and a return releases the response
+// (the get read a NULL producer and the return lost the response)
+static void test_http_responses_without_pool (void) {
+
+	test_check_null_ptr (http_response_get ());
+
+	HttpResponse *response = (HttpResponse *) http_response_new ();
+	test_check_ptr (response);
+	http_response_return (response);
+
+}
+
 #pragma region main
 
 static HttpResponse *test_http_response_new (void) {
@@ -1044,6 +1056,8 @@ void http_tests_responses (void) {
 	test_http_response_json_owned ();
 
 	test_http_responses_end ();
+
+	test_http_responses_without_pool ();
 
 	(void) printf ("Done!\n");
 
