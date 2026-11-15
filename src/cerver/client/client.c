@@ -20,6 +20,7 @@
 #include "cerver/connection/lifecycle.h"
 #include "cerver/connection/registry.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/internal.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
@@ -356,7 +357,7 @@ Client *client_create (void) {
 		// clients are created by the cerver threads and by the app at the same time
 		client->id = __atomic_fetch_add (&next_client_id, 1, __ATOMIC_RELAXED);
 
-		(void) strncpy (client->name, CLIENT_DEFAULT_NAME, CLIENT_NAME_SIZE - 1);
+		(void) c_string_copy_bounded (client->name, CLIENT_DEFAULT_NAME, CLIENT_NAME_SIZE);
 
 		(void) time (&client->connected_timestamp);
 
@@ -405,7 +406,7 @@ Client *client_create_with_connection (
 void client_set_name (Client *client, const char *name) {
 
 	if (client && name) {
-		(void) strncpy (client->name, name, CLIENT_NAME_SIZE - 1);
+		(void) c_string_copy_bounded (client->name, name, CLIENT_NAME_SIZE);
 	}
 
 }
@@ -486,6 +487,22 @@ void client_set_data (
 
 }
 
+// the client owns its handlers: a different one deletes the one it replaces,
+// the same one again is kept
+static void client_handler_replace (
+	Client *client, Handler **slot, Handler *handler
+) {
+
+	if (*slot && (*slot != handler)) handler_delete (*slot);
+
+	*slot = handler;
+	if (handler) {
+		handler->type = HANDLER_TYPE_CLIENT;
+		handler->client = client;
+	}
+
+}
+
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void client_set_app_handlers (
 	Client *client,
@@ -493,17 +510,8 @@ void client_set_app_handlers (
 ) {
 
 	if (client) {
-		client->app_packet_handler = app_handler;
-		if (client->app_packet_handler) {
-			client->app_packet_handler->type = HANDLER_TYPE_CLIENT;
-			client->app_packet_handler->client = client;
-		}
-
-		client->app_error_packet_handler = app_error_handler;
-		if (client->app_error_packet_handler) {
-			client->app_error_packet_handler->type = HANDLER_TYPE_CLIENT;
-			client->app_error_packet_handler->client = client;
-		}
+		client_handler_replace (client, &client->app_packet_handler, app_handler);
+		client_handler_replace (client, &client->app_error_packet_handler, app_error_handler);
 	}
 
 }
@@ -513,13 +521,7 @@ void client_set_custom_handler (
 	Client *client, Handler *custom_handler
 ) {
 
-	if (client) {
-		client->custom_packet_handler = custom_handler;
-		if (client->custom_packet_handler) {
-			client->custom_packet_handler->type = HANDLER_TYPE_CLIENT;
-			client->custom_packet_handler->client = client;
-		}
-	}
+	if (client) client_handler_replace (client, &client->custom_packet_handler, custom_handler);
 
 }
 
@@ -932,6 +934,7 @@ u8 client_register_connections_to_cerver_poll (
 
 // unregisters all the active connections from a client from the cerver's poll
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
+// the client is not dropped when every connection fails: its caller still uses it and decides
 u8 client_unregister_connections_from_cerver_poll (
 	Cerver *cerver, Client *client
 ) {
@@ -958,8 +961,6 @@ u8 client_unregister_connections_from_cerver_poll (
 				client->id, cerver->info->name
 			);
 			#endif
-
-			client_drop (cerver, client);       // drop the client ---> no active connections
 		}
 
 		else retval = 0;        // at least one connection is active
@@ -1027,8 +1028,7 @@ static void client_register_to_cerver_internal (
 	);
 	#endif
 
-	CERVER_STATS_ADD (cerver->stats->total_n_clients, 1);
-	CERVER_STATS_ADD (cerver->stats->current_n_connected_clients, 1);
+	cerver_stats_count_client (cerver);
 
 	#ifdef CERVER_STATS
 	cerver_log (
@@ -1306,6 +1306,20 @@ static u8 client_custom_handler_start (Client *client) {
 
 }
 
+static u8 client_handlers_start_each (Client *client) {
+
+	u8 errors = 0;
+
+	errors |= client_app_handler_start (client);
+
+	errors |= client_app_error_handler_start (client);
+
+	errors |= client_custom_handler_start (client);
+
+	return errors;
+
+}
+
 // starts all client's handlers
 static u8 client_handlers_start (Client *client) {
 
@@ -1320,15 +1334,11 @@ static u8 client_handlers_start (Client *client) {
 
 		// a client that starts again (after its connections ended) keeps its lock
 		if (!client->handlers_lock) {
-			client->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			pthread_mutex_init (client->handlers_lock, NULL);
+			client->handlers_lock = thread_mutex_new ();
 		}
 
-		errors |= client_app_handler_start (client);
-
-		errors |= client_app_error_handler_start (client);
-
-		errors |= client_custom_handler_start (client);
+		// the handlers mark themselves alive with the lock
+		errors |= client->handlers_lock ? client_handlers_start_each (client) : 1;
 
 		if (!errors) {
 			#ifdef CLIENT_DEBUG
