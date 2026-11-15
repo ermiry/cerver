@@ -1,44 +1,30 @@
 ## General
-- Moved the cerver to core with its types, the start & its end
-- Moved the admin into its own folder with its stats & its poll
-- Moved the auth & the sessions into a folder with their hold
-- Moved the client into a folder with its connect & its events
-- Moved the connection into its own folder & split it by parts
-- Moved the files into a folder with images, sends & receives
-- Moved the handler, the receive, events & errors to a folder
-- Moved the balancer into load with its services & its routes
-- Moved the network, the sockets & the udp into their folder
-- Moved the packets & serializer into a folder with its header
-- Moved the system, the timers & the input to its own folder
-- Updated the includes of collections & types to their layout
-- Updated the includes of threads & game to the new layout
-- Updated the includes of the utils & their tests to the layout
-- Using the random bytes of the kernel of crypto in sessions
-- Moved the tests of the pairs & the app to the layout's path
-- Updated the includes of the fuzzers to all the layout paths
-- Updated the examples & the benchmarks to the new paths
-- Updated the makefile with the folders & a test per module
-- Changed the license to Apache-2.0, its notice & the others
-- Added Doxygen with make docs, its Dockerfile & its CI job
-- Updated CLAUDE.md with the new layout & the comments
-- Added the changes of the 2.0b-74 to the incompatibilities
+- Added a bounded copy to the utils & fixed the limits of ints
+- Using localtime_r in the log & reentrant times in the timers
+- Removed the defines of glibc from config.h with an #error
+- Fixed the str_set that grows & str_split without a delimiter
+- Fixed the locks of the collections & their new safe variants
+- Fixed the requests of jobs, the semaphores & each worker
+- Added the references to the arguments of events & errors
+- Fixed the stop from a signal, the stats & the core handlers
+- Added the limits of the admins & its own check of packets
+- Fixed the drop of the poll of the clients & of their requests
+- Releasing the old received data that a connection replaces
+- Keeping the data of packets that can't grow & their copies
+- Rejecting uploads without a path & taking the plain names
+- Added the references of lobbies & the checks of the score
+- Using the bounded copy in sessions & in the load services
+- Updated CLAUDE.md with the analyzers & the faults tests
+- Added the changes of the 2.0b-75 to the incompatibilities
 
 ## HTTP
-- Moved the http cerver into http/core split by all of its parts
-- Moved the headers of http into a folder split in all its parts
-- Moved the http requests into a folder with content & forms
-- Moved the http responses into a folder with all their sends
-- Moved the http routes into a folder with its tree & a match
-- Moved the jwt keys, the origins & the security into a folder
-- Moved the json of http into a folder with all of its own tests
-- Moved the jwt of http into its own folder with all of its tests
-- Moved the parser of http to its own folder in the layout too
-- Moved the web pairs & the web clients to the layout paths
+- Answering the videos with RFC 9110 & checking the pools
+- Releasing the custom data the endpoints & groups replace
+- Keeping the last character of the dirname of a request too
+- Removed the warning of timeouts that are not powers of 2
+- Checking the memory of the query & of the multipart pairs
+- Added the MIT notice of the multipart parser to the source
 
-## Documentation
-- Documented the core, the config & the version in Doxygen
-- Documented the clients & the connections in Doxygen too
-- Documented the packets, handler & network with Doxygen
-- Documented the auth, admin, files, load & system headers
-- Documented the collections & the types with Doxygen too
-- Documented the utils, threads, crypto & game in Doxygen
+## Tests
+- Added the tests of the faults of allocations to the core too
+- Added the static analyzers with their suppressions & a job
