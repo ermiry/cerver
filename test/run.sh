@@ -50,5 +50,6 @@ run ./test/bin/threads
 
 run ./test/bin/utils
 
+run ./test/bin/crypto
 
 run ./test/bin/version

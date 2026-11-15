@@ -72,6 +72,7 @@
 #include "cerver/system/system.h"
 #include "cerver/system/timer.h"
 
+#include "cerver/crypto/random.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
