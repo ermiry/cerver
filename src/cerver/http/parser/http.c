@@ -29,11 +29,10 @@
 
 #include <stdbool.h>
 
-#include "cerver/http/method.h"
-
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 #include "cerver/http/parser/llhttp.h"
+#include "cerver/http/requests/method.h"
 
 // the statuses of the responses that change how their body is read
 #define LLHTTP_STATUS_CONTINUE					100
