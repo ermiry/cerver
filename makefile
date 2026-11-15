@@ -421,6 +421,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/network/*.o -o ./$(TESTTARGET)/network $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/crypto/*.o -o ./$(TESTTARGET)/crypto $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/events/*.o -o ./$(TESTTARGET)/events $(TESTLIBS)
 ifeq ($(SANITIZER),)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/faults/*.o ./$(TESTBUILD)/websockets/raw.o -o ./$(TESTTARGET)/faults $(TESTLIBS)
 endif
