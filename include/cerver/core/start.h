@@ -1,3 +1,8 @@
+/**
+ * @file cerver/core/start.h
+ * @brief How a cerver starts.
+ */
+
 #ifndef _CERVER_CORE_START_H_
 #define _CERVER_CORE_START_H_
 
@@ -11,15 +16,27 @@
 extern "C" {
 #endif
 
-#pragma region start
+/**
+ * @defgroup core_start Start
+ * @ingroup core
+ * @brief Starting a cerver.
+ * @{
+ */
 
-// tell the cerver to start listening for connections and packets
-// initializes cerver's structures like thpool (if any)
-// and any other processes that have been configured before
-// returns 0 on success, 1 on error
+/**
+ * @brief Starts the cerver: it initializes its structures (the thpool, the polls), starts its handlers, its
+ * authentication, its admin cerver and its update threads, and accepts connections until it is stopped.
+ *
+ * It blocks until cerver_shutdown () or a signal stops the cerver; a cerver is started only once, and a stop
+ * requested before the call cancels it.
+ *
+ * @param[in,out] cerver the cerver
+ * @retval 0 the cerver ran and was stopped, or its start was cancelled
+ * @retval 1 a NULL cerver, one that is already running, or it failed to start
+ */
 CERVER_EXPORT u8 cerver_start (Cerver *cerver);
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
