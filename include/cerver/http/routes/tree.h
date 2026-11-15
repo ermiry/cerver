@@ -4,18 +4,17 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
 
-#include "cerver/http/middleware.h"
-#include "cerver/http/request.h"
-#include "cerver/http/route.h"
-#include "cerver/http/validator.h"
-
+#include "cerver/http/requests/request.h"
+#include "cerver/http/routes/middleware.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/validator.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/settings.h"
 

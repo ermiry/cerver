@@ -8,9 +8,10 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
-#include "cerver/handler.h"
 
-#include "cerver/http/request.h"
+#include "cerver/handler/handler.h"
+
+#include "cerver/http/requests/request.h"
 
 #ifdef __cplusplus
 extern "C" {

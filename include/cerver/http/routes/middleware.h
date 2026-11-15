@@ -8,7 +8,7 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/request.h"
+#include "cerver/http/requests/request.h"
 
 #ifdef __cplusplus
 extern "C" {
