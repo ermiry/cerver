@@ -85,7 +85,7 @@ static void connection_reset_received_data (Connection *connection) {
 void connection_reset (Connection *connection) {
 
 	if (connection) {
-		if (connection->active) connection_end (connection);
+		if (connection_is_active (connection)) connection_end (connection);
 
 		connection_stop_send (connection);
 
@@ -131,11 +131,11 @@ void connection_reset (Connection *connection) {
 
 }
 
-// ends a connection
+// ends a connection, only once when two threads end it at the same time
 void connection_end (Connection *connection) {
 
 	if (connection) {
-		if (connection->active) {
+		if (connection_take_end (connection)) {
 			#ifdef CONNECTION_DEBUG
 			cerver_log_with_date (
 				LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
@@ -157,7 +157,6 @@ void connection_end (Connection *connection) {
 			}
 
 			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
-			connection->active = false;
 		}
 	}
 
