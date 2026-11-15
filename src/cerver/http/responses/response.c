@@ -540,9 +540,9 @@ u8 http_response_add_cors_header_from_origin (
 	HttpResponse *response, const HttpOrigin *origin
 ) {
 
-	return http_response_add_header (
+	return origin ? http_response_add_header (
 		response, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin->value
-	);
+	) : 1;
 
 }
 
@@ -555,9 +555,10 @@ u8 http_response_add_whitelist_cors_header (
 
 	u8 retval = 1;
 
-	const HttpCerver *http_cerver = http_response_producer_cerver ();
+	// without an HTTP cerver there is no whitelist
+	const HttpCerver *http_cerver = domain ? http_response_producer_cerver () : NULL;
 
-	for (u8 idx = 0; idx < http_cerver->n_origins; idx++) {
+	for (u8 idx = 0; http_cerver && (idx < http_cerver->n_origins); idx++) {
 		if (!strcmp (
 			http_cerver->origins_whitelist[idx].value,
 			domain
@@ -580,9 +581,9 @@ u8 http_response_add_whitelist_cors_header_from_origin (
 	HttpResponse *response, const HttpOrigin *origin
 ) {
 
-	return http_response_add_whitelist_cors_header (
+	return origin ? http_response_add_whitelist_cors_header (
 		response, origin->value
-	);
+	) : 1;
 
 }
 
@@ -597,7 +598,7 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 	u8 retval = 1;
 
-	if (http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
+	if (http_receive && http_receive->request && http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
 		retval = http_response_add_whitelist_cors_header (
 			response, http_receive->request->headers[
 				HTTP_HEADER_ORIGIN
@@ -646,11 +647,11 @@ u8 http_response_add_content_range_header (
 	HttpResponse *response, const BytesRange *bytes_range
 ) {
 
-	return http_response_add_custom_header (
+	return bytes_range ? http_response_add_custom_header (
 		response, HTTP_HEADER_CONTENT_RANGE,
 		"bytes %ld-%ld/%ld",
 		bytes_range->start, bytes_range->end, bytes_range->file_size
-	);
+	) : 1;
 
 }
 
@@ -684,16 +685,18 @@ void http_response_add_video_headers (
 }
 
 // sets the response's data (body), it will replace the existing one
-// the data will be deleted when the response gets deleted
+// the data will be deleted when the response gets deleted,
+// a reference that the response had is replaced without freeing it
 void http_response_set_data (
 	HttpResponse *response, const void *data, const size_t data_len
 ) {
 
 	if (response) {
-		if (response->data) {
-			free (response->data);
-			response->data = NULL;
-		}
+		if (response->data && !response->data_ref) free (response->data);
+
+		response->data = NULL;
+		response->data_len = 0;
+		response->data_ref = false;
 
 		if (data) {
 			response->data = (void *) data;
@@ -2203,7 +2206,7 @@ u8 http_response_send (
 
 	u8 retval = 1;
 
-	if (response && http_receive->cr->connection) {
+	if (response && http_receive && http_receive->cr->connection) {
 		if (response->res) {
 			// the compiled buffer starts with the header and continues with the data
 			const bool split = response->header_len && (response->header_len <= response->res_len);
@@ -2246,7 +2249,7 @@ u8 http_response_send_split (
 
 	u8 retval = 1;
 
-	if (response && http_receive->cr->connection) {
+	if (response && http_receive && http_receive->cr->connection) {
 		if (response->header && response->data) {
 			retval = http_response_send_parts (
 				http_receive, response->status,

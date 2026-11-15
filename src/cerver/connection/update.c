@@ -146,7 +146,7 @@ static void connection_update_receive (
 
 		while (
 			client_is_running (client)
-			&& connection->active
+			&& connection_is_active (connection)
 			&& !connection->custom_receive (
 				&custom_data,
 				buffer, buffer_size
@@ -159,7 +159,7 @@ static void connection_update_receive (
 	else {
 		while (
 			client_is_running (client)
-			&& connection->active
+			&& connection_is_active (connection)
 			&& !client_receive_internal (
 				client, connection,
 				buffer, buffer_size
@@ -229,7 +229,7 @@ static bool connection_update_reconnect_attempt (
 
 		// the host is resolved again, so a cerver that moved to another address is found
 		if (!connection_connect_round (connection, true)) {
-			connection->active = true;
+			connection_set_active (connection, true);
 			(void) time (&connection->connected_timestamp);
 
 			connection_set_state (connection, CONNECTION_STATE_WORKING);
@@ -263,7 +263,7 @@ static void connection_update_reconnect_close (
 	Client *client, Connection *connection
 ) {
 
-	if (connection->active) {
+	if (connection_is_active (connection)) {
 		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
 		connection_end (connection);
 	}

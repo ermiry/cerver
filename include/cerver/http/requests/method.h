@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/requests/method.h
+ * @brief The methods of a request.
+ */
+
 #ifndef _CERVER_HTTP_METHOD_H_
 #define _CERVER_HTTP_METHOD_H_
 
@@ -5,16 +10,33 @@
 
 #include "cerver/config.h"
 
-// the size of the tables indexed by a request method (the highest value + 1)
+/**
+ * @defgroup http_requests Requests
+ * @ingroup http
+ * @brief The requests that an HttpCerver receives: their methods, their urls, their contents and their bodies.
+ */
+
+/**
+ * @defgroup http_methods Methods
+ * @ingroup http_requests
+ * @brief The methods that a request and a route can have.
+ * @{
+ */
+
+/** @brief The size of the tables indexed by a request method (the highest value + 1). */
 #define REQUEST_METHOD_SIZE				47
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// the only table of the methods, with the values of the parser (llhttp):
-// the HTTP methods that llhttp accepts in a request, all of them can be registered in a route,
-// the values 34 to 45 are PRI (the preface of HTTP/2) and the RTSP methods, the parser rejects them
+/**
+ * @brief The X-macro table of the methods, the only one, with the values of the parser (llhttp): the number, the
+ * name and the string of each one.
+ *
+ * They are the HTTP methods that llhttp accepts in a request, and all of them can be registered in a route; the
+ * values 34 to 45 are PRI (the preface of HTTP/2) and the RTSP methods, that the parser rejects.
+ */
 #define REQUEST_METHOD_MAP(XX)			\
 	XX(0,  DELETE,      DELETE)			\
 	XX(1,  GET,         GET)			\
@@ -52,27 +74,42 @@ extern "C" {
 	XX(33, SOURCE,      SOURCE)			\
 	XX(46, QUERY,       QUERY)
 
+/**
+ * @brief The method of a request, one `REQUEST_METHOD_<name>` for each row of #REQUEST_METHOD_MAP.
+ */
 typedef enum RequestMethod {
 
 	#define XX(num, name, string) REQUEST_METHOD_##name = num,
 	REQUEST_METHOD_MAP(XX)
 	#undef XX
 
-	// any method outside REQUEST_METHOD_MAP, the method of a request that has not been parsed
+	/** @brief Any method outside #REQUEST_METHOD_MAP, the method of a request that has not been parsed. */
 	REQUEST_METHOD_UNDEFINED = 255
 
 } RequestMethod;
 
-// returns a string version of the HTTP request method,
-// "Undefined" for a method outside REQUEST_METHOD_MAP
+/**
+ * @brief Returns the string of a method.
+ *
+ * @param[in] request_method the method
+ * @return the string of its row in #REQUEST_METHOD_MAP, "Undefined" for a method outside it; a static string that
+ * must not be freed
+ */
 CERVER_PUBLIC const char *http_request_method_str (
 	const RequestMethod request_method
 );
 
-// returns true if the method is one of REQUEST_METHOD_MAP
+/**
+ * @brief Returns whether a method is one of #REQUEST_METHOD_MAP.
+ *
+ * @param[in] request_method the method
+ * @return true for a method of the table
+ */
 CERVER_PUBLIC bool http_request_method_is_valid (
 	const RequestMethod request_method
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

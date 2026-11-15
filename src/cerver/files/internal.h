@@ -1,3 +1,9 @@
+/**
+ * @file files/internal.h
+ * @internal
+ * @brief The methods that the parts of the files share.
+ */
+
 #ifndef _CERVER_FILES_INTERNAL_H_
 #define _CERVER_FILES_INTERNAL_H_
 
@@ -21,19 +27,56 @@
 extern "C" {
 #endif
 
-// the methods that the parts of the files share
-
+/**
+ * @internal
+ * @brief Sends the FileHeader and then the contents of an open file, with the write lock of the socket.
+ *
+ * @param[in] cerver the cerver
+ * @param[in] client the client of the connection
+ * @param[in] connection the connection
+ * @param[in] file_fd the fd of the file
+ * @param[in] actual_filename the name of the file in its FileHeader
+ * @param[in] filelen the bytes of the file
+ * @return the bytes of the file that were sent, -1 on error
+ */
 CERVER_HIDDEN ssize_t file_send_actual (
 	Cerver *cerver, Client *client, Connection *connection,
 	int file_fd, const char *actual_filename, size_t filelen
 );
 
+/**
+ * @internal
+ * @brief Opens a file to send it, and finds its name after the last '/'.
+ *
+ * @param[in] filename the path of the file
+ * @param[out] filestatus the status of the file
+ * @param[out] actual_filename the name after the last '/', NULL when it has none
+ * @return the fd, -1 on error
+ * @warning The check of the name tests the pointer to actual_filename, which is never NULL, so a filename without
+ * '/' is still opened.
+ */
 CERVER_HIDDEN int file_send_open (
 	const char *filename,
 	struct stat *filestatus,
 	const char **actual_filename
 );
 
+/**
+ * @internal
+ * @brief The default upload handler: saves the file in the uploads path as "<time>-<random>-<filename>".
+ *
+ * @param[in] cerver the files cerver
+ * @param[in] client the client
+ * @param[in] connection the connection
+ * @param[in] file_header the header of the file
+ * @param[in] file_data the first bytes of the file that came with its packet
+ * @param[in] file_data_len the bytes of file_data
+ * @param[out] saved_filename the path where the file was saved, allocated with malloc ()
+ * @retval 0 the file was saved
+ * @retval 1 it could not be saved
+ * @warning It dereferences the uploads path of the files cerver, which is NULL until
+ * file_cerver_set_uploads_path ().
+ */
 CERVER_HIDDEN u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header,
@@ -41,7 +84,19 @@ CERVER_HIDDEN u8 file_cerver_receive (
 	char **saved_filename
 );
 
-// it was exported before the files were split, it stays exported
+/**
+ * @internal
+ * @brief See the public declaration in cerver/files/receive.h; it was exported before the files were split, so it
+ * stays exported.
+ *
+ * @param[in] client the client of the connection
+ * @param[in] connection the connection
+ * @param[in] file_header the header of the file
+ * @param[in] file_data the first bytes of the file
+ * @param[in] file_data_len the bytes of file_data
+ * @param[in,out] saved_filename the path where the file is saved
+ * @return 0 when the whole file was saved, 1 on error
+ */
 u8 file_receive_actual (
 	Client *client, Connection *connection,
 	FileHeader *file_header,

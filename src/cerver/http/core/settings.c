@@ -219,7 +219,7 @@ const void *http_cerver_get_custom_data (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_cerver->custom_data;
+	return http_cerver ? http_cerver->custom_data : NULL;
 
 }
 
@@ -227,7 +227,7 @@ void http_cerver_set_custom_data (
 	HttpCerver *http_cerver, void *custom_data
 ) {
 
-	http_cerver->custom_data = custom_data;
+	if (http_cerver) http_cerver->custom_data = custom_data;
 
 }
 
@@ -235,7 +235,7 @@ void http_cerver_set_delete_custom_data (
 	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
 ) {
 
-	http_cerver->delete_custom_data = delete_custom_data;
+	if (http_cerver) http_cerver->delete_custom_data = delete_custom_data;
 
 }
 
@@ -243,7 +243,7 @@ void http_cerver_set_default_delete_custom_data (
 	HttpCerver *http_cerver
 ) {
 
-	http_cerver->delete_custom_data = free;
+	if (http_cerver) http_cerver->delete_custom_data = free;
 
 }
 

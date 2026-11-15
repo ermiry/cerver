@@ -222,6 +222,8 @@ const int http_multi_part_get_generated_filename_len (
 
 }
 
+// a filename that does not fit is truncated, its length is the one that was kept,
+// and a format that fails leaves it empty
 void http_multi_part_set_generated_filename (
 	const MultiPart *multi_part, const char *format, ...
 ) {
@@ -232,11 +234,15 @@ void http_multi_part_set_generated_filename (
 
 		MultiPart *mpart = (MultiPart *) multi_part;
 
-		mpart->generated_filename_len = vsnprintf (
+		if (vsnprintf (
 			mpart->generated_filename,
 			HTTP_MULTI_PART_GENERATED_FILENAME_SIZE - 1,
 			format, args
-		);
+		) < 0) {
+			mpart->generated_filename[0] = '\0';
+		}
+
+		mpart->generated_filename_len = (int) strlen (mpart->generated_filename);
 
 		va_end (args);
 	}
