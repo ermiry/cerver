@@ -39,6 +39,7 @@ void event_source_init (
 		source->fd = -1;
 		source->interest = EVENT_INTEREST_NONE;
 		source->registered = false;
+		source->silent = false;
 		source->owner = owner;
 	}
 
@@ -131,6 +132,7 @@ static uint32_t event_poller_interest_events (const unsigned int interest) {
 
 	if (interest & EVENT_INTEREST_READ) events |= EPOLLIN;
 	if (interest & EVENT_INTEREST_WRITE) events |= EPOLLOUT;
+	if (interest & EVENT_INTEREST_ONCE) events |= EPOLLONESHOT;
 
 	return events;
 
@@ -162,10 +164,18 @@ unsigned int event_poller_add (
 			source->fd = fd;
 			source->interest = interest;
 			source->registered = true;
+			source->silent = false;
 		}
 	}
 
 	return retval;
+
+}
+
+// a source that is reported once is silent after its report, so the same interest arms it again
+static bool event_poller_modify_is_needed (const EventSource *source, const unsigned int interest) {
+
+	return (source->interest != interest) || (interest & EVENT_INTEREST_ONCE);
 
 }
 
@@ -178,9 +188,12 @@ unsigned int event_poller_modify (
 	if (poller && source && source->registered) {
 		retval = 0;
 
-		if (source->interest != interest) {
+		if (event_poller_modify_is_needed (source, interest)) {
 			retval = event_poller_control (poller, EPOLL_CTL_MOD, source, source->fd, interest);
-			if (!retval) source->interest = interest;
+			if (!retval) {
+				source->interest = interest;
+				source->silent = false;
+			}
 		}
 	}
 
@@ -198,13 +211,22 @@ unsigned int event_poller_remove (EventPoller *poller, EventSource *source) {
 		if (source->registered) {
 			retval = event_poller_control (poller, EPOLL_CTL_DEL, source, source->fd, EVENT_INTEREST_NONE);
 
-			source->fd = -1;
-			source->interest = EVENT_INTEREST_NONE;
-			source->registered = false;
+			event_source_forget (source);
 		}
 	}
 
 	return retval;
+
+}
+
+void event_source_forget (EventSource *source) {
+
+	if (source) {
+		source->fd = -1;
+		source->interest = EVENT_INTEREST_NONE;
+		source->registered = false;
+		source->silent = false;
+	}
 
 }
 
