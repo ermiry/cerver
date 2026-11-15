@@ -3,6 +3,46 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-3 (from 3.0b-2)
+
+The documentation of the headers: the symbols of `libcerver.so` and the wire are the ones of the 3.0b-2, only the
+comments of the headers change, with the fixes below.
+
+- `cerver_start (NULL)` returns 1, it dereferenced the NULL cerver; `cerver_set_admin_enable ()` called again keeps
+  the admin cerver that the cerver already has (and returns 0), it created another one and lost the first
+- **The fixes that the documentation found** (each one with its test), that change what a call returns:
+  - with a NULL argument they fail or keep the current value instead of crashing: `connection_set_name ()`,
+    `connection_set_values ()`, `client_set_name ()`, `client_get_with_session_id ()`, `packet_send ()`,
+    `packet_send_unsafe ()`, `packet_send_split ()`, `packet_send_pieces ()`, `str_contains ()` (-1),
+    `c_string_concat ()`, `bool_value_from_string ()`, `xtoi ()`, `cerver_log_with_date ()`, `job_reset ()`,
+    `lobby_summary_packet_create ()`, `admin_get_with_session_id ()`, `admin_cerver_get_n_handlers_alive ()` (before
+    the admin cerver starts), `balancer_get_type ()` (`BALANCER_TYPE_NONE`), `balancer_service_get_status ()`
+    (`SERVICE_STATUS_NONE`), `avl_is_not_empty ()` (false), the HTTP custom data and receive getters,
+    `http_content_type_*` and the CORS, Content-Range and send methods of the responses (1);
+    `packet_send_to_socket ()`, `packet_generate ()` and `game_type_add_lobby_config ()` return 1 with a NULL argument
+    (they returned 0)
+  - `sock_set_timeout ()` returns 1 on error (it returned -1); `random_int_in_range ()` includes both limits (also
+    when they are equal or reversed); `c_string_remove_sub_after_token_with_idx ()` returns NULL without the token
+  - `str_set ()` and `str_set_with_args ()` do not change a String without `max_len` (they overflowed it);
+    `str_n_copy ()` and `str_n_replace_with ()` keep the real length of a shorter source; `str_split ()` counts its
+    tokens and returns NULL for a String of only delimiters
+  - `arena_alloc ()` fails with the sizes that wrap around; `packet_append_data ()` fails when the size wraps;
+    `packet_set_packet ()` releases the copy of a packet that was a reference; `c_string_create_with_ptrs ()` and
+    `c_string_n_copy ()` (with 0) do not write out of their buffers; `receive_handle_new ()` starts without received
+    bytes
+  - the lengths of `http_cerver_generate_uploads_path ()`, `http_header_set ()` and
+    `http_multi_part_set_generated_filename ()` are the ones of the truncated value (they were the ones that the format
+    needed); `http_origin_init ()` ends a truncated origin; `http_response_set_data ()` does not free the data of a
+    reference; `http_cerver_register_admin_file_system ()` fails without a path; the pairs without a key or a value
+    are skipped
+- The headers are documented with Doxygen: `make docs` writes the reference in `reference/` (HTML and XML), with
+  `Doxyfile`, `Dockerfile.docs` (Doxygen 1.9.8) and the `docs` job of `build.yml`, that fails with any warning
+- Every clang build adds `-Wdocumentation -Wdocumentation-unknown-command -fcomment-block-commands=threadsafety`
+  (`-Wno-documentation-deprecated-sync`): with `WERROR=1`, a comment of a header that does not match its declaration
+  fails the build; `cerver/http/json/hashtable.h` and `cerver/http/jwt/jwt.h` turn them off for their upstream
+  comments with `#pragma clang diagnostic`
+- The parts of `src/cerver/core/` that did not use HTTP do not include its headers
+
 ## 3.0b-2 (from 3.0b-1)
 
 The structure of the tree: every header changes its path and the functions with `_by_` are named with `_with_`;
