@@ -2151,6 +2151,14 @@ static void server_test_connection_stats (HttpWebSocket *web_socket, void *args)
 
 }
 
+// the server counts the bytes of a message after it wrote its last frame,
+// so a client that read that frame can ask for the metrics before the count
+static void server_test_wait_sent_bytes (const ServerTest *server, const uint64_t expected) {
+
+	(void) test_wait_counter_64 (&server->http_cerver->web_sockets->n_bytes_sent, expected, TEST_WAIT_SECONDS);
+
+}
+
 static void test_server_metrics (void) {
 
 	ServerTest *server = server_test_start (0);
@@ -2178,6 +2186,8 @@ static void test_server_metrics (void) {
 		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "a frame of the stream did not arrive");
 		raw_frame_delete (&frame);
 	}
+
+	server_test_wait_sent_bytes (server, 32);
 
 	metrics = http_cerver_metrics_generate (server->http_cerver);
 	test_check (strstr (metrics->str, "cerver_websocket_messages_sent_total 2\n") != NULL, "the sent messages are wrong");
@@ -2231,6 +2241,8 @@ static void test_server_metrics (void) {
 	raw_send_frame (stream, false, HTTP_WEB_SOCKET_OPCODE_CONTINUATION, "defg", 4);
 	raw_send_frame (stream, true, HTTP_WEB_SOCKET_OPCODE_CONTINUATION, "h", 1);
 	server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "3:8", 3);
+
+	server_test_wait_sent_bytes (server, 35);
 
 	metrics = http_cerver_metrics_generate (server->http_cerver);
 	test_check (strstr (metrics->str, "cerver_websocket_messages_received_total 3\n") != NULL, "the fragmented message was not counted");
