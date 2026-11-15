@@ -7,6 +7,7 @@ notice.
 |---|---|---|---|---|
 | [http_parser](https://github.com/nodejs/http-parser) | `include/cerver/http/parser/http_parser.h`, `src/cerver/http/parser/http_parser.c` | 2.9 | MIT, Copyright Joyent, Inc. and other Node contributors | The methods of `cerver/http/requests/method.h` |
 | [Jansson](https://github.com/akheron/jansson) | `include/cerver/http/json/`, `src/cerver/http/json/` | 2.13 | MIT, Copyright (c) 2009-2016 Petri Lehtinen | The style of cerver; the hash seed from the entropy of the kernel; a memory limit for each parse; the numbers without the locale; its internal methods are not exported |
+| [multipart-parser-c](https://github.com/iafonov/multipart-parser-c) | the region `parser` of `src/cerver/http/requests/multipart.c` and the group `http_multipart_parser` of `include/cerver/http/requests/multipart.h` | — | MIT, Copyright (c) 2012 Igor Afonov | The style of cerver; the parts, their headers and their files are cerver's own (the rest of `multipart.c`) |
 | [libjwt](https://github.com/benmcollins/libjwt) | `include/cerver/http/jwt/`, `src/cerver/http/jwt/` | 1.12 | MPL 2.0, Copyright (C) 2015-2018 Ben Collins | The style of cerver, OpenSSL 3 only; the signatures with the keys of `jwt/key.{h,c}` (cerver's own), the canonical base64url of `utils/base64.c`, the HMAC compared in constant time, the names of the algorithms of RFC 7518 |
 
 The MIT license of each project asks that its copyright and permission notice is kept with the code; the MPL 2.0 of
