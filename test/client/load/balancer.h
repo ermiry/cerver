@@ -1,12 +1,12 @@
 #ifndef _TEST_CLIENT_LOAD_BALANCER_H_
 #define _TEST_CLIENT_LOAD_BALANCER_H_
 
-#include <stdint.h>
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include <cerver/client.h>
-#include <cerver/connection.h>
+#include <cerver/client/client.h>
+#include <cerver/connection/connection.h>
 
 #include "../../cerver/upstream.h"
 

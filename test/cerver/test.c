@@ -1,18 +1,24 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <cerver/collections/dlist.h>
 
-#include <cerver/admin.h>
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/events.h>
-#include <cerver/errors.h>
-#include <cerver/sessions.h>
+#include <cerver/admin/admin.h>
+#include <cerver/admin/cerver.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/report.h>
+#include <cerver/core/serialization.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/errors.h>
+#include <cerver/handler/events.h>
 
 #include "../test.h"
 
@@ -141,8 +147,8 @@ static void test_cerver_admin_lookups (void) {
 	test_check_ptr (admin);
 	test_check_int_eq (dlist_insert_at_end (cerver->admin->admins, admin), 0, NULL);
 
-	test_check (admin_get_by_session_id (cerver->admin, "session") == admin, "the admin of its session id was not found");
-	test_check_null_ptr (admin_get_by_session_id (cerver->admin, NULL));
+	test_check (admin_get_with_session_id (cerver->admin, "session") == admin, "the admin of its session id was not found");
+	test_check_null_ptr (admin_get_with_session_id (cerver->admin, NULL));
 
 	(void) dlist_remove (cerver->admin->admins, admin, NULL);
 	admin_delete (admin);

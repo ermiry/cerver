@@ -1,29 +1,32 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <pthread.h>
-#include <unistd.h>
 
+#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/network.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
-#include <cerver/udp.h>
-
-#include <app/auth.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/serialization.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/network/network.h>
+#include <cerver/network/udp.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/auth.h>
 
 // an UDP cerver in the same process, with cerver clients and with raw sockets:
 // - a client gets the cerver info and its app packets are echoed, in IPv4 and IPv6

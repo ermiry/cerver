@@ -1,12 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
 #include <pthread.h>
 
-#include <cerver/client.h>
+#include <cerver/client/client.h>
 
 #include "../test.h"
 
@@ -51,7 +51,7 @@ static void test_client_null_arguments (void) {
 
 	client_delete (client);
 
-	test_check_null_ptr (client_get_by_session_id (NULL, "session"));
+	test_check_null_ptr (client_get_with_session_id (NULL, "session"));
 
 }
 
