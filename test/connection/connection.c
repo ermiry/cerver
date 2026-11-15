@@ -100,6 +100,7 @@ static void test_connection_recycle (void) {
 }
 
 #define CONNECTION_TEST_BUFFER_SIZE				2048
+#define CONNECTION_TEST_PORT					7001
 
 static unsigned int released_packets = 0;
 
@@ -136,6 +137,23 @@ static void test_connection_setters_invalid (void) {
 
 }
 
+// a NULL name or ip keeps the value that the connection had
+static void test_connection_setters_null (void) {
+
+	Connection *connection = test_connection_create ();
+
+	connection_set_name (connection, connection_name);
+	connection_set_name (connection, NULL);
+	test_check_str_eq (connection->name, connection_name, "a NULL name changed the name");
+
+	connection_set_values (connection, "127.0.0.1", CONNECTION_TEST_PORT, PROTOCOL_TCP, false);
+	connection_set_values (connection, NULL, CONNECTION_TEST_PORT, PROTOCOL_TCP, false);
+	test_check_str_eq (connection->ip, "127.0.0.1", "a NULL ip changed the ip");
+
+	connection_delete (connection);
+
+}
+
 int main (void) {
 
 	test_output_init ();
@@ -145,6 +163,8 @@ int main (void) {
 	test_connection_base_configuration ();
 
 	test_connection_setters_invalid ();
+
+	test_connection_setters_null ();
 
 	test_connection_storage ();
 
