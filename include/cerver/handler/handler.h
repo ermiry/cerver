@@ -172,7 +172,7 @@ CERVER_PRIVATE void handler_delete (void *handler_ptr);
  *
  * @param[in] handler_method the method that handles the packets: with a job queue it gets a HandlerData, directly
  * a Packet
- * @return the new handler, NULL if it could not be allocated
+ * @return the new handler, NULL if it or its job queue could not be allocated
  */
 CERVER_EXPORT Handler *handler_create (Action handler_method);
 
