@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-#include "cerver/config.h"
-
 #include "cerver/types/types.h"
+
+#include "cerver/config.h"
 
 // buckets[i] counts the values up to 2^i,
 // the last bucket counts the ones bigger than 2^HISTOGRAM_MAX_EXPONENT

@@ -1,8 +1,8 @@
 #ifndef _CERVER_UTILS_LOG_H_
 #define _CERVER_UTILS_LOG_H_
 
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "cerver/config.h"
 
