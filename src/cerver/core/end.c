@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,7 @@
 #include "cerver/core/handler.h"
 #include "cerver/core/internal.h"
 #include "cerver/core/start.h"
+#include "cerver/events/internal.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
@@ -64,6 +66,21 @@ static void cerver_stop_wake_threads (Cerver *cerver) {
 
 }
 
+static const uint64_t cerver_stop_wake_value = 1;
+
+// a cerver with event loops waits in cerver_start () for its eventfd,
+// a write () can be called from a signal handler; a counter that is full already ended the wait
+static void cerver_stop_wake_start (const Cerver *cerver) {
+
+	const i32 stop_fd = __atomic_load_n (&cerver->stop_fd, __ATOMIC_SEQ_CST);
+	if (stop_fd >= 0) {
+		while (write (stop_fd, &cerver_stop_wake_value, sizeof (cerver_stop_wake_value)) < 0) {
+			if (errno != EINTR) break;
+		}
+	}
+
+}
+
 // stops accepting new connections and wakes up cerver_start ()
 // the listening socket is only closed by cerver_teardown (),
 // so its fd can not be reused while another thread is inside accept ()
@@ -85,6 +102,8 @@ void cerver_stop_request (Cerver *cerver) {
 		if (sock >= 0) {
 			(void) shutdown (sock, SHUT_RDWR);
 		}
+
+		cerver_stop_wake_start (cerver);
 
 		cerver_stop_wake_threads (cerver);
 	}
@@ -264,12 +283,21 @@ static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
 
 	bool drained = true;
 
-	if (cerver->thpool) {
-		drained = !thpool_drain (
-			cerver->thpool,
-			(cerver->drain_policy == CERVER_DRAIN_POLICY_RUN),
-			timeout
-		);
+	const bool run_queued = (cerver->drain_policy == CERVER_DRAIN_POLICY_RUN);
+
+	// the requests that the event loops are reading go to the thpool or end first:
+	// a thpool that is being drained does not take them anymore
+	if (cerver->event_loops && !event_loop_group_quiesce (cerver->event_loops, !run_queued, timeout)) {
+		drained = false;
+	}
+
+	if (cerver->thpool && thpool_drain (cerver->thpool, run_queued, timeout)) {
+		drained = false;
+	}
+
+	// the event loops end when the thpool gave them back their connections
+	if (cerver->event_loops && !event_loop_group_finish (cerver->event_loops, timeout)) {
+		drained = false;
 	}
 
 	if (thread_group_wait (&cerver->connection_threads, timeout)) {
@@ -473,6 +501,9 @@ static void cerver_clean (Cerver *cerver) {
 			}
 
 			cerver_clean_thpool (cerver);
+
+			// the event loops ended with the drain, no thread uses them
+			event_loop_group_delete (cerver);
 
 			cerver_clean_data (cerver);
 		}

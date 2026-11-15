@@ -174,6 +174,12 @@ Cerver *cerver_new (void) {
 		cerver->check_packets = CERVER_DEFAULT_CHECK_PACKETS;
 		cerver->max_bad_packets = CERVER_DEFAULT_MAX_BAD_PACKETS;
 
+		cerver->n_io_threads = CERVER_DEFAULT_IO_THREADS;
+		cerver->max_connections = CERVER_DEFAULT_MAX_CONNECTIONS;
+		cerver->overload_wait_timeout = CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT;
+		cerver->stop_fd = -1;
+		cerver->event_loops = NULL;
+
 		cerver->update_thread_id = 0;
 		cerver->update = NULL;
 		cerver->update_args = NULL;
@@ -467,6 +473,37 @@ void cerver_set_overload_policy (
 	if (cerver && (policy > CERVER_OVERLOAD_POLICY_NONE) && (policy < CERVER_OVERLOAD_POLICY_MAX)) {
 		cerver->overload_policy = policy;
 	}
+
+}
+
+// sets the secs that a connection of an event loop waits for a place in a full thpool
+// with CERVER_OVERLOAD_POLICY_WAIT before it is answered with 503
+// the default value is CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT
+void cerver_set_overload_wait_timeout (
+	Cerver *cerver, u32 seconds
+) {
+
+	if (cerver) cerver->overload_wait_timeout = seconds;
+
+}
+
+// sets the I/O threads of a cerver with CERVER_HANDLER_TYPE_EVENTS, 0 keeps the current value
+// the default value is CERVER_DEFAULT_IO_THREADS
+void cerver_set_io_threads (
+	Cerver *cerver, unsigned int n_threads
+) {
+
+	if (cerver && n_threads) cerver->n_io_threads = n_threads;
+
+}
+
+// sets the connections that a cerver with CERVER_HANDLER_TYPE_EVENTS has at most, 0 keeps the current value
+// the default value is CERVER_DEFAULT_MAX_CONNECTIONS
+void cerver_set_max_connections (
+	Cerver *cerver, unsigned int max_connections
+) {
+
+	if (cerver && max_connections) cerver->max_connections = max_connections;
 
 }
 

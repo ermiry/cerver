@@ -6,6 +6,10 @@
 #include <time.h>
 
 #include <dirent.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -18,7 +22,10 @@
 #include <cerver/core/end.h>
 #include <cerver/handler/handler.h>
 
+#include "cerver/events/internal.h"
+
 #include "cerver/http/core/access.h"
+#include "cerver/http/core/connection.h"
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
@@ -98,6 +105,17 @@ static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL, NULL, NULL };
 
 // the receive that uses the arena and the buffers, it is not in the arena of its request
 static HttpReceive receive_storage;
+
+// when it is set, the requests are read from their socket by the connection of an event loop
+static EventLoop *receive_loop = NULL;
+static EventDispatcher receive_dispatcher;
+
+// a case that can not run in an event loop sets it
+static bool receive_loop_skip = false;
+
+// the steps that the loop takes at most to end a connection, and the milliseconds that each one waits
+#define TEST_RECEIVE_LOOP_STEPS				256
+#define TEST_RECEIVE_LOOP_WAIT				16
 
 static const char *public_file_content = { "<html>public</html>" };
 static const char *secret_file_content = { "secret-content" };
@@ -907,6 +925,109 @@ static void test_receive_read_response (const int client_fd) {
 
 }
 
+#pragma endregion
+
+#pragma region loop
+
+// the result of a request of the loop is taken when it ends, before its receive is released
+static void test_receive_loop_observe (const HttpReceive *http_receive, void *args) {
+
+	(void) args;
+
+	result.status = http_receive->receive_status;
+	result.keep_alive_requested = http_receive->keep_alive_requested;
+	result.unparsed = http_receive->unparsed;
+	result.framed = http_receive->framed;
+	result.upgraded = http_receive->upgraded;
+	result.pending_size = http_receive->web_socket ? http_receive->web_socket->pending_size : 0;
+
+}
+
+// the requests that are fed from now on are read from their socket by an event loop,
+// that runs the jobs of its connections in the same thread
+static void test_receive_loop_start (Cerver *cerver) {
+
+	event_dispatcher_inline (&receive_dispatcher);
+
+	receive_loop = event_loop_create (cerver, &receive_dispatcher);
+	test_check_ptr (receive_loop);
+
+	receive_loop->observer = test_receive_loop_observe;
+
+}
+
+static void test_receive_loop_end (void) {
+
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+
+	event_loop_delete (receive_loop);
+	receive_loop = NULL;
+
+}
+
+// the piece is one read of the loop: it is written and the loop takes a step,
+// a connection that already ended does not get the rest of its request
+static void test_receive_loop_piece (
+	const int client_fd, const char *piece, const size_t piece_len
+) {
+
+	size_t written = 0;
+	bool closed = false;
+
+	while ((written < piece_len) && !closed && event_loop_connections (receive_loop)) {
+		const ssize_t sent = send (client_fd, piece + written, piece_len - written, MSG_NOSIGNAL);
+
+		if (sent > 0) written += (size_t) sent;
+		else if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) closed = true;
+
+		(void) event_loop_step (receive_loop, 0);
+	}
+
+}
+
+static void test_receive_feed_loop (
+	const char *request, const size_t request_len,
+	const size_t *cuts, const size_t n_cuts
+) {
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
+
+	struct sockaddr_storage address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
+
+	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+
+	size_t start = 0;
+	for (size_t i = 0; (i <= n_cuts) && event_loop_connections (receive_loop); i++) {
+		const size_t end = (i < n_cuts) ? cuts[i] : request_len;
+		if (end > start) test_receive_loop_piece (fds[TEST_RECEIVE_CLIENT], request + start, end - start);
+		start = end;
+	}
+
+	// the client is done writing, a connection that waits for more ends with it
+	(void) shutdown (fds[TEST_RECEIVE_CLIENT], SHUT_WR);
+
+	for (
+		unsigned int steps = 0;
+		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+
+	test_receive_read_response (fds[TEST_RECEIVE_CLIENT]);
+
+	(void) close (fds[TEST_RECEIVE_CLIENT]);
+
+}
+
+#pragma endregion
+
+#pragma region feed
+
 // feeds the request in pieces that end at each cut
 static void test_receive_feed (
 	Cerver *cerver,
@@ -918,6 +1039,11 @@ static void test_receive_feed (
 	(void) memset (&result, 0, sizeof (TestReceiveResult));
 
 	n_fed_requests += 1;
+
+	if (receive_loop) {
+		test_receive_feed_loop (request, request_len, cuts, n_cuts);
+		return;
+	}
 
 	int fds[2] = { -1, -1 };
 	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
@@ -1043,6 +1169,13 @@ static void test_receive_every_split (
 
 	receive_arena = arena;
 	test_receive_every_split_actual (cerver, request, request_len, check);
+
+	// and read from its socket by an event loop
+	if (!receive_loop_skip) {
+		test_receive_loop_start (cerver);
+		test_receive_every_split_actual (cerver, request, request_len, check);
+		test_receive_loop_end ();
+	}
 
 }
 
@@ -3277,11 +3410,17 @@ static void test_receive_web_socket_upgrade (Cerver *cerver) {
 	(void) memcpy (request, TEST_RECEIVE_WEB_SOCKET_REQUEST (TEST_RECEIVE_WEB_SOCKET_VERSION), header_len);
 	(void) memcpy (request + header_len, test_receive_web_socket_frame, TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE);
 
+	// an event loop starts the WebSocket of an upgraded connection:
+	// it is covered by the servers of the WebSocket tests, here the handshake is not completed
+	receive_loop_skip = true;
+
 	test_receive_every_split (
 		cerver, "an upgrade with its first frame",
 		request, header_len + TEST_RECEIVE_WEB_SOCKET_FRAME_SIZE,
 		test_receive_web_socket_switched_split
 	);
+
+	receive_loop_skip = false;
 
 	test_receive_web_socket_released (cerver);
 
@@ -3572,6 +3711,178 @@ static void test_receive_preflight_headers_case (
 
 }
 
+// the smallest send buffer that the kernel gives to a socket, it rounds this size up to its minimum
+#define TEST_RECEIVE_SMALL_SEND_BUFFER			1
+
+// milliseconds that the loop waits to write its response to a client that does not read
+#define TEST_RECEIVE_LOOP_SEND_TIMEOUT			64
+
+// a preflight whose response does not fit in the smallest send buffer
+static size_t test_receive_loop_output_request (char *request, char *headers) {
+
+	(void) memset (headers, 'h', TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS);
+	headers[TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS] = '\0';
+
+	const int request_length = snprintf (
+		request, TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE,
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\nHost: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\nAccess-Control-Request-Method: GET\r\n"
+		"Access-Control-Request-Headers: %s\r\n\r\n",
+		headers
+	);
+
+	test_check ((request_length > 0) && (request_length < TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE), NULL);
+
+	return (size_t) request_length;
+
+}
+
+// a connection of the loop of the tests whose socket takes very little of a response,
+// with the preflight already read: its response is answered by the loop
+static int test_receive_loop_output_start (const char *request, const size_t request_length) {
+
+	(void) memset (&result, 0, sizeof (TestReceiveResult));
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
+
+	const int send_buffer = TEST_RECEIVE_SMALL_SEND_BUFFER;
+	test_check_int_eq (
+		setsockopt (fds[TEST_RECEIVE_SERVER], SOL_SOCKET, SO_SNDBUF, &send_buffer, sizeof (send_buffer)), 0, NULL
+	);
+
+	struct sockaddr_storage address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
+
+	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+
+	test_check (
+		send (fds[TEST_RECEIVE_CLIENT], request, request_length, MSG_NOSIGNAL) == (ssize_t) request_length,
+		"the request was not sent"
+	);
+
+	(void) event_loop_step (receive_loop, 0);
+
+	return fds[TEST_RECEIVE_CLIENT];
+
+}
+
+// a short response of cerver that the socket does not take whole is kept by its connection
+// and written when its client reads: the loop never waits for it and nothing of the response is lost
+static void test_receive_loop_output (Cerver *cerver) {
+
+	char *headers = (char *) malloc (TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS + 1);
+	char *request = (char *) malloc (TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE);
+	test_check_ptr (headers);
+	test_check_ptr (request);
+
+	const size_t request_length = test_receive_loop_output_request (request, headers);
+
+	current_case = "loop: a response that does not fit in its socket";
+	current_mode = "whole";
+
+	test_receive_loop_start (cerver);
+
+	const int client_fd = test_receive_loop_output_start (request, request_length);
+
+	// the request was answered and the loop is free, what the socket did not take waits to be written
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
+
+	const HttpConnection *connection = receive_loop->active;
+	test_check_ptr (connection);
+	test_check_int_eq ((int) connection->state, (int) HTTP_CONNECTION_STATE_WRITE, NULL);
+	test_check (connection->output.length > connection->output.offset, "nothing of the response was kept");
+
+	// the client reads what is ready and the loop writes more, until the connection ends
+	for (
+		unsigned int steps = 0;
+		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		test_receive_read_response (client_fd);
+
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+
+	test_receive_read_response (client_fd);
+	(void) close (client_fd);
+
+	test_receive_expect (test_receive_status_is ("204"));
+	test_receive_expect (result.response_len == strlen (result.response));
+
+	const char *allowed = strstr (result.response, "\r\nAccess-Control-Allow-Headers: ");
+	test_receive_expect (allowed != NULL);
+
+	allowed += strlen ("\r\nAccess-Control-Allow-Headers: ");
+	test_receive_expect (!strncmp (allowed, headers, TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS));
+	test_receive_expect (!strncmp (allowed + TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS, "\r\n", strlen ("\r\n")));
+
+	test_receive_expect (
+		!strcmp (result.response + result.response_len - strlen ("\r\n\r\n"), "\r\n\r\n")
+	);
+
+	test_receive_loop_end ();
+
+	free (request);
+	free (headers);
+
+}
+
+// a client that never reads the response that its connection keeps does not hold the connection:
+// it ends when the send timeout of the response passes, counted as a response that failed
+static void test_receive_loop_output_timeout (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	char *headers = (char *) malloc (TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS + 1);
+	char *request = (char *) malloc (TEST_RECEIVE_PREFLIGHT_REQUEST_SIZE);
+	test_check_ptr (headers);
+	test_check_ptr (request);
+
+	const size_t request_length = test_receive_loop_output_request (request, headers);
+
+	current_case = "loop: a client that does not read its response";
+	current_mode = "whole";
+
+	http_cerver_set_send_timeout_milliseconds (http_cerver, TEST_RECEIVE_LOOP_SEND_TIMEOUT);
+
+	const u64 failed = CERVER_STATS_GET (http_cerver->n_failed_responses);
+
+	test_receive_loop_start (cerver);
+
+	const int client_fd = test_receive_loop_output_start (request, request_length);
+
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
+
+	for (
+		unsigned int steps = 0;
+		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_failed_responses), failed + 1, NULL);
+
+	// what the socket took arrived, the rest was never written
+	test_receive_read_response (client_fd);
+	(void) close (client_fd);
+
+	test_receive_expect (test_receive_status_is ("204"));
+	test_receive_expect (result.response_len < request_length);
+
+	test_receive_loop_end ();
+
+	http_cerver_set_send_timeout_milliseconds (http_cerver, 0);
+
+	free (request);
+	free (headers);
+
+}
+
 // the headers that a preflight asks for are sent back complete, whatever their length:
 // a header of a response kept 256 bytes and its length was the one of the whole value,
 // so the bytes after it were sent to the client
@@ -3586,6 +3897,563 @@ static void test_receive_preflight_long_headers (Cerver *cerver) {
 		cerver, "a preflight that asks for headers that are not kept inside a response",
 		TEST_RECEIVE_PREFLIGHT_HUGE_HEADERS
 	);
+
+}
+
+#pragma endregion
+
+#pragma region parked
+
+// the jobs that the dispatcher of these tests takes at most
+#define TEST_RECEIVE_MANUAL_JOBS				4
+
+// the requests that are parked before the one that arrives when a place is free
+#define TEST_RECEIVE_MANUAL_PARKED				(TEST_RECEIVE_MANUAL_JOBS - 1)
+
+// the requests of a test with one that takes the place and one that waits
+#define TEST_RECEIVE_MANUAL_PAIR				2
+
+// the seconds that a test waits for the thread of its loop
+#define TEST_RECEIVE_MANUAL_SECONDS				TEST_WAIT_SECONDS
+
+// the seconds that a request waits for a place in these tests, and its milliseconds
+#define TEST_RECEIVE_MANUAL_WAIT				4
+#define TEST_RECEIVE_MANUAL_WAIT_MILLISECONDS	(TEST_RECEIVE_MANUAL_WAIT * HTTP_CONNECTION_MILLISECONDS_PER_SECOND)
+
+// where the clock of these tests starts
+#define TEST_RECEIVE_MANUAL_CLOCK_START			(1 << 20)
+
+static const char *manual_request = { "GET /v2/render HTTP/1.1\r\nHost: localhost:8080\r\n\r\n" };
+
+// a dispatcher that takes the jobs while it has places, like a pool whose queue has a limit;
+// the test runs each job when it wants, like a thread of the pool
+typedef struct TestReceiveManual {
+
+	// atomic, the thread of a loop uses them
+	unsigned int places;
+	unsigned int n_taken;
+
+	// the connections of the jobs in the order that they were taken, with their sockets
+	HttpConnection *taken[TEST_RECEIVE_MANUAL_JOBS];
+	int fds[TEST_RECEIVE_MANUAL_JOBS];
+
+} TestReceiveManual;
+
+static TestReceiveManual manual;
+
+// the clock of a loop of these tests, it only moves when the test moves it
+static u64 manual_clock = 0;
+
+static u64 test_receive_manual_clock (void) {
+
+	return manual_clock;
+
+}
+
+static unsigned int test_receive_manual_submit (
+	EventDispatcher *dispatcher, struct HttpConnection *connection
+) {
+
+	TestReceiveManual *jobs = (TestReceiveManual *) dispatcher->data;
+
+	const unsigned int taken = __atomic_load_n (&jobs->n_taken, __ATOMIC_ACQUIRE);
+
+	unsigned int retval = 1;
+
+	if (__atomic_load_n (&jobs->places, __ATOMIC_ACQUIRE) && (taken < TEST_RECEIVE_MANUAL_JOBS)) {
+		jobs->taken[taken] = connection;
+		jobs->fds[taken] = connection->peer->socket->sock_fd;
+
+		(void) __atomic_sub_fetch (&jobs->places, 1, __ATOMIC_RELEASE);
+		__atomic_store_n (&jobs->n_taken, taken + 1, __ATOMIC_RELEASE);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static bool test_receive_manual_is_full (const EventDispatcher *dispatcher) {
+
+	const TestReceiveManual *jobs = (const TestReceiveManual *) dispatcher->data;
+
+	return !__atomic_load_n (&jobs->places, __ATOMIC_ACQUIRE);
+
+}
+
+static unsigned int test_receive_manual_taken (void) {
+
+	return __atomic_load_n (&manual.n_taken, __ATOMIC_ACQUIRE);
+
+}
+
+// a place of the dispatcher is free: a job left its queue
+static void test_receive_manual_place (void) {
+
+	(void) __atomic_add_fetch (&manual.places, 1, __ATOMIC_RELEASE);
+
+}
+
+// a loop whose jobs are taken by the dispatcher of these tests, with the places that it starts with
+static void test_receive_manual_start (Cerver *cerver, const unsigned int places) {
+
+	(void) memset (&manual, 0, sizeof (TestReceiveManual));
+	manual.places = places;
+
+	receive_dispatcher.submit = test_receive_manual_submit;
+	receive_dispatcher.is_full = test_receive_manual_is_full;
+	receive_dispatcher.data = &manual;
+
+	receive_loop = event_loop_create (cerver, &receive_dispatcher);
+	test_check_ptr (receive_loop);
+
+}
+
+// a client whose request is complete when the loop takes its connection: the loop reads it at once
+// and submits its job; returns the socket of the client and gives the one of the loop
+static int test_receive_manual_client (int *server_fd) {
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
+
+	const size_t request_length = strlen (manual_request);
+	test_check (
+		send (fds[TEST_RECEIVE_CLIENT], manual_request, request_length, MSG_NOSIGNAL) == (ssize_t) request_length,
+		"the request was not sent"
+	);
+
+	struct sockaddr_storage address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
+
+	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+
+	*server_fd = fds[TEST_RECEIVE_SERVER];
+
+	return fds[TEST_RECEIVE_CLIENT];
+
+}
+
+// the job of a request runs like in a thread of the pool, that also ends its connection
+static void test_receive_manual_work (const unsigned int job) {
+
+	http_connection_work (manual.taken[job]);
+
+}
+
+static void test_receive_manual_response (const int client_fd, const char *status) {
+
+	(void) memset (&result, 0, sizeof (TestReceiveResult));
+
+	test_receive_read_response (client_fd);
+	(void) close (client_fd);
+
+	test_receive_expect (test_receive_status_is (status));
+
+}
+
+// the parked request of the loop loses its timer: its loop has nothing to wait for but a wake up
+static void test_receive_manual_parked_forever (void) {
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
+	test_check_ptr (receive_loop->parked_head);
+
+	event_wheel_remove (&receive_loop->wheel, &receive_loop->parked_head->timer);
+
+}
+
+// one step of a loop in its thread, that waits in its poller as long as it has to
+static void *test_receive_manual_step (void *loop_ptr) {
+
+	(void) event_loop_step ((EventLoop *) loop_ptr, EVENT_POLLER_WAIT_FOREVER);
+
+	return NULL;
+
+}
+
+// waits until the loop told that it is going to wait in its poller
+static void test_receive_manual_wait_loop (EventLoop *loop) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_RECEIVE_MANUAL_SECONDS;
+
+	bool waiting = false;
+	while (!waiting && (test_wait_now () < deadline)) {
+		(void) pthread_mutex_lock (&loop->completed_mutex);
+		waiting = loop->waiting;
+		(void) pthread_mutex_unlock (&loop->completed_mutex);
+
+		if (!waiting) (void) nanosleep (&interval, NULL);
+	}
+
+	test_check (waiting, "the loop does not wait in its poller");
+
+}
+
+// the requests that wait for a place of the pool get the places in the order that they arrived,
+// and a request that arrives when a place is free does not take it from them:
+// it got the place, and under a constant load the ones that waited were answered much later
+static void test_receive_loop_parked_order (Cerver *cerver) {
+
+	current_case = "loop: the parked requests take the places in their order";
+	current_mode = "whole";
+
+	test_receive_manual_start (cerver, 0);
+
+	int server_fds[TEST_RECEIVE_MANUAL_JOBS] = { -1, -1, -1, -1 };
+	int client_fds[TEST_RECEIVE_MANUAL_JOBS] = { -1, -1, -1, -1 };
+
+	for (unsigned int idx = 0; idx < TEST_RECEIVE_MANUAL_PARKED; idx++) {
+		client_fds[idx] = test_receive_manual_client (&server_fds[idx]);
+	}
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_PARKED, NULL);
+	test_check_unsigned_eq (test_receive_manual_taken (), 0, NULL);
+
+	// a place is free when the last request arrives: it waits behind the parked ones
+	test_receive_manual_place ();
+
+	client_fds[TEST_RECEIVE_MANUAL_PARKED] = test_receive_manual_client (&server_fds[TEST_RECEIVE_MANUAL_PARKED]);
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_JOBS, NULL);
+	test_check_unsigned_eq (test_receive_manual_taken (), 0, NULL);
+
+	// the loop gives each place to the request that has waited the most
+	for (unsigned int idx = 0; idx < TEST_RECEIVE_MANUAL_JOBS; idx++) {
+		if (idx) test_receive_manual_place ();
+
+		(void) event_loop_step (receive_loop, 0);
+
+		test_check_unsigned_eq (test_receive_manual_taken (), idx + 1, NULL);
+		test_check_int_eq (manual.fds[idx], server_fds[idx], NULL);
+		test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_JOBS - idx - 1, NULL);
+	}
+
+	for (unsigned int idx = 0; idx < TEST_RECEIVE_MANUAL_JOBS; idx++) {
+		test_receive_manual_work (idx);
+
+		test_receive_manual_response (client_fds[idx], "200");
+	}
+
+	test_receive_loop_end ();
+
+}
+
+// a request that waits for a place is answered with 503 when the wait of the cerver ends and not before,
+// and the one that the pool owns has no timer in its loop
+static void test_receive_loop_parked_timeout (Cerver *cerver) {
+
+	current_case = "loop: a parked request whose wait ends";
+	current_mode = "whole";
+
+	cerver_set_overload_wait_timeout (cerver, TEST_RECEIVE_MANUAL_WAIT);
+
+	const u64 rejected = CERVER_STATS_GET (cerver->stats->total_rejected_connections);
+
+	test_receive_manual_start (cerver, 1);
+
+	manual_clock = TEST_RECEIVE_MANUAL_CLOCK_START;
+	event_loop_set_clock (receive_loop, test_receive_manual_clock);
+
+	int server_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
+	int client_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
+
+	// the first request takes the place, the second one waits
+	client_fds[0] = test_receive_manual_client (&server_fds[0]);
+	client_fds[1] = test_receive_manual_client (&server_fds[1]);
+
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
+	test_check (!manual.taken[0]->timer.armed, "a connection of the pool has a timer in its loop");
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
+
+	// right before the end of the wait
+	manual_clock += TEST_RECEIVE_MANUAL_WAIT_MILLISECONDS - 1;
+	(void) event_loop_step (receive_loop, 0);
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
+	test_check_unsigned_eq (CERVER_STATS_GET (cerver->stats->total_rejected_connections), rejected, NULL);
+
+	// a timer expires at most a tick after its deadline
+	manual_clock += 1 + EVENT_WHEEL_TICK;
+	(void) event_loop_step (receive_loop, 0);
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 0, NULL);
+	test_check_unsigned_eq (CERVER_STATS_GET (cerver->stats->total_rejected_connections), rejected + 1, NULL);
+
+	// its connection ended, only the one of the pool is left
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
+
+	test_receive_manual_response (client_fds[1], "503");
+
+	test_receive_manual_work (0);
+
+	test_receive_manual_response (client_fds[0], "200");
+
+	test_receive_loop_end ();
+
+	cerver_set_overload_wait_timeout (cerver, CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT);
+
+}
+
+// a loop that waits in its poller with a parked request is woken up by the job that leaves the pool:
+// the request gets the place at once, not at the next tick of the timers
+static void test_receive_loop_parked_wake (Cerver *cerver) {
+
+	current_case = "loop: a place wakes the loop of a parked request up";
+	current_mode = "whole";
+
+	test_receive_manual_start (cerver, 1);
+
+	int server_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
+	int client_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
+
+	client_fds[0] = test_receive_manual_client (&server_fds[0]);
+	client_fds[1] = test_receive_manual_client (&server_fds[1]);
+
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
+
+	test_receive_manual_parked_forever ();
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, test_receive_manual_step, receive_loop), 0, NULL);
+
+	test_receive_manual_wait_loop (receive_loop);
+
+	// a thread of the pool takes the first job: its place is free and it tells the loops
+	test_receive_manual_place ();
+	test_receive_manual_work (0);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&manual.n_taken, TEST_RECEIVE_MANUAL_PAIR, TEST_RECEIVE_MANUAL_SECONDS),
+		TEST_RECEIVE_MANUAL_PAIR, "the loop was not woken up"
+	);
+
+	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 0, NULL);
+	test_check_int_eq (manual.fds[1], server_fds[1], NULL);
+
+	test_receive_manual_response (client_fds[0], "200");
+
+	test_receive_manual_work (1);
+
+	test_receive_manual_response (client_fds[1], "200");
+
+	test_receive_loop_end ();
+
+}
+
+// a place that was freed before the loop told that it waits wakes nobody up (the loop was running):
+// the loop finds it before it waits, a loop without timers waited forever with the place free
+static void test_receive_loop_parked_place (Cerver *cerver) {
+
+	current_case = "loop: a place that was freed before the loop waits";
+	current_mode = "whole";
+
+	test_receive_manual_start (cerver, 0);
+
+	int server_fd = -1;
+	const int client_fd = test_receive_manual_client (&server_fd);
+
+	test_check_unsigned_eq (test_receive_manual_taken (), 0, NULL);
+
+	test_receive_manual_parked_forever ();
+
+	test_receive_manual_place ();
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, test_receive_manual_step, receive_loop), 0, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&manual.n_taken, 1, TEST_RECEIVE_MANUAL_SECONDS), 1,
+		"the loop waits with a place for its parked request"
+	);
+
+	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
+
+	test_check_unsigned_eq (event_loop_parked (receive_loop), 0, NULL);
+	test_check_int_eq (manual.fds[0], server_fd, NULL);
+
+	test_receive_manual_work (0);
+
+	test_receive_manual_response (client_fd, "200");
+
+	test_receive_loop_end ();
+
+}
+
+static void test_receive_loop_parked (Cerver *cerver) {
+
+	test_receive_loop_parked_order (cerver);
+	test_receive_loop_parked_timeout (cerver);
+	test_receive_loop_parked_wake (cerver);
+	test_receive_loop_parked_place (cerver);
+
+}
+
+#pragma endregion
+
+#pragma region accept
+
+// the clients that wait in the listening socket of the loop
+#define TEST_RECEIVE_ACCEPT_CLIENTS				8
+
+// the fds that the process can still open when the loop accepts them
+#define TEST_RECEIVE_ACCEPT_PLACES				2
+
+// the clients that the loop can not accept
+#define TEST_RECEIVE_ACCEPT_REJECTED			(TEST_RECEIVE_ACCEPT_CLIENTS - TEST_RECEIVE_ACCEPT_PLACES)
+
+// the milliseconds that a client waits for its connection to be closed
+#define TEST_RECEIVE_ACCEPT_WAIT				1024
+
+// valgrind runs the binary with its preload, and it keeps fds of its own
+#define TEST_RECEIVE_PRELOAD_VARIABLE			"LD_PRELOAD"
+#define TEST_RECEIVE_VALGRIND_PRELOAD			"vgpreload"
+
+// under valgrind the fds that the process gets are not the next ones, so the limit can not be the next fds
+static bool test_receive_accept_limit_is_valid (void) {
+
+	const char *preload = getenv (TEST_RECEIVE_PRELOAD_VARIABLE);
+
+	return !(preload && strstr (preload, TEST_RECEIVE_VALGRIND_PRELOAD));
+
+}
+
+// a socket that listens in a port of the loopback that the system chooses, and its address
+static int test_receive_accept_listen (struct sockaddr_in *address) {
+
+	const int listen_fd = socket (AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	test_check (listen_fd > -1, "socket () failed");
+
+	(void) memset (address, 0, sizeof (struct sockaddr_in));
+	address->sin_family = AF_INET;
+	address->sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+
+	socklen_t address_length = sizeof (struct sockaddr_in);
+
+	test_check_int_eq (bind (listen_fd, (const struct sockaddr *) address, address_length), 0, NULL);
+	test_check_int_eq (listen (listen_fd, TEST_RECEIVE_ACCEPT_CLIENTS), 0, NULL);
+	test_check_int_eq (getsockname (listen_fd, (struct sockaddr *) address, &address_length), 0, NULL);
+
+	return listen_fd;
+
+}
+
+// a client whose connection waits in the listening socket: it is complete before it is accepted
+static int test_receive_accept_client (const struct sockaddr_in *address) {
+
+	const int client_fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (client_fd > -1, "socket () failed");
+
+	test_check_int_eq (
+		connect (client_fd, (const struct sockaddr *) address, sizeof (struct sockaddr_in)), 0, NULL
+	);
+
+	return client_fd;
+
+}
+
+// the process can only open the fds of the connections that the loop can accept;
+// returns the limit that it had
+static rlim_t test_receive_accept_limit_set (const int listen_fd) {
+
+	struct rlimit limit;
+	test_check_int_eq (getrlimit (RLIMIT_NOFILE, &limit), 0, NULL);
+
+	const rlim_t previous = limit.rlim_cur;
+
+	// the next fd that the process gets, the limit counts the numbers of the fds
+	const int next_fd = dup (listen_fd);
+	test_check (next_fd > -1, "dup () failed");
+	(void) close (next_fd);
+
+	limit.rlim_cur = (rlim_t) next_fd + TEST_RECEIVE_ACCEPT_PLACES;
+	test_check_int_eq (setrlimit (RLIMIT_NOFILE, &limit), 0, NULL);
+
+	return previous;
+
+}
+
+static void test_receive_accept_limit_restore (const rlim_t previous) {
+
+	struct rlimit limit;
+	test_check_int_eq (getrlimit (RLIMIT_NOFILE, &limit), 0, NULL);
+
+	limit.rlim_cur = previous;
+	test_check_int_eq (setrlimit (RLIMIT_NOFILE, &limit), 0, NULL);
+
+}
+
+// returns whether the connection of the client was closed by its peer
+static bool test_receive_accept_is_closed (const int client_fd) {
+
+	struct pollfd poll_fd = { client_fd, POLLIN, 0 };
+	char byte = 0;
+
+	return (poll (&poll_fd, 1, TEST_RECEIVE_ACCEPT_WAIT) > 0)
+		&& (recv (client_fd, &byte, sizeof (byte), MSG_DONTWAIT) == 0);
+
+}
+
+// a loop without fds rejects in one step every connection that waits in its listening socket:
+// it rejected one each time that its accept came back from its pause, and the rest waited in the
+// listen backlog for seconds
+static void test_receive_loop_out_of_fds (Cerver *cerver) {
+
+	if (!test_receive_accept_limit_is_valid ()) return;
+
+	current_case = "loop: the connections that wait when the process has no fds";
+	current_mode = "whole";
+
+	test_receive_loop_start (cerver);
+
+	struct sockaddr_in address;
+	const int listen_fd = test_receive_accept_listen (&address);
+
+	test_check_unsigned_eq (event_loop_listen (receive_loop, listen_fd, false), 0, NULL);
+
+	int client_fds[TEST_RECEIVE_ACCEPT_CLIENTS];
+	for (unsigned int idx = 0; idx < TEST_RECEIVE_ACCEPT_CLIENTS; idx++) {
+		client_fds[idx] = test_receive_accept_client (&address);
+	}
+
+	const u64 rejected = CERVER_STATS_GET (cerver->stats->total_rejected_connections);
+
+	const rlim_t limit = test_receive_accept_limit_set (listen_fd);
+
+	(void) event_loop_step (receive_loop, 0);
+
+	test_receive_accept_limit_restore (limit);
+
+	// the loop has the connections that it had fds for, the rest were accepted with the reserve fd and closed
+	test_check_unsigned_eq (event_loop_connections (receive_loop), TEST_RECEIVE_ACCEPT_PLACES, NULL);
+	test_check_unsigned_eq (
+		CERVER_STATS_GET (cerver->stats->total_rejected_connections), rejected + TEST_RECEIVE_ACCEPT_REJECTED, NULL
+	);
+
+	unsigned int closed = 0;
+	for (unsigned int idx = TEST_RECEIVE_ACCEPT_PLACES; idx < TEST_RECEIVE_ACCEPT_CLIENTS; idx++) {
+		if (test_receive_accept_is_closed (client_fds[idx])) closed += 1;
+	}
+
+	test_check_unsigned_eq (closed, TEST_RECEIVE_ACCEPT_REJECTED, NULL);
+
+	// the clients leave and the loop ends the connections that it accepted
+	for (unsigned int idx = 0; idx < TEST_RECEIVE_ACCEPT_CLIENTS; idx++) (void) close (client_fds[idx]);
+
+	for (
+		unsigned int steps = 0;
+		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_receive_loop_end ();
+
+	(void) close (listen_fd);
 
 }
 
@@ -4277,6 +5145,10 @@ void http_tests_receive (void) {
 
 	test_receive_framed (cerver);
 	test_receive_preflight_long_headers (cerver);
+	test_receive_loop_output (cerver);
+	test_receive_loop_output_timeout (cerver);
+	test_receive_loop_parked (cerver);
+	test_receive_loop_out_of_fds (cerver);
 	test_receive_reset (cerver);
 
 	(void) cerver_teardown (cerver);

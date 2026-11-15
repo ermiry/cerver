@@ -585,6 +585,96 @@ CERVER_HIDDEN void http_receive_handle (
 
 /**
  * @internal
+ * @brief Gives a buffer to the parser of the receive, without closing its connection: what
+ * http_receive_handle () does before it handles the result of the parser.
+ *
+ * The request of an event loop (HttpReceive::connection) is not handled by the parser: it stops with
+ * HPE_PAUSED and HttpReceive::pause tells why.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] buffer the bytes, a valid pointer also when length is 0
+ * @param[in] length the bytes of the buffer
+ * @param[out] n_parsed the bytes of the buffer that the parser consumed
+ * @return the result of the parser: HPE_OK when it needs more bytes, HPE_PAUSED after a pause, or its error
+ */
+CERVER_HIDDEN llhttp_errno_t http_receive_execute (
+	HttpReceive *http_receive,
+	const char *buffer, const size_t length, size_t *n_parsed
+);
+
+/**
+ * @internal
+ * @brief Lets the parser of a receive continue after a pause in its headers (#HTTP_RECEIVE_PAUSE_HEADERS), the
+ * next http_receive_execute () gives it the bytes of the body.
+ *
+ * @param[in,out] http_receive the receive
+ */
+CERVER_HIDDEN void http_receive_resume (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Answers with 400 a request that the parser could not parse, unless it was answered or its client is gone.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] parser_errno the error of the parser
+ * @param[in] n_parsed the bytes that the parser consumed
+ * @param[in] received the bytes that it was given
+ */
+CERVER_HIDDEN void http_receive_parser_failed (
+	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
+	const size_t n_parsed, const ssize_t received
+);
+
+/**
+ * @internal
+ * @brief Counts a request that did not arrive in time and answers it with 408, without closing its connection;
+ * when the client did not send anything only the status of the receive changes.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] received the client sent bytes of the request
+ */
+CERVER_HIDDEN void http_receive_timed_out (
+	HttpReceive *http_receive, const bool received
+);
+
+/**
+ * @internal
+ * @brief Runs the second part of the complete headers: the authentication of the endpoint or of the static path,
+ * the validation of an upgrade, the directory of the uploads and "100 Continue".
+ *
+ * It runs inside the parser, or in a thread of the pool for the request of an event loop that set
+ * HttpReceive::authorize_pending.
+ *
+ * @param[in,out] http_receive the receive
+ * @return 0 on success, #HTTP_RECEIVE_PARSER_STOP when the request was rejected (it was answered) or its client
+ * is gone
+ */
+CERVER_HIDDEN int http_receive_headers_authorize (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Handles a complete request: it serves its file, runs its endpoint or the handler of the requests that
+ * no endpoint handles, and answers with 500 the one that was not answered.
+ *
+ * A request with HttpReceive::authorize_pending is authorized first, a rejected one is not handled.
+ *
+ * @param[in,out] http_receive the receive
+ */
+CERVER_HIDDEN void http_receive_dispatch (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Returns whether cerver answers the complete request by itself with a short response (a redirect, an
+ * OPTIONS, a 405 or the default routes of a request without an endpoint), so an event loop can answer it
+ * without the pool.
+ *
+ * @param[in] http_receive the receive
+ * @return true when no method of the application nor a file is needed to answer it
+ */
+CERVER_HIDDEN bool http_receive_dispatch_is_inline (const HttpReceive *http_receive);
+
+/**
+ * @internal
  * @brief Ends a connection that is not kept alive: it shuts down its writes, reads what the client still sends and
  * ends the connection.
  *

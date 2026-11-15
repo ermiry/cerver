@@ -145,6 +145,16 @@ CERVER_HIDDEN void cerver_close_socket (Cerver *cerver);
 
 /**
  * @internal
+ * @brief Creates another socket that listens in the address of the cerver, for an event loop that is not the
+ * first one: non blocking and with SO_REUSEPORT, like the socket of a cerver with more than one I/O thread.
+ *
+ * @param[in] cerver the cerver, with its address already set by its own socket
+ * @return the socket, -1 on error
+ */
+CERVER_HIDDEN i32 cerver_network_listen_socket_create (const Cerver *cerver);
+
+/**
+ * @internal
  * @brief The thread of the update method: calls it every tick until the cerver stops.
  *
  * @param[in] args the cerver

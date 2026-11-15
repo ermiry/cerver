@@ -38,6 +38,7 @@
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/handler/handler.h"
+#include "cerver/handler/internal.h"
 #include "cerver/handler/receive.h"
 #include "cerver/load/balancer.h"
 #include "cerver/load/route.h"
@@ -3085,7 +3086,7 @@ static int handler_reserve_fd = -1;
 
 // keeps a fd open, so a connection can still be accepted and closed
 // when the process runs out of fds, instead of leaving it in the backlog
-static void cerver_accept_reserve_fd_open (void) {
+void cerver_accept_reserve_fd_open (void) {
 
 	(void) pthread_mutex_lock (&handler_reserve_fd_mutex);
 
@@ -3097,10 +3098,11 @@ static void cerver_accept_reserve_fd_open (void) {
 
 }
 
-// without fds, the pending connection is accepted with the reserve fd and closed,
-// then the cerver waits a bit, otherwise the listening socket is always readable
-// and accept () fails in a busy loop
-static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
+// the pending connection of a listening socket is accepted with the reserve fd and closed
+// returns true when a connection waited: a process without fds gets EMFILE from accept () also when none does
+static bool cerver_accept_reserve_fd_use (const int listen_fd) {
+
+	bool rejected = false;
 
 	(void) pthread_mutex_lock (&handler_reserve_fd_mutex);
 
@@ -3108,11 +3110,35 @@ static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
 		(void) close (handler_reserve_fd);
 		handler_reserve_fd = -1;
 
-		int fd = accept (cerver->sock, NULL, NULL);
-		if (fd > -1) (void) close (fd);
+		int fd = accept (listen_fd, NULL, NULL);
+		if (fd > -1) {
+			(void) close (fd);
+			rejected = true;
+		}
 	}
 
 	(void) pthread_mutex_unlock (&handler_reserve_fd_mutex);
+
+	return rejected;
+
+}
+
+bool cerver_accept_reserve_fd_reject (const int listen_fd) {
+
+	const bool rejected = cerver_accept_reserve_fd_use (listen_fd);
+
+	cerver_accept_reserve_fd_open ();
+
+	return rejected;
+
+}
+
+// without fds, the pending connection is accepted with the reserve fd and closed,
+// then the cerver waits a bit, otherwise the listening socket is always readable
+// and accept () fails in a busy loop
+static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
+
+	(void) cerver_accept_reserve_fd_use (cerver->sock);
 
 	CERVER_STATS_ADD (cerver->stats->total_rejected_connections, 1);
 

@@ -7,10 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+#include <cerver/types/string.h>
 
 #include <cerver/connection/connection.h>
 #include <cerver/connection/end.h>
@@ -19,8 +22,11 @@
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/public.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/uploads.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
@@ -34,6 +40,10 @@
 
 #define FUZZ_UPLOADS_PATH				"/tmp/cerver-fuzz-uploads"
 #define FUZZ_DIRECTORY_MODE				0755
+
+#define FUZZ_PUBLIC_PATH				"/tmp/cerver-fuzz-public"
+#define FUZZ_PUBLIC_FILE				FUZZ_PUBLIC_PATH "/index.html"
+#define FUZZ_PUBLIC_CONTENT				"<html>fuzz</html>"
 
 #define FUZZ_SERVER						0
 #define FUZZ_CLIENT						1
@@ -60,6 +70,57 @@ static const HttpWebSocketHandlers fuzz_web_socket_handlers = {
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
+// a target whose connections would start their WebSocket (the ones of an event loop)
+// clears it before the cerver is created, so no endpoint takes upgrades
+static bool fuzz_web_sockets = true;
+
+// the custom authentication accepts the requests whose Authorization starts with this,
+// so it depends only on the bytes of the request
+#define FUZZ_AUTHORIZATION_ACCEPTED		'a'
+
+static unsigned int fuzz_authentication (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+
+	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+
+	return (
+		authorization && authorization->len && (authorization->str[0] == FUZZ_AUTHORIZATION_ACCEPTED)
+	) ? 0 : 1;
+
+}
+
+// the requests with a custom authentication: before their body, with it, and their uploads
+static void fuzz_routes_secure (HttpCerver *http_cerver) {
+
+	HttpGroup *secure = http_cerver_group_create (http_cerver, "secure");
+	http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	http_group_set_authentication_handler (secure, fuzz_authentication);
+
+	(void) http_group_get (secure, "users/:id", fuzz_ok_handler);
+	(void) http_group_post (secure, "items", fuzz_ok_handler);
+
+	HttpEndpoint *upload = http_group_post (secure, "upload", fuzz_ok_handler);
+	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+	HttpEndpoint *with_body = http_group_post (secure, "body", fuzz_ok_handler);
+	http_endpoint_set_authentication_with_body (with_body, true);
+
+}
+
+// the upgrades to WebSocket, a socket pair never starts their connections
+static void fuzz_routes_web_socket (HttpGroup *api) {
+
+	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
+	const char *protocols[] = { "chat", "superchat" };
+	(void) http_endpoint_set_web_socket_protocols (socket, protocols, 2);
+	http_endpoint_set_web_socket_compression (socket, true);
+	http_endpoint_set_web_socket_origin_check (socket, true);
+
+}
+
 static void fuzz_routes (HttpCerver *http_cerver) {
 
 	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
@@ -80,12 +141,23 @@ static void fuzz_routes (HttpCerver *http_cerver) {
 	HttpEndpoint *private_endpoint = http_group_get (api, "private", fuzz_ok_handler);
 	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
 
-	// the upgrades to WebSocket, a socket pair never starts their connections
-	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
-	const char *protocols[] = { "chat", "superchat" };
-	(void) http_endpoint_set_web_socket_protocols (socket, protocols, 2);
-	http_endpoint_set_web_socket_compression (socket, true);
-	http_endpoint_set_web_socket_origin_check (socket, true);
+	if (fuzz_web_sockets) fuzz_routes_web_socket (api);
+
+	fuzz_routes_secure (http_cerver);
+
+}
+
+// a file of the static path of the cerver
+static void fuzz_public_create (void) {
+
+	(void) mkdir (FUZZ_PUBLIC_PATH, FUZZ_DIRECTORY_MODE);
+
+	const int fd = open (FUZZ_PUBLIC_FILE, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+	if (fd > -1) {
+		if (write (fd, FUZZ_PUBLIC_CONTENT, strlen (FUZZ_PUBLIC_CONTENT)) < 0) abort ();
+
+		(void) close (fd);
+	}
 
 }
 
@@ -115,6 +187,9 @@ static void fuzz_cerver_create (void) {
 	http_cerver_set_uploads_path (http_cerver, FUZZ_UPLOADS_PATH);
 	http_cerver_set_default_uploads_filename_generator (http_cerver);
 	http_cerver_set_uploads_delete_when_done (http_cerver, true);
+
+	fuzz_public_create ();
+	(void) http_cerver_static_path_add (http_cerver, FUZZ_PUBLIC_PATH);
 
 	if (http_cerver_init (http_cerver)) abort ();
 

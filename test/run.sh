@@ -10,6 +10,12 @@ run () {
 	$RUNNER "$@" || { echo "$1 failed"; exit 1; }
 }
 
+run_models () {
+	run "$@"
+
+	CERVER_TEST_HANDLER=events run "$@"
+}
+
 run ./test/bin/types
 
 run ./test/bin/cerver/test
@@ -52,13 +58,15 @@ run ./test/bin/utils
 
 run ./test/bin/crypto
 
+run ./test/bin/events
+
 if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
-	run ./test/bin/faults
+	run_models ./test/bin/faults
 fi
 
 run ./test/bin/http
 
-run ./test/bin/websockets
+run_models ./test/bin/websockets
 
 run ./test/bin/json
 

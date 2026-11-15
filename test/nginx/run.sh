@@ -6,6 +6,7 @@ BUILD=${BUILD:-1}
 
 NGINX_IMAGES=(${NGINX_IMAGES:-nginx:1.31.6-alpine nginx:1.30.6-alpine})
 CONFIGS=(${CONFIGS:-direct services pair})
+HANDLERS=(${HANDLERS:-threads events})
 
 PROJECT=cerver-nginx
 COMPOSE="$DOCKER compose -p $PROJECT -f test/nginx/docker-compose.yml"
@@ -139,9 +140,10 @@ nginx_direct () {
 nginx_run () {
 	local failed=0
 
-	echo "---- $NGINX_IMAGE - $CONFIG ----"
+	echo "---- $NGINX_IMAGE - $CONFIG - $HANDLER ----"
 
 	export IMAGE NGINX_IMAGE
+	export CERVER_TEST_HANDLER="$HANDLER"
 	export NGINX_CONF="$(nginx_config_file "$CONFIG")"
 	export COMPOSE_PROFILES="$(nginx_config_profiles "$CONFIG")"
 
@@ -167,7 +169,9 @@ nginx_run () {
 FAILED=0
 for NGINX_IMAGE in "${NGINX_IMAGES[@]}"; do
 	for CONFIG in "${CONFIGS[@]}"; do
-		nginx_run || { echo "$NGINX_IMAGE - $CONFIG: failed"; FAILED=1; }
+		for HANDLER in "${HANDLERS[@]}"; do
+			nginx_run || { echo "$NGINX_IMAGE - $CONFIG - $HANDLER: failed"; FAILED=1; }
+		done
 	done
 done
 
