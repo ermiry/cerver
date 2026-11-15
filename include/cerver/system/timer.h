@@ -68,20 +68,24 @@ CERVER_EXPORT void timer_sleep_for_seconds (double seconds);
 CERVER_EXPORT double timer_get_current_time (void);
 
 /**
- * @brief Returns the current time in UTC.
+ * @brief Writes the current time in UTC in a struct of the caller.
  *
- * @return the time of gmtime (), in its static buffer
- * @threadsafety Not thread safe: the buffer of gmtime () is shared.
+ * @param[out] result the struct
+ * @return result, NULL for a NULL result or on error
+ * @threadsafety Safe from any thread, with gmtime_r ().
+ * @since 1.9b-2
  */
-CERVER_EXPORT struct tm *timer_get_gmt_time (void);
+CERVER_EXPORT struct tm *timer_get_gmt_time_r (struct tm *result);
 
 /**
- * @brief Returns the current local time.
+ * @brief Writes the current local time in a struct of the caller.
  *
- * @return the time of localtime (), in its static buffer
- * @threadsafety Not thread safe: the buffer of localtime () is shared.
+ * @param[out] result the struct
+ * @return result, NULL for a NULL result or on error
+ * @threadsafety Safe from any thread, with localtime_r ().
+ * @since 1.9b-2
  */
-CERVER_EXPORT struct tm *timer_get_local_time (void);
+CERVER_EXPORT struct tm *timer_get_local_time_r (struct tm *result);
 
 /**
  * @brief Writes the 24 h time, as "hh:mm:ss".
