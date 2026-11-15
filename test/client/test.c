@@ -40,6 +40,21 @@ static void test_client_base_configuration (void) {
 
 }
 
+// a NULL name keeps the name of the client, and a NULL cerver has no clients
+static void test_client_null_arguments (void) {
+
+	Client *client = test_client_create ();
+
+	client_set_name (client, client_name);
+	client_set_name (client, NULL);
+	test_check_str_eq (client->name, client_name, "a NULL name changed the name");
+
+	client_delete (client);
+
+	test_check_null_ptr (client_get_with_session_id (NULL, "session"));
+
+}
+
 #define CLIENT_SESSION_ID					"session-0123456789abcdef"
 #define CLIENT_SESSION_OTHER				"session-other"
 #define CLIENT_SESSION_SHORT_SIZE			8
@@ -169,6 +184,7 @@ int main (void) {
 	(void) printf ("Testing CLIENT...\n");
 
 	test_client_base_configuration ();
+	test_client_null_arguments ();
 	test_client_session_id ();
 	test_client_session_id_threads ();
 	test_client_recycled ();
