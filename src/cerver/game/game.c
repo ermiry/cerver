@@ -14,6 +14,7 @@
 #include "cerver/client/events.h"
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/packets/packets.h"
@@ -65,7 +66,7 @@ void game_cerver_stats_print (Cerver *cerver) {
 			GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
 			(void) printf ("Current active lobbys:         %u\n", game_cerver->stats->current_active_lobbys);
-			(void) printf ("Total lobbys created:          %u\n", game_cerver->stats->lobbys_created);
+			(void) printf ("Total lobbys created:          %u\n", CERVER_STATS_GET (game_cerver->stats->lobbys_created));
 		}
 
 		else {
@@ -408,7 +409,7 @@ static Lobby *game_lobby_create_of_type (GameCerver *game, const Packet *packet,
 		lobby->game_type = game_type;
 
 		game_cerver_register_lobby (game, lobby);
-		game->stats->lobbys_created += 1;
+		CERVER_STATS_ADD (game->stats->lobbys_created, 1);
 
 		game_lobby_on_join (lobby, lobby->owner);
 	}
