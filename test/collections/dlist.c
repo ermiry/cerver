@@ -1,8 +1,7 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
 
 #include <pthread.h>
@@ -729,7 +728,7 @@ static bool dlist_test_remove_by_condition_greater_than_condition (
 
 static int dlist_test_remove_by_condition (void) {
 
-	cerver_log_raw ("dlist_remove_by_condition ()\n");
+	cerver_log_raw ("dlist_remove_with_condition ()\n");
 
 	DoubleList *list = dlist_init (integer_delete, integer_comparator);
 
@@ -749,7 +748,7 @@ static int dlist_test_remove_by_condition (void) {
 	}
 
 	Integer match = { 4 };
-	unsigned int matches = dlist_remove_by_condition (
+	unsigned int matches = dlist_remove_with_condition (
 		list, dlist_test_remove_by_condition_less_than_condition, &match, true
 	);
 
@@ -758,7 +757,7 @@ static int dlist_test_remove_by_condition (void) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	matches = dlist_remove_by_condition (
+	matches = dlist_remove_with_condition (
 		list, dlist_test_remove_by_condition_greater_than_condition, &match, true
 	);
 	cerver_log_raw ("\n\nRemoved %u elements greater than 4:\n", matches);
@@ -1420,7 +1419,7 @@ static bool test_split_by_condition_condition (
 
 static int dlist_test_split_by_condition (void) {
 
-	cerver_log_raw ("dlist_split_by_condition ()\n");
+	cerver_log_raw ("dlist_split_with_condition ()\n");
 
 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
@@ -1436,7 +1435,7 @@ static int dlist_test_split_by_condition (void) {
 	}
 
 	Integer match = { 5 };
-	DoubleList *matches = dlist_split_by_condition (
+	DoubleList *matches = dlist_split_with_condition (
 		dlist, test_split_by_condition_condition, &match
 	);
 
@@ -1524,7 +1523,7 @@ static bool test_merge_by_condition_condition (
 
 static int dlist_test_merge_two_by_condition (void) {
 
-	cerver_log_raw ("dlist_merge_two_by_condition ()\n");
+	cerver_log_raw ("dlist_merge_two_with_condition ()\n");
 
 	DoubleList *one = dlist_init (free, integer_comparator);
 	DoubleList *two = dlist_init (free, integer_comparator);
@@ -1556,7 +1555,7 @@ static int dlist_test_merge_two_by_condition (void) {
 
 	cerver_log_raw ("\n\nMerge both lists but ONLY elements < 5:\n");
 	Integer match = { 5 };
-	DoubleList *merge = dlist_merge_two_by_condition (
+	DoubleList *merge = dlist_merge_two_with_condition (
 		one, two,
 		test_merge_by_condition_condition, &match
 	);
