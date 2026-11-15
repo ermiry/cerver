@@ -4,19 +4,19 @@
  * This library is free software; you can redistribute it and/or modify
  * it under the terms of the MIT license. See LICENSE for details.
  */
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <stdint.h>
-#include <stddef.h>
 #include <time.h>
+
 #include <unistd.h>
 
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/private.h"
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
+#include "cerver/http/json/json.h"
+#include "cerver/http/json/private.h"
 
 // a new table has 2^3 buckets
 #define JSON_HASHTABLE_INITIAL_ORDER		3

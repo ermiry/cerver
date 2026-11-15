@@ -8,8 +8,8 @@
 #ifndef _CERVER_HTTP_JSON_TYPES_H_
 #define _CERVER_HTTP_JSON_TYPES_H_
 
-#include "cerver/http/json/private.h"
 #include "cerver/http/json/hashtable.h"
+#include "cerver/http/json/private.h"
 
 #ifdef __cplusplus
 extern "C" {

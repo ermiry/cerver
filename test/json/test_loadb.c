@@ -5,14 +5,14 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/http/json/json.h>
 
-#include "json.h"
 #include "errors.h"
+#include "json.h"
 
 static void start (void) {
 	json_t *json;
