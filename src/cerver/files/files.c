@@ -533,18 +533,16 @@ const char *files_get_file_extension_reference (
 ) {
 
 	const char *retval = NULL;
+	unsigned int len = 0;
 
-	if (filename) {
-		char *ptr = strrchr ((char *) filename, '.');
-		if (ptr) {
-			char *p = ptr + 1;
-			while (*p++) *ext_len += 1;
-
-			if (ext_len) {
-				retval = ptr + 1;
-			}
-		}
+	// a name that ends with '.' has no extension
+	const char *dot = filename ? strrchr (filename, '.') : NULL;
+	if (dot && dot[1]) {
+		retval = dot + 1;
+		len = (unsigned int) strlen (retval);
 	}
+
+	if (ext_len) *ext_len = len;
 
 	return retval;
 
