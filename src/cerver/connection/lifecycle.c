@@ -103,7 +103,7 @@ u8 connection_init (Connection *connection) {
 	u8 retval = 1;
 
 	if (connection) {
-		if (!connection->active) {
+		if (!connection_is_active (connection)) {
 			const int type = connection_init_socket_type (connection->protocol);
 			if ((type < 0) || connection_init_address (connection)) return 1;
 
@@ -450,7 +450,7 @@ unsigned int connection_start (Connection *connection) {
 
 	unsigned int retval = 1;
 
-	if (connection && connection->active) {
+	if (connection && connection_is_active (connection)) {
 		retval = 0;
 
 		if (

@@ -22,6 +22,7 @@
 #include "cerver/connection/connection.h"
 #include "cerver/connection/data.h"
 #include "cerver/connection/end.h"
+#include "cerver/connection/internal.h"
 #include "cerver/connection/update.h"
 #include "cerver/core/cerver.h"
 #include "cerver/core/report.h"
@@ -777,7 +778,7 @@ static void client_receive_handle_failed (
 		}
 	}
 
-	else if (connection->active) {
+	else if (connection_is_active (connection)) {
 		(void) client_connection_end (client, connection);
 	}
 

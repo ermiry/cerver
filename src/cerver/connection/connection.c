@@ -199,7 +199,7 @@ void connection_delete (void *connection_ptr) {
 		Connection *connection = (Connection *) connection_ptr;
 
 		// connection_end () closes the socket, so it must run before deleting it
-		if (connection->active) connection_end (connection);
+		if (connection_is_active (connection)) connection_end (connection);
 
 		// a packet that was only partially received
 		receive_handle_end (&connection->receive_handle);
@@ -351,7 +351,7 @@ void connection_set_values (
 		connection->protocol = protocol;
 		connection->use_ipv6 = use_ipv6;
 
-		connection->active = false;
+		connection_set_active (connection, false);
 	}
 
 }
@@ -383,6 +383,26 @@ void connection_set_state (
 
 		(void) pthread_mutex_unlock (connection->state_mutex);
 	}
+
+}
+
+// the client teardown and the reconnection thread read and end the same connection
+bool connection_is_active (const Connection *connection) {
+
+	return __atomic_load_n (&connection->active, __ATOMIC_ACQUIRE);
+
+}
+
+void connection_set_active (Connection *connection, const bool active) {
+
+	__atomic_store_n (&connection->active, active, __ATOMIC_RELEASE);
+
+}
+
+// only the thread that finds the connection active ends it
+bool connection_take_end (Connection *connection) {
+
+	return __atomic_exchange_n (&connection->active, false, __ATOMIC_ACQ_REL);
 
 }
 
