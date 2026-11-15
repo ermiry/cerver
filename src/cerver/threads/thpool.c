@@ -14,6 +14,7 @@
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 static void *thread_do (void *thread_ptr);
 
@@ -633,7 +634,7 @@ unsigned int thpool_init (Thpool *thpool) {
 void thpool_set_name (Thpool *thpool, const char *name) {
 
 	if (thpool && name) {
-		(void) strncpy (thpool->name, name, THPOOL_NAME_SIZE - 1);
+		(void) c_string_copy_bounded (thpool->name, name, THPOOL_NAME_SIZE);
 		thpool->namelen = strlen (thpool->name);
 	}
 
