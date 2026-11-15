@@ -10,6 +10,7 @@
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
@@ -28,6 +29,11 @@
 // and the allocations per request (with valgrind) of every phase
 // usage: server [port] [threads] [threads | events] [io threads]
 // the connections are handled with a thread for each one (the default) or with event loops
+// BENCH_KEEP_ALIVE in the environment sets whether the connections are kept between requests (0 or 1),
+// without it the cerver decides: only the event loops keep them
+
+#define BENCH_SERVER_KEEP_ALIVE_VARIABLE	"BENCH_KEEP_ALIVE"
+#define BENCH_SERVER_KEEP_ALIVE_DISABLED	"0"
 
 #define BENCH_SERVER_DEFAULT_PORT			8080
 #define BENCH_SERVER_DEFAULT_THREADS		4
@@ -154,6 +160,14 @@ int main (int argc, char **argv) {
 		cerver_set_io_threads (bench_cerver, io_threads);
 		cerver_set_thpool_n_threads (bench_cerver, threads);
 		cerver_set_reusable_address_flags (bench_cerver, true);
+
+		const char *keep_alive = getenv (BENCH_SERVER_KEEP_ALIVE_VARIABLE);
+		if (keep_alive) {
+			http_cerver_set_keep_alive (
+				(HttpCerver *) bench_cerver->cerver_data,
+				strcmp (keep_alive, BENCH_SERVER_KEEP_ALIVE_DISABLED) != 0
+			);
+		}
 
 		bench_server_routes ((HttpCerver *) bench_cerver->cerver_data);
 
