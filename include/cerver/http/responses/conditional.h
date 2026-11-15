@@ -3,9 +3,9 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 #include <sys/stat.h>
-#include <time.h>
 
 #include "cerver/config.h"
 

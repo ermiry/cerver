@@ -1,14 +1,14 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <ctype.h>
-#include <sys/stat.h>
 #include <time.h>
 
-#include "cerver/http/conditional.h"
-#include "cerver/http/date.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/request.h"
+#include <sys/stat.h>
+
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/responses/conditional.h"
+#include "cerver/http/responses/date.h"
 
 // FNV-1a with 64 bits
 static const unsigned long long http_etag_hash_offset = 14695981039346656037ull;

@@ -1,16 +1,16 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <sys/stat.h>
 
 #include <cerver/types/string.h>
 
-#include <cerver/http/conditional.h>
-#include <cerver/http/headers.h>
-#include <cerver/http/request.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/conditional.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *test_conditional_body = { "{\"oki\": \"doki\"}" };
 

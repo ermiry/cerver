@@ -5,10 +5,11 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/http/headers.h"
-#include "cerver/http/http.h"
-#include "cerver/http/response.h"
-#include "cerver/http/stream.h"
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/headers/fields.h"
+#include "cerver/http/responses/response.h"
+#include "cerver/http/responses/stream.h"
 
 #include "cerver/utils/log.h"
 

@@ -1,12 +1,12 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/arena.h>
 
-#include <cerver/http/compression.h>
+#include <cerver/http/responses/compression.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 // the first bytes of a gzip member (RFC 1952)
 #define TEST_COMPRESSION_GZIP_MAGIC_FIRST		0x1f
