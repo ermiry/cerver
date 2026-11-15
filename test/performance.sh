@@ -18,6 +18,13 @@ LOAD_REQUESTS=16384
 CONCURRENCIES=(8 64)
 MINIMUM_PERCENT=50
 
+HANDLERS=(threads events)
+HANDLER=threads
+
+COMPARE_REQUESTS=65536
+COMPARE_RUNS=5
+EVENTS_MINIMUM_PERCENT=90
+
 TREE_ROUNDS=1024
 TREE_MINIMUM_SPEEDUP=2
 
@@ -60,7 +67,7 @@ server_start () {
 	local log="$1" ready="$2"
 	shift 2
 
-	"$@" ./benchmarks/bin/server $PORT $THREADS > "$log" 2>&1 &
+	"$@" ./benchmarks/bin/server $PORT $THREADS $HANDLER > "$log" 2>&1 &
 	SERVER_PID=$!
 
 	wait_until "$ready" is_listening $PORT || { echo "the bench server did not start"; exit 1; }
@@ -109,7 +116,7 @@ check_allocations () {
 	server_stop || loaded=1
 
 	if [ $loaded -ne 0 ] || ! [[ "$base" =~ ^[0-9]+$ ]] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
-		fail "$method $path allocations were not counted"
+		fail "$HANDLER $method $path allocations were not counted"
 		return
 	fi
 
@@ -117,7 +124,7 @@ check_allocations () {
 	local per_request=$(awk -v allocations="$allocations" -v requests=$ALLOCATION_REQUESTS 'BEGIN { printf "%.3f", allocations / requests }')
 
 	echo "$method $path - $per_request allocations per request ($allocations for $ALLOCATION_REQUESTS, maximum $maximum)"
-	[ "$allocations" -le $(( maximum * ALLOCATION_REQUESTS + ALLOCATION_SLACK )) ] || fail "$method $path allocations"
+	[ "$allocations" -le $(( maximum * ALLOCATION_REQUESTS + ALLOCATION_SLACK )) ] || fail "$HANDLER $method $path allocations"
 }
 
 baseline_value () {
@@ -135,18 +142,18 @@ check_load () {
 
 	server_start "$LOGS/load.log" $READY_SECONDS
 	local result=$(./benchmarks/bin/load $PORT "$concurrency" $LOAD_REQUESTS $method "$path" "$body")
-	server_stop || fail "$method $path concurrency $concurrency: the server ended with an error"
+	server_stop || fail "$HANDLER $method $path concurrency $concurrency: the server ended with an error"
 
 	echo "$method $path - $result"
 
-	load_succeeded "$result" $LOAD_REQUESTS || { fail "$method $path concurrency $concurrency: the load failed"; return; }
+	load_succeeded "$result" $LOAD_REQUESTS || { fail "$HANDLER $method $path concurrency $concurrency: the load failed"; return; }
 
 	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/')
 	local unavailable=$(field "$result" 503)
 	local other=$(field "$result" other)
 	local failed=$(field "$result" failed)
 
-	[ "$unavailable" -eq 0 ] && [ "$other" -eq 0 ] && [ "$failed" -eq 0 ] || fail "$method $path concurrency $concurrency errors"
+	[ "$unavailable" -eq 0 ] && [ "$other" -eq 0 ] && [ "$failed" -eq 0 ] || fail "$HANDLER $method $path concurrency $concurrency errors"
 
 	local baseline=$(baseline_value "$method" "$concurrency")
 	if [ -z "$baseline" ]; then
@@ -155,7 +162,52 @@ check_load () {
 	fi
 
 	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
-	[ "$per_second" -ge "$minimum" ] || fail "$method $path concurrency $concurrency: $per_second req/s < $minimum"
+	[ "$per_second" -ge "$minimum" ] || fail "$HANDLER $method $path concurrency $concurrency: $per_second req/s < $minimum"
+}
+
+# the req/s of a load of the handler that is set, nothing when the load failed
+load_per_second () {
+	local method="$1" path="$2" body="$3" concurrency="$4"
+
+	server_start "$LOGS/load.log" $READY_SECONDS
+	local result=$(./benchmarks/bin/load $PORT "$concurrency" $COMPARE_REQUESTS $method "$path" "$body")
+	server_stop || return 1
+
+	load_succeeded "$result" $COMPARE_REQUESTS || return 1
+
+	echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/'
+}
+
+median () {
+	printf '%s\n' "$@" | sort -n | sed -n "$(( ($# + 1) / 2 ))p"
+}
+
+# the event loops against a thread for each connection: the median of some loads of each one,
+# taken in turns so both see the same machine
+check_events () {
+	local method="$1" path="$2" body="$3" concurrency="$4"
+	local threads=() events=() value
+
+	for (( run = 0; run < COMPARE_RUNS; run++ )); do
+		for HANDLER in "${HANDLERS[@]}"; do
+			value=$(load_per_second "$method" "$path" "$body" "$concurrency") \
+				|| { fail "$HANDLER $method $path concurrency $concurrency: the load of the comparison failed"; return; }
+
+			if [ "$HANDLER" = "events" ]; then
+				events+=("$value")
+			else
+				threads+=("$value")
+			fi
+		done
+	done
+
+	local threads_median=$(median "${threads[@]}")
+	local events_median=$(median "${events[@]}")
+	local percent=$(( events_median * 100 / threads_median ))
+
+	echo "$method $path concurrency $concurrency - threads $threads_median req/s - events $events_median req/s - $percent %"
+	[ "$percent" -ge $EVENTS_MINIMUM_PERCENT ] \
+		|| fail "$method $path concurrency $concurrency: events $events_median req/s < $EVENTS_MINIMUM_PERCENT % of threads $threads_median"
 }
 
 count_web_socket_allocations () {
@@ -182,7 +234,7 @@ check_web_socket_allocations () {
 	local messages=$(( WEB_SOCKET_ALLOCATION_CONNECTIONS * WEB_SOCKET_ALLOCATION_MESSAGES ))
 
 	if ! [[ "$base" =~ ^[0-9]+$ ]] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
-		fail "WebSocket allocations were not counted"
+		fail "$HANDLER WebSocket allocations were not counted"
 		return
 	fi
 
@@ -190,7 +242,7 @@ check_web_socket_allocations () {
 
 	echo "WebSocket $WEB_SOCKET_PATH - $per_message allocations per message ($(( total - base )) for $messages, maximum $WEB_SOCKET_MAX_ALLOCATIONS)"
 	awk -v value="$per_message" -v maximum=$WEB_SOCKET_MAX_ALLOCATIONS 'BEGIN { exit !(value <= maximum) }' \
-		|| fail "WebSocket allocations"
+		|| fail "$HANDLER WebSocket allocations"
 }
 
 check_web_socket_load () {
@@ -198,14 +250,14 @@ check_web_socket_load () {
 
 	server_start "$LOGS/load.log" $READY_SECONDS
 	local result=$(./benchmarks/bin/messages $PORT "$connections" $(( WEB_SOCKET_LOAD_MESSAGES / connections )) $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
-	server_stop || fail "WebSocket connections $connections: the server ended with an error"
+	server_stop || fail "$HANDLER WebSocket connections $connections: the server ended with an error"
 
 	echo "WebSocket $WEB_SOCKET_PATH - $result"
 
 	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) msg\/s.*/\1/')
 	local failed=$(field "$result" failed)
 
-	[ "$failed" -eq 0 ] || fail "WebSocket connections $connections errors"
+	[ "$failed" -eq 0 ] || fail "$HANDLER WebSocket connections $connections errors"
 
 	local baseline=$(baseline_value WS "$connections")
 	if [ -z "$baseline" ]; then
@@ -214,7 +266,7 @@ check_web_socket_load () {
 	fi
 
 	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
-	[ "$per_second" -ge "$minimum" ] || fail "WebSocket connections $connections: $per_second msg/s < $minimum"
+	[ "$per_second" -ge "$minimum" ] || fail "$HANDLER WebSocket connections $connections: $per_second msg/s < $minimum"
 }
 
 check_tree () {
@@ -228,17 +280,29 @@ check_tree () {
 		|| fail "$routes speedup ${speedup}x < ${TREE_MINIMUM_SPEEDUP}x"
 }
 
-echo "Allocations..."
-check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
-check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
-check_web_socket_allocations
-
-echo "Load on $ARCHITECTURE..."
-for concurrency in "${CONCURRENCIES[@]}"; do
-	check_load GET $GET_PATH "" "$concurrency"
-	check_load POST $POST_PATH "$JSON_BODY" "$concurrency"
-	check_web_socket_load "$concurrency"
+for HANDLER in "${HANDLERS[@]}"; do
+	echo "Allocations with $HANDLER..."
+	check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
+	check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+	check_web_socket_allocations
 done
+
+for HANDLER in "${HANDLERS[@]}"; do
+	echo "Load on $ARCHITECTURE with $HANDLER..."
+	for concurrency in "${CONCURRENCIES[@]}"; do
+		check_load GET $GET_PATH "" "$concurrency"
+		check_load POST $POST_PATH "$JSON_BODY" "$concurrency"
+		check_web_socket_load "$concurrency"
+	done
+done
+
+echo "Event loops against threads..."
+for concurrency in "${CONCURRENCIES[@]}"; do
+	check_events GET $GET_PATH "" "$concurrency"
+	check_events POST $POST_PATH "$JSON_BODY" "$concurrency"
+done
+
+HANDLER=threads
 
 echo "Routes tree..."
 for routes in "$ROUTES"/*.txt; do

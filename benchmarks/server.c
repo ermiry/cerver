@@ -26,12 +26,16 @@
 
 // a minimal web cerver to measure the requests per second, the latency
 // and the allocations per request (with valgrind) of every phase
-// usage: server [port] [threads]
+// usage: server [port] [threads] [threads | events] [io threads]
+// the connections are handled with a thread for each one (the default) or with event loops
 
 #define BENCH_SERVER_DEFAULT_PORT			8080
 #define BENCH_SERVER_DEFAULT_THREADS		4
 #define BENCH_SERVER_ARGUMENT_PORT			1
 #define BENCH_SERVER_ARGUMENT_THREADS		2
+#define BENCH_SERVER_ARGUMENT_HANDLER		3
+#define BENCH_SERVER_ARGUMENT_IO_THREADS	4
+#define BENCH_SERVER_HANDLER_EVENTS			"events"
 #define BENCH_SERVER_JSON_SIZE				256
 
 static Cerver *bench_cerver = NULL;
@@ -125,6 +129,15 @@ int main (int argc, char **argv) {
 	const u16 threads = (argc > BENCH_SERVER_ARGUMENT_THREADS) ?
 		(u16) atoi (argv[BENCH_SERVER_ARGUMENT_THREADS]) : BENCH_SERVER_DEFAULT_THREADS;
 
+	const CerverHandlerType handler_type = (
+		(argc > BENCH_SERVER_ARGUMENT_HANDLER)
+		&& !strcmp (argv[BENCH_SERVER_ARGUMENT_HANDLER], BENCH_SERVER_HANDLER_EVENTS)
+	) ? CERVER_HANDLER_TYPE_EVENTS : CERVER_HANDLER_TYPE_THREADS;
+
+	// 0 keeps the default of the cerver
+	const unsigned int io_threads = (argc > BENCH_SERVER_ARGUMENT_IO_THREADS) ?
+		(unsigned int) atoi (argv[BENCH_SERVER_ARGUMENT_IO_THREADS]) : 0;
+
 	cerver_init ();
 
 	// the signals stop the cerver, then it is drained and released
@@ -137,7 +150,8 @@ int main (int argc, char **argv) {
 
 	bench_cerver = cerver_create_web ("bench", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	if (bench_cerver) {
-		cerver_set_handler_type (bench_cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handler_type (bench_cerver, handler_type);
+		cerver_set_io_threads (bench_cerver, io_threads);
 		cerver_set_thpool_n_threads (bench_cerver, threads);
 		cerver_set_reusable_address_flags (bench_cerver, true);
 
