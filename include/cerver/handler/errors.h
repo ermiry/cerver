@@ -4,11 +4,12 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/config.h"
-#include "cerver/serializer.h"
+
+#include "cerver/packets/serializer.h"
 
 // the size of the buffer used to get the description of an errno with strerror_r ()
 #define CERVER_ERRNO_DESCRIPTION_SIZE			64

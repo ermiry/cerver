@@ -1,15 +1,15 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/events.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/events.h"
 
 #include "cerver/game/lobby.h"
 
