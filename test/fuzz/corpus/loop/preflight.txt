@@ -1,0 +1,6 @@
+0OPTIONS /api/users/1 HTTP/1.1
+Host: localhost
+Origin: http://allowed.com
+Access-Control-Request-Method: GET
+Access-Control-Request-Headers: X-Custom
+
