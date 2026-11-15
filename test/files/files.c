@@ -1,17 +1,18 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <pthread.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
-#include <sys/stat.h>
+#include <cerver/files/files.h>
+#include <cerver/files/images.h>
+#include <cerver/files/send.h>
+#include <cerver/packets/packets.h>
 
-#include <cerver/files.h>
-#include <cerver/packets.h>
-
-#include "test.h"
+#include "../test.h"
 
 static const char *sanitize_complete_one = { "hola/adios/1234567890-hola.png" };
 static const char *sanitize_complete_two = { "1234567890-hola/adios/hola.png.res" };
@@ -382,20 +383,20 @@ static void test_files_image_type_to_string (void) {
 
 static void test_files_image_get_type_by_extension (void) {
 	
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpg_file_small), IMAGE_TYPE_JPEG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpg_file_complete), IMAGE_TYPE_JPEG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpg_file_bad), IMAGE_TYPE_NONE, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpg_file_wrong), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpg_file_small), IMAGE_TYPE_JPEG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpg_file_complete), IMAGE_TYPE_JPEG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpg_file_bad), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpg_file_wrong), IMAGE_TYPE_NONE, NULL);
 
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpeg_file_small), IMAGE_TYPE_JPEG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpeg_file_complete), IMAGE_TYPE_JPEG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpeg_file_bad), IMAGE_TYPE_NONE, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (jpeg_file_wrong), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpeg_file_small), IMAGE_TYPE_JPEG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpeg_file_complete), IMAGE_TYPE_JPEG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpeg_file_bad), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (jpeg_file_wrong), IMAGE_TYPE_NONE, NULL);
 
-	test_check_unsigned_eq (files_image_get_type_by_extension (png_file_small), IMAGE_TYPE_PNG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (png_file_complete), IMAGE_TYPE_PNG, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (png_file_bad), IMAGE_TYPE_NONE, NULL);
-	test_check_unsigned_eq (files_image_get_type_by_extension (png_file_wrong), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (png_file_small), IMAGE_TYPE_PNG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (png_file_complete), IMAGE_TYPE_PNG, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (png_file_bad), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type_with_extension (png_file_wrong), IMAGE_TYPE_NONE, NULL);
 
 }
 
