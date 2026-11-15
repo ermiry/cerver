@@ -138,6 +138,23 @@
 #define HTTP_CERVER_POOLS_SIZE						(1 << 4)
 
 /**
+ * @brief The default microseconds that the thread of a pool that answered a request looks for the next one of its
+ * connection, before it gives the connection back to its event loop: none, a cerver asks for it with
+ * http_cerver_set_keep_alive_follow ().
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW		0
+
+/**
+ * @brief The microseconds that a cerver that asks its threads to follow their connections can start with: the
+ * next request of a quick client arrives in less.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT			(1 << 6)
+
+/**
  * @brief The exponent of the last bucket with a limit of the requests that a connection handled: 2^10 requests,
  * the default of #HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS.
  *
@@ -784,6 +801,22 @@ struct _HttpCerver {
 	 * @since 2.1b-17
 	 */
 	size_t uploads_write_bytes;
+
+	/**
+	 * @brief The microseconds that the thread of a pool that answered a request of a connection that is kept looks
+	 * for its next request, to handle it by itself; 0 disables it (http_cerver_set_keep_alive_follow ()). Only with
+	 * event loops.
+	 *
+	 * @since 2.1b-17
+	 */
+	unsigned int keep_alive_follow;
+	/**
+	 * @brief The requests that the thread that answered the one before them handled by itself, without their event
+	 * loop; updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_followed_requests;
 
 };
 

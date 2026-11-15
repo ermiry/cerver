@@ -397,6 +397,13 @@ struct EventDispatcher {
 	/** @internal @brief Returns whether a submit would find no place, to not try it. */
 	bool (*is_full) (const EventDispatcher *dispatcher);
 
+	/**
+	 * @internal
+	 * @brief Returns whether a job that it took waits for a thread: a thread does not follow its connection then.
+	 * NULL for a dispatcher whose jobs never wait. Called from the threads that run the jobs.
+	 */
+	bool (*is_awaited) (const EventDispatcher *dispatcher);
+
 	/** @internal @brief The data of the dispatcher. */
 	void *data;
 

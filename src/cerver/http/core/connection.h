@@ -45,6 +45,16 @@ struct EventLoop;
 
 /**
  * @internal
+ * @brief The most misses in a row that a connection counts: a connection with them is followed once in
+ * 2^6 requests.
+ */
+#define HTTP_CONNECTION_FOLLOW_MISSES				6
+
+/** @internal @brief The bytes of the buffer of a thread that follows its connection, the ones that it reads at once. */
+#define HTTP_CONNECTION_FOLLOW_BUFFER_SIZE			(1 << 12)
+
+/**
+ * @internal
  * @brief Where a connection of an event loop is. Only the thread of its loop changes it.
  */
 typedef enum HttpConnectionState {
@@ -92,7 +102,17 @@ typedef enum HttpConnectionOutcome {
 	/** @internal @brief The pool dropped the job without running it: the loop answers 503. */
 	HTTP_CONNECTION_OUTCOME_DROPPED			= 3,
 	/** @internal @brief Its request was handled and its connection is kept: the loop starts its next request. */
-	HTTP_CONNECTION_OUTCOME_KEPT			= 4
+	HTTP_CONNECTION_OUTCOME_KEPT			= 4,
+	/** @internal @brief The thread that followed it read a part of its next request: the loop reads the rest. */
+	HTTP_CONNECTION_OUTCOME_READING			= 5,
+	/**
+	 * @internal
+	 * @brief The thread that followed it parsed its next request up to where it needs another job: its
+	 * authentication before its body, or a complete request that the thread does not handle. The loop submits it.
+	 */
+	HTTP_CONNECTION_OUTCOME_PAUSED			= 6,
+	/** @internal @brief The thread that followed it could not parse its next request, or it was rejected and answered: the loop closes it. */
+	HTTP_CONNECTION_OUTCOME_FAILED			= 7
 
 } HttpConnectionOutcome;
 
@@ -232,6 +252,15 @@ struct HttpConnection {
 	struct HttpConnection *idle_previous;
 	/** @internal @brief When the time that it can wait idle ends, in the milliseconds of the clock of its loop. */
 	u64 idle_deadline;
+
+	/**
+	 * @internal
+	 * @brief The times in a row that the thread that followed it found no request in time, up to
+	 * #HTTP_CONNECTION_FOLLOW_MISSES; a request that arrives in time clears it. Of the thread that owns it.
+	 */
+	unsigned int follow_misses;
+	/** @internal @brief The requests that are not followed before the next try, 2^follow_misses - 1 after a miss. */
+	unsigned int follow_skip;
 
 };
 
