@@ -287,6 +287,15 @@ para que los ports entre líneas sigan siendo directos.
   público sin documentar no entra.
 - **La referencia** se genera en el CI como artifact y se publica con el release 3.0. El wiki (`docs/`) no se toca
   hasta el release.
+- **Hecha en la sesión 47 (2026-11-13), sin commit:** la referencia sale en `reference/` (no en `docs/reference/`:
+  `docs/` es el submódulo del wiki); `Dockerfile.docs` con Doxygen 1.9.8 y el job `docs` de `build.yml`; el `INPUT`
+  del `Doxyfile` lista las carpetas documentadas, y `http/json/`, `http/parser/` y `http/jwt/jwt.h` (de terceros)
+  quedan fuera; `-Wdocumentation` va en todo build de clang, con `-Wno-documentation-deprecated-sync` (un
+  `@deprecated` no agrega el atributo). La guía está en `CLAUDE.md` (Conventions).
+- **La sincronía con `core`** (la 1.9b-1): `core` no tenía nada que `labs` no tuviera; `core` recibió el layout de la
+  3.0b-2, `crypto/random`, `_by_` → `_with_`, la licencia y la misma documentación, y los archivos del core solo
+  difieren en las partes web de `cerver` y `handler`, el paraguas y lo de OpenSSL de `crypto/`. Un arreglo del core
+  se hace en las dos ramas.
 
 ### 4.1 L1 — El JSON propio
 
