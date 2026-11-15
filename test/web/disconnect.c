@@ -310,6 +310,8 @@ static void disconnect_configure (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
+	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
+
 	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
 
 	http_cerver_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
