@@ -3,6 +3,71 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9b-1 (from 1.8.2)
+
+The structure of the tree of the 3.0 (`labs` 3.0b-2), its documentation and its license: every header changes its
+path and the functions with `_by_` are named with `_with_`; the wire does not change, a 1.9b-1 talks with a 1.8.2.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`); `thirdparty.md` lists the code of other projects that cerver
+  includes (sha-2 and fastbase64), with their licenses
+- **Every include changes:** the headers are in folders by domain (`core/`, `admin/`, `auth/`, `client/`,
+  `connection/`, `files/`, `handler/`, `load/`, `network/`, `packets/`, `system/`), e.g. `cerver/client.h` is
+  `cerver/client/client.h`, `cerver/auth.h` is `cerver/auth/auth.h`, `cerver/sessions.h` is `cerver/auth/sessions.h`,
+  `cerver/balancer.h` is `cerver/load/balancer.h`, `cerver/receive.h` is `cerver/handler/receive.h`,
+  `cerver/socket.h` is `cerver/network/socket.h`, `cerver/serializer.h` is `cerver/packets/serializer.h`,
+  `cerver/timer.h` is `cerver/system/timer.h` and `cerver/game/gametype.h` is `cerver/game/types.h`;
+  `cerver/config.h` and `cerver/version.h` stay on top. There are no headers with the old paths
+- **The big headers are split in parts,** and the main header of a module does not include its parts: a program
+  that used `cerver_start ()` with `cerver/cerver.h` now includes `cerver/core/start.h` (or the umbrella). The parts
+  are `cerver/core/{types,info,data,handler,start,update,end,report,serialization}.h`,
+  `cerver/admin/{cerver,stats,lifecycle,handler,poll}.h`, `cerver/auth/hold.h`,
+  `cerver/client/{events,connect,requests,handler}.h`,
+  `cerver/connection/{stats,data,lifecycle,end,registry,update,send}.h`,
+  `cerver/files/{cerver,images,send,receive}.h`, `cerver/load/{stats,service,start,route,end}.h` and
+  `cerver/packets/header.h`
+- **`<cerver/cerver.h>` is now the umbrella of the core:** it includes every public header. The `Cerver` is declared
+  in `cerver/core/cerver.h`; a program that included `cerver/cerver.h` still compiles, with more headers
+- **The functions with `_by_` are named with `_with_`:** `admin_comparator_with_id ()`,
+  `admin_get_with_session_id ()`, `admin_get_with_sock_fd ()`, `admin_remove_connection_with_sock_fd ()`,
+  `cerver_poll_get_idx_with_sock_fd ()`, `client_get_with_session_id ()`, `client_get_with_sock_fd ()`,
+  `client_remove_connection_with_sock_fd ()`, `connection_get_with_sock_fd_from_admin ()`,
+  `connection_get_with_sock_fd_from_client ()`, `connection_get_with_sock_fd_from_on_hold ()`,
+  `dlist_merge_two_with_condition ()`, `dlist_remove_with_condition ()`, `dlist_split_with_condition ()`,
+  `file_send_with_fd ()`, `files_image_get_type_with_extension ()`, `game_type_get_with_name ()`,
+  `lobby_search_with_id ()`, `player_comparator_with_id ()` and `player_get_with_sock_fd_list ()`
+- **New:** `cerver/crypto/random.h` with `cerver_crypto_random_bytes ()`, the random bytes of the kernel that the
+  default session ids use (it was a static function of `sessions.c`)
+- The header guards follow the paths (`_CERVER_CORE_CERVER_H_`, `_CERVER_CLIENT_CLIENT_H_`, …); `_CERVER_H_` is the
+  umbrella. The internal declarations of the parts are in `src/cerver/<module>/internal.h`, never installed, and the
+  build adds `-I src`
+- `cerver_start (NULL)` returns 1, it dereferenced the NULL cerver; `cerver_set_admin_enable ()` called again keeps
+  the admin cerver that the cerver already has (and returns 0), it created another one and lost the first
+- **The fixes that the documentation found** (each one with its test), that change what a call returns:
+  - with a NULL argument they fail or keep the current value instead of crashing: `connection_set_name ()`,
+    `connection_set_values ()`, `client_set_name ()`, `client_get_with_session_id ()`, `packet_send ()`,
+    `packet_send_unsafe ()`, `packet_send_split ()`, `packet_send_pieces ()`, `str_contains ()` (-1),
+    `c_string_concat ()`, `bool_value_from_string ()`, `xtoi ()`, `cerver_log_with_date ()`, `job_reset ()`,
+    `lobby_summary_packet_create ()`, `admin_get_with_session_id ()`, `admin_cerver_get_n_handlers_alive ()` (before
+    the admin cerver starts), `balancer_get_type ()` (`BALANCER_TYPE_NONE`), `balancer_service_get_status ()`
+    (`SERVICE_STATUS_NONE`) and `avl_is_not_empty ()` (false); `packet_send_to_socket ()`, `packet_generate ()` and
+    `game_type_add_lobby_config ()` return 1 with a NULL argument (they returned 0)
+  - `sock_set_timeout ()` returns 1 on error (it returned -1); `random_int_in_range ()` includes both limits (also
+    when they are equal or reversed); `c_string_remove_sub_after_token_with_idx ()` returns NULL without the token
+  - `str_set ()` and `str_set_with_args ()` do not change a String without `max_len` (they overflowed it);
+    `str_n_copy ()` and `str_n_replace_with ()` keep the real length of a shorter source; `str_split ()` counts its
+    tokens and returns NULL for a String of only delimiters
+  - `arena_alloc ()` fails with the sizes that wrap around; `packet_append_data ()` fails when the size wraps;
+    `packet_set_packet ()` releases the copy of a packet that was a reference; `c_string_create_with_ptrs ()` and
+    `c_string_n_copy ()` (with 0) do not write out of their buffers; `receive_handle_new ()` starts without received
+    bytes
+- The headers are documented with Doxygen: `make docs` writes the reference in `reference/` (HTML and XML), with
+  `Doxyfile`, `Dockerfile.docs` (Doxygen 1.9.8) and the `docs` job of `build.yml`, that fails with any warning; every
+  clang build adds `-Wdocumentation -Wdocumentation-unknown-command -fcomment-block-commands=threadsafety`
+- The tests binaries follow the folders: `test/bin/connection`, `files`, `handler`, `load` (balancer and routing),
+  `network` (network, socket and udp), `packets`, `system` and `crypto` replace
+  `test/bin/{connection,files,receive,balancer,routing,network,socket,udp,packets,system}`; the handler pair is
+  `cerver/handler`; `test/test.h` scales the short timeouts with `TEST_TIME_SCALE` (valgrind and the sanitizers)
+
 ## 1.8.2 (from 1.8.1)
 
 The wire and the ABI do not change: a 1.8.2 talks with a 1.8.1, and an application built with the 1.8.1 runs with it.
