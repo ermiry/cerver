@@ -1,10 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/utils.h>
+#include <cerver/http/core/utils.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 static const char *range_none = { "None" };
 static const char *range_empty = { "Empty" };

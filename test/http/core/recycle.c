@@ -1,21 +1,21 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <pthread.h>
 
 #include <cerver/version.h>
 
-#include <cerver/http/headers.h>
-#include <cerver/http/http.h>
-#include <cerver/http/recycle.h>
-#include <cerver/http/response.h>
-#include <cerver/http/status.h>
+#include <cerver/http/core/http.h>
+#include "cerver/http/core/recycle.h"
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/headers/header.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/responses/status.h>
 
-#include "../test.h"
-
-#include "http.h"
+#include "../../test.h"
+#include "../http.h"
 
 // the responses and the buffers of the bodies that the threads reuse:
 // a reused one never keeps what its previous request left in it

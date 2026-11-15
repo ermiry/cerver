@@ -3,9 +3,9 @@
 
 #include <stddef.h>
 
-#include "cerver/config.h"
-
 #include "cerver/collections/freelist.h"
+
+#include "cerver/config.h"
 
 // the objects that the shared lists keep, 0 in the builds that do not recycle
 #define HTTP_RECYCLE_LIMIT						FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)

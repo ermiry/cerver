@@ -1,13 +1,13 @@
-#include <stdlib.h>
-#include <stdbool.h>
 #include <limits.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
 #include "cerver/collections/freelist.h"
 
-#include "cerver/http/recycle.h"
-#include "cerver/http/response.h"
+#include "cerver/http/core/recycle.h"
+#include "cerver/http/responses/response.h"
 
 #pragma region recycle
 

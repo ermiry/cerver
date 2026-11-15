@@ -2,24 +2,28 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cerver/cerver.h"
-#include "cerver/system.h"
 #include "cerver/version.h"
 
-#include "cerver/threads/worker.h"
+#include "cerver/core/cerver.h"
+#include "cerver/system/system.h"
 
-#include "cerver/http/admin.h"
-#include "cerver/http/http.h"
-#include "cerver/http/metrics.h"
-#include "cerver/http/request.h"
-#include "cerver/http/response.h"
-#include "cerver/http/route.h"
-#include "cerver/http/tree.h"
-
-#include "cerver/http/websockets/registry.h"
-
+#include "cerver/http/core/admin.h"
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
+#include "cerver/http/core/metrics.h"
+#include "cerver/http/core/settings.h"
+#include "cerver/http/core/stats.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/responses/response.h"
+#include "cerver/http/routes/route.h"
+#include "cerver/http/routes/tree.h"
+#include "cerver/http/security/auth.h"
+#include "cerver/http/websockets/registry.h"
+
+#include "cerver/threads/worker.h"
 
 #include "cerver/utils/log.h"
 
@@ -1539,3 +1543,197 @@ u8 http_cerver_admin_group_init (
 	return retval;
 
 }
+
+#pragma region admin
+
+// enables the ability to have admin routes
+// to fetch cerver's HTTP stats
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN
+void http_cerver_enable_admin_routes (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// enables the ability to have an admin info route
+// to fetch cerver's information
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO
+void http_cerver_enable_admin_info_route (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_info_route = enable;
+	}
+
+}
+
+// enables HTTP admin routes to handle HEAD requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS
+void http_cerver_enable_admin_head_handlers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_head_handlers = enable;
+	}
+
+}
+
+// enables HTTP admin routes to handle OPTIONS requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS
+void http_cerver_enable_admin_options_handlers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_options_handlers = enable;
+	}
+
+}
+
+// enables authentication in admin routes
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH
+void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_auth_type = auth_type;
+	}
+
+}
+
+// sets the method to be used to decode incoming data from JWT
+// and sets a method to delete it after use
+// if no delete method is set, data won't be freed
+void http_cerver_admin_routes_auth_set_decode_data (
+	HttpCerver *http_cerver,
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_decode_data = decode_data;
+		http_cerver->admin_delete_decoded_data = delete_decoded_data;
+	}
+
+}
+
+// works like http_cerver_enable_admin_routes_authentication ()
+// but sets a method to decode data from a JWT into a json string
+void http_cerver_admin_routes_auth_decode_to_json (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_decode_data = http_decode_data_into_json;
+		http_cerver->admin_delete_decoded_data = free;
+	}
+
+}
+
+// sets a method to be used to handle auth in admin routes
+// HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+void http_cerver_admin_routes_set_authentication_handler (
+	HttpCerver *http_cerver,
+	unsigned int (*authentication_handler)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_auth_handler = authentication_handler;
+	}
+
+}
+
+// sets a custom data reference to be set in all admin routes
+void http_cerver_admin_routes_set_custom_data (
+	HttpCerver *http_cerver, void *custom_data
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_routes_custom_data = custom_data;
+	}
+
+}
+
+// sets how the custom data will be disposed when the service gets destroyed
+void http_cerver_admin_routes_set_delete_custom_data (
+	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
+) {
+
+	if (http_cerver) {
+		http_cerver->delete_admin_routes_custom_data = delete_custom_data;
+	}
+
+}
+
+// enables CORS headers in admin routes responses
+// always uses admin origin's value
+// if there is no dedicated origin, it will dynamically
+// set the header based on the origins whitelist
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS
+void http_cerver_enable_admin_cors_headers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_cors_headers = enable;
+	}
+
+}
+
+// sets the dedicated domain that will be walways set
+// in the admin responses CORS headers
+void http_cerver_admin_set_origin (
+	HttpCerver *http_cerver, const char *domain
+) {
+
+	if (http_cerver) {
+		http_origin_init (
+			&http_cerver->admin_origin,
+			domain
+		);
+	}
+
+}
+
+// registers a new file system to be handled
+// when requesting for fs stats
+void http_cerver_register_admin_file_system (
+	HttpCerver *http_cerver, const char *path
+) {
+
+	if (http_cerver) {
+		(void) dlist_insert_at_end_unsafe (
+			http_cerver->admin_file_systems_stats,
+			http_admin_file_system_stats_create (path)
+		);
+	}
+
+}
+
+// registers an existing worker to be handled
+// when requisting for workers states
+void http_cerver_register_admin_worker (
+	HttpCerver *http_cerver, const Worker *worker
+) {
+
+	if (http_cerver && worker) {
+		(void) dlist_insert_at_end_unsafe (
+			http_cerver->admin_workers,
+			worker
+		);
+	}
+
+}
+
+#pragma endregion

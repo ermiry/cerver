@@ -1,40 +1,46 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
+#include <time.h>
 
 #include <dirent.h>
-#include <errno.h>
-#include <time.h>
-#include <unistd.h>
-
 #include <sys/socket.h>
 #include <sys/stat.h>
-
-#include <cerver/cerver.h>
-#include <cerver/connection.h>
-#include <cerver/handler.h>
+#include <unistd.h>
 
 #include <cerver/collections/arena.h>
 
-#include <cerver/http/access.h>
-#include <cerver/http/auth.h>
-#include <cerver/http/headers.h>
-#include <cerver/http/http.h>
-#include <cerver/http/jwt/alg.h>
-#include <cerver/http/multipart.h>
-#include <cerver/http/recycle.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/end.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/handler/handler.h>
 
-#include <cerver/http/websockets/internal.h>
+#include "cerver/http/core/access.h"
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
+#include <cerver/http/core/pairs.h>
+#include <cerver/http/core/public.h>
+#include "cerver/http/core/recycle.h"
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/headers/fields.h>
+#include <cerver/http/jwt/alg.h>
+#include <cerver/http/requests/multipart.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
+#include <cerver/http/security/auth.h>
+#include "cerver/http/websockets/internal.h"
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
 #include "../test.h"
-
 #include "http.h"
 
 // feeds http_receive_handle () with requests split between recv () calls
