@@ -1131,6 +1131,66 @@ static void test_packets_recycle_thread (void) {
 
 #pragma endregion
 
+#pragma region errors
+
+// the sends and the generate of a NULL packet fail without touching it
+static void test_packets_null (void) {
+
+	test_check_unsigned_eq (packet_send (NULL, 0, NULL, false), 1, "sent a NULL packet");
+	test_check_unsigned_eq (packet_send_unsafe (NULL, 0, NULL, false), 1, "sent a NULL packet without the lock");
+	test_check_unsigned_eq (packet_send_split (NULL, 0, NULL), 1, "sent a NULL packet in two parts");
+	test_check_unsigned_eq (packet_send_to_socket (NULL, NULL, 0, NULL, false), 1, "sent a NULL packet to a NULL socket");
+	test_check_unsigned_eq (packet_generate (NULL), 1, "generated a NULL packet");
+
+	char piece[BUFFER_SIZE] = { 0 };
+	void *pieces[] = { piece };
+	size_t sizes[] = { BUFFER_SIZE };
+
+	Packet *packet = packet_new ();
+	test_check_ptr (packet);
+	test_check_unsigned_eq (
+		packet_send_pieces (packet, pieces, sizes, (u32) ARRAY_SIZE (pieces), 0, NULL), 1,
+		"sent the pieces of a packet without a connection"
+	);
+	packet_delete (packet);
+
+}
+
+// a packet that was a reference and is copied again owns the copy, that packet_delete () releases
+static void test_packets_set_packet_after_reference (void) {
+
+	char reference[BUFFER_SIZE] = { 0 };
+	char copy[BUFFER_SIZE] = { 0 };
+
+	Packet *packet = packet_new ();
+	test_check_ptr (packet);
+
+	test_check_unsigned_eq (packet_set_packet_ref (packet, reference, BUFFER_SIZE), 0, NULL);
+	test_check_unsigned_eq (packet_set_packet (packet, copy, BUFFER_SIZE), 0, NULL);
+	test_check (!packet->packet_ref, "the copy of the packet was still a reference");
+
+	packet_delete (packet);
+
+}
+
+// a size that does not fit with the data of the packet fails, and the packet keeps its data
+static void test_packets_append_data_overflow (void) {
+
+	char buffer[BUFFER_SIZE] = { 0 };
+
+	Packet *packet = packet_create (PACKET_TYPE_APP, 0, buffer, BUFFER_SIZE);
+	test_check_ptr (packet);
+
+	test_check_unsigned_eq (packet_append_data (packet, buffer, SIZE_MAX), 1, "appended data whose size overflows");
+	test_check_unsigned_eq (packet->data_size, BUFFER_SIZE, NULL);
+	test_check_ptr (packet->data);
+
+	packet_delete (packet);
+
+}
+
+#pragma endregion
+
 int main (void) {
 
 	test_output_init ();
@@ -1183,6 +1243,11 @@ int main (void) {
 	test_packets_send_request ();
 	test_packets_route_between_connections ();
 	test_packets_check ();
+
+	// errors
+	test_packets_null ();
+	test_packets_set_packet_after_reference ();
+	test_packets_append_data_overflow ();
 
 	(void) printf ("\nDone with PACKETS tests!\n\n");
 

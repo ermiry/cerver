@@ -1405,7 +1405,7 @@ Packet *lobby_summary_packet_create (const Lobby *lobby, const u32 request_type,
 
 	Packet *packet = NULL;
 
-	LobbySummary *summary = (LobbySummary *) malloc (sizeof (LobbySummary));
+	LobbySummary *summary = lobby ? (LobbySummary *) malloc (sizeof (LobbySummary)) : NULL;
 	if (summary) {
 		game_cerver_lock (lobby->cerver);
 		lobby_summary_set (summary, lobby, created);

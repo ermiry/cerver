@@ -83,6 +83,7 @@ ReceiveHandle *receive_handle_new (void) {
 
 		receive_handle->buffer = NULL;
 		receive_handle->buffer_size = 0;
+		receive_handle->received_size = 0;
 
 		receive_handle->state = RECEIVE_HANDLE_STATE_NONE;
 

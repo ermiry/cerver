@@ -5,6 +5,8 @@
 
 #include <time.h>
 
+#include <cerver/collections/dlist.h>
+
 #include <cerver/admin.h>
 #include <cerver/cerver.h>
 #include <cerver/client.h>
@@ -95,6 +97,55 @@ static void test_cerver_setters_invalid (void) {
 	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
 	admin_cerver_set_max_fds (cerver->admin, 0);
 	test_check_unsigned_eq (cerver->admin->max_n_fds, ADMIN_CERVER_DEFAULT_POLL_FDS, "set an admin poll of 0 fds");
+
+	(void) cerver_teardown (cerver);
+
+}
+
+// the lifecycle of a NULL cerver fails without touching it
+static void test_cerver_lifecycle_null (void) {
+
+	test_check_unsigned_eq (cerver_start (NULL), 1, "started a NULL cerver");
+	test_check_unsigned_eq (cerver_shutdown (NULL), 1, "shut down a NULL cerver");
+	test_check_unsigned_eq (cerver_teardown (NULL), 1, "tore down a NULL cerver");
+
+}
+
+// enabling the admins again keeps the admin cerver that the cerver already has
+static void test_cerver_admin_enable_twice (void) {
+
+	Cerver *cerver = test_cerver_create ();
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	AdminCerver *admin = cerver->admin;
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	test_check (cerver->admin == admin, "enabling the admins again replaced the admin cerver");
+
+	(void) cerver_teardown (cerver);
+
+}
+
+// the admin cerver answers its getters before it starts, and a lookup without a session id finds no admin
+static void test_cerver_admin_lookups (void) {
+
+	Cerver *cerver = test_cerver_create ();
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	test_check_unsigned_eq (admin_cerver_get_n_handlers_alive (cerver->admin), 0, "the alive handlers of an admin cerver that has not started");
+
+	Client *client = client_create ();
+	test_check_unsigned_eq (client_set_session_id (client, "session"), 0, NULL);
+
+	Admin *admin = admin_create_with_client (client);
+	test_check_ptr (admin);
+	test_check_int_eq (dlist_insert_at_end (cerver->admin->admins, admin), 0, NULL);
+
+	test_check (admin_get_by_session_id (cerver->admin, "session") == admin, "the admin of its session id was not found");
+	test_check_null_ptr (admin_get_by_session_id (cerver->admin, NULL));
+
+	(void) dlist_remove (cerver->admin->admins, admin, NULL);
+	admin_delete (admin);
 
 	(void) cerver_teardown (cerver);
 
@@ -417,6 +468,9 @@ int main (void) {
 
 	test_cerver_base_configuration ();
 	test_cerver_setters_invalid ();
+	test_cerver_lifecycle_null ();
+	test_cerver_admin_enable_twice ();
+	test_cerver_admin_lookups ();
 	test_cerver_session_default_ids ();
 	test_cerver_events_out_of_range ();
 	test_cerver_events_dropped ();

@@ -34,7 +34,25 @@ static void test_http_admin_file_system_stats_create (void) {
 	test_check_str_eq (stats->path, uploads_file_system, NULL);
 
 	http_admin_file_system_stats_delete (stats);
-	
+
+}
+
+// a file system without a path is not registered
+static void test_http_admin_register_file_system_null (void) {
+
+	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
+	test_check_ptr (test_cerver);
+
+	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+
+	http_cerver_register_admin_file_system (http_cerver, NULL);
+	test_check_unsigned_eq (dlist_size (http_cerver->admin_file_systems_stats), 0, "registered a file system without a path");
+
+	http_cerver_register_admin_file_system (http_cerver, uploads_file_system);
+	test_check_unsigned_eq (dlist_size (http_cerver->admin_file_systems_stats), 1, NULL);
+
+	(void) cerver_teardown (test_cerver);
+
 }
 
 #pragma endregion
@@ -159,6 +177,7 @@ void http_tests_admin (void) {
 	// systems
 	test_http_admin_file_system_stats_new ();
 	test_http_admin_file_system_stats_create ();
+	test_http_admin_register_file_system_null ();
 
 	// generate
 	test_http_admin_generate_jsons ();

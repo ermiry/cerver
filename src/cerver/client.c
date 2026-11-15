@@ -432,10 +432,10 @@ Client *client_create_with_connection (
 
 }
 
-// sets the client's name
+// sets the client's name, a NULL name keeps the current one
 void client_set_name (Client *client, const char *name) {
 
-	if (client) {
+	if (client && name) {
 		(void) strncpy (client->name, name, CLIENT_NAME_SIZE - 1);
 	}
 
@@ -1170,7 +1170,7 @@ Client *client_get_by_session_id (
 
 	Client *client = NULL;
 
-	if (session_id) {
+	if (cerver && session_id) {
 		// create our search query
 		Client *client_query = client_new ();
 		if (client_query) {
@@ -2365,7 +2365,7 @@ unsigned int client_connect (
 
 	if (client && connection) {
 		if (!connection_connect (connection)) {
-			connection->active = true;
+			connection_set_active (connection, true);
 			(void) time (&connection->connected_timestamp);
 
 			// the event sees the connection already active
@@ -2552,7 +2552,7 @@ int client_connection_start (Client *client, Connection *connection) {
 	int retval = 1;
 
 	if (client && connection) {
-		if (connection->active) {
+		if (connection_is_active (connection)) {
 			if (!client_start (client) && !connection_start (connection)) {
 				// set before the thread exists, so an end that arrives first waits for it
 				client_update_thread_started (client, connection, true);
@@ -3697,7 +3697,7 @@ static void client_receive_handle_failed (
 		}
 	}
 
-	else if (connection->active) {
+	else if (connection_is_active (connection)) {
 		(void) client_connection_end (client, connection);
 	}
 
@@ -3954,7 +3954,7 @@ static void client_connection_terminate (
 ) {
 
 	if (connection) {
-		if (connection->active) {
+		if (connection_is_active (connection)) {
 			if (__atomic_load_n (&connection->cerver_report, __ATOMIC_ACQUIRE)) {
 				// send a close connection packet
 				Packet *packet = packet_generate_request (

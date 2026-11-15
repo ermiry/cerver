@@ -3,6 +3,41 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-73 (from 2.0b-72)
+
+The fixes that the documentation of the headers found in the other lines (`labs` 3.0b-3, `core` 1.9b-1), each one with
+its test. The API, the structures and the wire are the ones of 2.0b-72; what changes is what some calls return.
+
+- `cerver_start (NULL)` returns 1, it dereferenced the NULL cerver; `cerver_set_admin_enable ()` called again keeps the
+  admin cerver that the cerver already has (and returns 0), it created another one and lost the first
+- Two threads that end the same connection (a client teardown and its reconnection thread) never both end it: the
+  active flag of a connection is read and written with `__atomic` (a data race with TSan)
+- With a NULL argument they fail or keep the current value instead of crashing: `connection_set_name ()`,
+  `connection_set_values ()`, `client_set_name ()`, `client_get_by_session_id ()`, `packet_send ()`,
+  `packet_send_unsafe ()`, `packet_send_split ()`, `packet_send_pieces ()`, `str_contains ()` (-1),
+  `c_string_concat ()`, `bool_value_from_string ()`, `xtoi ()`, `cerver_log_with_date ()`, `job_reset ()`,
+  `lobby_summary_packet_create ()`, `admin_get_by_session_id ()`, `admin_cerver_get_n_handlers_alive ()` (before the
+  admin cerver starts), `balancer_get_type ()` (`BALANCER_TYPE_NONE`), `balancer_service_get_status ()`
+  (`SERVICE_STATUS_NONE`), `avl_is_not_empty ()` (false), the HTTP custom data and receive getters,
+  `http_content_type_by_*` and the CORS, Content-Range and send methods of the responses (1);
+  `packet_send_to_socket ()`, `packet_generate ()` and `game_type_add_lobby_config ()` return 1 with a NULL argument
+  (they returned 0)
+- `sock_set_timeout ()` returns 1 on error (it returned -1); `random_int_in_range ()` includes both limits (also when
+  they are equal or reversed); `c_string_remove_sub_after_token_with_idx ()` returns NULL without the token
+- `str_set ()` and `str_set_with_args ()` do not change a String without `max_len` (they overflowed it);
+  `str_n_copy ()` and `str_n_replace_with ()` keep the real length of a shorter source; `str_split ()` counts its
+  tokens and returns NULL for a String of only delimiters
+- `arena_alloc ()` fails with the sizes that wrap around; `packet_append_data ()` fails when the size wraps;
+  `packet_set_packet ()` releases the copy of a packet that was a reference; `c_string_create_with_ptrs ()` and
+  `c_string_n_copy ()` (with 0) do not write out of their buffers; `receive_handle_new ()` starts without received
+  bytes
+- The lengths of `http_cerver_generate_uploads_path ()` and `http_multi_part_set_generated_filename ()` are the ones of
+  the truncated value; `http_origin_init ()` ends a truncated origin; `http_response_set_data ()` does not free the data
+  of a reference; `http_cerver_register_admin_file_system ()` fails without a path; the pairs without a key or a value
+  are skipped
+- `test/performance.sh` measures the allocations of the requests inside the same server, between two snapshots of
+  valgrind (`vgdb`), with a slack of the connections that the free lists can still create
+
 ## 2.0b-72 (from 2.0b-71)
 
 The rest of the review of the requests: limits, defaults and the targets of a request.

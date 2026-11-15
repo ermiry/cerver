@@ -1532,14 +1532,15 @@ void cerver_set_update_interval (
 
 }
 
-// enables admin connections to cerver
+// enables admin connections to cerver,
+// a cerver that already has its admin cerver keeps it
 // returns 0 on success, 1 on error
 u8 cerver_set_admin_enable (Cerver *cerver) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver->admin = admin_cerver_create ();
+		if (!cerver->admin) cerver->admin = admin_cerver_create ();
 		if (cerver->admin) {
 			cerver->admin->cerver = cerver;
 			retval = 0;
@@ -3054,7 +3055,7 @@ u8 cerver_start (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	if (!cerver_is_running (cerver)) {
+	if (cerver && !cerver_is_running (cerver)) {
 		cerver_set_running (cerver, true);
 
 		if (cerver_start_cancelled (cerver)) return 0;
@@ -3140,7 +3141,7 @@ u8 cerver_start (Cerver *cerver) {
 		cerver_stop_request (cerver);
 	}
 
-	else {
+	else if (cerver) {
 		cerver_log (
 			LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 			"The cerver %s is already running!",

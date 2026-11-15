@@ -48,13 +48,22 @@ static void test_receive_handle_state_to_string (void) {
 
 }
 
+// a released block of the same size, filled with garbage, is the one that malloc () gives again
+#define RECEIVE_TEST_GARBAGE		0xA5
+
 static void test_receive_handle_create (void) {
+
+	void *garbage = malloc (sizeof (ReceiveHandle));
+	test_check_ptr (garbage);
+	(void) memset (garbage, RECEIVE_TEST_GARBAGE, sizeof (ReceiveHandle));
+	free (garbage);
 
 	ReceiveHandle *receive = receive_handle_new ();
 
 	test_check_ptr (receive);
 
 	test_check_unsigned_eq (receive->type, RECEIVE_TYPE_NONE, NULL);
+	test_check (receive->received_size == 0, "a new receive handle did not start without received bytes");
 
 	test_check_null_ptr (receive->cerver);
 

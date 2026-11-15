@@ -37,6 +37,7 @@ const char *http_origin_get_value (
 
 }
 
+// a value that does not fit is truncated and always ends inside the origin
 void http_origin_init (
 	HttpOrigin *origin, const char *value
 ) {
@@ -47,6 +48,8 @@ void http_origin_init (
 			value,
 			HTTP_ORIGIN_VALUE_SIZE - 1
 		);
+
+		origin->value[HTTP_ORIGIN_VALUE_SIZE - 1] = '\0';
 
 		origin->len = (int) strlen (origin->value);
 	}

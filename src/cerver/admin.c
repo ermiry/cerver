@@ -308,7 +308,7 @@ Admin *admin_get_by_session_id (
 
 	Admin *retval = NULL;
 
-	if (admin_cerver) {
+	if (admin_cerver && session_id) {
 		(void) pthread_mutex_lock (admin_cerver->admins->mutex);
 
 		Admin *admin = NULL;
@@ -807,7 +807,8 @@ unsigned int admin_cerver_get_n_handlers_alive (
 
 	unsigned int retval = 0;
 
-	if (admin_cerver) {
+	// an admin cerver that has not started does not have the lock
+	if (admin_cerver && admin_cerver->handlers_lock) {
 		(void) pthread_mutex_lock (admin_cerver->handlers_lock);
 		retval = admin_cerver->num_handlers_alive;
 		(void) pthread_mutex_unlock (admin_cerver->handlers_lock);

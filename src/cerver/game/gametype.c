@@ -77,12 +77,14 @@ void game_type_delete (void *ptr) {
 int game_type_add_lobby_config (GameType *game_type,
 	bool use_default_handler, Action custom_handler, u32 max_players) {
 
-	int retval = 0;
+	int retval = 1;
 
 	if (game_type) {
 		game_type->use_default_handler = use_default_handler;
 		game_type->custom_handler = custom_handler;
 		game_type->max_players = max_players;
+
+		retval = 0;
 	}
 
 	return retval;

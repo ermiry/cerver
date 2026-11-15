@@ -2820,7 +2820,7 @@ static u8 cerver_register_new_connection_auth_required (
 
 	// the on hold poll owns the connection as soon as it is registered,
 	// it can drop it at any time, so it is prepared before
-	connection->active = true;
+	connection_set_active (connection, true);
 
 	cerver_info_send_info_packet (cerver, NULL, connection);
 
@@ -3064,7 +3064,7 @@ static u8 cerver_register_new_connection_normal_default (
 		(void) connection_register_to_client (client, connection);
 
 		if (!client_register_to_cerver (cerver, client)) {
-			connection->active = true;
+			connection_set_active (connection, true);
 
 			(void) cerver_info_send_info_packet (cerver, client, connection);
 
@@ -3164,7 +3164,7 @@ static void cerver_register_new_connection (
 		);
 		#endif
 
-		connection->active = true;
+		connection_set_active (connection, true);
 
 		if (!cerver_register_new_connection_select (cerver, connection)) {
 			#ifdef CERVER_DEBUG

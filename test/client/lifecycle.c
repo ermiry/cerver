@@ -448,6 +448,20 @@ static bool lifecycle_wait_connections (Client *client, const size_t expected) {
 
 }
 
+// waits until the client is running: an async connection triggers CONNECTED before it starts its client
+static bool lifecycle_wait_running (Client *client) {
+
+	const struct timespec interval = { 0, LIFECYCLE_POLL_NANOSECONDS };
+	const double deadline = lifecycle_now () + LIFECYCLE_WAIT_SECONDS;
+
+	while (!client_is_running (client) && (lifecycle_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	return client_is_running (client);
+
+}
+
 #pragma endregion
 
 #pragma region tests
@@ -583,7 +597,7 @@ static void test_lifecycle_connect_async (void) {
 	);
 
 	test_check_true (connection->active);
-	test_check_true (client_is_running (client));
+	test_check (lifecycle_wait_running (client), "the async connection did not start its client");
 	test_check_unsigned_eq (lifecycle_events[CLIENT_EVENT_CONNECTION_FAILED], 0, NULL);
 
 	test_check_int_eq (client_connection_end (client, connection), 0, NULL);

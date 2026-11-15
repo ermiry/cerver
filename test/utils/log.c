@@ -78,11 +78,25 @@ static void test_log_file (void) {
 
 }
 
+// a message without a format prints nothing, the pointer skips the format check of the compiler
+static void test_log_null_format (void) {
+
+	void (*log_with_date) (const LogType, const LogType, const char *, ...) = cerver_log_with_date;
+
+	cerver_log_init ();
+
+	log_with_date (LOG_TYPE_DEBUG, LOG_TYPE_NONE, NULL);
+
+	cerver_log_end ();
+
+}
+
 void utils_tests_log (void) {
 
 	(void) printf ("Testing UTILS log...\n");
 
 	test_log_file ();
+	test_log_null_format ();
 
 	(void) printf ("Done!\n");
 

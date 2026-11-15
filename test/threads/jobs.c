@@ -77,6 +77,9 @@ static void test_job_reset (void) {
 
 	job_delete (job);
 
+	// a NULL job has nothing to reset
+	job_reset (NULL);
+
 }
 
 static void test_job_handler_new (void) {

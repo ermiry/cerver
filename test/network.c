@@ -17,6 +17,8 @@
 
 #define NETWORK_BAD_FD			-1
 
+#define NETWORK_TEST_TIMEOUT	1
+
 // sock_set_blocking () had its flags inverted,
 // the poll cerver called it with true to get a non blocking socket
 static void test_network_blocking (void) {
@@ -317,6 +319,22 @@ static void test_network_ipv6_only (void) {
 
 }
 
+// the timeouts of a socket return 0 on success and 1 on error, like the other setters
+static void test_network_timeouts (void) {
+
+	int fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (fd > NETWORK_BAD_FD, NULL);
+
+	test_check_int_eq (sock_set_timeout (fd, NETWORK_TEST_TIMEOUT), 0, NULL);
+	test_check_int_eq (sock_set_send_timeout (fd, NETWORK_TEST_TIMEOUT), 0, NULL);
+
+	(void) close (fd);
+
+	test_check_int_eq (sock_set_timeout (NETWORK_BAD_FD, NETWORK_TEST_TIMEOUT), 1, "the receive timeout of a bad fd did not return 1");
+	test_check_int_eq (sock_set_send_timeout (NETWORK_BAD_FD, NETWORK_TEST_TIMEOUT), 1, NULL);
+
+}
+
 int main (int argc, char **argv) {
 
 	(void) argc;
@@ -339,6 +357,8 @@ int main (int argc, char **argv) {
 	test_network_ip_equal ();
 
 	test_network_ipv6_only ();
+
+	test_network_timeouts ();
 
 	(void) printf ("\nDone with NETWORK tests!\n\n");
 

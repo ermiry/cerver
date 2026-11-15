@@ -136,6 +136,16 @@ static void test_http_content_type_is_json (void) {
 
 }
 
+// the lookups of a NULL mime or extension find nothing
+static void test_http_content_type_null (void) {
+
+	test_check_int_eq (http_content_type_by_mime (NULL), HTTP_CONTENT_TYPE_NONE, NULL);
+	test_check_int_eq (http_content_type_by_extension (NULL), HTTP_CONTENT_TYPE_NONE, NULL);
+	test_check_null_ptr (http_content_type_mime_by_extension (NULL));
+	test_check_bool_eq (http_content_type_is_json (NULL), false, NULL);
+
+}
+
 void http_tests_contents (void) {
 
 	(void) printf ("Testing HTTP contents...\n");
@@ -146,6 +156,7 @@ void http_tests_contents (void) {
 	test_http_content_type_by_extension ();
 	test_http_content_type_mime_by_extension ();
 	test_http_content_type_is_json ();
+	test_http_content_type_null ();
 
 	(void) printf ("Done!\n");
 

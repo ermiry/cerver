@@ -65,6 +65,24 @@ static void test_random_int_in_range (void) {
 		test_check_true ((result <= max));
 	}
 
+	// a range of a single value returns it
+	test_check_int_eq (random_int_in_range (5, 5), 5, NULL);
+
+	// the limits in the other order are the same inclusive range
+	bool lowest = false;
+	bool highest = false;
+	for (unsigned int i = 0; i < 1000; i++) {
+		const int result = random_int_in_range (3, 1);
+
+		test_check_true ((result >= 1));
+		test_check_true ((result <= 3));
+
+		if (result == 1) lowest = true;
+		if (result == 3) highest = true;
+	}
+
+	test_check (lowest && highest, "the limits in the other order were not inclusive");
+
 }
 
 void utils_tests_math (void) {

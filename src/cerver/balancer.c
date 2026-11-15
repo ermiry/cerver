@@ -238,7 +238,7 @@ void balancer_delete (void *balancer_ptr) {
 
 BalancerType balancer_get_type (const Balancer *balancer) {
 
-	return balancer->type;
+	return balancer ? balancer->type : BALANCER_TYPE_NONE;
 
 }
 
@@ -503,7 +503,7 @@ Service *balancer_service_create (void) {
 
 ServiceStatus balancer_service_get_status (const Service *service) {
 
-	return __atomic_load_n (&service->status, __ATOMIC_SEQ_CST);
+	return service ? __atomic_load_n (&service->status, __ATOMIC_SEQ_CST) : SERVICE_STATUS_NONE;
 
 }
 

@@ -345,7 +345,7 @@ void connection_delete (void *connection_ptr) {
 		Connection *connection = (Connection *) connection_ptr;
 
 		// connection_end () closes the socket, so it must run before deleting it
-		if (connection->active) connection_end (connection);
+		if (connection_is_active (connection)) connection_end (connection);
 
 		// a packet that was only partially received
 		receive_handle_end (&connection->receive_handle);
@@ -457,12 +457,12 @@ int connection_comparator (const void *a, const void *b) {
 
 }
 
-// sets the connection's name
+// sets the connection's name, a NULL name keeps the current one
 void connection_set_name (
 	Connection *connection, const char *name
 ) {
 
-	if (connection) {
+	if (connection && name) {
 		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
 	}
 
@@ -484,20 +484,20 @@ void connection_get_values (Connection *connection) {
 
 }
 
-// sets the connection's newtwork values
+// sets the connection's newtwork values, a NULL ip keeps the current one
 void connection_set_values (
 	Connection *connection,
 	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
 ) {
 
 	if (connection) {
-		(void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+		if (ip_address) (void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
 
 		connection->port = port;
 		connection->protocol = protocol;
 		connection->use_ipv6 = use_ipv6;
 
-		connection->active = false;
+		connection_set_active (connection, false);
 	}
 
 }
@@ -529,6 +529,26 @@ void connection_set_state (
 
 		(void) pthread_mutex_unlock (connection->state_mutex);
 	}
+
+}
+
+// the client teardown and the reconnection thread read and end the same connection
+bool connection_is_active (const Connection *connection) {
+
+	return __atomic_load_n (&connection->active, __ATOMIC_ACQUIRE);
+
+}
+
+void connection_set_active (Connection *connection, const bool active) {
+
+	__atomic_store_n (&connection->active, active, __ATOMIC_RELEASE);
+
+}
+
+// only the thread that finds the connection active ends it
+bool connection_take_end (Connection *connection) {
+
+	return __atomic_exchange_n (&connection->active, false, __ATOMIC_ACQ_REL);
 
 }
 
@@ -921,7 +941,7 @@ u8 connection_init (Connection *connection) {
 	u8 retval = 1;
 
 	if (connection) {
-		if (!connection->active) {
+		if (!connection_is_active (connection)) {
 			const int type = connection_init_socket_type (connection->protocol);
 			if ((type < 0) || connection_init_address (connection)) return 1;
 
@@ -1268,7 +1288,7 @@ unsigned int connection_start (Connection *connection) {
 
 	unsigned int retval = 1;
 
-	if (connection && connection->active) {
+	if (connection && connection_is_active (connection)) {
 		retval = 0;
 
 		if (
@@ -1329,7 +1349,7 @@ static void connection_reset_received_data (Connection *connection) {
 void connection_reset (Connection *connection) {
 
 	if (connection) {
-		if (connection->active) connection_end (connection);
+		if (connection_is_active (connection)) connection_end (connection);
 
 		connection_stop_send (connection);
 
@@ -1375,11 +1395,11 @@ void connection_reset (Connection *connection) {
 
 }
 
-// ends a connection
+// ends a connection, only once when two threads end it at the same time
 void connection_end (Connection *connection) {
 
 	if (connection) {
-		if (connection->active) {
+		if (connection_take_end (connection)) {
 			#ifdef CONNECTION_DEBUG
 			cerver_log_with_date (
 				LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
@@ -1401,7 +1421,6 @@ void connection_end (Connection *connection) {
 			}
 
 			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
-			connection->active = false;
 		}
 	}
 
@@ -1781,7 +1800,7 @@ static void connection_update_receive (
 
 		while (
 			client_is_running (client)
-			&& connection->active
+			&& connection_is_active (connection)
 			&& !connection->custom_receive (
 				&custom_data,
 				buffer, buffer_size
@@ -1794,7 +1813,7 @@ static void connection_update_receive (
 	else {
 		while (
 			client_is_running (client)
-			&& connection->active
+			&& connection_is_active (connection)
 			&& !client_receive_internal (
 				client, connection,
 				buffer, buffer_size
@@ -1864,7 +1883,7 @@ static bool connection_update_reconnect_attempt (
 
 		// the host is resolved again, so a cerver that moved to another address is found
 		if (!connection_connect_round (connection, true)) {
-			connection->active = true;
+			connection_set_active (connection, true);
 			(void) time (&connection->connected_timestamp);
 
 			connection_set_state (connection, CONNECTION_STATE_WORKING);
@@ -1898,7 +1917,7 @@ static void connection_update_reconnect_close (
 	Client *client, Connection *connection
 ) {
 
-	if (connection->active) {
+	if (connection_is_active (connection)) {
 		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
 		connection_end (connection);
 	}
