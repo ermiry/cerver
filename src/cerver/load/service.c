@@ -184,7 +184,7 @@ Service *balancer_service_create (void) {
 
 ServiceStatus balancer_service_get_status (const Service *service) {
 
-	return __atomic_load_n (&service->status, __ATOMIC_SEQ_CST);
+	return service ? __atomic_load_n (&service->status, __ATOMIC_SEQ_CST) : SERVICE_STATUS_NONE;
 
 }
 
