@@ -100,8 +100,15 @@ typedef struct CerverEvent {
 	Work work;
 	/** @brief The arguments of the action. */
 	void *work_args;
-	/** @brief Releases the arguments when the event is deleted. */
+	/** @brief Releases the arguments when the event and every trigger of it are done with them. */
 	Action delete_action_args;
+
+	/**
+	 * @brief The arguments shared with the data of each trigger, for the internal methods of cerver: the last one
+	 * that releases them deletes them.
+	 * @since 1.9b-2
+	 */
+	struct _CerverActionArgs *shared_args;
 
 } CerverEvent;
 
@@ -127,8 +134,8 @@ CERVER_PUBLIC void cerver_event_delete (void *event_ptr);
  * @param[in] drop_after_trigger true to unregister the action after its first trigger
  * @retval 0 the action was registered
  * @retval 1 a NULL cerver, an event out of range or it could not be allocated
- * @warning Replacing or unregistering an action while a thread of a previous trigger still runs it releases the
- * arguments that the thread uses (except with drop_after_trigger, whose arguments go with the data of the trigger).
+ * @note The arguments are shared by the event and the data of each trigger: replacing or unregistering the action
+ * while a thread of a previous trigger still runs it keeps them until that data is deleted.
  */
 CERVER_EXPORT u8 cerver_event_register (
 	struct _Cerver *cerver,
@@ -217,10 +224,18 @@ typedef struct CerverEventData {
 	Action delete_action_args;
 
 	/**
-	 * @brief The event was dropped after this trigger, so cerver_event_data_delete () releases the arguments of
-	 * the action with delete_action_args ().
+	 * @brief The event was dropped after this trigger: cerver_event_data_delete () releases the last reference to the
+	 * arguments of the action, so it deletes them with delete_action_args ().
 	 */
 	bool owns_action_args;
+
+	/**
+	 * @brief The reference of this trigger to the arguments of the action, for the internal methods of cerver:
+	 * cerver_event_data_delete () releases it, and the arguments are deleted when the event and every trigger are
+	 * done with them.
+	 * @since 1.9b-2
+	 */
+	struct _CerverActionArgs *shared_args;
 
 } CerverEventData;
 
