@@ -62,6 +62,8 @@ extern void http_tests_receive (void);
 
 extern void http_tests_server (void);
 
+extern void http_tests_keepalive (void);
+
 extern void http_tests_features (void);
 
 extern void http_tests_disconnect (void);
