@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/headers/types.h
+ * @brief The headers that HTTP knows: their types, their names and their descriptions.
+ */
+
 #ifndef _CERVER_HTTP_HEADERS_TYPES_H_
 #define _CERVER_HTTP_HEADERS_TYPES_H_
 
@@ -12,14 +17,31 @@
 extern "C" {
 #endif
 
+/**
+ * @defgroup http_headers Headers
+ * @ingroup http
+ * @brief The headers of the requests and of the responses.
+ */
+
+/**
+ * @defgroup http_headers_types Types
+ * @ingroup http_headers
+ * @brief The known headers.
+ * @{
+ */
+
+/** @brief The number of known headers, the value of HTTP_HEADER_UNDEFINED. */
 #define HTTP_HEADERS_MAX				63
+/** @brief The number of rows of #HTTP_HEADERS_MAP, with HTTP_HEADER_UNDEFINED. */
 #define HTTP_HEADERS_SIZE				64
-// the longest name of a header that is not one of the known ones
+/** @brief The longest name of a header that is not one of the known ones. */
 #define HTTP_HEADER_NAME_MAX			128
 
-// the open addressing table that finds a header type by its name,
-// a power of 2 bigger than twice the number of headers
+/** @brief The size of the open addressing table that finds a header type by its name, a power of 2 bigger than twice the number of headers. */
 #define HTTP_HEADERS_TABLE_SIZE			128
+/**
+ * @brief The X-macro table of the known headers: the number, the name, the string and the description of each one.
+ */
 #define HTTP_HEADERS_MAP(XX)																																																																	\
 	/* Authentication */																																																																		\
 	XX(0,	AUTHENTICATE,      					WWW-Authenticate,					(Defines the authentication method that should be used to access a resource.))																																\
@@ -105,6 +127,9 @@ extern "C" {
 	XX(62,  REAL_IP,							X-Real-IP,							(The IP address of the client that a proxy received the request from.))																																		\
 	XX(63,  UNDEFINED,							Undefined,							(Undefined Header))																																															\
 
+/**
+ * @brief A known header, one `HTTP_HEADER_<name>` for each row of #HTTP_HEADERS_MAP.
+ */
 typedef enum http_header {
 
 	#define XX(num, name, string, description) HTTP_HEADER_##name = num,
@@ -113,17 +138,40 @@ typedef enum http_header {
 
 } http_header;
 
+/**
+ * @brief Returns the name of a header, like "Content-Type".
+ *
+ * @param[in] header the header
+ * @return the name of its row in #HTTP_HEADERS_MAP, or "Undefined" for a value out of the table; a static string that
+ * must not be freed
+ */
 CERVER_PUBLIC const char *http_header_string (
 	const http_header header
 );
 
+/**
+ * @brief Returns the description of a header.
+ *
+ * @param[in] header the header
+ * @return the description of its row in #HTTP_HEADERS_MAP, or the one of HTTP_HEADER_UNDEFINED for a value out of
+ * the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_header_description (
 	const http_header header
 );
 
+/**
+ * @brief Returns the type of a header from its name, compared without case.
+ *
+ * @param[in] header_type_string the name, like "content-type"
+ * @return the type, HTTP_HEADER_UNDEFINED for a NULL or an unknown name
+ * @threadsafety Safe from any thread, the table is built once with pthread_once ().
+ */
 CERVER_PUBLIC const http_header http_header_type_with_string (
 	const char *header_type_string
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }
