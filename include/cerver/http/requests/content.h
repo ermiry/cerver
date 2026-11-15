@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/requests/content.h
+ * @brief The content types: their extensions, their descriptions and their mimes.
+ */
+
 #ifndef _CERVER_HTTP_CONTENT_H_
 #define _CERVER_HTTP_CONTENT_H_
 
@@ -9,6 +14,17 @@
 extern "C" {
 #endif
 
+/**
+ * @defgroup http_content Content types
+ * @ingroup http_requests
+ * @brief The types of the files and of the bodies.
+ * @{
+ */
+
+/**
+ * @brief The X-macro table of the content types: the number, the name, the extension, the description and the mime
+ * of each one.
+ */
 #define HTTP_CONTENT_TYPE_MAP(XX)																													\
 	XX(0,  NONE,	undefined, 	undefined,							undefined)																		\
 	XX(1,  AAC,		aac, 	(AAC audio),							audio/aac)																		\
@@ -85,6 +101,9 @@ extern "C" {
 	XX(72,  3G2,	3g2, 	(3GPP2 audio/video container),			video/3gpp2)																	\
 	XX(73,  7Z,		7z, 	(7-zip archive),						application/x-7z-compressed)
 
+/**
+ * @brief A content type, one `HTTP_CONTENT_TYPE_<name>` for each row of #HTTP_CONTENT_TYPE_MAP.
+ */
 typedef enum ContentType {
 
 	#define XX(num, name, extension, description, mime) HTTP_CONTENT_TYPE_##name = num,
@@ -93,37 +112,92 @@ typedef enum ContentType {
 
 } ContentType;
 
+/**
+ * @brief Returns the extension of a content type, like "json".
+ *
+ * @param[in] content_type the content type
+ * @return the extension of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value out
+ * of the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_content_type_extension (
 	const ContentType content_type
 );
 
+/**
+ * @brief Returns the description of a content type.
+ *
+ * @param[in] content_type the content type
+ * @return the description of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value
+ * out of the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_content_type_description (
 	const ContentType content_type
 );
 
+/**
+ * @brief Returns the mime of a content type, like "application/json".
+ *
+ * @param[in] content_type the content type
+ * @return the mime of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value out of
+ * the table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_content_type_mime (
 	const ContentType content_type
 );
 
+/**
+ * @brief Returns the content type of a mime, compared exactly.
+ *
+ * @param[in] mime_string the mime
+ * @return the first row of #HTTP_CONTENT_TYPE_MAP with the mime, HTTP_CONTENT_TYPE_NONE for a NULL or an unknown
+ * mime
+ */
 CERVER_PUBLIC ContentType http_content_type_with_mime (
 	const char *mime_string
 );
 
+/**
+ * @brief Returns the content type of an extension, compared exactly and without its dot.
+ *
+ * @param[in] extension_string the extension, like "png"
+ * @return the content type, HTTP_CONTENT_TYPE_NONE for a NULL or an unknown extension
+ */
 CERVER_PUBLIC ContentType http_content_type_with_extension (
 	const char *extension_string
 );
 
+/**
+ * @brief Returns the mime of an extension, compared exactly and without its dot.
+ *
+ * @param[in] extension_string the extension, like "png"
+ * @return the mime, a static string that must not be freed; NULL for a NULL or an unknown extension
+ */
 CERVER_PUBLIC const char *http_content_type_mime_with_extension (
 	const char *extension_string
 );
 
+/**
+ * @brief Returns whether a content type is "application/json", compared without case.
+ *
+ * @param[in] description the value of a Content-Type
+ * @return true for json, false for any other value or NULL
+ * @note A value with parameters, like "application/json; charset=utf-8", is not json for it.
+ */
 CERVER_PUBLIC bool http_content_type_is_json (
 	const char *description
 );
 
+/**
+ * @brief Returns the content type of a file from the extension of its name.
+ *
+ * @param[in] filename the name of the file
+ * @return the content type, HTTP_CONTENT_TYPE_NONE when it has no extension or an unknown one
+ */
 CERVER_PUBLIC ContentType http_content_type_from_filename (
 	const char *filename
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

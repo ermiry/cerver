@@ -1,3 +1,10 @@
+/**
+ * @file http/core/internal.h
+ * @internal
+ * @brief What the parts of the HttpCerver share and never export: the admin stats, the custom headers, the
+ * responses of the errors, and the callbacks of the parsers of a request.
+ */
+
 #ifndef _CERVER_HTTP_CORE_INTERNAL_H_
 #define _CERVER_HTTP_CORE_INTERNAL_H_
 
@@ -21,6 +28,7 @@
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/tree.h"
 
+/** @internal @brief The size of the path of a file system of the admin stats, with its terminator. */
 #define HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE				128
 
 #ifdef __cplusplus
@@ -31,79 +39,181 @@ struct _HttpCerver;
 struct _HttpGroup;
 struct _HttpRoute;
 
+/**
+ * @internal
+ * @brief A file system whose stats the admin routes report.
+ */
 typedef struct HttpAdminFileSystemStats {
 
+	/** @internal @brief The length of #path. */
 	size_t path_len;
+	/** @internal @brief The path of the file system. */
 	char path[HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE];
 
+	/** @internal @brief Its stats, read when they are requested. */
 	FileSystemStats stats;
 
 } HttpAdminFileSystemStats;
 
+/**
+ * @internal
+ * @brief Allocates the stats of a file system with an empty path.
+ *
+ * @return the new stats, NULL if they could not be allocated
+ */
 CERVER_PRIVATE HttpAdminFileSystemStats *http_admin_file_system_stats_new (void);
 
+/**
+ * @internal
+ * @brief Releases the stats of a file system.
+ *
+ * @param[in] stats_ptr the stats, they can be NULL
+ */
 CERVER_PRIVATE void http_admin_file_system_stats_delete (void *stats_ptr);
 
+/**
+ * @internal
+ * @brief Creates the stats of a file system.
+ *
+ * @param[in] path the path, truncated to HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE - 1 characters; it must not be NULL
+ * @return the new stats, NULL if they could not be allocated
+ */
 CERVER_PRIVATE HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 	const char *path
 );
 
+/**
+ * @internal
+ * @brief Generates the json of the info of the cerver: its name, its alias, its uptime and its version.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return the json, released with free (); NULL on error
+ */
 CERVER_PRIVATE char *http_cerver_admin_generate_info_json (
 	const struct _HttpCerver *http_cerver
 );
 
+/**
+ * @internal
+ * @brief Generates the json of the stats of the routes of the first routes API.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return the json, released with free (); NULL on error
+ */
 CERVER_PRIVATE char *http_cerver_admin_generate_routes_stats_json (
 	const struct _HttpCerver *http_cerver
 );
 
+/**
+ * @internal
+ * @brief Generates the json of the stats of the registered file systems.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return the json, released with free (); NULL on error
+ */
 CERVER_PRIVATE char *http_cerver_admin_generate_file_systems_stats_json (
 	const struct _HttpCerver *http_cerver
 );
 
+/**
+ * @internal
+ * @brief Generates the json of the states of the registered workers.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return the json, released with free (); NULL on error
+ */
 CERVER_PRIVATE char *http_cerver_admin_generate_workers_json (
 	const struct _HttpCerver *http_cerver
 );
 
+/**
+ * @internal
+ * @brief Adds the admin routes as children of a top level route of the first routes API.
+ *
+ * @param[in] http_cerver the HttpCerver, with its admin settings
+ * @param[in,out] top_level_route the route
+ * @retval 0 the routes were added
+ * @retval 1 a NULL route
+ */
 CERVER_PRIVATE u8 http_cerver_admin_init (
 	const struct _HttpCerver *http_cerver,
 	struct _HttpRoute *top_level_route
 );
 
-// the admin routes as endpoints of a group of the routes tree
-// returns 0 on success, 1 on error
+/**
+ * @internal
+ * @brief Adds the admin routes as endpoints of a group of the routes tree.
+ *
+ * @param[in] http_cerver the HttpCerver, with its admin settings
+ * @param[in,out] group the group
+ * @retval 0 the routes were added
+ * @retval 1 a NULL group
+ */
 CERVER_PRIVATE u8 http_cerver_admin_group_init (
 	const struct _HttpCerver *http_cerver,
 	struct _HttpGroup *group
 );
 
-// creates a custom header with an empty value in the arena
+/**
+ * @internal
+ * @brief Creates a custom header with an empty value in an arena.
+ *
+ * @param[in] arena the arena of the request
+ * @param[in] header the name of the header
+ * @param[in] header_len the length of the name
+ * @return the new custom header, NULL on error
+ */
 CERVER_PRIVATE HttpCustomHeader *http_custom_header_create (
 	struct Arena *arena, const char *header, const size_t header_len
 );
 
-// sets the value of the custom header, a new string in the arena
-// returns 0 on success, 1 on error
+/**
+ * @internal
+ * @brief Sets the value of a custom header, a new string in the arena.
+ *
+ * @param[in] arena the arena of the request
+ * @param[in,out] custom_header the custom header
+ * @param[in] value the value
+ * @param[in] value_len the length of the value
+ * @retval 0 the value was set
+ * @retval 1 the string could not be created
+ */
 CERVER_PRIVATE unsigned int http_custom_header_set_value (
 	struct Arena *arena, HttpCustomHeader *custom_header,
 	const char *value, const size_t value_len
 );
 
-// the responses that the parts of the HTTP cerver send, created by the first HTTP cerver
+/** @internal @brief The response of the catch all route, created by the first HTTP cerver. */
 CERVER_HIDDEN HttpResponse *catch_all;
 
+/** @internal @brief The 413 response. */
 CERVER_HIDDEN HttpResponse *payload_too_large_error;
+/** @internal @brief The 414 response. */
 CERVER_HIDDEN HttpResponse *uri_too_long_error;
+/** @internal @brief The 431 response. */
 CERVER_HIDDEN HttpResponse *header_fields_too_large_error;
+/** @internal @brief The 408 response. */
 CERVER_HIDDEN HttpResponse *request_timeout_error;
+/** @internal @brief The 405 response. */
 CERVER_HIDDEN HttpResponse *method_not_allowed_error;
+/** @internal @brief The 501 response. */
 CERVER_HIDDEN HttpResponse *not_implemented_error;
+/** @internal @brief The 505 response. */
 CERVER_HIDDEN HttpResponse *http_version_not_supported_error;
 
+/** @internal @brief The 426 response of a request that has to upgrade to a WebSocket. */
 CERVER_HIDDEN HttpResponse *upgrade_required_error;
+/** @internal @brief The 403 response. */
 CERVER_HIDDEN HttpResponse *forbidden_error;
+/** @internal @brief The 503 response of a WebSocket that the cerver can not take. */
 CERVER_HIDDEN HttpResponse *web_socket_unavailable_error;
 
-// keeps the string's memory but empties its contents
+/**
+ * @internal
+ * @brief Keeps the memory of a string but empties its contents.
+ *
+ * @param[in,out] buffer the string, it can be NULL
+ */
 static inline void http_receive_buffer_reset (String *buffer) {
 
 	if (buffer) {
@@ -113,135 +223,427 @@ static inline void http_receive_buffer_reset (String *buffer) {
 
 }
 
-// the value that a parser callback returns when it rejected the request
-// or when it found that its client is gone, the parser stops with it
+/**
+ * @internal
+ * @brief The value that a parser callback returns: the parser stops when the request was rejected or its client is
+ * gone.
+ *
+ * @param[in] rejected not 0 when the request was rejected or its client is gone
+ * @return #HTTP_RECEIVE_PARSER_STOP or 0
+ */
 static inline int http_receive_parser_result (const int rejected) {
 
 	return rejected ? HTTP_RECEIVE_PARSER_STOP : 0;
 
 }
 
-// the methods that the parts of the HTTP cerver share, never exported
-
+/**
+ * @internal
+ * @brief Adds the admin routes to the routes, only once, when they are enabled.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ */
 CERVER_HIDDEN void http_cerver_init_admin_routes (HttpCerver *http_cerver);
 
+/**
+ * @internal
+ * @brief Releases a static path.
+ *
+ * @param[in] http_static_path_ptr the static path, it can be NULL
+ */
 CERVER_HIDDEN void http_static_path_delete (void *http_static_path_ptr);
 
+/**
+ * @internal
+ * @brief Compares two static paths by their paths.
+ *
+ * @param[in] a the first static path
+ * @param[in] b the second static path
+ * @return the result of strcmp () of their paths
+ */
 CERVER_HIDDEN int http_static_path_comparator (const void *a, const void *b);
 
+/**
+ * @internal
+ * @brief Answers a request that is rejected, once: it sends the response and sets the status of the receive.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] response the response
+ * @param[in] status the new status; HTTP_RECEIVE_STATUS_LIMIT also counts a limited request
+ * @return always 1, so a parser callback stops
+ */
 CERVER_HIDDEN int http_receive_reject (
 	HttpReceive *http_receive,
 	HttpResponse *response, const HttpReceiveStatus status
 );
 
+/**
+ * @internal
+ * @brief Adds bytes to the body of the request and rejects it with 413 when it exceeds its limit.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] length the bytes
+ * @return 0 while it is below the limit, 1 when it was rejected
+ */
 CERVER_HIDDEN int http_receive_check_body_size (
 	HttpReceive *http_receive, const size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser for the pieces of the headers that are not kept, only counted for the limit of
+ * the headers.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP when the headers exceed their limit
+ */
 CERVER_HIDDEN int http_receive_handle_discarded (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of the url.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_url (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser when the url is complete.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_url_complete (llhttp_t *parser);
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of the protocol of the request line.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_protocol (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser when the protocol of the request line is complete.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_protocol_complete (llhttp_t *parser);
 
+/**
+ * @internal
+ * @brief The callback of the parser when the version of the request line is complete.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_version_complete (llhttp_t *parser);
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of the name of a header.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_header_field (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of the value of a header.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_header_value (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the parser when the value of a header is complete.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_header_value_complete (llhttp_t *parser);
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of a body that is not multipart.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_body (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief Returns whether a content type starts with the one of a multipart form.
+ *
+ * @param[in] content the value of the Content-Type, it must not be NULL
+ * @return true for a multipart form
+ */
 CERVER_HIDDEN bool is_multipart (const char *content);
 
+/**
+ * @internal
+ * @brief Creates the pool of the multi-parts that every HTTP cerver of the process shares, with
+ * #HTTP_CERVER_MULTI_PARTS_POOL_INIT multi-parts.
+ *
+ * @retval 0 the pool is ready
+ * @retval 1 it could not be created
+ */
 CERVER_HIDDEN unsigned int http_multi_parts_init_pool (void);
 
+/**
+ * @internal
+ * @brief Releases the pool of the multi-parts.
+ */
 CERVER_HIDDEN void http_multi_parts_end_pool (void);
 
+/**
+ * @internal
+ * @brief Gives a multi-part back to its pool.
+ *
+ * @param[in] multi_part_ptr the multi-part
+ */
 CERVER_HIDDEN void http_multi_parts_return (void *multi_part_ptr);
 
+/**
+ * @internal
+ * @brief Copies the boundary of a multipart Content-Type, with its leading "--".
+ *
+ * @param[out] boundary the buffer of HTTP_MULTI_PART_BOUNDARY_MAX_SIZE bytes; a longer boundary is truncated
+ * @param[in] content_type the value of the Content-Type
+ * @param[in] content_type_len its length
+ * @retval 0 the boundary was copied
+ * @retval 1 the Content-Type has no boundary
+ */
 CERVER_HIDDEN unsigned int http_mpart_get_boundary (
 	char *boundary,
 	const char *content_type, const unsigned int content_type_len
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser when a part begins.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_part_data_begin (
 	multipart_parser *parser
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser for a piece of the name of a header of a part.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_header_field (
 	multipart_parser *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser for a piece of the value of a header of a part.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_header_value (
 	multipart_parser *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser when the headers of a part are complete: a file part opens its file.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_headers_completed (
 	multipart_parser *parser
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser for a piece of the data of a part.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_data (
 	multipart_parser *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The callback of the multipart parser when the data of a part ends.
+ *
+ * @param[in] parser the multipart parser, its data is the receive
+ * @return 0 to continue, not 0 to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_data_end (multipart_parser *parser);
 
+/**
+ * @internal
+ * @brief The callback of the parser for a piece of a multipart body, that goes to the multipart parser.
+ *
+ * @param[in] parser the parser, its data is the receive
+ * @param[in] at the piece
+ * @param[in] length the bytes of the piece
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ */
 CERVER_HIDDEN int http_receive_handle_mpart_body (
 	llhttp_t *parser, const char *at, size_t length
 );
 
+/**
+ * @internal
+ * @brief The default catch all handler.
+ *
+ * @param[in] http_receive the receive
+ * @param[in] request the request
+ */
 CERVER_HIDDEN void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
 
+/**
+ * @internal
+ * @brief The default not found handler, that answers with 404.
+ *
+ * @param[in] http_receive the receive
+ * @param[in] request the request
+ */
 CERVER_HIDDEN void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
 
+/**
+ * @internal
+ * @brief Prepares the multipart parser of a request and the directory of its uploads.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] boundary the boundary of the body
+ * @retval 0 the parser is ready
+ * @retval 1 the parser, the list of the parts or the directory could not be created
+ */
 CERVER_HIDDEN int http_receive_init_mpart_parser (
 	HttpReceive *http_receive, const char *boundary
 );
 
+/**
+ * @internal
+ * @brief Handles a buffer that the connection received: it parses it and answers the requests that it completes.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] rc the bytes that were received
+ * @param[in] packet_buffer the buffer
+ */
 CERVER_HIDDEN void http_receive_handle (
 	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 );
 
+/**
+ * @internal
+ * @brief Ends a connection that is not kept alive: it shuts down its writes, reads what the client still sends and
+ * ends the connection.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] rejected the request was rejected, so the rest of it is read with a short timeout
+ */
 CERVER_HIDDEN void http_receive_close (
 	HttpReceive *http_receive, const bool rejected
 );
 
+/**
+ * @internal
+ * @brief Returns whether an endpoint takes WebSocket connections: its modifier is the one of WebSockets and it has
+ * its handlers.
+ *
+ * @param[in] endpoint the endpoint, it must not be NULL
+ * @return true for a WebSocket endpoint
+ */
 CERVER_HIDDEN bool http_endpoint_is_web_socket (const HttpEndpoint *endpoint);
 
+/**
+ * @internal
+ * @brief Releases the WebSocket handshake of a request, and its reservation in the registry if it had one.
+ *
+ * @param[in,out] http_receive the receive
+ */
 CERVER_HIDDEN void http_receive_web_socket_release (HttpReceive *http_receive);
 
+/**
+ * @internal
+ * @brief Checks the headers of a request to a WebSocket endpoint and keeps its handshake.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] parser the parser of the request
+ * @return 0 to continue, not 0 when the request was rejected
+ */
 CERVER_HIDDEN int http_receive_handle_headers_web_socket (
 	HttpReceive *http_receive, const llhttp_t *parser
 );
 
+/**
+ * @internal
+ * @brief Keeps the bytes that arrived after the request of an upgrade, for its WebSocket.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] unparsed the bytes after the request
+ */
 CERVER_HIDDEN void http_receive_web_socket_pending (
 	HttpReceive *http_receive, const char *unparsed
 );
 
+/**
+ * @internal
+ * @brief Upgrades the connection of a request to a WebSocket of its endpoint.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in,out] request the request
+ * @param[in] endpoint the WebSocket endpoint
+ */
 CERVER_HIDDEN void http_receive_web_socket_upgrade (
 	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
 );

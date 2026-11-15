@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/core/metrics.h
+ * @brief The metrics of an HttpCerver in the Prometheus text format.
+ */
+
 #ifndef _CERVER_HTTP_METRICS_H_
 #define _CERVER_HTTP_METRICS_H_
 
@@ -7,16 +12,23 @@
 
 #include "cerver/config.h"
 
-// the content type of the Prometheus text exposition format
+/**
+ * @defgroup http_metrics Metrics
+ * @ingroup http_core
+ * @brief The metrics of an HttpCerver, for Prometheus.
+ * @{
+ */
+
+/** @brief The content type of the Prometheus text exposition format. */
 #define HTTP_METRICS_CONTENT_TYPE			"text/plain; version=0.0.4; charset=utf-8"
 
-// the initial memory of the metrics, it grows with the endpoints
+/** @brief The initial memory of the metrics, it grows with the endpoints. */
 #define HTTP_METRICS_INITIAL_SIZE			(1 << 12)
 
-// the longest line of a metric, its name, its labels and its value
+/** @brief The longest line of a metric: its name, its labels and its value. */
 #define HTTP_METRICS_LINE_SIZE				(1 << 10)
 
-// the longest label value after it is escaped
+/** @brief The longest value of a label after it is escaped. */
 #define HTTP_METRICS_LABEL_SIZE				(1 << 9)
 
 #ifdef __cplusplus
@@ -25,14 +37,22 @@ extern "C" {
 
 struct _HttpCerver;
 
-// generates the metrics of the cerver in the Prometheus text format:
-// its version and uptime, the responses by status code, the rejected requests,
-// the threads of its pool and, for every endpoint, its requests, its bytes
-// and the histogram of its process times
-// returns a new string that must be deleted with str_delete (), NULL on error
+/**
+ * @brief Generates the metrics of the cerver in the Prometheus text format.
+ *
+ * They have its version and its uptime, the responses by status code, the rejected, aborted and vanished
+ * requests, the threads of its pool, its WebSocket connections and, for every endpoint, its requests, its bytes and
+ * the histogram of its process times.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return a new string that must be deleted with str_delete (), empty if its memory could not be reserved; NULL for
+ * a NULL HttpCerver or if the string could not be allocated
+ */
 CERVER_PUBLIC String *http_cerver_metrics_generate (
 	const struct _HttpCerver *http_cerver
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }
