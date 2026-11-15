@@ -856,6 +856,47 @@ static void test_http_response_set_data_ref (void) {
 
 }
 
+// the data of a reference is not freed when it is replaced by data of the response
+static void test_http_response_set_data_after_ref (void) {
+
+	HttpResponse *response = test_http_response_new ();
+
+	(void) http_response_set_data_ref (response, (void *) json_data, strlen (json_data));
+	http_response_set_data (response, strdup (json_data), strlen (json_data));
+	test_check (response->data != (const void *) json_data, "the data of the reference was kept");
+	test_check_bool_eq (response->data_ref, false, "the data of the response is still a reference");
+
+	http_response_delete (response);
+
+}
+
+#pragma endregion
+
+#pragma region null
+
+// the headers that take a value from a pointer fail without one
+static void test_http_response_headers_null (void) {
+
+	HttpResponse *response = test_http_response_new ();
+
+	test_check_unsigned_eq (http_response_add_cors_header_from_origin (response, NULL), 1, "added a NULL origin");
+	test_check_unsigned_eq (http_response_add_whitelist_cors_header (response, NULL), 1, "added a NULL domain");
+	test_check_unsigned_eq (
+		http_response_add_whitelist_cors_header_from_origin (response, NULL), 1, "added a NULL whitelist origin"
+	);
+	test_check_unsigned_eq (
+		http_response_add_whitelist_cors_header_from_request (NULL, response), 1, "added the origin of a NULL request"
+	);
+	test_check_unsigned_eq (http_response_add_content_range_header (response, NULL), 1, "added a NULL range");
+	test_check_unsigned_eq (response->headers.count, 0, NULL);
+
+	test_check_unsigned_eq (http_response_send (response, NULL), 1, "sent a response without a receive");
+	test_check_unsigned_eq (http_response_send_split (response, NULL), 1, "sent a split response without a receive");
+
+	http_response_delete (response);
+
+}
+
 #pragma endregion
 
 #pragma region json
@@ -992,6 +1033,10 @@ void http_tests_responses (void) {
 	// data
 	test_http_response_set_data ();
 	test_http_response_set_data_ref ();
+	test_http_response_set_data_after_ref ();
+
+	// null
+	test_http_response_headers_null ();
 
 	// json
 	test_http_response_json_escaped ();
