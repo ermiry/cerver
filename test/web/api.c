@@ -30,6 +30,7 @@
 #include <cerver/utils/utils.h>
 
 #include "../address.h"
+#include "../handler.h"
 #include <app/routes.h>
 #include <app/users.h>
 
@@ -116,7 +117,8 @@ int main (void) {
 		(void) cerver_set_bind_address (api_cerver, test_address ());
 		cerver_set_receive_buffer_size (api_cerver, 4096);
 		cerver_set_thpool_n_threads (api_cerver, 4);
-		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handler_type (api_cerver, test_handler_type ());
+		cerver_set_io_threads (api_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (api_cerver, true);
 

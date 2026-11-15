@@ -17,6 +17,7 @@
 #include <cerver/utils/log.h>
 
 #include "../address.h"
+#include "../handler.h"
 
 // the echo server of autobahn-testsuite (fuzzingclient), ws://cerver:9001/ws/echo
 #define AUTOBAHN_PORT					9001
@@ -77,7 +78,8 @@ int main (int argc, char **argv) {
 	if (autobahn_cerver) {
 		(void) cerver_set_bind_address (autobahn_cerver, test_address ());
 		cerver_set_thpool_n_threads (autobahn_cerver, AUTOBAHN_THREADS);
-		cerver_set_handler_type (autobahn_cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handler_type (autobahn_cerver, test_handler_type ());
+		cerver_set_io_threads (autobahn_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (autobahn_cerver, true);
 
 		autobahn_configure ((HttpCerver *) autobahn_cerver->cerver_data);
