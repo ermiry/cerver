@@ -1,12 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <cerver/connection.h>
-#include <cerver/packets.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/send.h>
+#include <cerver/packets/packets.h>
 
-#include "test.h"
+#include "../test.h"
 
 static const char *connection_name = "test-connection";
 
