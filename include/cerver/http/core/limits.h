@@ -178,6 +178,68 @@ CERVER_EXPORT void http_cerver_set_send_timeout_milliseconds (
 );
 
 /**
+ * @brief Sets whether a connection is kept after a request for the next one of its client, when the client
+ * asked for it and its response tells where it ends.
+ *
+ * Without this call a cerver of CERVER_HANDLER_TYPE_EVENTS keeps its connections and the other handler types
+ * close each one after its response.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] keep_alive true to keep the connections, false to close each one after its response
+ * @warning With a handler type that is not CERVER_HANDLER_TYPE_EVENTS a connection that is kept uses a thread of
+ * the pool of the cerver while it waits for its next request, up to the timeout of
+ * http_cerver_set_keep_alive_timeout ().
+ * @since 2.1b-16
+ */
+CERVER_EXPORT void http_cerver_set_keep_alive (
+	HttpCerver *http_cerver, const bool keep_alive
+);
+
+/**
+ * @brief Sets the most seconds that a connection that is kept waits for its next request, then it is closed
+ * without a response.
+ *
+ * Behind a proxy that keeps its connections it has to be more than the time that the proxy keeps an idle one,
+ * so the proxy is the one that closes them: a proxy that sends a request through a connection that the cerver
+ * is closing answers 502.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] keep_alive_timeout the seconds, 0 sets the default, #HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT
+ * @since 2.1b-16
+ */
+CERVER_EXPORT void http_cerver_set_keep_alive_timeout (
+	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
+);
+
+/**
+ * @brief The same as http_cerver_set_keep_alive_timeout (), in milliseconds.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] keep_alive_timeout the milliseconds, 0 sets the default,
+ * #HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS
+ * @since 2.1b-16
+ */
+CERVER_EXPORT void http_cerver_set_keep_alive_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
+);
+
+/**
+ * @brief Sets the most requests that a connection handles: the response of the last one has
+ * "Connection: close" and the connection is closed after it.
+ *
+ * Behind a proxy that keeps its connections it has to be more than the requests that the proxy sends through
+ * one of them.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] keep_alive_requests the requests, 0 disables the limit; the default is
+ * #HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS
+ * @since 2.1b-16
+ */
+CERVER_EXPORT void http_cerver_set_keep_alive_requests (
+	HttpCerver *http_cerver, const unsigned int keep_alive_requests
+);
+
+/**
  * @brief Sets whether http_receive_is_client_gone () takes a client that closed its side of the connection
  * (HTTP_CLIENT_STATE_CLOSED) as gone.
  *

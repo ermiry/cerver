@@ -24,6 +24,8 @@
 #include "cerver/version.h"
 
 #include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/types.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/handler.h"
@@ -232,6 +234,13 @@ HttpCerver *http_cerver_new (void) {
 		(void) memset (http_cerver->n_aborted_requests, 0, sizeof (http_cerver->n_aborted_requests));
 		(void) memset (http_cerver->n_vanished_requests, 0, sizeof (http_cerver->n_vanished_requests));
 		http_cerver->n_failed_responses = 0;
+
+		http_cerver->keep_alive = false;
+		http_cerver->keep_alive_configured = false;
+		http_cerver->keep_alive_timeout = HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
+		http_cerver->keep_alive_requests = HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS;
+
+		http_cerver->n_reused_connections = 0;
 	}
 
 	return http_cerver;
@@ -697,6 +706,24 @@ static void http_cervers_remove (
 
 }
 
+// the connections are kept between requests by default only in an event loop, where an idle one
+// costs no thread; a cerver that handles each connection with a thread keeps them only when it was asked to
+static void http_cerver_init_keep_alive (HttpCerver *http_cerver) {
+
+	const bool events = (http_cerver->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS);
+
+	if (!http_cerver->keep_alive_configured) http_cerver->keep_alive = events;
+
+	if (http_cerver->keep_alive && !events) {
+		cerver_log_warning (
+			"Cerver %s keeps its HTTP connections alive without an event loop: "
+			"each idle connection uses a thread of its pool",
+			http_cerver->cerver->info->name
+		);
+	}
+
+}
+
 static unsigned int http_cerver_init_internal (
 	HttpCerver *http_cerver
 ) {
@@ -706,6 +733,8 @@ static unsigned int http_cerver_init_internal (
 	#ifdef HTTP_DEBUG
 	cerver_log_msg ("Initializing HTTP cerver...");
 	#endif
+
+	http_cerver_init_keep_alive (http_cerver);
 
 	// the jwt pool, the responses and the multi-parts pool
 	if (!http_cerver->global_reference) errors |= http_cervers_add (http_cerver);

@@ -108,6 +108,29 @@
 	(HTTP_CERVER_DEFAULT_IDLE_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
 
 /**
+ * @brief The default seconds that a connection that is kept waits for its next request, more than the time that
+ * a proxy keeps its idle connections: the proxy closes them first.
+ *
+ * @since 2.1b-16
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT		(1 << 7)
+/**
+ * @brief #HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT in milliseconds.
+ *
+ * @since 2.1b-16
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS	\
+	(HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT * HTTP_MILLISECONDS_PER_SECOND)
+
+/**
+ * @brief The default requests that a connection handles before it is closed, more than the ones that a proxy
+ * sends through a connection.
+ *
+ * @since 2.1b-16
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS		(1 << 10)
+
+/**
  * @brief A client that closed its side of the connection (EOF) is taken as gone by default, although a half-close
  * (shutdown (SHUT_WR)) client still waits for the response.
  */
@@ -621,6 +644,41 @@ struct _HttpCerver {
 
 	/** @brief The requests whose response could not be sent completely. */
 	size_t n_failed_responses;
+
+	/**
+	 * @brief A connection is kept after a request for the next one of its client. When it was not configured, it
+	 * is set when the cerver starts: true with CERVER_HANDLER_TYPE_EVENTS, false with the other handler types.
+	 *
+	 * @since 2.1b-16
+	 */
+	bool keep_alive;
+	/**
+	 * @brief http_cerver_set_keep_alive () was called, the handler type does not choose.
+	 *
+	 * @since 2.1b-16
+	 */
+	bool keep_alive_configured;
+	/**
+	 * @brief The most milliseconds that a connection that is kept waits for its next request.
+	 *
+	 * @since 2.1b-16
+	 */
+	unsigned int keep_alive_timeout;
+	/**
+	 * @brief The most requests that a connection handles, the last one is answered with "Connection: close";
+	 * 0 disables the limit.
+	 *
+	 * @since 2.1b-16
+	 */
+	unsigned int keep_alive_requests;
+
+	/**
+	 * @brief The requests that arrived in a connection that had already handled another one, updated with atomic
+	 * operations.
+	 *
+	 * @since 2.1b-16
+	 */
+	size_t n_reused_connections;
 
 };
 
