@@ -90,8 +90,7 @@ Cerver *cerver_new (void) {
 
 		cerver->send_timeout = CERVER_DEFAULT_SEND_TIMEOUT;
 
-		cerver->stop_mutex = thread_mutex_new ();
-		cerver->stop_cond = thread_cond_new ();
+		cerver_stop_pipe_create (cerver);
 
 		cerver->clients = NULL;
 		cerver->client_sock_fd_map = NULL;
@@ -121,7 +120,6 @@ Cerver *cerver_new (void) {
 		cerver->poll_lock = NULL;
 
 		cerver->auth_required = CERVER_DEFAULT_AUTH_REQUIRED;
-		cerver->auth_packet = NULL;
 		cerver->max_auth_tries = CERVER_DEFAULT_MAX_AUTH_TRIES;
 		cerver->authenticate = NULL;
 		cerver->auth_schema = NULL;
@@ -214,8 +212,7 @@ void cerver_delete (void *ptr) {
 			else free (cerver->cerver_data);
 		}
 
-		thread_mutex_delete (cerver->stop_mutex);
-		thread_cond_delete (cerver->stop_cond);
+		cerver_stop_pipe_close (cerver);
 
 		if (cerver->clients) avl_delete (cerver->clients);
 		if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
@@ -227,8 +224,6 @@ void cerver_delete (void *ptr) {
 			pthread_mutex_destroy (cerver->poll_lock);
 			free (cerver->poll_lock);
 		}
-
-		packet_delete (cerver->auth_packet);
 
 		if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
 		if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
@@ -744,23 +739,30 @@ void cerver_set_max_received_packet_size (
 
 }
 
+// the cerver owns its handlers: a different one deletes the one it replaces,
+// the same one again is kept
+static void cerver_handler_replace (
+	Cerver *cerver, Handler **slot, Handler *handler
+) {
+
+	if (*slot && (*slot != handler)) handler_delete (*slot);
+
+	*slot = handler;
+	if (handler) {
+		handler->type = HANDLER_TYPE_CERVER;
+		handler->cerver = cerver;
+	}
+
+}
+
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void cerver_set_app_handlers (
 	Cerver *cerver, Handler *app_handler, Handler *app_error_handler
 ) {
 
 	if (cerver) {
-		cerver->app_packet_handler = app_handler;
-		if (cerver->app_packet_handler) {
-			cerver->app_packet_handler->type = HANDLER_TYPE_CERVER;
-			cerver->app_packet_handler->cerver = cerver;
-		}
-
-		cerver->app_error_packet_handler = app_error_handler;
-		if (cerver->app_error_packet_handler) {
-			cerver->app_error_packet_handler->type = HANDLER_TYPE_CERVER;
-			cerver->app_error_packet_handler->cerver = cerver;
-		}
+		cerver_handler_replace (cerver, &cerver->app_packet_handler, app_handler);
+		cerver_handler_replace (cerver, &cerver->app_error_packet_handler, app_error_handler);
 	}
 
 }
@@ -792,13 +794,7 @@ void cerver_set_custom_handler (
 	Cerver *cerver, Handler *custom_handler
 ) {
 
-	if (cerver) {
-		cerver->custom_packet_handler = custom_handler;
-		if (cerver->custom_packet_handler) {
-			cerver->custom_packet_handler->type = HANDLER_TYPE_CERVER;
-			cerver->custom_packet_handler->cerver = cerver;
-		}
-	}
+	if (cerver) cerver_handler_replace (cerver, &cerver->custom_packet_handler, custom_handler);
 
 }
 
