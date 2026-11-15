@@ -159,6 +159,21 @@ CERVER_PUBLIC const char *http_trailing_slash_description (
 #define HTTP_ROUTE_SETTING_ETAG						(1 << 8)
 /** @brief The compression was set. */
 #define HTTP_ROUTE_SETTING_COMPRESSION				(1 << 9)
+/**
+ * @brief The pool of threads was set.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_ROUTE_SETTING_POOL						(1 << 10)
+
+/**
+ * @brief The size of the name of a pool of threads (http/core/pool.h), with its end.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_POOL_NAME_SIZE							32
+
+struct HttpPool;
 
 /**
  * @brief The settings of a group or an endpoint.
@@ -207,6 +222,20 @@ struct _HttpRouteSettings {
 
 	/** @brief The responses are compressed with gzip when the request accepts it (only when cerver was compiled with zlib). */
 	bool compression;
+
+	/**
+	 * @brief The name of the pool of threads that handles the requests (http/core/pool.h).
+	 *
+	 * @since 2.1b-17
+	 */
+	char pool_name[HTTP_POOL_NAME_SIZE];
+	/**
+	 * @brief The pool with that name, found when the cerver starts; NULL without a name: the default pool, the
+	 * thpool of the cerver.
+	 *
+	 * @since 2.1b-17
+	 */
+	struct HttpPool *pool;
 
 	/** @brief The middlewares. */
 	HttpMiddlewares middlewares;

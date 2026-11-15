@@ -91,8 +91,14 @@ HttpResponse *upgrade_required_error = NULL;
 HttpResponse *forbidden_error = NULL;
 HttpResponse *web_socket_unavailable_error = NULL;
 
+// the answer of the ready route of a cerver that can not take a request
+HttpResponse *not_ready_error = NULL;
+
 static const char *upgrade_required_json = { "{\"error\": \"Upgrade to WebSocket required!\"}" };
 static const char *web_socket_unavailable_json = { "{\"error\": \"Too many WebSocket connections!\"}" };
+static const char *not_ready_json = { "{\"error\": \"Not ready!\"}" };
+
+static const char *http_cerver_retry_after_header = { "Retry-After" };
 
 // the HTTP cervers of the process that hold a reference to the shared state
 static DoubleList *http_cervers = NULL;
@@ -241,9 +247,53 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->keep_alive_requests = HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS;
 
 		http_cerver->n_reused_connections = 0;
+
+		(void) memset (http_cerver->pools, 0, sizeof (http_cerver->pools));
+		http_cerver->n_pools = 0;
+		http_cerver->pools_started = false;
+
+		http_cerver->health_route = NULL;
+		http_cerver->ready_route = NULL;
+
+		http_cerver->n_health_requests = 0;
+		http_cerver->n_ready_requests = 0;
+		http_cerver->n_not_ready_requests = 0;
+
+		(void) memset (http_cerver->connection_requests, 0, sizeof (http_cerver->connection_requests));
+		http_cerver->n_connection_requests = 0;
+
+		http_cerver->uploads_write_microseconds = 0;
+		http_cerver->uploads_write_bytes = 0;
 	}
 
 	return http_cerver;
+
+}
+
+// the bucket of a connection by its requests: the first power of two that is not less than them
+static unsigned int http_cerver_connection_requests_bucket (const size_t n_requests) {
+
+	unsigned int bucket = 0;
+	while (
+		(bucket < (HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1))
+		&& (((size_t) 1 << bucket) < n_requests)
+	) {
+		bucket += 1;
+	}
+
+	return bucket;
+
+}
+
+void http_cerver_connection_ended (HttpCerver *http_cerver, const size_t n_requests) {
+
+	if (http_cerver && n_requests) {
+		CERVER_STATS_ADD (
+			http_cerver->connection_requests[http_cerver_connection_requests_bucket (n_requests)], 1
+		);
+
+		CERVER_STATS_ADD (http_cerver->n_connection_requests, n_requests);
+	}
 
 }
 
@@ -294,6 +344,11 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		http_web_socket_registry_delete (http_cerver->web_sockets);
 
+		http_cerver_pools_delete (http_cerver);
+
+		str_delete (http_cerver->health_route);
+		str_delete (http_cerver->ready_route);
+
 		free (http_cerver_ptr);
 	}
 
@@ -336,6 +391,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->mutex = thread_mutex_new ();
 
 		http_cerver->web_sockets = http_web_socket_registry_create ();
+
+		(void) http_cerver_pools_create (http_cerver);
 	}
 
 	return http_cerver;
@@ -361,6 +418,32 @@ static HttpResponse *http_cerver_web_socket_response (
 
 		// the json is a static string
 		response->data = (char *) json;
+		response->data_len = json_len;
+		response->data_ref = true;
+
+		(void) http_response_compile (response);
+	}
+
+	return response;
+
+}
+
+// the 503 of the ready route, with the Retry-After of the 503 of a request that was rejected
+static HttpResponse *http_cerver_not_ready_response (void) {
+
+	HttpResponse *response = (HttpResponse *) http_response_new ();
+	if (response) {
+		response->status = HTTP_STATUS_SERVICE_UNAVAILABLE;
+
+		const size_t json_len = strlen (not_ready_json);
+		(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
+		(void) http_response_add_content_length_header (response, json_len);
+		(void) http_response_header_add_with_name (
+			response, http_cerver_retry_after_header, HTTP_RESPONSE_RETRY_AFTER_SECONDS
+		);
+
+		// the json is a static string
+		response->data = (char *) not_ready_json;
 		response->data_len = json_len;
 		response->data_ref = true;
 
@@ -443,6 +526,8 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_SERVICE_UNAVAILABLE, web_socket_unavailable_json, HTTP_HEADER_UNDEFINED, NULL
 	);
 
+	not_ready_error = http_cerver_not_ready_response ();
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
@@ -455,6 +540,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& method_not_allowed_error && not_implemented_error
 		&& http_version_not_supported_error
 		&& upgrade_required_error && forbidden_error && web_socket_unavailable_error
+		&& not_ready_error
 	) retval = 0;
 
 	return retval;
@@ -600,6 +686,9 @@ static void http_cerver_end_responses (void) {
 	http_response_delete (web_socket_unavailable_error);
 	web_socket_unavailable_error = NULL;
 
+	http_response_delete (not_ready_error);
+	not_ready_error = NULL;
+
 }
 
 // releases the state shared by every HTTP cerver of the process
@@ -724,6 +813,22 @@ static void http_cerver_init_keep_alive (HttpCerver *http_cerver) {
 
 }
 
+// an event loop answers the health and the ready routes by itself, also when every thread is busy;
+// with the other handler types they are answered by the thread that has the connection, that waits for a thread
+static void http_cerver_init_health (const HttpCerver *http_cerver) {
+
+	const bool events = (http_cerver->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS);
+
+	if ((http_cerver->health_route || http_cerver->ready_route) && !events) {
+		cerver_log_warning (
+			"Cerver %s answers its health and ready routes without an event loop: "
+			"they wait for a thread of its pool like any request",
+			http_cerver->cerver->info->name
+		);
+	}
+
+}
+
 static unsigned int http_cerver_init_internal (
 	HttpCerver *http_cerver
 ) {
@@ -735,6 +840,11 @@ static unsigned int http_cerver_init_internal (
 	#endif
 
 	http_cerver_init_keep_alive (http_cerver);
+
+	// the thpool of the cerver was started before, the named pools start here
+	errors |= http_cerver_pools_start (http_cerver);
+
+	http_cerver_init_health (http_cerver);
 
 	// the jwt pool, the responses and the multi-parts pool
 	if (!http_cerver->global_reference) errors |= http_cervers_add (http_cerver);

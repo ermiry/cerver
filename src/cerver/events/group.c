@@ -23,6 +23,10 @@
 #include "cerver/handler/events.h"
 #include "cerver/network/network.h"
 
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
+#include "cerver/http/core/pool.h"
+
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
@@ -73,16 +77,27 @@ static unsigned int event_loop_group_loop_listen (
 
 }
 
+// a lane for each named pool that has threads, in the position of its pool
+static void event_loop_group_loop_lanes (EventLoopGroup *group, EventLoop *loop) {
+
+	for (unsigned int idx = EVENT_LOOP_LANE_DEFAULT + 1; idx < group->n_dispatchers; idx++) {
+		if (group->dispatchers[idx].submit) (void) event_loop_lane_set (loop, idx, &group->dispatchers[idx]);
+	}
+
+}
+
 // returns 0 on success, 1 on error
 static unsigned int event_loop_group_loops_create (EventLoopGroup *group) {
 
 	unsigned int errors = 0;
 
 	for (unsigned int idx = 0; (idx < group->n_loops) && !errors; idx++) {
-		EventLoop *loop = event_loop_create (group->cerver, &group->dispatcher);
+		EventLoop *loop = event_loop_create (group->cerver, &group->dispatchers[EVENT_LOOP_LANE_DEFAULT]);
 		if (loop) {
 			loop->group = group;
 			loop->id = idx;
+
+			event_loop_group_loop_lanes (group, loop);
 
 			group->loops[idx] = loop;
 
@@ -114,13 +129,39 @@ static void event_loop_group_free (EventLoopGroup *group) {
 
 }
 
+static void event_loop_group_dispatcher_set (EventLoopGroup *group, const HttpPool *pool) {
+
+	if (pool->thpool) {
+		event_dispatcher_thpool (&group->dispatchers[pool->index], pool->thpool);
+
+		group->n_dispatchers = pool->index + 1;
+	}
+
+}
+
+// the first dispatcher gives the jobs to the thpool of the cerver, the default pool;
+// each named pool of its HTTP cerver that has threads has its own, in its position
+static void event_loop_group_dispatchers (EventLoopGroup *group) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) group->cerver->cerver_data;
+
+	event_dispatcher_thpool (&group->dispatchers[EVENT_LOOP_LANE_DEFAULT], group->cerver->thpool);
+	group->n_dispatchers = EVENT_LOOP_LANE_DEFAULT + 1;
+
+	const unsigned int n_pools = http_cerver ? http_cerver->n_pools : 0;
+	for (unsigned int idx = EVENT_LOOP_LANE_DEFAULT + 1; idx < n_pools; idx++) {
+		event_loop_group_dispatcher_set (group, http_cerver->pools[idx]);
+	}
+
+}
+
 static EventLoopGroup *event_loop_group_create (Cerver *cerver) {
 
 	EventLoopGroup *group = (EventLoopGroup *) calloc (1, sizeof (EventLoopGroup));
 	if (group) {
 		group->cerver = cerver;
 
-		event_dispatcher_thpool (&group->dispatcher, cerver->thpool);
+		event_loop_group_dispatchers (group);
 
 		group->n_loops = cerver->n_io_threads ? cerver->n_io_threads : CERVER_DEFAULT_IO_THREADS;
 		group->loops = (EventLoop **) calloc (group->n_loops, sizeof (EventLoop *));
@@ -186,6 +227,30 @@ unsigned int event_loop_group_parked (const struct _Cerver *cerver) {
 
 	return (cerver && cerver->event_loops) ?
 		__atomic_load_n (&cerver->event_loops->n_parked, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+unsigned int event_loop_group_idle (const struct _Cerver *cerver) {
+
+	unsigned int idle = 0;
+
+	if (cerver && cerver->event_loops) {
+		const EventLoopGroup *group = cerver->event_loops;
+		for (unsigned int idx = 0; idx < group->n_loops; idx++) {
+			idle += event_loop_idle (group->loops[idx]);
+		}
+	}
+
+	return idle;
+
+}
+
+unsigned int event_loop_group_lane_parked (
+	const struct _Cerver *cerver, const unsigned int lane
+) {
+
+	return (cerver && cerver->event_loops && (lane < EVENT_LOOP_LANES_SIZE)) ?
+		__atomic_load_n (&cerver->event_loops->lanes_parked[lane], __ATOMIC_ACQUIRE) : 0;
 
 }
 

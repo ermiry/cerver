@@ -202,7 +202,16 @@ struct HttpConnection {
 	/** @internal @brief How the job ended. */
 	HttpConnectionOutcome outcome;
 
-	/** @internal @brief The connection is in the parked ones of its loop. */
+	/**
+	 * @internal
+	 * @brief The pool that runs its job, the one of the endpoint of its request (http/core/pool.h); NULL for a
+	 * cerver without pools. It is chosen each time that a job is submitted.
+	 */
+	struct HttpPool *pool;
+	/** @internal @brief The lane of its loop for that pool, the position of the pool in its cerver. */
+	unsigned int lane;
+
+	/** @internal @brief The connection is in the parked ones of its lane. */
 	bool parked;
 
 	/** @internal @brief The next connection of the list where it is: the completed ones, the parked ones or the recycled ones. */

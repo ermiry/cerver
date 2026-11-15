@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 #include <sys/types.h>
 
@@ -18,15 +19,19 @@
 
 #include "cerver/config.h"
 
+#include "cerver/core/types.h"
 #include "cerver/system/system.h"
 
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/pool.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/tree.h"
+
+#include "cerver/threads/thpool.h"
 
 /** @internal @brief The size of the path of a file system of the admin stats, with its terminator. */
 #define HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE				128
@@ -35,9 +40,159 @@
 extern "C" {
 #endif
 
+struct _Cerver;
 struct _HttpCerver;
 struct _HttpGroup;
 struct _HttpRoute;
+
+/**
+ * @internal
+ * @brief A pool of threads of an HTTP cerver (http/core/pool.h).
+ *
+ * The default pool, the first one of its cerver, is the thpool of the cerver: it takes its threads, its queue, its
+ * policy and its wait from the cerver, and the cerver starts it and releases it.
+ */
+struct HttpPool {
+
+	/** @internal @brief The name of the pool. */
+	char name[HTTP_POOL_NAME_SIZE];
+	/** @internal @brief Its position in the pools of its cerver, 0 for the default one. */
+	unsigned int index;
+
+	/** @internal @brief The HTTP cerver of the pool. */
+	struct _HttpCerver *http_cerver;
+
+	/** @internal @brief The threads of the pool. */
+	unsigned int n_threads;
+	/** @internal @brief The size of its queue, 0 for the default of the thpool. */
+	unsigned int queue_size;
+
+	/** @internal @brief The policy of the pool was set, without it the pool uses the one of its cerver. */
+	bool policy_configured;
+	/** @internal @brief What the pool does with a request when its queue is full. */
+	CerverOverloadPolicy overload_policy;
+
+	/** @internal @brief The wait of the pool was set, without it the pool uses the one of its cerver. */
+	bool wait_configured;
+	/** @internal @brief The seconds that a request waits for a place in the pool. */
+	unsigned int wait_timeout;
+
+	/** @internal @brief The thpool: the one of the cerver for the default pool, its own for the others; NULL until the cerver starts. */
+	Thpool *thpool;
+	/** @internal @brief The pool created its thpool and releases it. */
+	bool owns_thpool;
+
+	/** @internal @brief Every request that waited in its event loop for a place in the pool; atomic. */
+	u64 n_parked;
+	/** @internal @brief Every request that was answered with 503 because the pool had no place for it, at once or when its wait ended; atomic. */
+	u64 n_unavailable;
+
+};
+
+/**
+ * @internal
+ * @brief Creates the default pool of an HTTP cerver, when it is created.
+ *
+ * @param[in,out] http_cerver the HTTP cerver
+ * @return 0 on success, 1 on error
+ */
+CERVER_HIDDEN unsigned int http_cerver_pools_create (struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Releases the pools of an HTTP cerver, their threads must have ended.
+ *
+ * @param[in,out] http_cerver the HTTP cerver
+ */
+CERVER_HIDDEN void http_cerver_pools_delete (struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Starts the pools of an HTTP cerver when it starts: the default one takes the thpool of the cerver, and
+ * the others create their own with CERVER_HANDLER_TYPE_EVENTS; with another handler type they are not started and
+ * a warning is logged.
+ *
+ * @param[in,out] http_cerver the HTTP cerver
+ * @return 0 on success, 1 when the thpool of a pool could not be started
+ */
+CERVER_HIDDEN unsigned int http_cerver_pools_start (struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Drains the named pools of an HTTP cerver, like the cerver drains its thpool (thpool_drain ()); the pools
+ * share the timeout.
+ *
+ * @param[in,out] http_cerver the HTTP cerver
+ * @param[in] run_queued true to run the jobs that wait in their queues, false to drop them
+ * @param[in] timeout the seconds for all the pools, #THPOOL_DRAIN_TIMEOUT_NONE waits until every job has finished
+ * @return the pools that still had threads working when the time ended, 0 when every pool was drained
+ */
+CERVER_HIDDEN unsigned int http_cerver_pools_drain (
+	struct _HttpCerver *http_cerver, const bool run_queued, const time_t timeout
+);
+
+/**
+ * @internal
+ * @brief Ends the threads of the named pools of an HTTP cerver and releases their thpools, after they were drained.
+ *
+ * @param[in,out] http_cerver the HTTP cerver
+ */
+CERVER_HIDDEN void http_cerver_pools_end (struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Returns the threads of the named pools of an HTTP cerver that are running a job.
+ *
+ * @param[in] http_cerver the HTTP cerver
+ * @return the threads
+ */
+CERVER_HIDDEN unsigned int http_cerver_pools_working (const struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Returns the jobs that wait in the queues of the named pools of an HTTP cerver.
+ *
+ * @param[in] http_cerver the HTTP cerver
+ * @return the jobs
+ */
+CERVER_HIDDEN unsigned int http_cerver_pools_queued (const struct _HttpCerver *http_cerver);
+
+/**
+ * @internal
+ * @brief Counts a connection that ended by the requests that it handled (HttpCerver::connection_requests).
+ *
+ * The owner of the connection calls it once, when the connection ends: its event loop or the thread that had it.
+ * A connection of a thread that goes back to the thpool to wait for its next request has not ended.
+ *
+ * @param[in,out] http_cerver the HTTP cerver, NULL does nothing
+ * @param[in] n_requests the requests that the connection handled, a connection without one is not counted
+ * @threadsafety Any thread, the counters are atomic.
+ */
+CERVER_HIDDEN void http_cerver_connection_ended (struct _HttpCerver *http_cerver, const size_t n_requests);
+
+/**
+ * @internal
+ * @brief Returns what a pool does when its queue is full: its own policy, or the one of the cerver.
+ *
+ * @param[in] cerver the cerver
+ * @param[in] pool the pool, NULL for the default one
+ * @return the policy
+ */
+CERVER_PRIVATE CerverOverloadPolicy http_pool_overload_policy (
+	const struct _Cerver *cerver, const struct HttpPool *pool
+);
+
+/**
+ * @internal
+ * @brief Returns the seconds that a request waits for a place in a pool: its own wait, or the one of the cerver.
+ *
+ * @param[in] cerver the cerver
+ * @param[in] pool the pool, NULL for the default one
+ * @return the seconds
+ */
+CERVER_PRIVATE unsigned int http_pool_wait_timeout (
+	const struct _Cerver *cerver, const struct HttpPool *pool
+);
 
 /**
  * @internal
@@ -207,6 +362,13 @@ CERVER_HIDDEN HttpResponse *upgrade_required_error;
 CERVER_HIDDEN HttpResponse *forbidden_error;
 /** @internal @brief The 503 response of a WebSocket that the cerver can not take. */
 CERVER_HIDDEN HttpResponse *web_socket_unavailable_error;
+
+/**
+ * @internal
+ * @brief The 503 response of the ready route of a cerver that can not take a request, with its Retry-After; it
+ * does not close its connection like the one of a request that was rejected.
+ */
+CERVER_HIDDEN HttpResponse *not_ready_error;
 
 /**
  * @internal

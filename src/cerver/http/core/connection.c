@@ -357,6 +357,8 @@ static void http_connection_request_release (HttpConnection *connection) {
 	const EventLoop *loop = connection->loop;
 	if (loop->observer) loop->observer (&connection->receive, loop->observer_args);
 
+	http_cerver_connection_ended (connection->receive.http_cerver, connection->receive.n_requests);
+
 	http_receive_delete (&connection->receive);
 
 	socket_delete (connection->cerver_receive.socket);
@@ -707,7 +709,7 @@ static void http_connection_flush (HttpConnection *connection) {
 static unsigned int http_connection_dispatch (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
-	EventDispatcher *dispatcher = loop->dispatcher;
+	EventDispatcher *dispatcher = loop->lanes[connection->lane].dispatcher;
 
 	const HttpConnectionState previous = connection->state;
 	const bool handled = (connection->job == HTTP_CONNECTION_JOB_DISPATCH);
@@ -758,7 +760,46 @@ static void http_connection_unavailable (HttpConnection *connection) {
 
 }
 
-// the job waits in the loop for a place in the pool, without a thread
+static bool http_connection_loop_has_lane (const EventLoop *loop, const unsigned int lane) {
+
+	return (lane < loop->n_lanes) && loop->lanes[lane].dispatcher;
+
+}
+
+static struct HttpPool *http_connection_pool_default (const HttpConnection *connection) {
+
+	const HttpCerver *http_cerver = connection->receive.http_cerver;
+
+	return (http_cerver && http_cerver->n_pools) ? http_cerver->pools[EVENT_LOOP_LANE_DEFAULT] : NULL;
+
+}
+
+// the job of a request runs in the pool that its endpoint or one of its groups chose;
+// the default one runs the ones without an endpoint, and the ones of a pool that the loop has no lane for
+static void http_connection_pool_select (HttpConnection *connection) {
+
+	const HttpEndpoint *endpoint = connection->receive.endpoint;
+
+	struct HttpPool *pool = endpoint ? endpoint->resolved.pool : NULL;
+
+	if (!pool || !http_connection_loop_has_lane (connection->loop, pool->index)) {
+		pool = http_connection_pool_default (connection);
+	}
+
+	connection->pool = pool;
+	connection->lane = pool ? pool->index : EVENT_LOOP_LANE_DEFAULT;
+
+}
+
+static bool http_connection_pool_is_full (const HttpConnection *connection) {
+
+	const EventDispatcher *dispatcher = connection->loop->lanes[connection->lane].dispatcher;
+
+	return dispatcher->is_full (dispatcher);
+
+}
+
+// the job waits in the loop for a place in its pool, without a thread
 static void http_connection_park (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
@@ -767,39 +808,68 @@ static void http_connection_park (HttpConnection *connection) {
 
 	event_loop_park (loop, connection);
 
+	if (connection->pool) (void) __atomic_add_fetch (&connection->pool->n_parked, 1, __ATOMIC_RELEASE);
+
 	http_connection_deadline_set (
 		connection,
-		loop->now + ((u64) loop->cerver->overload_wait_timeout * HTTP_CONNECTION_MILLISECONDS_PER_SECOND)
+		loop->now + (
+			(u64) http_pool_wait_timeout (loop->cerver, connection->pool)
+			* HTTP_CONNECTION_MILLISECONDS_PER_SECOND
+		)
 	);
 
 }
 
-static bool http_connection_can_wait (const EventLoop *loop) {
+// each pool has its own policy and its own wait, the ones of the cerver when they were not set
+static bool http_connection_can_wait (const HttpConnection *connection) {
 
-	const Cerver *cerver = loop->cerver;
+	const EventLoop *loop = connection->loop;
 
-	return (cerver->overload_policy == CERVER_OVERLOAD_POLICY_WAIT)
-		&& cerver->overload_wait_timeout
+	return (http_pool_overload_policy (loop->cerver, connection->pool) == CERVER_OVERLOAD_POLICY_WAIT)
+		&& http_pool_wait_timeout (loop->cerver, connection->pool)
 		&& !__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE);
+
+}
+
+// a request that its pool had no place for: at once, or when its wait ended
+static void http_connection_pool_refused (const HttpConnection *connection) {
+
+	if (connection->pool) (void) __atomic_add_fetch (&connection->pool->n_unavailable, 1, __ATOMIC_RELEASE);
 
 }
 
 bool http_connection_refuse (HttpConnection *connection) {
 
-	const EventLoop *loop = connection->loop;
+	http_connection_pool_select (connection);
 
-	const bool refused = __atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE) || (
-		!http_connection_can_wait (loop) && loop->dispatcher->is_full (loop->dispatcher)
-	);
+	const bool rejecting = __atomic_load_n (&connection->loop->rejecting, __ATOMIC_ACQUIRE);
 
-	if (refused) http_connection_answer_unavailable (connection);
+	const bool full = !rejecting
+		&& !http_connection_can_wait (connection) && http_connection_pool_is_full (connection);
 
-	return refused;
+	if (full) http_connection_pool_refused (connection);
+
+	if (rejecting || full) http_connection_answer_unavailable (connection);
+
+	return rejecting || full;
 
 }
 
-// leaves the poller and the wheel, the thread that runs the job owns the connection;
-// without a place in the pool the job waits for one, or the request is answered with 503
+// without a place in its pool the job waits for one in the loop, or the request is answered with 503
+static void http_connection_no_place (HttpConnection *connection) {
+
+	if (http_connection_can_wait (connection)) {
+		http_connection_park (connection);
+	}
+
+	else {
+		http_connection_pool_refused (connection);
+		http_connection_unavailable (connection);
+	}
+
+}
+
+// leaves the poller and the wheel, the thread that runs the job owns the connection
 static void http_connection_submit (
 	HttpConnection *connection, const HttpConnectionJob job
 ) {
@@ -812,19 +882,20 @@ static void http_connection_submit (
 	http_connection_unwatch (connection);
 	http_connection_deadline_clear (connection);
 
+	http_connection_pool_select (connection);
+
 	if (__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE)) {
 		http_connection_unavailable (connection);
 	}
 
-	// the requests that already wait for a place go first: a new one never takes the place
+	// the requests that already wait for a place in its pool go first: a new one never takes the place
 	// that the pool just freed for them
-	else if (loop->parked_head && http_connection_can_wait (loop)) {
+	else if (event_loop_lane_has_parked (loop, connection->lane) && http_connection_can_wait (connection)) {
 		http_connection_park (connection);
 	}
 
 	else if (http_connection_dispatch (connection)) {
-		if (http_connection_can_wait (loop)) http_connection_park (connection);
-		else http_connection_unavailable (connection);
+		http_connection_no_place (connection);
 	}
 
 }
@@ -1421,8 +1492,8 @@ void http_connection_work (void *connection_ptr) {
 
 	HttpConnection *connection = (HttpConnection *) connection_ptr;
 
-	// the job left the queue of the pool: a parked connection can take its place
-	event_loop_space (connection->loop);
+	// the job left the queue of its pool: a connection that is parked for that pool can take its place
+	event_loop_space (connection->loop, connection->lane);
 
 	switch (connection->job) {
 		case HTTP_CONNECTION_JOB_DISPATCH:
@@ -1568,9 +1639,10 @@ static void http_connection_expired (HttpConnection *connection) {
 			http_connection_read_timeout (connection);
 			break;
 
-		// no place in the pool in time
+		// no place in its pool in time
 		case HTTP_CONNECTION_STATE_PARKED:
 			event_loop_unpark (connection->loop, connection);
+			http_connection_pool_refused (connection);
 			http_connection_unavailable (connection);
 			break;
 
