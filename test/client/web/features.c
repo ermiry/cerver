@@ -1,18 +1,18 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <strings.h>
 
 #include <curl/curl.h>
 
-#include <cerver/http/status.h>
+#include <cerver/http/responses/status.h>
 
 #include <cerver/utils/log.h>
 
-#include "curl.h"
-
 #include "../../address.h"
+#include "curl.h"
 
 // the client of test/web/features: standalone, against the cerver,
 // and behind nginx (test/nginx), where the request id is the one of nginx,
