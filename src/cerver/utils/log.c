@@ -585,7 +585,8 @@ void cerver_log_with_date (
 	const char *format, ...
 ) {
 
-	va_list args;
+	if (format) {
+		va_list args;
 		va_start (args, format);
 
 		if (quiet) {
@@ -615,6 +616,7 @@ void cerver_log_with_date (
 		}
 
 		va_end (args);
+	}
 
 }
 
