@@ -1,3 +1,9 @@
+/**
+ * @file cerver/cerver.h
+ * @brief The umbrella header of cerver: it includes every part of the core, collections, crypto, game, threads,
+ * types and utils, and declares nothing.
+ */
+
 #ifndef _CERVER_H_
 #define _CERVER_H_
 
