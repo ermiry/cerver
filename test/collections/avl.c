@@ -1,11 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/avl.h>
 
 #include "../test.h"
-
 #include "data.h"
 
 static AVLTree *test_avl_create (void) {
@@ -353,9 +352,20 @@ static void test_avl_int_get_single (void) {
 
 // }
 
+// a NULL tree is empty
+static void test_avl_null (void) {
+
+	test_check_true (avl_is_empty (NULL));
+	test_check (!avl_is_not_empty (NULL), "a NULL tree is not empty");
+	test_check_unsigned_eq (avl_size (NULL), 0, NULL);
+
+}
+
 void collections_tests_avl (void) {
 
 	(void) printf ("Testing COLLECTIONS avl...\n");
+
+	test_avl_null ();
 
 	test_avl_int_insert_single ();
 

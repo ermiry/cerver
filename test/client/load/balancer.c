@@ -1,20 +1,20 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <time.h>
 #include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-#include <cerver/client.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/utils/log.h>
 
-#include "balancer.h"
-
 #include "../../test.h"
+#include "balancer.h"
 
 #define BALANCER_PATTERN_MASK			0xFF
 #define BALANCER_MAX_SLEEP				30

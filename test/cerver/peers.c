@@ -1,29 +1,32 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <pthread.h>
-#include <unistd.h>
 
+#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/network.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
-#include <cerver/udp.h>
-
-#include <app/auth.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/serialization.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/network/network.h>
+#include <cerver/network/udp.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/auth.h>
 
 // an UDP cerver in the same process, with cerver clients and with raw sockets:
 // - a client gets the cerver info and its app packets are echoed, in IPv4 and IPv6
@@ -678,7 +681,7 @@ static void test_peers_invalid_datagrams (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	// shorter than a header, empty, and a header with another size
 	const char short_datagram[PEERS_SHORT_DATAGRAM_SIZE] = { 0 };
@@ -722,7 +725,7 @@ static void test_peers_bad_packets (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 1), 1, NULL);
@@ -752,7 +755,7 @@ static void test_peers_request (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_REQUEST, REQUEST_PACKET_TYPE_GET_FILE, NULL, 0, NULL);
 	peers_socket_send (&raw, PACKET_TYPE_GAME, GAME_PACKET_TYPE_LOBBY_JOIN, NULL, 0, NULL);
@@ -782,7 +785,7 @@ static void test_peers_timeout (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 
 	test_check_unsigned_eq (peers_wait_count (cerver, 1), 1, NULL);
@@ -839,7 +842,7 @@ static void test_peers_disconnect (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_cerver_create (port));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 1), 1, NULL);
 
@@ -888,7 +891,7 @@ static void test_peers_queued_handler (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	for (unsigned int i = 0; i < PEERS_QUEUED_PACKETS; i++) {
 		peers_socket_send (&raw, PACKET_TYPE_APP, 0, NULL, 0, NULL);
 	}
@@ -958,7 +961,7 @@ static void test_peers_auth_failed (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_auth_cerver_create (port, PEERS_AUTH_SINGLE_TRY));
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send_credentials (&raw, PEERS_BAD_PASSWORD);
 
 	char buffer[MAX_UDP_PACKET_SIZE];
@@ -969,7 +972,7 @@ static void test_peers_auth_failed (void) {
 
 	test_check_unsigned_eq (peers_event_count (CERVER_EVENT_CLIENT_FAILED_AUTH), 1, NULL);
 	test_check_unsigned_eq (peers_wait_count (peers.cerver, 0), 0, "the peer was not removed");
-	test_check_unsigned_eq (CERVER_STATS_GET (peers.cerver->stats->current_n_hold_connections), 0, NULL);
+	test_check_unsigned_eq (peers_wait_stat (&peers.cerver->stats->current_n_hold_connections, 0), 0, NULL);
 
 	peers_socket_close (&raw);
 
@@ -992,7 +995,7 @@ static void test_peers_pending (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, cerver);
 
-	PeersSocket raw =peers_socket_open (PEERS_IPV4_LOOPBACK, port);
+	PeersSocket raw = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 
 	peers_socket_send (&raw, PACKET_TYPE_APP, PEERS_REQUEST_ECHO, NULL, 0, NULL);
 	test_check_unsigned_eq (
@@ -1039,7 +1042,7 @@ static void test_peers_token (void) {
 	PeersCerver peers;
 	peers_cerver_start (&peers, peers_auth_cerver_create (port, PEERS_AUTH_MAX_TRIES));
 
-	PeersSocket raw =peers_socket_authenticate (port, false);
+	PeersSocket raw = peers_socket_authenticate (port, false);
 
 	test_check (peers_socket_echo (&raw, raw.token), "the token was not accepted");
 

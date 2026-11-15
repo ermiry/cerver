@@ -1,8 +1,7 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
 
 #include <cerver/types/string.h>
@@ -12,6 +11,8 @@
 #define STRING_TEST_GROWTH_APPENDS			(1 << 16)
 #define STRING_TEST_GROWTH_MAX_MOVES		(1 << 6)
 #define STRING_TEST_RESERVE					(1 << 8)
+#define STRING_TEST_LONGER					(1 << 5)
+#define STRING_TEST_NO_TOKENS				(-1)
 
 static const char *string_test_byte = "x";
 
@@ -654,6 +655,75 @@ static void test_str_contains (void) {
 
 }
 
+// the n copies keep the length of what they copied when the source is shorter than n
+static void test_str_n_shorter_source (void) {
+
+	String *from = str_new ("Erick");
+	String *to = str_new (NULL);
+
+	str_n_copy (to, from, STRING_TEST_LONGER);
+	test_check_unsigned_eq (to->len, strlen ("Erick"), "str_n_copy () kept n as the length");
+	test_check_str_eq (to->str, "Erick", NULL);
+
+	str_n_replace_with (to, "Salas", STRING_TEST_LONGER);
+	test_check_unsigned_eq (to->len, strlen ("Salas"), "str_n_replace_with () kept n as the length");
+	test_check_str_eq (to->str, "Salas", NULL);
+
+	str_delete (to);
+	str_delete (from);
+
+}
+
+// a string without a max len (not created with str_allocate ()) is never written by str_set ()
+static void test_str_set_without_max_len (void) {
+
+	String *str = str_new ("Erick");
+	str_set (str, "%s", "I am Erick Salas and I am 22 years old!");
+	test_check_str_eq (str->str, "Erick", "str_set () wrote a string without a max len");
+	test_check_unsigned_eq (str->len, strlen ("Erick"), NULL);
+	str_delete (str);
+
+	String *empty = str_new (NULL);
+	str_set (empty, "%s", "Erick Salas");
+	test_check_null_ptr (empty->str);
+	test_check_unsigned_eq (empty->len, 0, NULL);
+	str_delete (empty);
+
+}
+
+// a NULL string or a NULL query never match
+static void test_str_contains_null (void) {
+
+	String *str = str_new ("Erick Salas");
+	test_check_int_eq (str_contains (NULL, "Erick"), -1, NULL);
+	test_check_int_eq (str_contains (str, NULL), -1, NULL);
+	str_delete (str);
+
+}
+
+// a string of only delimiters has no tokens
+static void test_str_split_only_delimiters (void) {
+
+	String *str = str_new (",,,");
+	int n_tokens = STRING_TEST_NO_TOKENS;
+	char **tokens = str_split (str, ',', &n_tokens);
+	test_check (tokens == NULL, "str_split () returned tokens of a string of only delimiters");
+	test_check_int_eq (n_tokens, 0, NULL);
+	str_delete (str);
+
+	String *pair = str_new ("a,,b");
+	n_tokens = STRING_TEST_NO_TOKENS;
+	tokens = str_split (pair, ',', &n_tokens);
+	test_check_ptr (tokens);
+	test_check_int_eq (n_tokens, 2, NULL);
+	test_check_str_eq (tokens[0], "a", NULL);
+	test_check_str_eq (tokens[1], "b", NULL);
+	for (int i = 0; i < n_tokens; i++) free (tokens[i]);
+	free (tokens);
+	str_delete (pair);
+
+}
+
 void types_tests_string (void) {
 
 	(void) printf ("Testing TYPES string...\n");
@@ -685,6 +755,10 @@ void types_tests_string (void) {
 	test_str_remove_char ();
 	test_str_remove_last_char ();
 	test_str_contains ();
+	test_str_n_shorter_source ();
+	test_str_set_without_max_len ();
+	test_str_contains_null ();
+	test_str_split_only_delimiters ();
 
 	(void) printf ("Done!\n");
 

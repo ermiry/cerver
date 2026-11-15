@@ -1,3 +1,5 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +30,13 @@ typedef struct _ArenaLarge ArenaLarge;
 static size_t arena_align (const size_t size) {
 
 	return (size + (ARENA_ALIGNMENT - 1)) & ~((size_t) ARENA_ALIGNMENT - 1);
+
+}
+
+// a size fits when it is aligned and with the header of a large allocation it does not wrap around
+static bool arena_size_fits (const size_t size) {
+
+	return size <= (SIZE_MAX - arena_align (sizeof (struct _ArenaLarge)) - ARENA_ALIGNMENT);
 
 }
 
@@ -154,7 +163,7 @@ void *arena_alloc (Arena *arena, const size_t size) {
 
 	void *retval = NULL;
 
-	if (arena && size) {
+	if (arena && size && arena_size_fits (size)) {
 		const size_t aligned = arena_align (size);
 
 		if (aligned > arena->chunk_size) {

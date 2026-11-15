@@ -1,10 +1,10 @@
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <ctype.h>
-#include <stdarg.h>
 
 #include "cerver/types/string.h"
 
@@ -92,9 +92,17 @@ String *str_allocate (const unsigned int max_len) {
 
 }
 
+// only a string with its max len (str_allocate (), str_reserve ()) has room to be set,
+// the others have exactly len + 1 bytes and a max len of 0
+static inline bool str_can_set (const String *str) {
+
+	return str && str->str && str->max_len;
+
+}
+
 void str_set (String *str, const char *format, ...) {
 
-	if (str && format) {
+	if (str_can_set (str) && format) {
 		va_list args;
 		va_start (args, format);
 
@@ -114,7 +122,7 @@ void str_set_with_args (
 	String *str, const char *format, va_list args
 ) {
 
-	if (str && format) {
+	if (str_can_set (str) && format) {
 		(void) vsnprintf (
 			str->str, str->max_len - 1,
 			format, args
@@ -163,6 +171,9 @@ void str_n_copy (String *to, const String *from, const size_t n) {
 		to->len = n;
 		to->str = (char *) calloc (to->len + 1, sizeof (char));
 		(void) strncpy (to->str, from->str, n);
+
+		// the source can be shorter than n
+		to->len = strlen (to->str);
 	}
 
 }
@@ -220,6 +231,9 @@ void str_n_replace_with (
 		str->len = n;
 		str->str = (char *) calloc (str->len + 1, sizeof (char));
 		(void) strncpy (str->str, c_str, n);
+
+		// the c string can be shorter than n
+		str->len = strlen (str->str);
 	}
 
 }
@@ -431,8 +445,6 @@ static char **str_split_internal (
 	if (count) {
 		result = (char **) calloc (count, sizeof (char *));
 		if (result) {
-			if (n_tokens) *n_tokens = count;
-
 			size_t idx = 0;
 
 			char dlm[2];
@@ -441,9 +453,17 @@ static char **str_split_internal (
 
 			char *token = NULL;
 			char *rest = string;
-			while ((token = __strtok_r (rest, dlm, &rest))) {
+			while ((idx < count) && (token = __strtok_r (rest, dlm, &rest))) {
 				result[idx] = strdup (token);
 				idx++;
+			}
+
+			// a string of only delimiters is counted as one token but has none
+			if (n_tokens) *n_tokens = (int) idx;
+
+			if (!idx) {
+				free (result);
+				result = NULL;
 			}
 		}
 	}
@@ -510,6 +530,8 @@ void str_remove_last_char (String *s) {
 }
 
 int str_contains (const String *str, const char *to_find) {
+
+	if (!str || !to_find) return -1;
 
 	const size_t slen = str->len;
 	const size_t to_find_len = strlen (to_find);

@@ -1,9 +1,9 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"

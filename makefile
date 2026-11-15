@@ -78,6 +78,8 @@ COMMON		:= -Wall -Wno-unknown-pragmas \
 
 ifeq ($(findstring clang,$(CC)),)
 	COMMON += -Wmaybe-uninitialized
+else
+	COMMON += -Wdocumentation -Wdocumentation-unknown-command -Wno-documentation-deprecated-sync -fcomment-block-commands=threadsafety
 endif
 
 ifeq ($(WERROR), 1)
@@ -101,7 +103,7 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	CFLAGS += -std=c++11
 else
 	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
@@ -135,8 +137,8 @@ ifeq ($(TYPE), test)
 	endif
 endif
 
-INC         := -I $(INCDIR) -I /usr/local/include
-INCDEP      := -I $(INCDIR)
+INC         := -I $(INCDIR) -I $(SRCDIR) -I /usr/local/include
+INCDEP      := -I $(INCDIR) -I $(SRCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
@@ -178,7 +180,7 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	EXAFLAGS += -std=c++11
 else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
@@ -197,6 +199,9 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+# an example is compiled again when a header that it includes changes
+-include $(EXOBJS:.$(OBJEXT)=.$(DEPEXT))
+
 EXAPP		:= ./$(EXATARGET)/app/libapp.so
 EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
 
@@ -211,7 +216,7 @@ ifeq ($(DEBUG), 1)
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	EXAPPFGS += -std=c++11
 else
 	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
@@ -228,6 +233,7 @@ exapp:
 	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
 
 base: $(EXOBJS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/start.o -o ./$(EXATARGET)/start $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers $(EXALIBS) $(EXAPPLINK)
@@ -301,10 +307,13 @@ ifeq ($(TYPE), test)
 	endif
 endif
 
-TESTINC		:= -I $(INCDIR) -I ./$(TESTDIR)
+TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT) -not -path '$(TESTDIR)/fuzz/*')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+# a test is compiled again when a header that it includes changes
+-include $(TESTOBJS:.$(OBJEXT)=.$(DEPEXT))
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
@@ -322,7 +331,7 @@ ifeq ($(DEBUG), 1)
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
+ifeq ($(CC), g++)
 	TESTAPPFGS += -std=c++11
 else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
@@ -339,28 +348,26 @@ testapp:
 	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
 
 units: testout $(TESTOBJS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/balancer.o -o ./$(TESTTARGET)/balancer $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/routing.o -o ./$(TESTTARGET)/routing $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/load/*.o -o ./$(TESTTARGET)/load $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/core.o -o ./$(TESTTARGET)/cerver/core $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/lobby.o -o ./$(TESTTARGET)/cerver/lobby $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/peers.o -o ./$(TESTTARGET)/cerver/peers $(TESTLIBS) $(TESTAPPLIB)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/game/*.o -o ./$(TESTTARGET)/game $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/lifecycle.o -o ./$(TESTTARGET)/client/lifecycle $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/features.o -o ./$(TESTTARGET)/client/features $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/files.o -o ./$(TESTTARGET)/client/files $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/connection/*.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/network/*.o -o ./$(TESTTARGET)/network $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/files.o -o ./$(TESTTARGET)/files $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/game/*.o -o ./$(TESTTARGET)/game $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/network.o -o ./$(TESTTARGET)/network $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/packets.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/receive.o -o ./$(TESTTARGET)/receive $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/socket.o -o ./$(TESTTARGET)/socket $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/system.o -o ./$(TESTTARGET)/system $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/crypto/*.o -o ./$(TESTTARGET)/crypto $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/files/*.o -o ./$(TESTTARGET)/files $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/handler/*.o -o ./$(TESTTARGET)/handler $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/packets/*.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/system/*.o -o ./$(TESTTARGET)/system $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/types/*.o -o ./$(TESTTARGET)/types $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/udp.o -o ./$(TESTTARGET)/udp $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
@@ -372,6 +379,7 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/connections.o -o $(INTCERVEROUT)/connections $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/game.o -o $(INTCERVEROUT)/game $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/handler.o -o $(INTCERVEROUT)/handler $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/load.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/load $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
@@ -393,6 +401,7 @@ integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/connections.o -o $(INTCLIENTOUT)/connections $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/game.o -o $(INTCLIENTOUT)/game $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/handler.o -o $(INTCLIENTOUT)/handler $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/abandon.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/abandon $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/concurrent.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/concurrent $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
@@ -414,28 +423,17 @@ integration: testout $(TESTOBJS)
 	$(MAKE) integration-cerver
 	$(MAKE) integration-client
 
-TESTHANDLERIN	:= ./$(TESTBUILD)/handler
-TESTHANDLEROUT	:= ./$(TESTTARGET)/handler
-TESTHANDLERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
-
-testhandler: testout $(TESTOBJS)
-	@mkdir -p ./$(TESTTARGET)/handler
-	$(CC) $(TESTINC) $(TESTHANDLERIN)/cerver.o -o $(TESTHANDLEROUT)/cerver $(TESTHANDLERLIBS)
-	$(CC) $(TESTINC) $(TESTHANDLERIN)/client.o -o $(TESTHANDLEROUT)/client $(TESTHANDLERLIBS)
-
 testout:
 	@mkdir -p ./$(TESTTARGET)
 	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
 	@mkdir -p ./$(TESTTARGET)/client/load
-	@mkdir -p ./$(TESTTARGET)/handler
 
 test: testout
 	$(MAKE) $(TESTOBJS)
 	$(MAKE) testapp
 	$(MAKE) units
 	$(MAKE) integration
-	$(MAKE) testhandler
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
@@ -459,7 +457,7 @@ FUZZSANITIZERS	:= address,undefined
 FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
 FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH)
-FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
+FUZZINC			:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
 FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name *.$(SRCEXT) 2> /dev/null)
 FUZZLIBOBJS		:= $(patsubst $(SRCDIR)/%,$(FUZZBUILD)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
@@ -511,6 +509,9 @@ BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
+# a benchmark is compiled again when a header that it includes changes
+-include $(BENCHOBJS:.$(OBJEXT)=.$(DEPEXT))
+
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
@@ -526,10 +527,20 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
 
-clear: clean-objects clean-examples clean-tests clean-coverage clean-bench
+# the reference of the public headers, with doxygen
+DOCSDIR		:= reference
+
+docs:
+	@mkdir -p ./$(DOCSDIR)
+	doxygen Doxyfile
+
+clear: clean-objects clean-examples clean-tests clean-coverage clean-bench clean-docs
 
 clean: clear
 	@$(RM) -rf $(TARGETDIR)
+
+clean-docs:
+	@$(RM) -rf $(DOCSDIR)
 
 clean-objects:
 	@$(RM) -rf $(BUILDDIR)
@@ -549,4 +560,4 @@ clean-bench:
 	@$(RM) -rf $(BENCHBUILD)
 	@$(RM) -rf $(BENCHTARGET)
 
-.PHONY: all clean clear examples test coverage bench fuzz
+.PHONY: all clean clear examples test coverage bench fuzz docs

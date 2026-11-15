@@ -1,7 +1,7 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/utils/sha256.h"
 
@@ -95,7 +95,7 @@ static int calc_chunk (
 		const size_t left = space_in_chunk - TOTAL_LEN_LEN;
 		size_t len = state->total_len;
 		int i;
-		(void) memset(chunk, 0x00, left);
+		(void) memset (chunk, 0x00, left);
 		chunk += left;
 
 		/* Storing of len * 8 as a big endian 64-bit without overflow. */

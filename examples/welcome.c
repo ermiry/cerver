@@ -1,13 +1,15 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
 #include <cerver/version.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+
 #include <cerver/utils/log.h>
 
 #include <app/events.h>
@@ -78,14 +80,12 @@ int main (void) {
 		else {
 			cerver_log_error ("Failed to start cerver!");
 
-			cerver_delete (my_cerver);
+			(void) cerver_teardown (my_cerver);
 		}
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
-		
-		cerver_delete (my_cerver);
+		cerver_log_error ("Failed to create cerver!");
 	}
 
 	cerver_end ();

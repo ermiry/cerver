@@ -23,7 +23,7 @@ PAIRS=(
 	cerver/queue
 	cerver/udp
 	cerver/game
-	handler
+	cerver/handler
 	balancer/round_robin
 	balancer/handler_id
 	balancer/custom
@@ -35,6 +35,7 @@ PAIRS=(
 )
 
 EXAMPLE_PAIRS=(
+	examples/start
 	examples/welcome
 	examples/test
 	examples/handlers

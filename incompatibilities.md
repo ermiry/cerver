@@ -3,6 +3,112 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9b-1 (from 1.8.2)
+
+The structure of the tree of the 3.0 (`labs` 3.0b-2), its documentation and its license: every header changes its
+path and the functions with `_by_` are named with `_with_`; the wire does not change, a 1.9b-1 talks with a 1.8.2.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`); `thirdparty.md` lists the code of other projects that cerver
+  includes (sha-2 and fastbase64), with their licenses
+- **Every include changes:** the headers are in folders by domain (`core/`, `admin/`, `auth/`, `client/`,
+  `connection/`, `files/`, `handler/`, `load/`, `network/`, `packets/`, `system/`), e.g. `cerver/client.h` is
+  `cerver/client/client.h`, `cerver/auth.h` is `cerver/auth/auth.h`, `cerver/sessions.h` is `cerver/auth/sessions.h`,
+  `cerver/balancer.h` is `cerver/load/balancer.h`, `cerver/receive.h` is `cerver/handler/receive.h`,
+  `cerver/socket.h` is `cerver/network/socket.h`, `cerver/serializer.h` is `cerver/packets/serializer.h`,
+  `cerver/timer.h` is `cerver/system/timer.h` and `cerver/game/gametype.h` is `cerver/game/types.h`;
+  `cerver/config.h` and `cerver/version.h` stay on top. There are no headers with the old paths
+- **The big headers are split in parts,** and the main header of a module does not include its parts: a program
+  that used `cerver_start ()` with `cerver/cerver.h` now includes `cerver/core/start.h` (or the umbrella). The parts
+  are `cerver/core/{types,info,data,handler,start,update,end,report,serialization}.h`,
+  `cerver/admin/{cerver,stats,lifecycle,handler,poll}.h`, `cerver/auth/hold.h`,
+  `cerver/client/{events,connect,requests,handler}.h`,
+  `cerver/connection/{stats,data,lifecycle,end,registry,update,send}.h`,
+  `cerver/files/{cerver,images,send,receive}.h`, `cerver/load/{stats,service,start,route,end}.h` and
+  `cerver/packets/header.h`
+- **`<cerver/cerver.h>` is now the umbrella of the core:** it includes every public header. The `Cerver` is declared
+  in `cerver/core/cerver.h`; a program that included `cerver/cerver.h` still compiles, with more headers
+- **The functions with `_by_` are named with `_with_`:** `admin_comparator_with_id ()`,
+  `admin_get_with_session_id ()`, `admin_get_with_sock_fd ()`, `admin_remove_connection_with_sock_fd ()`,
+  `cerver_poll_get_idx_with_sock_fd ()`, `client_get_with_session_id ()`, `client_get_with_sock_fd ()`,
+  `client_remove_connection_with_sock_fd ()`, `connection_get_with_sock_fd_from_admin ()`,
+  `connection_get_with_sock_fd_from_client ()`, `connection_get_with_sock_fd_from_on_hold ()`,
+  `dlist_merge_two_with_condition ()`, `dlist_remove_with_condition ()`, `dlist_split_with_condition ()`,
+  `file_send_with_fd ()`, `files_image_get_type_with_extension ()`, `game_type_get_with_name ()`,
+  `lobby_search_with_id ()`, `player_comparator_with_id ()` and `player_get_with_sock_fd_list ()`
+- **New:** `cerver/crypto/random.h` with `cerver_crypto_random_bytes ()`, the random bytes of the kernel that the
+  default session ids use (it was a static function of `sessions.c`)
+- The header guards follow the paths (`_CERVER_CORE_CERVER_H_`, `_CERVER_CLIENT_CLIENT_H_`, …); `_CERVER_H_` is the
+  umbrella. The internal declarations of the parts are in `src/cerver/<module>/internal.h`, never installed, and the
+  build adds `-I src`
+- `cerver_start (NULL)` returns 1, it dereferenced the NULL cerver; `cerver_set_admin_enable ()` called again keeps
+  the admin cerver that the cerver already has (and returns 0), it created another one and lost the first
+- **The fixes that the documentation found** (each one with its test), that change what a call returns:
+  - with a NULL argument they fail or keep the current value instead of crashing: `connection_set_name ()`,
+    `connection_set_values ()`, `client_set_name ()`, `client_get_with_session_id ()`, `packet_send ()`,
+    `packet_send_unsafe ()`, `packet_send_split ()`, `packet_send_pieces ()`, `str_contains ()` (-1),
+    `c_string_concat ()`, `bool_value_from_string ()`, `xtoi ()`, `cerver_log_with_date ()`, `job_reset ()`,
+    `lobby_summary_packet_create ()`, `admin_get_with_session_id ()`, `admin_cerver_get_n_handlers_alive ()` (before
+    the admin cerver starts), `balancer_get_type ()` (`BALANCER_TYPE_NONE`), `balancer_service_get_status ()`
+    (`SERVICE_STATUS_NONE`) and `avl_is_not_empty ()` (false); `packet_send_to_socket ()`, `packet_generate ()` and
+    `game_type_add_lobby_config ()` return 1 with a NULL argument (they returned 0)
+  - `sock_set_timeout ()` returns 1 on error (it returned -1); `random_int_in_range ()` includes both limits (also
+    when they are equal or reversed); `c_string_remove_sub_after_token_with_idx ()` returns NULL without the token
+  - `str_set ()` and `str_set_with_args ()` do not change a String without `max_len` (they overflowed it);
+    `str_n_copy ()` and `str_n_replace_with ()` keep the real length of a shorter source; `str_split ()` counts its
+    tokens and returns NULL for a String of only delimiters
+  - `arena_alloc ()` fails with the sizes that wrap around; `packet_append_data ()` fails when the size wraps;
+    `packet_set_packet ()` releases the copy of a packet that was a reference; `c_string_create_with_ptrs ()` and
+    `c_string_n_copy ()` (with 0) do not write out of their buffers; `receive_handle_new ()` starts without received
+    bytes
+- The headers are documented with Doxygen: `make docs` writes the reference in `reference/` (HTML and XML), with
+  `Doxyfile`, `Dockerfile.docs` (Doxygen 1.9.8) and the `docs` job of `build.yml`, that fails with any warning; every
+  clang build adds `-Wdocumentation -Wdocumentation-unknown-command -fcomment-block-commands=threadsafety`
+- The tests binaries follow the folders: `test/bin/connection`, `files`, `handler`, `load` (balancer and routing),
+  `network` (network, socket and udp), `packets`, `system` and `crypto` replace
+  `test/bin/{connection,files,receive,balancer,routing,network,socket,udp,packets,system}`; the handler pair is
+  `cerver/handler`; `test/test.h` scales the short timeouts with `TEST_TIME_SCALE` (valgrind and the sanitizers)
+
+## 1.8.2 (from 1.8.1)
+
+The wire and the ABI do not change: a 1.8.2 talks with a 1.8.1, and an application built with the 1.8.1 runs with it.
+
+- `config.h` includes `<stdarg.h>`, `va_copy` is always the one of the compiler: without it, the fallback copied a `va_list` with `memcpy ()`, that in x86-64 copies the pointer of a `va_list` parameter and not the list
+- `base64_encode_len ()`, `base64_decode_len ()` and `base64_encode_strlen ()` take their argument in parentheses: `base64_decode_len (size + 1)` divided the 1 before it added it to `size`
+- A removed UDP peer is out of the stats of the cerver before `cerver_udp_peers_count ()` stops counting it (the count is released and acquired): the count dropped first, and a thread that waited for it could read the old stats
+- New: `base64url_encode ()`, `base64url_decode ()`, `base64url_encode_length ()` and `base64url_decode_length ()`, the canonical base64url of RFC 4648 §5, and `CERVER_HIDDEN` in `config.h`; the beta and production workflows only clean the tests between gcc and g++ (`make clean-tests`)
+
+## 1.8.1 (from 1.8)
+
+The wire does not change: a 1.8.1 talks with a 1.8.
+
+- The default session ids of `cerver_set_sessions ()` are `SESSION_ID_LENGTH` (64) hex characters of `SESSION_ID_RANDOM_BYTES` random bytes of the kernel (`getrandom ()`); they were the SHA-256 of the time and a random number, that could be guessed
+- `cerver_set_sessions (cerver, NULL)` uses the default session id generator, it returned an error
+- The data that an authenticate method sets in `AuthData.data` becomes the data of the new client (`client_set_data ()`), and without a new client it is released with its `delete_data`: it was never released, a method that released it by itself must stop doing it
+- The data of a handler is released with its `data_delete` also when the handler never had a thread, like a direct handler or a handler of a cerver that never started; the handler releases it once
+- With `cerver_set_multiple_handlers ()`, a direct handler (`handler_set_direct_handle ()`) runs in the thread that received the packet, its packets went to a queue that no thread took; the packets follow `cerver_set_app_handler_delete ()`
+- `cerver_set_multiple_handlers ()` with 0 handlers or a second time is an error; `cerver_handlers_add ()` with an id that is not below the number of handlers or that already has a handler is an error, and the handler still belongs to the caller
+- `cerver_get_n_handlers ()` can be called before the cerver starts (it crashed)
+- `cerver_set_welcome_msg ()` with a `NULL` message is an error (it crashed); `cerver_set_receive_buffer_size ()`, `cerver_set_on_hold_receive_buffer_size ()`, `cerver_set_max_received_packet_size ()`, `connection_set_receive_buffer_size ()` and `admin_cerver_set_max_fds ()` ignore 0, and `admin_cerver_set_max_fds ()` ignores a call after the cerver started
+- The registers, unregisters and triggers of the events and errors of a cerver and of a client fail with a type that is not below `CERVER_MAX_EVENTS`, `CERVER_MAX_ERRORS`, `CLIENT_MAX_EVENTS` or `CLIENT_MAX_ERRORS`: they wrote and read outside of their arrays
+- An event or an error with `drop_after_trigger` gives its arguments to the data of its only trigger, that releases them with its `*_data_delete ()`; they were released when the event was dropped, while an action in its own thread still used them
+- Changed fields (ABI): `CerverEventData` and `ClientEventData` (new `owns_action_args`), `CerverErrorEventData` and `ClientErrorData` (new `delete_action_args` and `owns_action_args`)
+- A cerver that tears down sends `CERVER_PACKET_TYPE_TEARDOWN` to its clients before it shuts their connections down (it was sent after, so it never arrived), and a client that gets it triggers `CLIENT_EVENT_CERVER_TEARDOWN` and closes or reconnects only that connection, it used to stop the whole client
+- A client triggers `CLIENT_EVENT_CERVER_INFO` when it gets the info of its cerver; an on hold connection that its client closes triggers `CERVER_EVENT_ON_HOLD_DISCONNECTED`, it triggered `CERVER_EVENT_ON_HOLD_DROPPED`
+- A cerver that fails to bind, to listen or to set its socket options closes its socket once: the teardown closed the same fd number again, that could belong to another connection by then
+- `connection_send_packet ()` deletes a packet that it can not queue, like with a connection without a send queue
+- `file_read ()` sets the size to the bytes that it read, it set the size of the file, and it takes a `NULL` size
+- `c_string_concat_safe ()` takes a `char *` destination, it was `const char *`
+- A cerver that failed to start is released with `cerver_teardown ()`, the examples called the private `cerver_delete ()`
+- New: `examples/start.c`, the echo cerver and client of the README, and `CLIENT_ARGUMENTS` in `test/pair.sh`; `.github/workflows/docs.yml` was removed, the wiki is published from the documentation repository
+
+## 1.8 (from 1.8b-9)
+
+The wire does not change: a 1.8 talks with a 1.8b-9.
+
+- `files_create_recursive_dir ()` returns 0 for a path that already is a directory (it returned 1), also when another thread or process creates it at the same time; an empty path, `NULL` or a path that does not fit in `DIRNAME_DEFAULT_SIZE` returns 1 without creating anything (it was truncated)
+- The sends of `socket_send_vector ()`, `socket_send_buffer ()` and `socket_send_file ()` end with their deadline also in a blocking socket: a send used to wait the `SO_SNDTIMEO` of the socket in each system call, now `sendmsg ()` uses `MSG_DONTWAIT` and waits for space in `poll ()`, and `sendfile ()` also waits for space in `poll ()` and sends only what fits in the send buffer of the socket (the kernel applies `SO_SNDTIMEO` to each piece of a `sendfile ()`, so one call could block longer than it), with the `SO_SNDTIMEO` limited to what is left of the deadline and restored after the file
+- New: `socket_deadline_create_milliseconds ()`, and `socket_send_vector_until ()`, `socket_send_buffer_until ()` and `socket_send_file_until ()` (from an offset of the file, or its current one), that take a deadline that several sends can share
+
 ## 1.8b-9 (from 1.8b-8)
 
 The wire of the game packets changes: their requests and answers are serializer objects, a 1.8b-9 game cerver does not talk with 1.8b-8 game clients. The other packets do not change.

@@ -2,7 +2,7 @@
 
 #include "cerver/utils/log.h"
 
-// print full erver version information
+// print full cerver version information
 void cerver_version_print_full (void) {
 
 	cerver_log_both (

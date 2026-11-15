@@ -1,12 +1,16 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
 #include <cerver/version.h>
-#include <cerver/cerver.h>
+
+#include <cerver/client/connect.h>
+#include <cerver/client/requests.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
 
 #include <cerver/threads/thread.h>
 
@@ -383,14 +387,12 @@ int main (void) {
 				client_cerver->info->name
 			);
 
-			cerver_delete (client_cerver);
+			(void) cerver_teardown (client_cerver);
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create cerver!");
-
-		cerver_delete (client_cerver);
 	}
 
 	cerver_end ();

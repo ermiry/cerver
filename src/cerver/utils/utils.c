@@ -1,14 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/utils/utils.h"
 
@@ -74,9 +72,10 @@ int random_int_in_range (const int min, const int max) {
 		high = max + 1;
 	}
 
+	// the limits in the other order, or a single value, are the same inclusive range
 	else {
-		low = max + 1;
-		high = min;
+		low = max;
+		high = min + 1;
 	}
 
 	return (rand () % (high - low)) + low;
@@ -95,6 +94,8 @@ float random_float (const float abs) {
 int xtoi (char *hex_string) {
 
 	int i = 0;
+
+	if (!hex_string) return i;
 
 	if ((*hex_string == '0') && (*(hex_string + 1) == 'x')) hex_string += 2;
 
@@ -138,7 +139,7 @@ char *itoa (int i, char *b) {
 
 bool bool_value_from_string (const char *string_value) {
 
-	if (!strcasecmp ("true", string_value)) return true;
+	if (string_value && !strcasecmp ("true", string_value)) return true;
 	return false;
 
 }
@@ -156,10 +157,11 @@ void c_string_copy (char *to, const char *from) {
 
 }
 
-// copies n bytes from a c string into another one previuosly allocated
+// copies n bytes from a c string into another one previuosly allocated,
+// a destination of 0 bytes has no room even for the null byte
 void c_string_n_copy (char *to, const char *from, size_t n) {
 
-	if (to && from) {
+	if (to && from && n) {
 		while (*from && n) {
 			*to++ = *from++;
 			n--;
@@ -198,7 +200,7 @@ char *c_string_concat (
 				(char *) s1, (char *) s2, retval
 			);
 
-			*des_size = len;
+			if (des_size) *des_size = len;
 		}
 	}
 
@@ -211,7 +213,7 @@ char *c_string_concat (
 // returns the len of the final string
 size_t c_string_concat_safe (
 	const char *s1, const char *s2,
-	const char *des, size_t des_size
+	char *des, size_t des_size
 ) {
 
 	size_t retval = 0;
@@ -219,7 +221,7 @@ size_t c_string_concat_safe (
 	if (s1 && s2 && des) {
 		if ((strlen (s1) + strlen (s2)) < des_size) {
 			c_string_concat_actual (
-				(char *) s1, (char *) s2, (char *) des
+				(char *) s1, (char *) s2, des
 			);
 
 			retval = strlen (des);
@@ -470,7 +472,7 @@ char *c_string_strip_quotes (char *str) {
 
 	if (*str == 0) return str;
 
-	char *end = str + strlen(str) - 1;
+	char *end = str + strlen (str) - 1;
 	while (end > str && is_quote (*end)) end--;
 
 	*(end + 1) = 0;
@@ -501,7 +503,7 @@ char *c_string_find_sub_in_len (
 	for (i = 0; i <= (int) (len - needle_len); i++) {
 		if (
 			(haystack[0] == needle[0]) &&
-			(0 == strncmp(haystack, needle, needle_len))
+			(0 == strncmp (haystack, needle, needle_len))
 		)
 			return (char *) haystack;
 
@@ -521,7 +523,9 @@ char *c_string_create_with_ptrs (char *first, char *last) {
 	if (first && last) {
 		ptrdiff_t diff = last - first;
 		diff += 1;
-		retval = (char *) calloc (diff, sizeof (char));
+
+		// the characters and the null byte
+		retval = (char *) calloc (diff + 1, sizeof (char));
 
 		if (retval) {
 			char *ptr = first;
@@ -604,6 +608,9 @@ char *c_string_remove_sub_after_token_with_idx (
 
 			ptr++;
 		}
+
+		// without the token there is nothing to remove after it
+		if (!last_ptr) return retval;
 
 		last_ptr++;
 
