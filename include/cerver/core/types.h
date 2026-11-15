@@ -81,7 +81,8 @@ CERVER_EXPORT const char *cerver_type_to_string (CerverType type);
 #define CERVER_HANDLER_TYPE_MAP(XX)																\
 	XX(0,	NONE, 		None, 		None)														\
 	XX(1,	POLL, 		Poll, 		Handle connections using a single thread & poll ())			\
-	XX(2,	THREADS, 	Threads, 	Handle each new connection in a dedicated thread)
+	XX(2,	THREADS, 	Threads, 	Handle each new connection in a dedicated thread)			\
+	XX(3,	EVENTS, 	Events, 	Handle the connections of a web cerver with event loops)
 
 /**
  * @brief How a cerver handles its connections, one `CERVER_HANDLER_TYPE_<name>` for each row of
