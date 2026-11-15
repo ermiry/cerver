@@ -91,7 +91,8 @@ void http_cerver_set_uploads_path (
 }
 
 // works like http_cerver_set_uploads_path () but can generate
-// a custom path on the fly using variable arguments
+// a custom path on the fly using variable arguments,
+// its length is the one of the path that fits, an error leaves it empty
 void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 ) {
@@ -100,10 +101,14 @@ void http_cerver_generate_uploads_path (
 		va_list args;
 		va_start (args, format);
 
-		http_cerver->uploads_path_len = vsnprintf (
+		if (vsnprintf (
 			http_cerver->uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE - 1,
 			format, args
-		);
+		) < 0) {
+			http_cerver->uploads_path[0] = '\0';
+		}
+
+		http_cerver->uploads_path_len = (int) strlen (http_cerver->uploads_path);
 
 		va_end (args);
 	}
