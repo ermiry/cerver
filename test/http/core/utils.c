@@ -1,15 +1,20 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/dlist.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/utils.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/pairs.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/core/utils.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 // a generated uploads path that does not fit in the uploads path of the HTTP cerver
 #define TEST_UPLOADS_PATH_LONG_SIZE			512
