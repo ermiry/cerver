@@ -209,7 +209,7 @@ Admin *admin_get_with_session_id (
 
 	Admin *retval = NULL;
 
-	if (admin_cerver) {
+	if (admin_cerver && session_id) {
 		(void) pthread_mutex_lock (admin_cerver->admins->mutex);
 
 		Admin *admin = NULL;
