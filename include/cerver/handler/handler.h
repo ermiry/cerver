@@ -5,17 +5,18 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
-#include "cerver/config.h"
-#include "cerver/client.h"
-#include "cerver/packets.h"
-#include "cerver/receive.h"
-
 #include "cerver/collections/freelist.h"
 
-#include "cerver/threads/jobs.h"
+#include "cerver/config.h"
+
+#include "cerver/client/client.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/receive.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/game/lobby.h"
+
+#include "cerver/threads/jobs.h"
 
 #include "cerver/utils/histogram.h"
 
@@ -369,7 +370,7 @@ CERVER_PRIVATE i32 cerver_poll_get_free_idx (
 );
 
 // get the idx of the connection sock fd in the cerver poll fds
-CERVER_PRIVATE i32 cerver_poll_get_idx_by_sock_fd (
+CERVER_PRIVATE i32 cerver_poll_get_idx_with_sock_fd (
 	struct _Cerver *cerver, i32 sock_fd
 );
 
