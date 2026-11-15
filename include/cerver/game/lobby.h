@@ -7,22 +7,23 @@
 #include <poll.h>
 #include <pthread.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 #include "cerver/collections/htab.h"
 
 #include "cerver/config.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/serializer.h"
 
-#include "cerver/threads/thread.h"
+#include "cerver/client/client.h"
+#include "cerver/core/cerver.h"
+#include "cerver/packets/serializer.h"
 
 #include "cerver/game/game.h"
-#include "cerver/game/gametype.h"
 #include "cerver/game/player.h"
+#include "cerver/game/types.h"
+
+#include "cerver/threads/thread.h"
 
 #define LOBBY_DEFAULT_POLL_TIMEOUT			2000
 #define LOBBY_DEFAULT_MAX_PLAYERS			4
@@ -193,7 +194,7 @@ CERVER_EXPORT bool lobby_is_running (const Lobby *lobby);
 CERVER_EXPORT Lobby *lobby_get (struct _GameCerver *game_cerver, Lobby *query);
 
 // seraches for a lobby with matching id, with the lock of the game cerver
-CERVER_EXPORT Lobby *lobby_search_by_id (struct _Cerver *cerver, const char *id);
+CERVER_EXPORT Lobby *lobby_search_with_id (struct _Cerver *cerver, const char *id);
 
 // stops the lobby threads, returns the connections of its players to the cerver,
 // destroys the lobby game data and releases the reference of the game cerver

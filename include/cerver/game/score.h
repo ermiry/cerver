@@ -1,12 +1,12 @@
 #ifndef _CERVER_GAME_SCORE_H_
 #define _CERVER_GAME_SCORE_H_
 
-#include "cerver/config.h"
-
 #include "cerver/types/types.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/htab.h"
+
+#include "cerver/config.h"
 
 // the players that a scoreboard has room for when it is created
 #define SCORE_DEFAULT_SIZE		5

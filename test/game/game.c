@@ -1,20 +1,19 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include <cerver/cerver.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/collections/dlist.h>
 
+#include <cerver/core/cerver.h>
+
 #include <cerver/game/game.h>
-#include <cerver/game/gametype.h>
 #include <cerver/game/lobby.h>
 #include <cerver/game/player.h>
 #include <cerver/game/score.h>
+#include <cerver/game/types.h>
 
 #include "../test.h"
-
 #include "game.h"
 
 // the game module without network: scores, game types, players and lobbies
@@ -22,7 +21,7 @@
 // - the scores used the size of a pointer as the length of every key, and pointers to stack values
 // - adding a score type was ignored and removing one leaked, the scoreboard itself leaked
 // - game_score_update () added the value twice, and game_score_add_player () always failed
-// - game_type_get_by_name () returned the last game type when none matched
+// - game_type_get_with_name () returned the last game type when none matched
 // - game_type_unregister () used the element that it had just released
 // - a second player_set_id () leaked the first id
 
@@ -156,12 +155,12 @@ static void test_game_types (void) {
 	test_check_int_eq (game_type_register (game_types, first), 0, NULL);
 	test_check_int_eq (game_type_register (game_types, second), 0, NULL);
 
-	test_check_ptr_eq (game_type_get_by_name (game_types, first_type), first);
-	test_check_ptr_eq (game_type_get_by_name (game_types, second_type), second);
-	test_check_null_ptr (game_type_get_by_name (game_types, missing_type));
+	test_check_ptr_eq (game_type_get_with_name (game_types, first_type), first);
+	test_check_ptr_eq (game_type_get_with_name (game_types, second_type), second);
+	test_check_null_ptr (game_type_get_with_name (game_types, missing_type));
 
 	test_check_int_eq (game_type_unregister (game_types, first_type), 0, NULL);
-	test_check_null_ptr (game_type_get_by_name (game_types, first_type));
+	test_check_null_ptr (game_type_get_with_name (game_types, first_type));
 	test_check_int_eq (game_type_unregister (game_types, missing_type), 1, NULL);
 
 	dlist_delete (game_types);
@@ -184,10 +183,10 @@ static void test_game_players (void) {
 	player_set_id (second, second_player);
 	test_check_str_eq (first->id->str, second_player, NULL);
 
-	test_check_int_eq (player_comparator_by_id (first, second), 0, NULL);
+	test_check_int_eq (player_comparator_with_id (first, second), 0, NULL);
 
 	player_set_id (second, first_player);
-	test_check (player_comparator_by_id (first, second) != 0, NULL);
+	test_check (player_comparator_with_id (first, second) != 0, NULL);
 
 	player_set_data (first, malloc (GAME_TEST_VALUE), NULL);
 
