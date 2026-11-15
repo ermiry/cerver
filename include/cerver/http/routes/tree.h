@@ -340,6 +340,8 @@ CERVER_EXPORT void http_endpoint_set_auth (
  * @param[in,out] endpoint the endpoint
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_endpoint_set_decode_data (
 	HttpEndpoint *endpoint,
@@ -768,6 +770,8 @@ CERVER_EXPORT void http_group_set_auth (
  * @param[in,out] group the group
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_group_set_decode_data (
 	HttpGroup *group,

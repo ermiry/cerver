@@ -485,6 +485,8 @@ CERVER_EXPORT void http_route_set_auth (
  * @param[in,out] route the route
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route,
