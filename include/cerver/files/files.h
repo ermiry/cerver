@@ -158,10 +158,8 @@ CERVER_EXPORT char *files_get_file_extension (const char *filename);
  * @brief Returns a reference to the extension of a filename, what follows its last '.'.
  *
  * @param[in] filename the filename
- * @param[in,out] ext_len the length of the extension is added to it, so it must start at 0
- * @return a pointer inside the filename, NULL for a NULL filename or one without a '.'
- * @warning ext_len must not be NULL, and a filename that ends in '.' returns an empty extension (not NULL): the
- * check after the count tests the pointer instead of the length.
+ * @param[out] ext_len the length of the extension, 0 without one; it can be NULL
+ * @return a pointer inside the filename, NULL for a NULL filename, one without a '.' or one that ends in '.'
  */
 CERVER_EXPORT const char *files_get_file_extension_reference (
 	const char *filename, unsigned int *ext_len
