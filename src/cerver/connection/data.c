@@ -114,7 +114,7 @@ u8 connection_set_auth_token (
 
 	if (connection && token && (strlen (token) < TOKEN_SIZE)) {
 		SessionToken session_token = { { 0 } };
-		(void) strncpy (session_token.token, token, TOKEN_SIZE - 1);
+		(void) c_string_copy_bounded (session_token.token, token, TOKEN_SIZE);
 
 		retval = connection_set_auth_encoded (
 			connection, &session_token_schema, &session_token, admin_auth, true
