@@ -1,3 +1,10 @@
+/**
+ * @file packets/internal.h
+ * @internal
+ * @brief The protocol of the process and the methods that the parts of the packets share, never exported by
+ * libcerver.so.
+ */
+
 #ifndef _CERVER_PACKETS_INTERNAL_H_
 #define _CERVER_PACKETS_INTERNAL_H_
 
@@ -14,11 +21,22 @@
 extern "C" {
 #endif
 
-// the protocol of the packets of the process, set with packets_set_protocol_id () and its version
+/** @internal @brief The protocol id of the packets of the process, set with packets_set_protocol_id (). */
 CERVER_HIDDEN ProtocolID protocol_id;
+/** @internal @brief The protocol version of the packets of the process, set with packets_set_protocol_version (). */
 CERVER_HIDDEN ProtocolVersion protocol_version;
 
-// it is zeroed so headers can be compared and copied as a whole
+/**
+ * @internal
+ * @brief Initializes a header with its values and the local protocol.
+ *
+ * It is zeroed first, so headers can be compared and copied as a whole.
+ *
+ * @param[out] header the header, it must not be NULL
+ * @param[in] packet_type the packet type
+ * @param[in] packet_size the total size of the packet (header and data)
+ * @param[in] req_type the request type
+ */
 CERVER_HIDDEN void packet_header_init (
 	PacketHeader *header,
 	const PacketType packet_type,
