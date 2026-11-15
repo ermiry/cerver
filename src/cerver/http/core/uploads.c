@@ -77,11 +77,7 @@ void http_cerver_set_uploads_path (
 ) {
 
 	if (http_cerver && uploads_path) {
-		(void) strncpy (
-			http_cerver->uploads_path,
-			uploads_path,
-			HTTP_CERVER_UPLOADS_PATH_SIZE - 1
-		);
+		(void) c_string_copy_bounded (http_cerver->uploads_path, uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE);
 
 		http_cerver->uploads_path_len = (int) strlen (
 			http_cerver->uploads_path
