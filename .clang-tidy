@@ -1,0 +1,17 @@
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-branch-clone,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-narrowing-conversions,
+  -bugprone-reserved-identifier,
+  -bugprone-signed-char-misuse,
+  -bugprone-suspicious-string-compare,
+  -bugprone-switch-missing-default-case,
+  cert-err34-c,
+  cert-msc30-c
+WarningsAsErrors: ''
+HeaderFilterRegex: ''
