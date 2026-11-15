@@ -42,6 +42,10 @@
 
 #include "cerver/game/game.h"
 
+#include "cerver/http/core/http.h"
+#include "cerver/http/websockets/internal.h"
+#include "cerver/http/websockets/registry.h"
+
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
@@ -1327,7 +1331,7 @@ u8 cerver_start (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	if (!cerver_is_running (cerver)) {
+	if (cerver && !cerver_is_running (cerver)) {
 		cerver_set_running (cerver, true);
 
 		if (cerver_start_cancelled (cerver)) return 0;
@@ -1413,7 +1417,7 @@ u8 cerver_start (Cerver *cerver) {
 		cerver_stop_request (cerver);
 	}
 
-	else {
+	else if (cerver) {
 		cerver_log (
 			LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 			"The cerver %s is already running!",
