@@ -55,7 +55,7 @@ CERVER_PUBLIC void bsem_delete (void *bsem_ptr);
  *
  * @param[in,out] bsem_p the semaphore
  * @param[in] value 0 or 1; any other value leaves the semaphore without its mutex and its condition
- * @warning The allocations are not checked.
+ * @note Without memory for one of them, the semaphore keeps both NULL and the post and the wait do nothing.
  */
 CERVER_PUBLIC void bsem_init (bsem *bsem_p, int value);
 
