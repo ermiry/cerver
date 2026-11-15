@@ -1,13 +1,15 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
-#include <cerver/balancer.h>
+#include <cerver/load/balancer.h>
+#include <cerver/load/route.h>
+#include <cerver/load/service.h>
 
-#include "test.h"
+#include "../test.h"
+#include "load.h"
 
 #pragma region services
 
@@ -373,6 +375,8 @@ static void test_balancer_route_limit (void) {
 
 int main (void) {
 
+	test_output_init ();
+
 	srand ((unsigned) time (NULL));
 
 	(void) printf ("Testing BALANCER...\n");
@@ -394,6 +398,8 @@ int main (void) {
 	test_balancer_route_limit ();
 
 	(void) printf ("\nDone with BALANCER tests!\n\n");
+
+	routing_tests ();
 
 	return 0;
 
