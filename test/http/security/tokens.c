@@ -1,28 +1,25 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <errno.h>
 #include <time.h>
 
-#include <cerver/cerver.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
 
-#include <cerver/http/auth.h>
-#include <cerver/http/http.h>
-
+#include <cerver/http/core/http.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
-
 #include <cerver/http/jwt/alg.h>
 #include <cerver/http/jwt/jwt.h>
 #include <cerver/http/jwt/key.h>
+#include <cerver/http/security/auth.h>
 
 #include <cerver/utils/base64.h>
 
-#include "http.h"
-
-#include "../test.h"
+#include "../../test.h"
+#include "../http.h"
 
 #define TOKENS_CERVER_NAME				"tokens-cerver"
 #define TOKENS_CERVER_PORT				8080
