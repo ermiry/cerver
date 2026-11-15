@@ -674,19 +674,23 @@ static void test_str_n_shorter_source (void) {
 
 }
 
-// a string without a max len (not created with str_allocate ()) is never written by str_set ()
+// a string without a max len (not created with str_allocate ()) grows to the value that str_set () writes
+// (it was not changed, and before that the value overflowed its buffer)
 static void test_str_set_without_max_len (void) {
 
+	const char *value = "I am Erick Salas and I am 22 years old!";
+
 	String *str = str_new ("Erick");
-	str_set (str, "%s", "I am Erick Salas and I am 22 years old!");
-	test_check_str_eq (str->str, "Erick", "str_set () wrote a string without a max len");
-	test_check_unsigned_eq (str->len, strlen ("Erick"), NULL);
+	str_set (str, "%s", value);
+	test_check_str_eq (str->str, value, "str_set () did not grow a string without a max len");
+	test_check_unsigned_eq (str->len, strlen (value), NULL);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
 	str_delete (str);
 
 	String *empty = str_new (NULL);
 	str_set (empty, "%s", "Erick Salas");
-	test_check_null_ptr (empty->str);
-	test_check_unsigned_eq (empty->len, 0, NULL);
+	test_check_str_eq (empty->str, "Erick Salas", "str_set () did not grow an empty string");
+	test_check_unsigned_eq (empty->len, strlen ("Erick Salas"), NULL);
 	str_delete (empty);
 
 }
@@ -721,6 +725,49 @@ static void test_str_split_only_delimiters (void) {
 	for (int i = 0; i < n_tokens; i++) free (tokens[i]);
 	free (tokens);
 	str_delete (pair);
+
+	// a string without the delimiter is its only token (it returned NULL)
+	String *single = str_new ("Erick Salas");
+	n_tokens = STRING_TEST_NO_TOKENS;
+	tokens = str_split (single, ',', &n_tokens);
+	test_check_ptr (tokens);
+	test_check_int_eq (n_tokens, 1, "a string without the delimiter is not its only token");
+	test_check_str_eq (tokens[0], "Erick Salas", NULL);
+	free (tokens[0]);
+	free (tokens);
+	str_delete (single);
+
+}
+
+// a String without characters (str_new (NULL)) is compared, copied and cleaned without a crash (strcmp () got NULL)
+static void test_str_null_characters (void) {
+
+	String *empty = str_new (NULL);
+	String *value = str_new ("cerver");
+	test_check_ptr (empty);
+	test_check_ptr (value);
+	test_check_null_ptr (empty->str);
+
+	test_check (str_compare (value, empty) < 0, "a String with characters is not before one without them");
+	test_check (str_compare (empty, value) > 0, "a String without characters is not after one with them");
+	test_check_int_eq (str_compare (empty, empty), 0, NULL);
+	test_check_int_eq (str_comparator (empty, empty), 0, NULL);
+
+	str_copy (value, empty);
+	test_check_str_eq (value->str, "cerver", "a copy of a String without characters changed the String");
+
+	str_n_copy (value, empty, 1);
+	test_check_str_eq (value->str, "cerver", NULL);
+
+	str_remove_char (empty, 'c');
+	test_check_null_ptr (empty->str);
+
+	str_copy (empty, value);
+	test_check_str_eq (empty->str, "cerver", NULL);
+	test_check_unsigned_eq ((unsigned int) empty->len, (unsigned int) value->len, NULL);
+
+	str_delete (value);
+	str_delete (empty);
 
 }
 
@@ -759,6 +806,7 @@ void types_tests_string (void) {
 	test_str_set_without_max_len ();
 	test_str_contains_null ();
 	test_str_split_only_delimiters ();
+	test_str_null_characters ();
 
 	(void) printf ("Done!\n");
 
