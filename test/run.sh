@@ -52,4 +52,9 @@ run ./test/bin/utils
 
 run ./test/bin/crypto
 
+# the faults binary defines the allocators: it is not built with a sanitizer and does not run under valgrind
+if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
+	run ./test/bin/faults
+fi
+
 run ./test/bin/version

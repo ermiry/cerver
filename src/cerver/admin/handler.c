@@ -23,6 +23,7 @@
 #include "cerver/connection/connection.h"
 #include "cerver/connection/end.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/handler/handler.h"
@@ -203,7 +204,7 @@ static const char *admin_bad_packet_type = { "The packet has an unknown type" };
 // returns ADMIN_CERVER_HANDLER_ERROR_DROPPED when the connection is being dropped
 static AdminCerverHandlerError admin_bad_packet (const Packet *packet, const char *reason) {
 
-	packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
+	CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_bad_packets, 1);
 
 	(void) error_packet_generate_and_send (
 		CERVER_ERROR_PACKET_ERROR, reason,
@@ -237,7 +238,7 @@ static AdminCerverHandlerError admin_packet_handler_actual (
 
 	switch (packet->header.packet_type) {
 		case PACKET_TYPE_CLIENT:
-			packet->cerver->admin->stats->received_packets->n_client_packets += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_client_packets, 1);
 			packet->client->stats->received_packets->n_client_packets += 1;
 			packet->connection->stats->received_packets->n_client_packets += 1;
 			error = admin_cerver_client_packet_handler (packet);
@@ -246,7 +247,7 @@ static AdminCerverHandlerError admin_packet_handler_actual (
 
 		// handles a request made from the admin
 		case PACKET_TYPE_REQUEST:
-			packet->cerver->admin->stats->received_packets->n_request_packets += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_request_packets, 1);
 			packet->client->stats->received_packets->n_request_packets += 1;
 			packet->connection->stats->received_packets->n_request_packets += 1;
 			admin_cerver_request_packet_handler (packet);
@@ -254,21 +255,21 @@ static AdminCerverHandlerError admin_packet_handler_actual (
 			break;
 
 		case PACKET_TYPE_APP:
-			packet->cerver->admin->stats->received_packets->n_app_packets += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_app_packets, 1);
 			packet->client->stats->received_packets->n_app_packets += 1;
 			packet->connection->stats->received_packets->n_app_packets += 1;
 			admin_app_packet_handler (packet);
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
-			packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_app_error_packets, 1);
 			packet->client->stats->received_packets->n_app_error_packets += 1;
 			packet->connection->stats->received_packets->n_app_error_packets += 1;
 			admin_app_error_packet_handler (packet);
 			break;
 
 		case PACKET_TYPE_CUSTOM:
-			packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
+			CERVER_STATS_ADD (packet->cerver->admin->stats->received_packets->n_custom_packets, 1);
 			packet->client->stats->received_packets->n_custom_packets += 1;
 			packet->connection->stats->received_packets->n_custom_packets += 1;
 			admin_custom_packet_handler (packet);
@@ -296,7 +297,8 @@ static AdminCerverHandlerError admin_packet_handler_check_version (
 	// the version came in the header, it used to be expected in the data,
 	// and the check was inverted, so every valid packet was rejected
 	// a rejected packet is handled by admin_bad_packet ()
-	if (packet->cerver->check_packets && !packet_check (packet)) {
+	// the admin cerver has its own flag, admin_cerver_set_check_packets ()
+	if (packet->cerver->admin->check_packets && !packet_check (packet)) {
 		error = ADMIN_CERVER_HANDLER_ERROR_PACKET;
 	}
 

@@ -204,10 +204,29 @@ extern int htab_insert (
  * @param[in] key the key
  * @param[in] key_size the size in bytes of the key
  * @return the value, NULL if the key has none or an argument is NULL or 0
- * @warning The value is returned after the mutex is released: another thread can remove it.
+ * @warning The value is returned after the mutex is released: another thread can remove it; use
+ * htab_get_apply () to use the value with the mutex.
  */
 extern void *htab_get (
 	Htab *ht, const void *key, size_t key_size
+);
+
+/**
+ * @brief Runs a method with the value associated with a key while the mutex of the table is held, so another
+ * thread can not remove it in between.
+ *
+ * @param[in] ht the table
+ * @param[in] key the key
+ * @param[in] key_size the size in bytes of the key
+ * @param[in] method gets the value and the method args; it must not change the same table
+ * @param[in] method_args the second argument of the method
+ * @retval 0 the key was found and the method ran
+ * @retval 1 the key has no value or an argument is NULL or 0
+ * @since 1.9b-2
+ */
+extern unsigned int htab_get_apply (
+	Htab *ht, const void *key, size_t key_size,
+	void (*method)(void *data, void *method_args), void *method_args
 );
 
 /**

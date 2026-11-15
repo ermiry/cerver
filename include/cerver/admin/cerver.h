@@ -38,16 +38,11 @@ struct _AdminCerver {
 	/** @brief The method that authenticates the admins, it returns 0 when the authentication succeeds. */
 	delegate authenticate;
 
-	/**
-	 * @brief The max admins at the same time.
-	 *
-	 * @warning It is only stored: cerver does not enforce it.
-	 */
+	/** @brief The max admins at the same time, 0 is no limit: admin_cerver_register_admin () rejects one more. */
 	u8 max_admins;
 	/**
-	 * @brief The max connections of each admin.
-	 *
-	 * @warning It is only stored: cerver does not enforce it.
+	 * @brief The max connections of each admin, 0 is no limit: admin_cerver_register_admin () rejects an admin whose
+	 * client has more.
 	 */
 	u8 max_admin_connections;
 
@@ -89,11 +84,7 @@ struct _AdminCerver {
 	/** @brief The admin cerver deletes the PACKET_TYPE_CUSTOM packets after their handler. */
 	bool custom_packet_handler_delete_packet;
 
-	/**
-	 * @brief The packets of the admins are checked with packet_check ().
-	 *
-	 * @warning It is only stored: the admin handler checks the packets with the check_packets of the cerver.
-	 */
+	/** @brief The packets of the admins are checked with packet_check () by the admin handler. */
 	bool check_packets;
 
 	/** @brief The thread of the update method. */
@@ -164,8 +155,8 @@ CERVER_EXPORT void admin_cerver_set_authenticate (
  * @brief Sets the max admins at the same time.
  *
  * @param[in,out] admin_cerver the admin cerver
- * @param[in] max_admins the admins, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMINS
- * @warning The value is only stored: cerver does not enforce it.
+ * @param[in] max_admins the admins, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMINS, 0 is no limit
+ * @note An admin that authenticates when the limit is reached is rejected with an error.
  */
 CERVER_EXPORT void admin_cerver_set_max_admins (
 	AdminCerver *admin_cerver, u8 max_admins
@@ -175,8 +166,9 @@ CERVER_EXPORT void admin_cerver_set_max_admins (
  * @brief Sets the max connections of each admin.
  *
  * @param[in,out] admin_cerver the admin cerver
- * @param[in] max_admin_connections the connections, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS
- * @warning The value is only stored: cerver does not enforce it.
+ * @param[in] max_admin_connections the connections, the default is #ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS, 0
+ * is no limit
+ * @note An admin whose client has more connections when it authenticates is rejected with an error.
  */
 CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 	AdminCerver *admin_cerver, u8 max_admin_connections
@@ -234,7 +226,8 @@ CERVER_EXPORT void admin_cerver_set_poll_timeout (
  * NULL
  * @param[in] app_error_handler the handler of the PACKET_TYPE_APP_ERROR packets, the admin cerver owns it from now
  * on; it can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before cerver_start ().
  */
 CERVER_EXPORT void admin_cerver_set_app_handlers (
 	AdminCerver *admin_cerver,
@@ -266,7 +259,8 @@ CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (
  *
  * @param[in,out] admin_cerver the admin cerver
  * @param[in] custom_handler the handler, the admin cerver owns it from now on; it can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before cerver_start ().
  */
 CERVER_EXPORT void admin_cerver_set_custom_handler (
 	AdminCerver *admin_cerver, struct _Handler *custom_handler
@@ -309,8 +303,7 @@ CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_working (
  *
  * @param[in,out] admin_cerver the admin cerver
  * @param[in] check_packets true to check them, the default is #ADMIN_CERVER_DEFAULT_CHECK_PACKETS
- * @warning The value is only stored: the admin handler checks the packets when the check_packets of the cerver
- * (cerver_set_check_packets ()) is set.
+ * @note It is independent of the check_packets of the cerver (cerver_set_check_packets ()), which was used before.
  */
 CERVER_EXPORT void admin_cerver_set_check_packets (
 	AdminCerver *admin_cerver, bool check_packets
@@ -406,7 +399,8 @@ CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (
  * @param[in,out] admin_cerver the admin cerver
  * @param[in,out] admin the admin, with at least one connection
  * @retval 0 the admin was registered
- * @retval 1 a NULL argument, or the admin poll is full
+ * @retval 1 a NULL argument, the admin cerver has #AdminCerver::max_admins, the client of the admin has more than
+ * #AdminCerver::max_admin_connections, or the admin poll is full
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE u8 admin_cerver_register_admin (

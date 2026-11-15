@@ -106,6 +106,7 @@ typedef struct LobbyStats {
 	 * @brief How often the stats should be reset.
 	 *
 	 * @warning It is only stored and printed: it starts at 0 and cerver does not reset the stats with it.
+	 * @deprecated Only the stats of the cerver are reset (CerverStats::threshold_time); it goes away in the 3.0.
 	 */
 	time_t threshold_time;
 
@@ -134,8 +135,9 @@ typedef struct LobbyStats {
  * @param[in,out] lobby the lobby
  * @param[in] threshold_time the seconds
  * @warning The value is only stored and printed, see LobbyStats::threshold_time.
+ * @deprecated Only the stats of the cerver are reset, with cerver_stats_set_threshold_time ().
  */
-CERVER_EXPORT void lobby_stats_set_threshold_time (struct _Lobby *lobby, time_t threshold_time);
+DEPRECATED (CERVER_EXPORT void lobby_stats_set_threshold_time (struct _Lobby *lobby, time_t threshold_time));
 
 /**
  * @brief Prints the stats of a lobby to stdout, with printf ().
@@ -353,8 +355,21 @@ CERVER_EXPORT bool lobby_is_running (const Lobby *lobby);
  * @param[in] query a lobby with the id
  * @return the lobby, NULL for a NULL argument or without a match
  * @warning It does not take a reference: the lobby can be released after the lock is released.
+ * @deprecated Use lobby_get_reference (), which takes the reference with the lock.
  */
-CERVER_EXPORT Lobby *lobby_get (struct _GameCerver *game_cerver, Lobby *query);
+DEPRECATED (CERVER_EXPORT Lobby *lobby_get (struct _GameCerver *game_cerver, Lobby *query));
+
+/**
+ * @brief Searches a registered lobby that matches a query by its id and takes a reference to it, with the lock of
+ * the game cerver, so it can not be released before its caller is done.
+ *
+ * @param[in] game_cerver the game cerver
+ * @param[in] query a lobby with the id
+ * @return the lobby with a reference that the caller releases with lobby_release (), NULL for a NULL argument or
+ * without a match
+ * @since 1.9b-2
+ */
+CERVER_EXPORT Lobby *lobby_get_reference (struct _GameCerver *game_cerver, Lobby *query);
 
 /**
  * @brief Searches a registered lobby with an id, with the lock of the game cerver.
@@ -363,8 +378,21 @@ CERVER_EXPORT Lobby *lobby_get (struct _GameCerver *game_cerver, Lobby *query);
  * @param[in] id the id
  * @return the lobby, NULL for a NULL argument, a cerver that is not a game cerver or without a match
  * @warning It does not take a reference: the lobby can be released after the lock is released.
+ * @deprecated Use lobby_search_with_id_reference (), which takes the reference with the lock.
  */
-CERVER_EXPORT Lobby *lobby_search_with_id (struct _Cerver *cerver, const char *id);
+DEPRECATED (CERVER_EXPORT Lobby *lobby_search_with_id (struct _Cerver *cerver, const char *id));
+
+/**
+ * @brief Searches a registered lobby with an id and takes a reference to it, with the lock of the game cerver, so
+ * it can not be released before its caller is done.
+ *
+ * @param[in] cerver a game cerver
+ * @param[in] id the id
+ * @return the lobby with a reference that the caller releases with lobby_release (), NULL for a NULL argument, a
+ * cerver that is not a game cerver or without a match
+ * @since 1.9b-2
+ */
+CERVER_EXPORT Lobby *lobby_search_with_id_reference (struct _Cerver *cerver, const char *id);
 
 /**
  * @brief Tears down a lobby: stops its threads, returns the connections of its players to the cerver, ends its game,

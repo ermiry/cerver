@@ -10,6 +10,7 @@
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
 #include "cerver/handler/events.h"
+#include "cerver/handler/internal.h"
 
 #include "cerver/game/lobby.h"
 
@@ -50,20 +51,54 @@ static CerverEventData *cerver_event_data_new (void) {
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
 		event_data->owns_action_args = false;
+		event_data->shared_args = NULL;
 	}
 
 	return event_data;
 
 }
 
+#pragma region args
+
+CerverActionArgs *cerver_action_args_create (void *args, Action delete_args) {
+
+	CerverActionArgs *action_args = args ? (CerverActionArgs *) malloc (sizeof (CerverActionArgs)) : NULL;
+	if (action_args) {
+		action_args->args = args;
+		action_args->delete_args = delete_args;
+		action_args->references = 1;
+	}
+
+	return action_args;
+
+}
+
+CerverActionArgs *cerver_action_args_reference (CerverActionArgs *action_args) {
+
+	if (action_args) (void) __atomic_add_fetch (&action_args->references, 1, __ATOMIC_SEQ_CST);
+
+	return action_args;
+
+}
+
+void cerver_action_args_release (CerverActionArgs *action_args) {
+
+	if (action_args && !__atomic_sub_fetch (&action_args->references, 1, __ATOMIC_SEQ_CST)) {
+		if (action_args->delete_args) action_args->delete_args (action_args->args);
+
+		free (action_args);
+	}
+
+}
+
+#pragma endregion
+
 void cerver_event_data_delete (CerverEventData *event_data) {
 
 	if (event_data) {
 		lobby_release (event_data->lobby);
 
-		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
-			event_data->delete_action_args (event_data->action_args);
-		}
+		cerver_action_args_release (event_data->shared_args);
 
 		free (event_data);
 	}
@@ -87,6 +122,7 @@ static CerverEventData *cerver_event_data_create (
 
 		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
+		event_data->shared_args = cerver_action_args_reference (event->shared_args);
 	}
 
 	return event_data;
@@ -109,21 +145,20 @@ static CerverEvent *cerver_event_new (void) {
 		cerver_event->work = NULL;
 		cerver_event->work_args = NULL;
 		cerver_event->delete_action_args = NULL;
+		cerver_event->shared_args = NULL;
 	}
 
 	return cerver_event;
 
 }
 
+// the arguments are deleted when the last trigger that still runs is done with them
 void cerver_event_delete (void *event_ptr) {
 
 	if (event_ptr) {
 		CerverEvent *event = (CerverEvent *) event_ptr;
 
-		if (event->work_args) {
-			if (event->delete_action_args)
-				event->delete_action_args (event->work_args);
-		}
+		cerver_action_args_release (event->shared_args);
 
 		free (event);
 	}
@@ -163,6 +198,12 @@ u8 cerver_event_register (
 			event->work = work;
 			event->work_args = work_args;
 			event->delete_action_args = delete_action_args;
+			event->shared_args = cerver_action_args_create (work_args, delete_action_args);
+
+			if (work_args && !event->shared_args) {
+				free (event);
+				return retval;
+			}
 
 			// search if there is an action already registred for that event and remove it
 			(void) cerver_event_unregister (cerver, event_type);
@@ -227,19 +268,21 @@ void cerver_event_trigger_lobby (
 					cerver, client, connection, lobby, event
 				);
 
-				// the event is dropped while its action can still run in its thread,
-				// so the arguments go with the data of this trigger
+				// the event is dropped while its action can still run in its thread:
+				// the reference of this trigger is the last one to the arguments
 				if (event_data && event->drop_after_trigger) {
 					event_data->owns_action_args = true;
-					event->work_args = NULL;
 				}
 
-				// the thread is counted, so the cerver teardown waits for it
+				// the thread is counted, so the cerver teardown waits for it;
+				// a thread that could not be created leaves its data to be released here
 				if (event->create_thread) {
-					(void) thread_group_create (
+					if (thread_group_create (
 						(ThreadGroup *) &cerver->event_threads,
 						event->work, event_data
-					);
+					)) {
+						cerver_event_data_delete (event_data);
+					}
 				}
 
 				else {

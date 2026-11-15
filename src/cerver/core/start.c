@@ -511,8 +511,8 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 			);
 
 			// 28/05/2020
-			cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			pthread_mutex_init (cerver->poll_lock, NULL);
+			cerver->poll_lock = thread_mutex_new ();
+			if (!cerver->poll_lock) errors |= 1;
 
 			// init the cerver thpool
 			errors |= cerver_one_time_init_thpool (cerver);
@@ -523,7 +523,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 				case CERVER_TYPE_GAME: {
 					GameCerver *game_data = (GameCerver *) cerver->cerver_data;
-					game_data->cerver = cerver;
+					if (game_data) game_data->cerver = cerver;
 					if (game_data && game_data->load_game_data) {
 						game_data->load_game_data (NULL);
 					}
@@ -594,22 +594,18 @@ static u8 cerver_auth_start (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver->auth_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0);
-
 		cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
 		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections, NULL, NULL);
 		if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
 			cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
-			if (cerver->hold_fds) {
+			cerver->on_hold_poll_lock = thread_mutex_new ();
+			if (cerver->hold_fds && cerver->on_hold_poll_lock) {
 				memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
 
 				for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
 					cerver->hold_fds[i].fd = -1;
 
 				cerver->current_on_hold_nfds = 0;
-
-				cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-				pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
 
 				// the peers of an UDP cerver authenticate in its receive loop (udp.c)
 				if (cerver->protocol == PROTOCOL_TCP) {
@@ -822,6 +818,22 @@ static u8 cerver_custom_handler_start (Cerver *cerver) {
 
 }
 
+static u8 cerver_handlers_start_each (Cerver *cerver) {
+
+	u8 errors = 0;
+
+	errors |= cerver_app_handlers_start (cerver);
+
+	errors |= cerver_app_error_handler_start (cerver);
+
+	errors |= cerver_custom_handler_start (cerver);
+
+	errors |= cerver_request_handlers_start (cerver);
+
+	return errors;
+
+}
+
 // 27/05/2020 -- starts all cerver's handlers
 static u8 cerver_handlers_start (Cerver *cerver) {
 
@@ -835,18 +847,11 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 		);
 		#endif
 
-		cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		pthread_mutex_init (cerver->handlers_lock, NULL);
-
+		cerver->handlers_lock = thread_mutex_new ();
 		cerver->handlers_alive_cond = thread_cond_new ();
-
-		errors |= cerver_app_handlers_start (cerver);
-
-		errors |= cerver_app_error_handler_start (cerver);
-
-		errors |= cerver_custom_handler_start (cerver);
-
-		errors |= cerver_request_handlers_start (cerver);
+		// the handlers mark themselves alive with the lock and its condition
+		errors |= (cerver->handlers_lock && cerver->handlers_alive_cond) ?
+			cerver_handlers_start_each (cerver) : 1;
 
 		if (!errors) {
 			#ifdef CERVER_DEBUG
@@ -924,21 +929,12 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 }
 
+static const i64 CERVER_SLEEP_MICROSECONDS_PER_SECOND = 1000000;
+
 // sleeps the seconds or until the cerver is stopped
 void cerver_sleep (Cerver *cerver, u32 seconds) {
 
-	struct timespec deadline = CERVER_ZERO_INITIALIZER;
-	(void) clock_gettime (CLOCK_REALTIME, &deadline);
-	deadline.tv_sec += seconds;
-
-	(void) pthread_mutex_lock (cerver->stop_mutex);
-
-	int result = 0;
-	while (cerver_is_running (cerver) && (result != ETIMEDOUT)) {
-		result = pthread_cond_timedwait (cerver->stop_cond, cerver->stop_mutex, &deadline);
-	}
-
-	(void) pthread_mutex_unlock (cerver->stop_mutex);
+	cerver_stop_wait (cerver, (i64) seconds * CERVER_SLEEP_MICROSECONDS_PER_SECOND);
 
 }
 

@@ -35,6 +35,7 @@ struct _AdminCerverStats {
 	 * @brief How often the stats should be reset.
 	 *
 	 * @warning It is only stored and printed: cerver does not reset the stats with it.
+	 * @deprecated Only the stats of the cerver are reset (CerverStats::threshold_time); it goes away in the 3.0.
 	 */
 	time_t threshold_time;
 

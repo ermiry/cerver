@@ -10,6 +10,7 @@
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
 #include "cerver/handler/errors.h"
+#include "cerver/handler/internal.h"
 #include "cerver/packets/packets.h"
 
 #include "cerver/threads/thread.h"
@@ -47,6 +48,7 @@ static CerverErrorEventData *cerver_error_event_data_new (void) {
 		error_event_data->action_args = NULL;
 		error_event_data->delete_action_args = NULL;
 		error_event_data->owns_action_args = false;
+		error_event_data->shared_args = NULL;
 
 		error_event_data->error_message = NULL;
 	}
@@ -60,12 +62,7 @@ void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 	if (error_event_data) {
 		str_delete (error_event_data->error_message);
 
-		if (
-			error_event_data->owns_action_args
-			&& error_event_data->action_args && error_event_data->delete_action_args
-		) {
-			error_event_data->delete_action_args (error_event_data->action_args);
-		}
+		cerver_action_args_release (error_event_data->shared_args);
 
 		free (error_event_data);
 	}
@@ -75,7 +72,7 @@ void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 static CerverErrorEventData *cerver_error_event_data_create (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
-	void *action_args,
+	CerverErrorEvent *error,
 	const char *error_message
 ) {
 
@@ -86,7 +83,9 @@ static CerverErrorEventData *cerver_error_event_data_create (
 		error_event_data->client = client;
 		error_event_data->connection = connection;
 
-		error_event_data->action_args = action_args;
+		error_event_data->action_args = error->work_args;
+		error_event_data->delete_action_args = error->delete_action_args;
+		error_event_data->shared_args = cerver_action_args_reference (error->shared_args);
 
 		error_event_data->error_message = error_message ? str_new (error_message) : NULL;
 	}
@@ -111,21 +110,20 @@ static CerverErrorEvent *cerver_error_event_new (void) {
 		cerver_error_event->work = NULL;
 		cerver_error_event->work_args = NULL;
 		cerver_error_event->delete_action_args = NULL;
+		cerver_error_event->shared_args = NULL;
 	}
 
 	return cerver_error_event;
 
 }
 
+// the arguments are deleted when the last trigger that still runs is done with them
 void cerver_error_event_delete (void *event_ptr) {
 
 	if (event_ptr) {
 		CerverErrorEvent *event = (CerverErrorEvent *) event_ptr;
 
-		if (event->work_args) {
-			if (event->delete_action_args)
-				event->delete_action_args (event->work_args);
-		}
+		cerver_action_args_release (event->shared_args);
 
 		free (event);
 	}
@@ -164,6 +162,12 @@ u8 cerver_error_event_register (
 			error->work = work;
 			error->work_args = work_args;
 			error->delete_action_args = delete_action_args;
+			error->shared_args = cerver_action_args_create (work_args, delete_action_args);
+
+			if (work_args && !error->shared_args) {
+				free (error);
+				return retval;
+			}
 
 			// search if there is an action already registred for that error and remove it
 			(void) cerver_error_event_unregister (cerver, error_type);
@@ -214,23 +218,24 @@ void cerver_error_event_trigger (
 			// trigger the action
 			if (error->work) {
 				CerverErrorEventData *error_event_data = cerver_error_event_data_create (
-					cerver, client, connection, error->work_args, error_message
+					cerver, client, connection, error, error_message
 				);
 
-				// the error is dropped while its action can still run in its thread,
-				// so the arguments go with the data of this trigger
+				// the error is dropped while its action can still run in its thread:
+				// the reference of this trigger is the last one to the arguments
 				if (error_event_data && error->drop_after_trigger) {
-					error_event_data->delete_action_args = error->delete_action_args;
 					error_event_data->owns_action_args = true;
-					error->work_args = NULL;
 				}
 
-				// the thread is counted, so the cerver teardown waits for it
+				// the thread is counted, so the cerver teardown waits for it;
+				// a thread that could not be created leaves its data to be released here
 				if (error->create_thread) {
-					(void) thread_group_create (
+					if (thread_group_create (
 						(ThreadGroup *) &cerver->event_threads,
 						error->work, error_event_data
-					);
+					)) {
+						cerver_error_event_data_delete (error_event_data);
+					}
 				}
 
 				else {

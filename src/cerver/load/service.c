@@ -327,7 +327,7 @@ void balancer_service_set_name (
 ) {
 
 	if (service && name) {
-		(void) strncpy (service->name, name, SERVICE_NAME_SIZE - 1);
+		(void) c_string_copy_bounded (service->name, name, SERVICE_NAME_SIZE);
 	}
 
 }

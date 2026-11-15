@@ -174,8 +174,8 @@ CERVER_PUBLIC void worker_set_name (
 /**
  * @brief Returns the state of a worker.
  *
- * @param[in] worker the worker, it must not be NULL
- * @return the state
+ * @param[in] worker the worker
+ * @return the state, WORKER_STATE_NONE for a NULL worker
  */
 CERVER_PUBLIC WorkerState worker_get_state (
 	Worker *worker
@@ -247,7 +247,7 @@ CERVER_PUBLIC u64 worker_get_idle_milliseconds (Worker *worker);
 /**
  * @brief Sets the work of the jobs that are pushed without one (worker_push_job ()).
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker, NULL is ignored
  * @param[in] work the work
  */
 CERVER_PUBLIC void worker_set_work (
@@ -257,7 +257,7 @@ CERVER_PUBLIC void worker_set_work (
 /**
  * @brief Sets how the argument of each job is released after its work.
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker, NULL is ignored
  * @param[in] delete_data releases the argument, NULL to keep it
  */
 CERVER_PUBLIC void worker_set_delete_data (
@@ -267,7 +267,7 @@ CERVER_PUBLIC void worker_set_delete_data (
 /**
  * @brief Sets the reference that remove_reference gets after each job.
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker, NULL is ignored
  * @param[in] reference the reference
  */
 CERVER_PUBLIC void worker_set_reference (
@@ -277,7 +277,7 @@ CERVER_PUBLIC void worker_set_reference (
 /**
  * @brief Sets the method that gets the reference after each job.
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker, NULL is ignored
  * @param[in] remove_reference the method, NULL for none
  */
 CERVER_PUBLIC void worker_set_remove_reference (
@@ -335,10 +335,10 @@ CERVER_PUBLIC unsigned int worker_end (Worker *worker);
 /**
  * @brief Pushes a job without a work to the queue of a worker: its work is the one of worker_set_work ().
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker
  * @param[in] args the argument of the work
  * @retval 0 the job was pushed
- * @retval 1 it could not be pushed
+ * @retval 1 it could not be pushed, or the worker is NULL
  */
 CERVER_PUBLIC unsigned int worker_push_job (
 	Worker *worker, void *args
@@ -347,11 +347,11 @@ CERVER_PUBLIC unsigned int worker_push_job (
 /**
  * @brief Pushes a job with its work to the queue of a worker.
  *
- * @param[in,out] worker the worker, it must not be NULL
+ * @param[in,out] worker the worker
  * @param[in] work the work
  * @param[in] args the argument of the work
  * @retval 0 the job was pushed
- * @retval 1 it could not be pushed
+ * @retval 1 it could not be pushed, or the worker is NULL
  */
 CERVER_PUBLIC unsigned int worker_push_job_with_work (
 	Worker *worker,

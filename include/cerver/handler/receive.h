@@ -37,7 +37,7 @@ struct _Lobby;
  */
 #define RECEIVE_ERROR_MAP(XX)			\
 	XX(0,	NONE,		None)			\
-	XX(1,	TIMEOUT,	Timeoout)		\
+	XX(1,	TIMEOUT,	Timeout)		\
 	XX(2,	EMPTY,		Empty)			\
 	XX(3,	FAILED,		Failed)
 
