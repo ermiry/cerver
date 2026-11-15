@@ -26,6 +26,8 @@ make docs               # the reference of the headers with Doxygen, in referenc
 
 `make clean` goes right before every build. The Dockerfiles and the CI use `gcc:16.2`. `make docs` runs Doxygen 1.9.8 with the `Doxyfile` (`Dockerfile.docs` has it: `docker build -f Dockerfile.docs -t cerver-docs .` and `docker run --rm -v $PWD:/cerver cerver-docs`), and any warning fails it; its `INPUT` lists the documented folders. Every clang build adds `-Wdocumentation -Wdocumentation-unknown-command -fcomment-block-commands=threadsafety` (and `-Wno-documentation-deprecated-sync`), so with `WERROR=1` a comment that does not match its declaration fails. The `docs` job of `build.yml` uploads the reference as an artifact.
 
+The static analyzers (1.9b-2): `bash test/analyze.sh` runs gcc `-fanalyzer` (`make ANALYZER=1`), scan-build, clang-tidy (its checks are in `.clang-tidy`) and cppcheck, writes each finding as `<tool> <file> <check>` (without its line) and fails on one that is not in `test/suppressions.txt`; `Dockerfile.analyze` has the tools (`docker build -f Dockerfile.analyze -t cerver-analyze .` and `docker run --rm -v $PWD:/cerver cerver-analyze`), and the `analyzers` job of `build.yml` runs it. A finding is fixed with its test; only a false positive goes to the suppressions, and a suppression of a file hides a new finding of the same check in that file.
+
 ## Tests
 
 There is no test framework; `test/test.h` provides `test_check_*` macros that print the location and `exit(1)` on failure. Each unit test binary has a `main` that calls static `test_*` functions.
@@ -39,6 +41,7 @@ bash test/integration.sh         # the cerver / client pairs, in a container
 - The unit tests mirror `src/cerver/`: a folder for each module with one binary (`test/bin/connection`, `files`, `handler`, `load`, `network`, `packets`, `system`, `crypto`, …); `test/version.c` stays on top, like `version.h`.
 - Integration tests are server/client pairs: servers in `test/cerver/` (TCP, port 7000), clients in `test/client/`; `test/integration.sh` runs each pair with `test/pair.sh` in `Dockerfile.test` (`SANITIZER=address,undefined` or `thread`). The handler pair is `cerver/handler`.
 - `test/test.h` scales the short timeouts with `TEST_TIME_SCALE` (`RUNNER` sets it under valgrind, the sanitizer builds use 4); `bash test/repeat.sh <binary | pair> [count]` is the flaky hunter; `test/fuzz/` are the libFuzzer targets of the core (`make TYPE=test CC=clang fuzz`).
+- `test/faults/` (1.9b-2) defines `malloc ()`, `calloc ()`, `realloc ()` and `pthread_create ()` to make one call fail (`faults_arm ()` by its function and its size): a check of an allocation gets its test there. It is built only without a sanitizer and `test/run.sh` runs it only without `RUNNER`. gcc can merge a `malloc ()` and its `memset ()` into a `calloc ()`, so a test arms both; the size of the call that fails must not be the one of another allocation of the same path.
 - Every bug is fixed with its test, seen failing against the version before it.
 
 ## Architecture
