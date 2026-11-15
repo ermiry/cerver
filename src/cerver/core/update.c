@@ -39,10 +39,6 @@
 
 #include "cerver/game/game.h"
 
-#include "cerver/http/core/http.h"
-#include "cerver/http/websockets/internal.h"
-#include "cerver/http/websockets/registry.h"
-
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
