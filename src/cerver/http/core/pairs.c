@@ -140,7 +140,7 @@ const String *key_value_pairs_get_value (
 		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kvp = (KeyValuePair *) le->data;
-			if (!strcmp (kvp->key->str, key)) {
+			if (kvp->key && !strcmp (kvp->key->str, key)) {
 				value = kvp->value;
 				break;
 			}
@@ -148,6 +148,15 @@ const String *key_value_pairs_get_value (
 	}
 
 	return value;
+
+}
+
+// what is printed for the key or the value that a pair does not have
+static const char *key_value_pair_missing = { "" };
+
+static inline const char *key_value_pair_string (const String *string) {
+
+	return string ? string->str : key_value_pair_missing;
 
 }
 
@@ -161,7 +170,7 @@ void key_value_pairs_print (const DoubleList *pairs) {
 
 			(void) printf (
 				"[%u] - %s = %s\n",
-				idx, kv->key->str, kv->value->str
+				idx, key_value_pair_string (kv->key), key_value_pair_string (kv->value)
 			);
 
 			idx++;

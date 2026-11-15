@@ -1707,12 +1707,12 @@ void http_cerver_admin_set_origin (
 }
 
 // registers a new file system to be handled
-// when requesting for fs stats
+// when requesting for fs stats, a NULL path is not registered
 void http_cerver_register_admin_file_system (
 	HttpCerver *http_cerver, const char *path
 ) {
 
-	if (http_cerver) {
+	if (http_cerver && path) {
 		(void) dlist_insert_at_end_unsafe (
 			http_cerver->admin_file_systems_stats,
 			http_admin_file_system_stats_create (path)
