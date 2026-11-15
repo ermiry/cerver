@@ -83,9 +83,11 @@ Job *job_get (JobQueue *job_queue) {
 
 void job_reset (Job *job) {
 
-	job->id = 0;
-	job->work = NULL;
-	job->args = NULL;
+	if (job) {
+		job->id = 0;
+		job->work = NULL;
+		job->args = NULL;
+	}
 
 }
 
