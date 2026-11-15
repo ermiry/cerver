@@ -1,3 +1,8 @@
+/**
+ * @file cerver/admin/stats.h
+ * @brief The stats of the admin cerver.
+ */
+
 #ifndef _CERVER_ADMIN_STATS_H_
 #define _CERVER_ADMIN_STATS_H_
 
@@ -11,37 +16,70 @@
 extern "C" {
 #endif
 
-#pragma region stats
+/**
+ * @defgroup admin_stats Stats
+ * @ingroup admin
+ * @brief What the admin cerver received and sent.
+ * @{
+ */
 
+/**
+ * @brief The stats of the admin cerver.
+ *
+ * @warning The counters are plain integers, not the __atomic ones of CerverStats: they are updated by the admin
+ * poll, the handlers and the on hold poll without a common lock.
+ */
 struct _AdminCerverStats {
 
-	time_t threshold_time;				// every time we want to reset cerver stats (like packets), defaults 24hrs
+	/**
+	 * @brief How often the stats should be reset.
+	 *
+	 * @warning It is only stored and printed: cerver does not reset the stats with it.
+	 */
+	time_t threshold_time;
 
-	u64 total_n_packets_received;		// total number of packets received (packet header + data)
-	u64 total_n_receives_done;			// total amount of actual calls to recv ()
-	u64 total_bytes_received;			// total amount of bytes received in the cerver
+	/** @brief The packets received (packet header and data). */
+	u64 total_n_packets_received;
+	/** @brief The calls to recv (). */
+	u64 total_n_receives_done;
+	/** @brief The bytes received. */
+	u64 total_bytes_received;
 
-	u64 total_n_packets_sent;			// total number of packets that were sent
-	u64 total_bytes_sent;				// total amount of bytes sent by the cerver
+	/** @brief The packets sent. */
+	u64 total_n_packets_sent;
+	/** @brief The bytes sent. */
+	u64 total_bytes_sent;
 
-	u64 current_connections;			// all of the current active connections from all the admins (registered in the poll array)
-	u64 current_connected_admins;		// the current number of auth admins connected (unique clients)
+	/** @brief The connections of the admins that are registered in the admin poll. */
+	u64 current_connections;
+	/** @brief The authenticated admins that are connected. */
+	u64 current_connected_admins;
 
-	u64 total_admin_connections;		// the total amount of admin connections that have been done to the cerver
-	u64 total_n_admins;					// the total amount of admins that were registered to the cerver
+	/** @brief The admin connections that were made to the cerver. */
+	u64 total_admin_connections;
+	/** @brief The admins that were registered to the cerver. */
+	u64 total_n_admins;
 
+	/** @brief The packets received, by packet type. */
 	struct _PacketsPerType *received_packets;
+	/** @brief The packets sent, by packet type. */
 	struct _PacketsPerType *sent_packets;
 
 };
 
+/** @brief The stats of the admin cerver, see struct _AdminCerverStats. */
 typedef struct _AdminCerverStats AdminCerverStats;
 
+/**
+ * @brief Prints the stats of the admin cerver, with the packets by type.
+ *
+ * @param[in] stats the stats, NULL prints nothing
+ */
 CERVER_PUBLIC void admin_cerver_stats_print (
 	AdminCerverStats *stats
 );
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }

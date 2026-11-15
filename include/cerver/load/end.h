@@ -1,3 +1,8 @@
+/**
+ * @file cerver/load/end.h
+ * @brief How a load balancer is torn down.
+ */
+
 #ifndef _CERVER_LOAD_END_H_
 #define _CERVER_LOAD_END_H_
 
@@ -9,15 +14,25 @@
 extern "C" {
 #endif
 
-#pragma region end
+/**
+ * @defgroup load_end End
+ * @ingroup load
+ * @brief Releasing a balancer.
+ * @{
+ */
 
-// first ends and destroys the balancer's internal cerver
-// then disconnects from each of the registered services
-// last frees any balancer memory left
-// returns 0 on success, 1 on error
+/**
+ * @brief Tears down a balancer: stops the reconnect threads of its services, tears down its cerver (the receive
+ * threads of the clients end and remove their routes) and its client (the connections with the services end), and
+ * releases it.
+ *
+ * @param[in] balancer the balancer, invalid after the call
+ * @retval 0 the balancer was torn down
+ * @retval 1 the balancer is NULL
+ */
 CERVER_EXPORT u8 balancer_teardown (Balancer *balancer);
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
