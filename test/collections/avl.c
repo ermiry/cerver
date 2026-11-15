@@ -1,11 +1,10 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cerver/collections/avl.h>
 
 #include "../test.h"
-
 #include "data.h"
 
 static AVLTree *test_avl_create (void) {

@@ -1,9 +1,9 @@
 #ifndef _COLLECTIONS_HTAB_H_
 #define _COLLECTIONS_HTAB_H_
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #include <pthread.h>
 

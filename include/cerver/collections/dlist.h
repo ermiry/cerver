@@ -220,7 +220,7 @@ extern void *dlist_remove_at (
 // comparator must return TRUE on match (item will be removed from the dlist)
 // this methods is thread safe
 // returns the number of elements that we removed from the dlist
-extern unsigned int dlist_remove_by_condition (
+extern unsigned int dlist_remove_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match,
@@ -310,7 +310,7 @@ extern DoubleList *dlist_split_half (DoubleList *dlist);
 // comparator must return TRUE on match (item will be moved to new dlist)
 // this method is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
-extern DoubleList *dlist_split_by_condition (
+extern DoubleList *dlist_split_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
@@ -326,7 +326,7 @@ extern void dlist_merge_two (DoubleList *one, DoubleList *two);
 // that match the specified confition
 // elements from original dlists are moved directly to the new list
 // returns a newly allocated dlist with all the matches
-extern DoubleList *dlist_merge_two_by_condition (
+extern DoubleList *dlist_merge_two_with_condition (
 	DoubleList *one, DoubleList *two,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
