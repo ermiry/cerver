@@ -43,6 +43,8 @@ static const char http_connection_no_bytes[] = "";
 static void http_connection_end (HttpConnection *connection);
 static void http_connection_settle (HttpConnection *connection, const HttpConnectionNext next);
 static void http_connection_unavailable (HttpConnection *connection);
+static void http_connection_kept (HttpConnection *connection);
+static void http_connection_idle (HttpConnection *connection);
 
 #pragma region buffers
 
@@ -163,6 +165,7 @@ const char *http_connection_state_string (const HttpConnectionState state) {
 		case HTTP_CONNECTION_STATE_DISPATCHED: name = "Dispatched"; break;
 		case HTTP_CONNECTION_STATE_WRITE: name = "Write"; break;
 		case HTTP_CONNECTION_STATE_CLOSING: name = "Closing"; break;
+		case HTTP_CONNECTION_STATE_IDLE: name = "Idle"; break;
 		default: break;
 	}
 
@@ -174,10 +177,13 @@ const char *http_connection_state_string (const HttpConnectionState state) {
 
 #pragma region state
 
-// a connection is pending until a thread of the pool handles its request, or until it ends
+// a connection is pending until a thread of the pool handles its request, or until it ends;
+// one that waits idle for its next request has nothing that a drain has to wait for
 static bool http_connection_state_is_pending (const HttpConnectionState state) {
 
-	return (state != HTTP_CONNECTION_STATE_NONE) && (state != HTTP_CONNECTION_STATE_DISPATCHED);
+	return (state != HTTP_CONNECTION_STATE_NONE)
+		&& (state != HTTP_CONNECTION_STATE_DISPATCHED)
+		&& (state != HTTP_CONNECTION_STATE_IDLE);
 
 }
 
@@ -204,6 +210,12 @@ bool http_connection_is_loop_owned (const HttpConnection *connection) {
 static int http_connection_fd (const HttpConnection *connection) {
 
 	return connection->peer->socket->sock_fd;
+
+}
+
+static bool http_connection_loop_is_stopping (const HttpConnection *connection) {
+
+	return __atomic_load_n (&connection->loop->stopping, __ATOMIC_ACQUIRE);
 
 }
 
@@ -235,6 +247,18 @@ static void http_connection_deadline_clear (HttpConnection *connection) {
 static u64 http_connection_deadline_after (const u64 now, const u64 timeout) {
 
 	return timeout ? (now + timeout) : 0;
+
+}
+
+// the deadlines of a request start with it: when its connection is accepted,
+// when the bytes of the next request of a connection that was kept arrive, or with a pipelined request
+static void http_connection_request_deadlines (HttpConnection *connection) {
+
+	const u64 now = connection->loop->now;
+	const HttpCerver *http_cerver = connection->receive.http_cerver;
+
+	connection->headers_deadline = http_connection_deadline_after (now, http_cerver->headers_timeout);
+	connection->request_deadline = http_connection_deadline_after (now, http_cerver->request_timeout);
 
 }
 
@@ -281,9 +305,14 @@ static u64 http_connection_send_timeout (const HttpConnection *connection) {
 
 #pragma region poller
 
+// the socket leaves the poller before the connection is given to a thread of the pool or ended
+// a socket that was reported once (the one of a connection that waited idle) is already silent:
+// it stays registered, and the thread that gives the connection back to its loop arms it again
 static void http_connection_unwatch (HttpConnection *connection) {
 
-	(void) event_poller_remove (connection->loop->poller, &connection->source);
+	if (!connection->source.silent) {
+		(void) event_poller_remove (connection->loop->poller, &connection->source);
+	}
 
 }
 
@@ -371,6 +400,11 @@ static void http_connection_recycle (HttpConnection *connection) {
 	connection->job = HTTP_CONNECTION_JOB_NONE;
 	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
 
+	// the close of its socket took it out of the poller, if it was still there
+	event_source_forget (&connection->source);
+
+	connection->idle_deadline = 0;
+
 	connection->peer = NULL;
 
 	event_loop_connection_release (loop, connection);
@@ -387,6 +421,7 @@ static void http_connection_give_back (HttpConnection *connection) {
 }
 
 // ends a connection that the loop owns: the request is logged and counted, its socket is closed
+// a connection that ends between two requests has no request to log, it is counted as an idle one that was closed
 static void http_connection_end (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
@@ -396,7 +431,8 @@ static void http_connection_end (HttpConnection *connection) {
 
 	event_loop_unpark (loop, connection);
 
-	http_access_request (&connection->receive);
+	if (http_receive_is_between_requests (&connection->receive)) event_loop_idle_closed (loop);
+	else http_access_request (&connection->receive);
 
 	connection_drop (loop->cerver, connection->peer);
 
@@ -581,6 +617,10 @@ static void http_connection_proceed (
 			http_connection_linger (connection);
 			break;
 
+		case HTTP_CONNECTION_NEXT_KEEP:
+			http_connection_kept (connection);
+			break;
+
 		default:
 			http_connection_close (connection);
 			break;
@@ -589,7 +629,7 @@ static void http_connection_proceed (
 }
 
 // after the loop answered or parsed: what is left of a short response is written first,
-// then the connection reads again, lingers or closes
+// then the connection reads again, starts its next request, lingers or closes
 static void http_connection_settle (
 	HttpConnection *connection, const HttpConnectionNext next
 ) {
@@ -847,7 +887,10 @@ static void http_connection_message (HttpConnection *connection) {
 	if (http_receive_dispatch_is_inline (receive)) {
 		http_receive_dispatch (receive);
 
-		http_connection_settle (connection, HTTP_CONNECTION_NEXT_CLOSE);
+		http_connection_settle (
+			connection,
+			http_receive_keeps_connection (receive) ? HTTP_CONNECTION_NEXT_KEEP : HTTP_CONNECTION_NEXT_CLOSE
+		);
 	}
 
 	else {
@@ -914,7 +957,12 @@ static void http_connection_parse (
 
 	switch (result) {
 		// the request is not complete; a "100 Continue" can be waiting to be written
+		// the bytes that were kept from the request before were all parsed
 		case HPE_OK:
+			if (http_connection_buffer_contains (&connection->pending, buffer)) {
+				http_connection_buffer_clear (&connection->pending);
+			}
+
 			http_connection_settle (connection, HTTP_CONNECTION_NEXT_READ);
 			break;
 
@@ -948,42 +996,84 @@ static void http_connection_received (HttpConnection *connection, const size_t l
 
 }
 
-static void http_connection_read_failed (HttpConnection *connection, const int error) {
+// the read of a request that failed: its client left with an error
+static void http_connection_read_error (HttpConnection *connection, const int error) {
 
 	HttpReceive *receive = &connection->receive;
 
+	char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
+	cerver_log_with_date (
+		LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+		"http_connection_read () - recv () failed - fd %d - errno %d (%s) - received %zu - recv #%u",
+		http_connection_fd (connection), error,
+		strerror_r (error, error_description, sizeof (error_description)),
+		receive->received, receive->diagnostics.n_recvs
+	);
+
+	http_receive_client_left (receive, error);
+
+	http_connection_end (connection);
+
+}
+
+// the client of a request left, the request is counted where it was;
+// the client of an idle connection only closed it, there is no request
+static void http_connection_client_left (HttpConnection *connection, const int error) {
+
+	if (connection->state == HTTP_CONNECTION_STATE_IDLE) {
+		http_connection_end (connection);
+	}
+
+	else if (error) {
+		http_connection_read_error (connection, error);
+	}
+
+	else {
+		http_receive_client_left (&connection->receive, 0);
+
+		http_connection_end (connection);
+	}
+
+}
+
+static void http_connection_read_failed (HttpConnection *connection, const int error) {
+
 	switch (error) {
 		// nothing to read yet, or a signal: the client is still there
+		// an idle connection keeps the time that it had to send its next request
 		case EAGAIN:
 		#if EAGAIN != EWOULDBLOCK
 		case EWOULDBLOCK:
 		#endif
 		case EINTR:
-			(void) http_connection_wait (
+			if (connection->state == HTTP_CONNECTION_STATE_IDLE) http_connection_idle (connection);
+			else (void) http_connection_wait (
 				connection, EVENT_INTEREST_READ, http_connection_read_deadline (connection)
 			);
 			break;
 
-		default: {
-			char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
-			cerver_log_with_date (
-				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-				"http_connection_read () - recv () failed - fd %d - errno %d (%s) - received %zu - recv #%u",
-				http_connection_fd (connection), error,
-				strerror_r (error, error_description, sizeof (error_description)),
-				receive->received, receive->diagnostics.n_recvs
-			);
-
-			http_receive_client_left (receive, error);
-
-			http_connection_end (connection);
-		} break;
+		default:
+			http_connection_client_left (connection, error);
+			break;
 	}
+
+}
+
+// the first bytes of the next request of a connection that waited idle arrived:
+// the clock and the deadlines of the request start now, the time that it waited idle is not part of it
+static void http_connection_idle_leave (HttpConnection *connection) {
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	http_receive_request_arrived (&connection->receive);
+
+	http_connection_request_deadlines (connection);
 
 }
 
 // one read of what the client sent: a short read is not followed by another one,
 // the poller reports the socket again when there is more
+// the first bytes that an idle connection receives start its next request
 static void http_connection_read (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
@@ -997,18 +1087,146 @@ static void http_connection_read (HttpConnection *connection) {
 	receive->diagnostics.n_recvs += 1;
 
 	if (received > 0) {
+		if (connection->state == HTTP_CONNECTION_STATE_IDLE) http_connection_idle_leave (connection);
+
 		http_connection_received (connection, (size_t) received);
 	}
 
 	else if (!received) {
-		http_receive_client_left (receive, 0);
-
-		http_connection_end (connection);
+		http_connection_client_left (connection, 0);
 	}
 
 	else {
 		http_connection_read_failed (connection, error);
 	}
+
+}
+
+#pragma endregion
+
+#pragma region keep
+
+// the connection waits for the next request of its client, at most the keep alive timeout of the cerver:
+// it becomes one of the idle connections of its loop, with its socket armed to be reported once
+// the thread that owns it calls it, its loop or the thread of the pool that answered its request;
+// after a success the loop owns it: it is not one of the connections that the loop walks to end them,
+// the idle ones have their own list
+// returns 0 on success, 1 when its socket could not be armed (the caller still owns it)
+static unsigned int http_connection_idle_enter (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	connection->job = HTTP_CONNECTION_JOB_NONE;
+	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_IDLE);
+
+	return event_loop_idle_enter (
+		loop, connection, connection->receive.http_cerver->keep_alive_timeout
+	);
+
+}
+
+// the loop gives a connection that it owns to its idle ones, one whose socket can not be armed is closed
+static void http_connection_idle (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	event_loop_connection_detach (loop, connection);
+
+	if (http_connection_idle_enter (connection)) {
+		event_loop_connection_attach (loop, connection);
+
+		http_connection_close (connection);
+	}
+
+}
+
+// closes an idle connection whose client is still there, that its loop took out of its idle ones:
+// it did not send its next request in time, or its cerver stops; its writes are shut down and it is closed
+// when its client closes it too, so a request that its client was sending at that moment
+// is not answered with a reset
+static void http_connection_idle_close (HttpConnection *connection) {
+
+	http_connection_linger (connection);
+
+}
+
+void http_connection_evict (HttpConnection *connection) {
+
+	if (connection->state == HTTP_CONNECTION_STATE_IDLE) http_connection_close (connection);
+
+}
+
+void http_connection_idle_expired (HttpConnection *connection) {
+
+	if (connection->state == HTTP_CONNECTION_STATE_IDLE) http_connection_idle_close (connection);
+
+}
+
+// continues with the request that arrived behind the one that ended, a pipelined request
+static void http_connection_continue (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	http_connection_request_deadlines (connection);
+
+	receive->received += connection->pending.length;
+
+	http_connection_parse (connection, connection->pending.data, connection->pending.length);
+
+}
+
+// the next request of a connection that is kept, once the one that ended was logged and released:
+// the bytes that followed it are a pipelined request, without them the connection waits idle
+// a loop that stops does not keep its connections
+static void http_connection_next (HttpConnection *connection) {
+
+	connection->job = HTTP_CONNECTION_JOB_NONE;
+	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
+
+	if (http_connection_loop_is_stopping (connection)) http_connection_close (connection);
+	else if (connection->pending.length) http_connection_continue (connection);
+	else http_connection_idle (connection);
+
+}
+
+// a pipelined request that follows one that the loop answered waits for the next step of the loop,
+// like one that comes back from the pool: a client that sends many of them does not keep the loop
+static void http_connection_requeue (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	http_connection_unwatch (connection);
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_DISPATCHED);
+
+	event_loop_connection_detach (loop, connection);
+
+	connection->outcome = HTTP_CONNECTION_OUTCOME_KEPT;
+
+	event_loop_complete (loop, connection);
+
+}
+
+// the request of a connection that is kept ended in the loop, cerver answered it by itself:
+// it is logged and counted, its data is released and its next request starts
+static void http_connection_kept (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+	const EventLoop *loop = connection->loop;
+
+	http_connection_deadline_clear (connection);
+
+	http_access_request (receive);
+
+	if (loop->observer) loop->observer (receive, loop->observer_args);
+
+	if (http_receive_reset (receive)) http_connection_close (connection);
+	else if (connection->pending.length) http_connection_requeue (connection);
+	else http_connection_next (connection);
 
 }
 
@@ -1032,8 +1250,6 @@ static void http_connection_cerver_receive_set (HttpConnection *connection, Conn
 // returns 0 on success, 1 on error
 static unsigned int http_connection_start (HttpConnection *connection, Connection *peer) {
 
-	EventLoop *loop = connection->loop;
-
 	connection->peer = peer;
 
 	http_connection_cerver_receive_set (connection, peer);
@@ -1045,12 +1261,9 @@ static unsigned int http_connection_start (HttpConnection *connection, Connectio
 
 	unsigned int retval = http_receive_prepare (&connection->receive, &connection->cerver_receive, &resources);
 	if (!retval) {
-		const HttpCerver *http_cerver = connection->receive.http_cerver;
-
 		connection->receive.connection = connection;
 
-		connection->headers_deadline = http_connection_deadline_after (loop->now, http_cerver->headers_timeout);
-		connection->request_deadline = http_connection_deadline_after (loop->now, http_cerver->request_timeout);
+		http_connection_request_deadlines (connection);
 
 		http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
 	}
@@ -1100,18 +1313,35 @@ unsigned int http_connection_accepted (EventLoop *loop, Connection *peer) {
 
 #pragma region work
 
-// the end of a request that a thread of the pool handled, what a thread does with its connection
-// when the cerver handles them with threads: the connection is closed (or its WebSocket takes it),
-// the request is logged and counted, and its data is released
-static void http_connection_work_end (HttpConnection *connection) {
+// the connection of a request that a thread of the pool handled ended, or its WebSocket took it:
+// its data is released, and nothing is left for the loop to do: its memory goes back without waking it up
+static void http_connection_work_release (HttpConnection *connection) {
+
+	if (!http_web_socket_start (&connection->cerver_receive, &connection->receive)) {
+		connection_drop (connection->loop->cerver, connection->peer);
+	}
+
+	http_connection_request_release (connection);
+
+	http_connection_recycle (connection);
+
+}
+
+// the end of a request that a thread of the pool handled and whose connection is not kept,
+// what a thread does with its connection when the cerver handles them with threads:
+// the connection is closed (or its WebSocket takes it), the request is logged and counted, and its data is released
+static void http_connection_work_close (HttpConnection *connection) {
 
 	HttpReceive *receive = &connection->receive;
 
-	// the bytes that followed an upgrade are the first ones of its WebSocket
+	// the bytes that followed an upgrade are the first ones of its WebSocket, that reads its socket from now on:
+	// a socket that stayed silent in the poller of the loop (the one of a connection that was kept) leaves it
 	if (receive->upgraded) {
 		http_receive_web_socket_pending (
 			receive, connection->pending.data ? connection->pending.data : http_connection_no_bytes
 		);
+
+		(void) event_poller_remove (connection->loop->poller, &connection->source);
 	}
 
 	else {
@@ -1120,14 +1350,60 @@ static void http_connection_work_end (HttpConnection *connection) {
 
 	http_access_request (receive);
 
-	if (!http_web_socket_start (&connection->cerver_receive, receive)) {
-		connection_drop (connection->loop->cerver, connection->peer);
-	}
+	http_connection_work_release (connection);
 
-	http_connection_request_release (connection);
+}
 
-	// nothing is left for the loop to do: its memory goes back without waking it up
-	http_connection_recycle (connection);
+// a connection that is kept and whose next request can not start ends in the thread that handled its request
+static void http_connection_work_abandon (HttpConnection *connection) {
+
+	http_receive_close (&connection->receive, false);
+
+	http_connection_work_release (connection);
+
+}
+
+// the connection goes back to its loop through its queue, and the loop is woken up: the bytes that followed
+// the request are its next one (a pipelined request), or the loop stops and closes the connection
+static void http_connection_work_return (HttpConnection *connection) {
+
+	connection->outcome = HTTP_CONNECTION_OUTCOME_KEPT;
+
+	event_loop_complete (connection->loop, connection);
+
+}
+
+// the connection waits for its next request: the thread gives it to the idle connections of its loop
+// and arms its socket by itself, the loop is not woken up and finds the connection
+// when its client sends its next request
+static void http_connection_work_idle (HttpConnection *connection) {
+
+	if (http_connection_idle_enter (connection)) http_connection_work_abandon (connection);
+
+}
+
+// the end of a request that a thread of the pool handled and whose connection is kept:
+// the request is logged and counted and its data is released here, so the methods of the application
+// that delete it never run in the thread of the loop; then the connection goes back to its loop
+static void http_connection_work_keep (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+	const EventLoop *loop = connection->loop;
+
+	http_access_request (receive);
+
+	if (loop->observer) loop->observer (receive, loop->observer_args);
+
+	if (http_receive_reset (receive)) http_connection_work_abandon (connection);
+	else if (connection->pending.length || http_connection_loop_is_stopping (connection)) http_connection_work_return (connection);
+	else http_connection_work_idle (connection);
+
+}
+
+static void http_connection_work_end (HttpConnection *connection) {
+
+	if (http_receive_keeps_connection (&connection->receive)) http_connection_work_keep (connection);
+	else http_connection_work_close (connection);
 
 }
 
@@ -1212,6 +1488,12 @@ void http_connection_completed (HttpConnection *connection) {
 			http_connection_unavailable (connection);
 			break;
 
+		// its request was answered and its connection is kept: the loop can end it again
+		case HTTP_CONNECTION_OUTCOME_KEPT:
+			event_loop_connection_attach (connection->loop, connection);
+			http_connection_next (connection);
+			break;
+
 		default:
 			event_loop_connection_attach (connection->loop, connection);
 			http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
@@ -1225,11 +1507,28 @@ void http_connection_completed (HttpConnection *connection) {
 
 #pragma region events
 
+// the client of an idle connection sent something (or it left): the loop takes the connection out
+// of its idle ones and owns it again; its socket was reported once, so it is silent from now on
+static void http_connection_idle_claim (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	if (event_loop_idle_claim (loop, connection)) {
+		connection->source.silent = true;
+
+		event_loop_connection_attach (loop, connection);
+	}
+
+}
+
 void http_connection_ready (HttpConnection *connection, const unsigned int ready) {
+
+	http_connection_idle_claim (connection);
 
 	switch (connection->state) {
 		// an error or a hang up is found by the read
 		case HTTP_CONNECTION_STATE_READ:
+		case HTTP_CONNECTION_STATE_IDLE:
 			http_connection_read (connection);
 			break;
 
@@ -1285,6 +1584,7 @@ static void http_connection_expired (HttpConnection *connection) {
 			http_connection_end (connection);
 			break;
 
+		// an idle connection has no timer: its loop checks its idle ones (http_connection_idle_expired ())
 		default: break;
 	}
 
@@ -1328,6 +1628,11 @@ void http_connection_abort (HttpConnection *connection) {
 		case HTTP_CONNECTION_STATE_PARKED:
 			event_loop_unpark (connection->loop, connection);
 			http_connection_unavailable (connection);
+			break;
+
+		// a connection that waits for its next request has nothing to be answered
+		case HTTP_CONNECTION_STATE_IDLE:
+			http_connection_idle_close (connection);
 			break;
 
 		// the other states end by themselves: a write, a close, or a job of the pool

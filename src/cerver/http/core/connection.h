@@ -57,12 +57,14 @@ typedef enum HttpConnectionState {
 	HTTP_CONNECTION_STATE_AUTH				= 2,
 	/** @internal @brief Its job waits in the loop for a place in the pool. */
 	HTTP_CONNECTION_STATE_PARKED			= 3,
-	/** @internal @brief A thread of the pool handles its request and ends it; the pool owns it. */
+	/** @internal @brief A thread of the pool handles its request, and ends it or gives it back to be kept; the pool owns it. */
 	HTTP_CONNECTION_STATE_DISPATCHED		= 4,
 	/** @internal @brief The loop writes what is left of a short response of cerver. */
 	HTTP_CONNECTION_STATE_WRITE				= 5,
 	/** @internal @brief Its writes were shut down, the loop reads what the client still sends before closing it. */
-	HTTP_CONNECTION_STATE_CLOSING			= 6
+	HTTP_CONNECTION_STATE_CLOSING			= 6,
+	/** @internal @brief It was kept after a request and its client has not sent the next one. */
+	HTTP_CONNECTION_STATE_IDLE				= 7
 
 } HttpConnectionState;
 
@@ -73,7 +75,7 @@ typedef enum HttpConnectionJob {
 	HTTP_CONNECTION_JOB_NONE				= 0,
 	/** @internal @brief The second part of its headers, before its body is read. */
 	HTTP_CONNECTION_JOB_AUTHORIZE			= 1,
-	/** @internal @brief Its complete request, and the end of its connection. */
+	/** @internal @brief Its complete request, and the end of its connection when it is not kept. */
 	HTTP_CONNECTION_JOB_DISPATCH			= 2
 
 } HttpConnectionJob;
@@ -88,7 +90,9 @@ typedef enum HttpConnectionOutcome {
 	/** @internal @brief It was not authorized and it was answered, or its client is gone: the loop closes it. */
 	HTTP_CONNECTION_OUTCOME_REJECTED		= 2,
 	/** @internal @brief The pool dropped the job without running it: the loop answers 503. */
-	HTTP_CONNECTION_OUTCOME_DROPPED			= 3
+	HTTP_CONNECTION_OUTCOME_DROPPED			= 3,
+	/** @internal @brief Its request was handled and its connection is kept: the loop starts its next request. */
+	HTTP_CONNECTION_OUTCOME_KEPT			= 4
 
 } HttpConnectionOutcome;
 
@@ -102,7 +106,9 @@ typedef enum HttpConnectionNext {
 	/** @internal @brief Close it after reading what the client still sends: its request was rejected. */
 	HTTP_CONNECTION_NEXT_LINGER				= 2,
 	/** @internal @brief Keep reading its request (a "100 Continue" was written). */
-	HTTP_CONNECTION_NEXT_READ				= 3
+	HTTP_CONNECTION_NEXT_READ				= 3,
+	/** @internal @brief Keep it for its next request: the loop answered its complete request. */
+	HTTP_CONNECTION_NEXT_KEEP				= 4
 
 } HttpConnectionNext;
 
@@ -131,6 +137,14 @@ typedef struct HttpConnectionBuffer {
  * #HTTP_CONNECTION_STATE_AUTH and #HTTP_CONNECTION_STATE_DISPATCHED). It goes to the pool through the queue of
  * the pool and it comes back through the queue of completed connections of its loop, both with a mutex, so the
  * two threads never use it at the same time.
+ *
+ * A connection handles one request at a time. When the cerver keeps it (HttpReceive::keep_alive) the thread
+ * that answered its request starts the next one (http_receive_reset ()): the bytes that followed the request
+ * that ended are a pipelined request, and the connection goes back through the queue; without them the
+ * connection waits in #HTTP_CONNECTION_STATE_IDLE, and the thread of the pool gives it to its loop by itself
+ * (event_loop_idle_enter ()): it adds it to the idle connections of the loop and arms its socket, with the mutex
+ * of that list and without waking the loop up. The loop owns an idle connection again when it takes it out of
+ * that list (event_loop_idle_claim ()), with the same mutex.
  */
 struct HttpConnection {
 
@@ -201,6 +215,15 @@ struct HttpConnection {
 	/** @internal @brief The previous connection that its loop can end. */
 	struct HttpConnection *active_previous;
 
+	/** @internal @brief The connection is in the idle ones of its loop; with the mutex of that list, like the three fields that follow. */
+	bool idle;
+	/** @internal @brief The connection that became idle after it. */
+	struct HttpConnection *idle_next;
+	/** @internal @brief The connection that became idle before it. */
+	struct HttpConnection *idle_previous;
+	/** @internal @brief When the time that it can wait idle ends, in the milliseconds of the clock of its loop. */
+	u64 idle_deadline;
+
 };
 
 /** @internal @brief A connection of an event loop, see struct HttpConnection. */
@@ -270,11 +293,31 @@ CERVER_HIDDEN unsigned int http_connection_unpark (HttpConnection *connection);
 /**
  * @internal
  * @brief Ends a connection that the loop owns because its cerver stops: one that has not been answered gets a 503
- * when it already sent bytes of a request.
+ * when it already sent bytes of a request, and one that waits idle for its next request is closed once its
+ * client closes it too.
  *
  * @param[in,out] connection the connection
  */
 CERVER_HIDDEN void http_connection_abort (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Closes at once a connection that its loop took out of its idle ones, to give its place to a new
+ * connection when the cerver is at its limit of connections; nothing is done with a connection that is not idle.
+ *
+ * @param[in,out] connection the connection, owned by its loop
+ */
+CERVER_HIDDEN void http_connection_evict (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Closes a connection that its loop took out of its idle ones because its time ended: its writes are
+ * shut down and it ends when its client closes it too, so a request that its client was sending is not
+ * answered with a reset.
+ *
+ * @param[in,out] connection the connection, owned by its loop
+ */
+CERVER_HIDDEN void http_connection_idle_expired (HttpConnection *connection);
 
 /**
  * @internal
