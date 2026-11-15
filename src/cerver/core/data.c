@@ -69,14 +69,71 @@ void cerver_stats_delete (CerverStats *cerver_stats) {
 
 }
 
+static time_t cerver_stats_now (void) {
+
+	struct timespec now = CERVER_ZERO_INITIALIZER;
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return now.tv_sec;
+
+}
+
 // sets the cerver stats threshold time (how often the stats get reset)
 void cerver_stats_set_threshold_time (
 	Cerver *cerver, time_t threshold_time
 ) {
 
 	if (cerver) {
-		if (cerver->stats) cerver->stats->threshold_time = threshold_time;
+		if (cerver->stats) {
+			cerver->stats->threshold_time = threshold_time;
+			__atomic_store_n (&cerver->stats->threshold_start, cerver_stats_now (), __ATOMIC_SEQ_CST);
+		}
 	}
+
+}
+
+// the counters that grow, not the current ones nor the packets by type
+static void cerver_stats_reset_counters (CerverStats *stats) {
+
+	u64 *counters[] = {
+		&stats->client_n_packets_received, &stats->client_receives_done, &stats->client_bytes_received,
+		&stats->on_hold_n_packets_received, &stats->on_hold_receives_done, &stats->on_hold_bytes_received,
+		&stats->total_n_packets_received, &stats->total_n_receives_done, &stats->total_bytes_received,
+		&stats->n_packets_sent, &stats->total_bytes_sent,
+		&stats->total_on_hold_connections, &stats->total_n_clients, &stats->unique_clients,
+		&stats->total_client_connections, &stats->total_rejected_connections
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE (counters); i++) {
+		__atomic_store_n (counters[i], 0, __ATOMIC_RELAXED);
+	}
+
+}
+
+// the thread that moves the start of the threshold time is the only one that resets the counters
+void cerver_stats_threshold_check (Cerver *cerver) {
+
+	CerverStats *stats = cerver->stats;
+	if (stats && (stats->threshold_time > 0)) {
+		const time_t now = cerver_stats_now ();
+		time_t start = __atomic_load_n (&stats->threshold_start, __ATOMIC_SEQ_CST);
+
+		if (((now - start) >= stats->threshold_time) && __atomic_compare_exchange_n (
+			&stats->threshold_start, &start, now, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST
+		)) {
+			cerver_stats_reset_counters (stats);
+		}
+	}
+
+}
+
+void cerver_stats_count_client (Cerver *cerver) {
+
+	cerver_stats_threshold_check (cerver);
+
+	CERVER_STATS_ADD (cerver->stats->total_n_clients, 1);
+	CERVER_STATS_ADD (cerver->stats->unique_clients, 1);
+	CERVER_STATS_ADD (cerver->stats->current_n_connected_clients, 1);
 
 }
 
@@ -227,6 +284,8 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
 	if (cerver) {
 		if (cerver->stats) {
+			cerver_stats_threshold_check (cerver);
+
 			cerver_log_msg ("\nCerver's %s stats:\n", cerver->info->name);
 			cerver_log_msg ("Threshold time:                %ld\n", cerver->stats->threshold_time);
 
