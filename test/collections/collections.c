@@ -47,6 +47,8 @@ int main (int argc, char **argv) {
 
 	collections_tests_queue ();
 
+	collections_tests_safe ();
+
 	(void) printf ("\nDone with COLLECTIONS tests!\n\n");
 
 	cerver_log_end ();

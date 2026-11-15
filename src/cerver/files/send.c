@@ -96,7 +96,7 @@ Packet *file_header_packet_create (
 		FileHeader file_header;
 		serializer_object_init (&file_header_schema, &file_header);
 
-		(void) strncpy (file_header.filename, filename, FILENAME_DEFAULT_SIZE - 1);
+		(void) c_string_copy_bounded (file_header.filename, filename, FILENAME_DEFAULT_SIZE);
 		file_header.len = len;
 
 		packet = packet_create_serialized (
@@ -187,12 +187,13 @@ int file_send_open (
 
 	int file_fd = -1;
 
-	char *last = strrchr ((char *) filename, '/');
-	*actual_filename = last ? last + 1 : NULL;
-	if (actual_filename) {
+	// a name without a '/' is the name that is sent, a name that ends with one has none
+	const char *last = strrchr (filename, '/');
+	*actual_filename = last ? last + 1 : filename;
+	if (**actual_filename) {
 		// try to open the file
 		file_fd = file_open_as_fd (filename, filestatus, O_RDONLY);
-		if (file_fd <= 0) {
+		if (file_fd < 0) {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_FILE,
 				"file_send () - Failed to open file %s", filename

@@ -24,20 +24,6 @@ extern "C" {
 /** @brief The size of the name of a service, with its terminator. */
 #define SERVICE_NAME_SIZE					64
 
-/**
- * @brief The size of the name of the connection of a service.
- *
- * @note cerver does not use it: the connection takes the name of the service.
- */
-#define SERVICE_CONNECTION_NAME_SIZE		64
-
-/**
- * @brief The max sleep of the connection of a service.
- *
- * @note cerver does not use it: the connection makes a single attempt, see #SERVICE_CONNECT_MAX_SLEEP.
- */
-#define SERVICE_DEFAULT_MAX_SLEEP			30
-
 /** @brief The default seconds that a service waits to reconnect after it disconnected. */
 #define SERVICE_DEFAULT_WAIT_TIME			20
 

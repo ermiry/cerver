@@ -50,10 +50,8 @@ CERVER_HIDDEN ssize_t file_send_actual (
  *
  * @param[in] filename the path of the file
  * @param[out] filestatus the status of the file
- * @param[out] actual_filename the name after the last '/', NULL when it has none
- * @return the fd, -1 on error
- * @warning The check of the name tests the pointer to actual_filename, which is never NULL, so a filename without
- * '/' is still opened.
+ * @param[out] actual_filename the name after the last '/', or the whole filename when it has none
+ * @return the fd, -1 on error or for a filename that ends with '/' (it has no name)
  */
 CERVER_HIDDEN int file_send_open (
 	const char *filename,
@@ -73,9 +71,8 @@ CERVER_HIDDEN int file_send_open (
  * @param[in] file_data_len the bytes of file_data
  * @param[out] saved_filename the path where the file was saved, allocated with malloc ()
  * @retval 0 the file was saved
- * @retval 1 it could not be saved
- * @warning It dereferences the uploads path of the files cerver, which is NULL until
- * file_cerver_set_uploads_path ().
+ * @retval 1 it could not be saved, or the files cerver has no uploads path: then the client gets a
+ * `CERVER_ERROR_SEND_FILE` and the connection is ended (the bytes of the file follow its packet)
  */
 CERVER_HIDDEN u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,

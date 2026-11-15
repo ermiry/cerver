@@ -382,7 +382,7 @@ CERVER_EXPORT void http_endpoint_set_authentication_with_body (
  * @param[in,out] endpoint the endpoint
  * @param[in] custom_data the custom data, the endpoint owns it
  * @param[in] delete_custom_data releases it when the endpoint is deleted, NULL to keep it
- * @warning The custom data that the endpoint had is replaced without being released.
+ * @note A different custom data releases the one that the endpoint had with its delete; the same one is kept.
  */
 CERVER_EXPORT void http_endpoint_set_custom_data (
 	HttpEndpoint *endpoint, void *custom_data, void (*delete_custom_data)(void *)
@@ -809,7 +809,7 @@ CERVER_EXPORT void http_group_set_authentication_with_body (
  * @param[in,out] group the group
  * @param[in] custom_data the custom data, the group owns it
  * @param[in] delete_custom_data releases it when the group is deleted, NULL to keep it
- * @warning The custom data that the group had is replaced without being released.
+ * @note A different custom data releases the one that the group had with its delete; the same one is kept.
  */
 CERVER_EXPORT void http_group_set_custom_data (
 	HttpGroup *group, void *custom_data, void (*delete_custom_data)(void *)

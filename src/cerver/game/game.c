@@ -14,6 +14,7 @@
 #include "cerver/client/events.h"
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/packets/packets.h"
@@ -65,7 +66,7 @@ void game_cerver_stats_print (Cerver *cerver) {
 			GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
 			(void) printf ("Current active lobbys:         %u\n", game_cerver->stats->current_active_lobbys);
-			(void) printf ("Total lobbys created:          %u\n", game_cerver->stats->lobbys_created);
+			(void) printf ("Total lobbys created:          %u\n", CERVER_STATS_GET (game_cerver->stats->lobbys_created));
 		}
 
 		else {
@@ -104,7 +105,6 @@ GameCerver *game_new (void) {
 		game->current_lobbys = dlist_init (lobby_delete, lobby_comparator);
 
 		game->lobby_id_generator = lobby_default_id_generator;
-		game->player_comparator = NULL;
 
 		game->game_types = dlist_init (game_type_delete, NULL);
 
@@ -184,13 +184,6 @@ void game_set_cerver_reference (GameCerver *game_cerver, Cerver *cerver) {
 void game_set_lobby_id_generator (GameCerver *game_cerver, void *(*lobby_id_generator) (const void *)) {
 
 	if (game_cerver) game_cerver->lobby_id_generator = lobby_id_generator;
-
-}
-
-// option to set the game cerver comparator
-void game_set_player_comparator (GameCerver *game_cerver, Comparator player_comparator) {
-
-	if (game_cerver) game_cerver->player_comparator = player_comparator;
 
 }
 
@@ -408,7 +401,7 @@ static Lobby *game_lobby_create_of_type (GameCerver *game, const Packet *packet,
 		lobby->game_type = game_type;
 
 		game_cerver_register_lobby (game, lobby);
-		game->stats->lobbys_created += 1;
+		CERVER_STATS_ADD (game->stats->lobbys_created, 1);
 
 		game_lobby_on_join (lobby, lobby->owner);
 	}

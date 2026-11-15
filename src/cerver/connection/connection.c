@@ -236,11 +236,7 @@ Connection *connection_create_empty (void) {
 
 	Connection *connection = connection_new ();
 	if (connection) {
-		(void) strncpy (
-			connection->name,
-			CONNECTION_DEFAULT_NAME,
-			CONNECTION_NAME_SIZE - 1
-		);
+		(void) c_string_copy_bounded (connection->name, CONNECTION_DEFAULT_NAME, CONNECTION_NAME_SIZE);
 
 		connection->socket = (Socket *) socket_create_empty ();
 
@@ -317,7 +313,7 @@ void connection_set_name (
 ) {
 
 	if (connection && name) {
-		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
+		(void) c_string_copy_bounded (connection->name, name, CONNECTION_NAME_SIZE);
 	}
 
 }
@@ -345,7 +341,7 @@ void connection_set_values (
 ) {
 
 	if (connection) {
-		if (ip_address) (void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+		if (ip_address) (void) c_string_copy_bounded (connection->ip, ip_address, CONNECTION_IP_SIZE);
 
 		connection->port = port;
 		connection->protocol = protocol;
@@ -468,6 +464,11 @@ void connection_set_received_data (
 ) {
 
 	if (connection) {
+		// the data that is replaced is released with its own delete, the same data again is kept
+		if (connection->received_data && (connection->received_data != data) && connection->received_data_delete) {
+			connection->received_data_delete (connection->received_data);
+		}
+
 		connection->received_data = data;
 		connection->received_data_size = data_size;
 		connection->received_data_delete = data_delete;

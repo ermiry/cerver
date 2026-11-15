@@ -329,6 +329,24 @@ typedef struct JobQueueStats {
 } JobQueueStats;
 
 /**
+ * @brief A thread that waits in job_queue_request () for the job with an id, in the list of its queue.
+ * @since 1.9b-2
+ */
+struct _JobQueueRequest {
+
+	/** @brief The id that it waits for. */
+	u64 id;
+	/** @brief The job that was given to it, NULL until it arrives. */
+	void *job;
+	/** @brief The next request of the queue. */
+	struct _JobQueueRequest *next;
+
+};
+
+/** @brief A thread that waits for a job, see struct _JobQueueRequest. */
+typedef struct _JobQueueRequest JobQueueRequest;
+
+/**
  * @brief A queue of jobs or of job handlers with priorities.
  *
  * @threadsafety Every function of a queue is safe from many threads; the fields are protected by its mutex.
@@ -365,12 +383,11 @@ struct _JobQueue {
 	/** @brief A signal that job_queue_wait () has not seen yet. */
 	bool signaled;
 
-	/** @brief A thread waits in job_queue_request (). */
-	bool waiting;
-	/** @brief The id that it waits for. */
-	u64 requested_id;
-	/** @brief The job that was given to it. */
-	void *requested_job;
+	/**
+	 * @brief The threads that wait in job_queue_request (), one request each (it lives in the stack of its thread).
+	 * @since 1.9b-2
+	 */
+	struct _JobQueueRequest *requests;
 
 	/** @brief The stats of the queue. */
 	JobQueueStats stats;

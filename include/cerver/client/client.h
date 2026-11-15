@@ -94,13 +94,6 @@ struct _ClientError;
  */
 struct _ClientStats {
 
-	/**
-	 * @brief How often the stats should be reset.
-	 *
-	 * @warning It is only stored and printed: cerver does not reset the stats with it.
-	 */
-	time_t threshold_time;
-
 	/** @brief The calls to recv (), updated with __atomic. */
 	u64 n_receives_done;
 
@@ -485,7 +478,8 @@ CERVER_EXPORT void client_set_data (
  * @param[in] app_handler the handler of the PACKET_TYPE_APP packets, the client owns it from now on; it can be NULL
  * @param[in] app_error_handler the handler of the PACKET_TYPE_APP_ERROR packets, the client owns it from now on; it
  * can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before the client connects.
  */
 CERVER_EXPORT void client_set_app_handlers (
 	Client *client,
@@ -497,7 +491,8 @@ CERVER_EXPORT void client_set_app_handlers (
  *
  * @param[in,out] client the client
  * @param[in] custom_handler the handler, the client owns it from now on; it can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before the client connects.
  */
 CERVER_EXPORT void client_set_custom_handler (
 	Client *client, struct _Handler *custom_handler
@@ -685,8 +680,7 @@ CERVER_PRIVATE u8 client_register_connections_to_cerver_poll (
  * @param[in,out] cerver the cerver
  * @param[in] client the client
  * @retval 0 at least one connection was unregistered
- * @retval 1 a NULL argument or every connection failed
- * @warning When every connection fails, it drops the client (client_drop ()): the client is invalid after it.
+ * @retval 1 a NULL argument or every connection failed; the client is not dropped, its caller decides
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE u8 client_unregister_connections_from_cerver_poll (

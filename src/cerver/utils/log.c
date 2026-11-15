@@ -75,15 +75,10 @@ unsigned int cerver_log_set_path (const char *pathname) {
 
 	unsigned int retval = 1;
 
+	// a path that is set again replaces the previous one, which is released
 	if (pathname) {
-		if (!file_exists (pathname)) {
-			if (!files_create_dir (pathname, 0755)) {
-				logs_pathname = str_new (pathname);
-				retval = 0;
-			}
-		}
-
-		else {
+		if (file_exists (pathname) || !files_create_dir (pathname, LOG_PATH_MODE)) {
+			str_delete (logs_pathname);
 			logs_pathname = str_new (pathname);
 			retval = 0;
 		}
@@ -423,8 +418,11 @@ static void cerver_log_internal_with_time_actual (
 	const LogOutputType log_output_type
 ) {
 
+	// the _r versions write in this thread's struct tm, the others share a static one between threads
 	time_t datetime = time (NULL);
-	struct tm *timeinfo = use_local_time ? localtime (&datetime) : gmtime (&datetime);
+	struct tm time_storage = CERVER_ZERO_INITIALIZER;
+	struct tm *timeinfo = use_local_time ?
+		localtime_r (&datetime, &time_storage) : gmtime_r (&datetime, &time_storage);
 
 	switch (log_time_type) {
 		case LOG_TIME_TYPE_TIME: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%T", timeinfo); break;

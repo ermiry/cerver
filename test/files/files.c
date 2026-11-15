@@ -261,11 +261,30 @@ static void test_files_get_file_extension_reference_png (void) {
 
 }
 
+#define FILES_TEST_STALE_LENGTH			7
+
+// the length is set (it was added to the value it had), it can be NULL (it crashed),
+// and a name that ends with '.' has no extension (it returned an empty one)
+static void test_files_get_file_extension_reference_edges (void) {
+
+	unsigned int ext_len = FILES_TEST_STALE_LENGTH;
+	test_check_str_eq (files_get_file_extension_reference (png_file_small, &ext_len), png_extension, NULL);
+	test_check_unsigned_eq (ext_len, strlen (png_extension), "the length was added to its old value");
+
+	test_check_str_eq (files_get_file_extension_reference (png_file_small, NULL), png_extension, NULL);
+
+	ext_len = FILES_TEST_STALE_LENGTH;
+	test_check_null_ptr (files_get_file_extension_reference ("image.", &ext_len));
+	test_check_unsigned_eq (ext_len, 0, NULL);
+
+}
+
 static void test_files_get_file_extension_reference (void) {
-	
+
 	test_files_get_file_extension_reference_jpg ();
 	test_files_get_file_extension_reference_jpeg ();
 	test_files_get_file_extension_reference_png ();
+	test_files_get_file_extension_reference_edges ();
 
 }
 

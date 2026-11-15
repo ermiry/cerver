@@ -122,6 +122,7 @@ typedef struct ServerTestCounters {
 	unsigned int messages;
 	unsigned int floods;
 	unsigned int refused;
+	unsigned int foreign;
 
 	// the data of the upgrades that were rejected after they set it
 	unsigned int deleted;
@@ -236,6 +237,35 @@ static void server_test_closed_stream (HttpWebSocket *web_socket) {
 
 }
 
+// a thread that did not begin the stream tries its pieces and its end
+static void *server_test_foreign_thread (void *web_socket_ptr) {
+
+	HttpWebSocket *web_socket = (HttpWebSocket *) web_socket_ptr;
+
+	const bool refused = http_web_socket_send_write (web_socket, "foreign", 7)
+		&& http_web_socket_send_end (web_socket);
+
+	if (refused) test_counter_add (&counters.foreign);
+
+	return NULL;
+
+}
+
+// the stream belongs to the thread that began it: the pieces and the end of another thread are errors and the
+// stream goes on (they were sent and the end unlocked the mutex of the owner)
+static void server_test_foreign_stream (HttpWebSocket *web_socket) {
+
+	test_check_unsigned_eq (http_web_socket_send_begin (web_socket, HTTP_WEB_SOCKET_OPCODE_TEXT), 0, NULL);
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, server_test_foreign_thread, web_socket), 0, NULL);
+	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
+
+	test_check_unsigned_eq (http_web_socket_send_write (web_socket, "piece", 5), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_send_end (web_socket), 0, NULL);
+
+}
+
 // sends large messages until a send fails, to a client that never reads
 static void server_test_flood (HttpWebSocket *web_socket) {
 
@@ -273,6 +303,7 @@ static bool server_test_command (HttpWebSocket *web_socket, const char *text) {
 	else if (!strcmp (text, "refused-begin")) server_test_refused_begin (web_socket);
 	else if (!strcmp (text, "refused-stream")) server_test_refused_stream (web_socket);
 	else if (!strcmp (text, "closed-stream")) server_test_closed_stream (web_socket);
+	else if (!strcmp (text, "foreign-stream")) server_test_foreign_stream (web_socket);
 	else if (!strcmp (text, "flood")) server_test_flood (web_socket);
 	else if (!strcmp (text, "close")) (void) http_web_socket_close (web_socket, 4001, "asked");
 	else command = false;
@@ -1652,6 +1683,42 @@ static void test_server_streaming (void) {
 
 }
 
+// the pieces and the end of a thread that did not begin the stream are refused, the owner ends it
+static void test_server_foreign_stream (void) {
+
+	ServerTest *server = server_test_start (0);
+
+	const int fd = raw_open (server->port, "/ws/echo", NULL);
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "foreign-stream", 14);
+
+	RawFrame frame;
+	test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the piece of the owner did not arrive");
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_TEXT, NULL);
+	test_check_false (frame.fin);
+	test_check ((frame.size == 5) && !memcmp (frame.data, "piece", 5), "a piece of another thread was sent");
+	raw_frame_delete (&frame);
+
+	test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the end did not arrive");
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CONTINUATION, NULL);
+	test_check_true (frame.fin);
+	raw_frame_delete (&frame);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&counters.foreign, 1, TEST_WAIT_SECONDS),
+		1, "the stream took the pieces of another thread"
+	);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+	server_test_wait_closed (1);
+
+	server_test_stop (server);
+
+}
+
 // the client asks for sends after the close of the server, answers the close
 // and the connection ends clean: with the code of the server and without errors
 static void server_test_refused_case (
@@ -2304,6 +2371,7 @@ void web_socket_tests_server (void) {
 	test_run (test_server_shutdown);
 	test_run (test_server_shutdown_silent);
 	test_run (test_server_streaming);
+	test_run (test_server_foreign_stream);
 	test_run (test_server_refused_sends);
 	test_run (test_server_upgrade_data);
 	test_run (test_server_upgrade_decisions);

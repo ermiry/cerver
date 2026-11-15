@@ -69,19 +69,20 @@ double timer_get_current_time (void) {
 
 }
 
-struct tm *timer_get_gmt_time (void) {
+// the time goes to the struct of the caller, so many threads can ask for it at the same time
+struct tm *timer_get_gmt_time_r (struct tm *result) {
 
 	time_t rawtime = 0;
 	(void) time (&rawtime);
-	return gmtime (&rawtime);
+	return result ? gmtime_r (&rawtime, result) : NULL;
 
 }
 
-struct tm *timer_get_local_time (void) {
+struct tm *timer_get_local_time_r (struct tm *result) {
 
 	time_t rawtime = 0;
 	(void) time (&rawtime);
-	return localtime (&rawtime);
+	return result ? localtime_r (&rawtime, result) : NULL;
 
 }
 

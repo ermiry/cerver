@@ -153,7 +153,8 @@ extern void pool_clear (Pool *pool);
  * @brief Releases every element with the destroy method, but keeps the pool.
  *
  * @param[in,out] pool the pool, it can be NULL
- * @note The destroy method runs with the mutex of the pool, unlike in pool_push ().
+ * @note The elements are taken out with the mutex and the destroy method runs after it, so it can use the pool;
+ * only without memory for that copy it runs with the mutex.
  */
 extern void pool_reset (Pool *pool);
 

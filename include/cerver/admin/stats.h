@@ -31,13 +31,6 @@ extern "C" {
  */
 struct _AdminCerverStats {
 
-	/**
-	 * @brief How often the stats should be reset.
-	 *
-	 * @warning It is only stored and printed: cerver does not reset the stats with it.
-	 */
-	time_t threshold_time;
-
 	/** @brief The packets received (packet header and data). */
 	u64 total_n_packets_received;
 	/** @brief The calls to recv (). */

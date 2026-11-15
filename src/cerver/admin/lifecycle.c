@@ -173,10 +173,8 @@ static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
 
 			admin_cerver->current_n_fds = 0;
 
-			admin_cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			(void) pthread_mutex_init (admin_cerver->poll_lock, NULL);
-
-			retval = 0;
+			admin_cerver->poll_lock = thread_mutex_new ();
+			if (admin_cerver->poll_lock) retval = 0;
 		}
 	}
 
@@ -301,6 +299,20 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
 
 }
 
+static u8 admin_cerver_handlers_start_each (AdminCerver *admin_cerver) {
+
+	u8 errors = 0;
+
+	errors |= admin_cerver_app_handler_start (admin_cerver);
+
+	errors |= admin_cerver_app_error_handler_start (admin_cerver);
+
+	errors |= admin_cerver_custom_handler_start (admin_cerver);
+
+	return errors;
+
+}
+
 static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 
 	u8 errors = 0;
@@ -313,14 +325,10 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 		);
 		#endif
 
-		admin_cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		(void) pthread_mutex_init (admin_cerver->handlers_lock, NULL);
-
-		errors |= admin_cerver_app_handler_start (admin_cerver);
-
-		errors |= admin_cerver_app_error_handler_start (admin_cerver);
-
-		errors |= admin_cerver_custom_handler_start (admin_cerver);
+		admin_cerver->handlers_lock = thread_mutex_new ();
+		// the handlers mark themselves alive with the lock
+		errors |= admin_cerver->handlers_lock ?
+			admin_cerver_handlers_start_each (admin_cerver) : 1;
 
 		if (!errors) {
 			#ifdef ADMIN_DEBUG

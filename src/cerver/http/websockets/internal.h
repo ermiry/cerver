@@ -292,6 +292,11 @@ struct _HttpWebSocket {
 
 	/** @internal @brief A message is being streamed (http_web_socket_send_begin ()). */
 	bool streaming;
+	/**
+	 * @internal @brief The thread that began the stream and holds #message_mutex: only it writes and ends the stream
+	 * (another one unlocked a mutex that it did not hold).
+	 */
+	pthread_t stream_owner;
 	/** @internal @brief The opcode of the stream. */
 	u8 stream_type;
 	/** @internal @brief The first frame of the stream was sent. */

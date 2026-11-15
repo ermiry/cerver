@@ -39,18 +39,6 @@
  * @{
  */
 
-/** @brief A default player timeout in seconds. @warning cerver does not use it: the game types have their own. */
-#define GAME_DEFAULT_PLAYER_TIMEOUT		30
-
-/** @brief A default fps. @warning cerver does not use it: the game types have their own. */
-#define GAME_DEFAULT_FPS				20
-
-/** @brief A default of the least players of a game. @warning cerver does not use it. */
-#define GAME_DEFAULT_MIN_PLAYERS		2
-
-/** @brief A default of the most players of a game. @warning cerver does not use it: the lobbies use LOBBY_DEFAULT_MAX_PLAYERS. */
-#define GAME_DEFAULT_MAX_PLAYERS		4
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,11 +56,7 @@ typedef struct GameCerverStats {
 
 	/** @brief The lobbies that are registered now. */
 	u32 current_active_lobbys;
-	/**
-	 * @brief The lobbies that were created in the life of the cerver.
-	 *
-	 * @warning cerver does not count it yet, it stays at 0.
-	 */
+	/** @brief The lobbies that the players created in the life of the cerver, written with __atomic. */
 	u32 lobbys_created;
 
 } GameCerverStats;
@@ -115,9 +99,6 @@ struct _GameCerver {
 
 	/** @brief The game types. */
 	DoubleList *game_types;
-
-	/** @brief A comparator of the players. @warning cerver does not use it. */
-	Comparator player_comparator;
 
 	/** @brief Called with NULL by cerver_start (), to load the data of the game (to connect to a db, ...). */
 	Action load_game_data;
@@ -193,17 +174,6 @@ CERVER_EXPORT void *lobby_default_id_generator (const void *data_ptr);
  */
 CERVER_EXPORT void game_set_lobby_id_generator (
 	GameCerver *game_cerver, void *(*lobby_id_generator) (const void *)
-);
-
-/**
- * @brief Sets the comparator of the players.
- *
- * @param[in,out] game_cerver the game cerver
- * @param[in] player_comparator the comparator
- * @warning cerver does not use it: the players of each lobby are compared by the ids of their clients.
- */
-CERVER_EXPORT void game_set_player_comparator (
-	GameCerver *game_cerver, Comparator player_comparator
 );
 
 /**

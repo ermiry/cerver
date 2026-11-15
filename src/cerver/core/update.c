@@ -80,23 +80,7 @@ static i64 cerver_timespec_diff_microseconds (
 // sleeps the microseconds or until the cerver is stopped, used to limit the fps of an update
 void cerver_sleep_microseconds (Cerver *cerver, i64 microseconds) {
 
-	const i64 nanoseconds_per_second = CERVER_MICROSECONDS_PER_SECOND * CERVER_NANOSECONDS_PER_MICROSECOND;
-
-	struct timespec deadline = CERVER_ZERO_INITIALIZER;
-	(void) clock_gettime (CLOCK_REALTIME, &deadline);
-
-	i64 nanoseconds = (i64) deadline.tv_nsec + (microseconds * CERVER_NANOSECONDS_PER_MICROSECOND);
-	deadline.tv_sec += (time_t) (nanoseconds / nanoseconds_per_second);
-	deadline.tv_nsec = (long) (nanoseconds % nanoseconds_per_second);
-
-	(void) pthread_mutex_lock (cerver->stop_mutex);
-
-	int result = 0;
-	while (cerver_is_running (cerver) && (result != ETIMEDOUT)) {
-		result = pthread_cond_timedwait (cerver->stop_cond, cerver->stop_mutex, &deadline);
-	}
-
-	(void) pthread_mutex_unlock (cerver->stop_mutex);
+	cerver_stop_wait (cerver, microseconds);
 
 }
 

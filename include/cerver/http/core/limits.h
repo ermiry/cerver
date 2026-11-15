@@ -19,8 +19,8 @@ extern "C" {
  * @ingroup http_core
  * @brief How big and how slow a request can be.
  *
- * The setters ignore a NULL HttpCerver. The size limits and the timeouts in seconds log a warning when the value is
- * not a power of 2, and keep it anyway.
+ * The setters ignore a NULL HttpCerver. The size limits log a warning when the value is not a power of 2, and keep
+ * it anyway; the timeouts take any value.
  * @{
  */
 

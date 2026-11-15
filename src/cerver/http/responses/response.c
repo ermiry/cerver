@@ -200,20 +200,24 @@ void http_response_delete (void *res_ptr) {
 
 }
 
-// get a new HTTP response ready to be used
+// get a new HTTP response ready to be used,
+// without an HTTP cerver there is no producer and no pool to take it from (it crashed)
 HttpResponse *http_response_get (void) {
 
-	return (HttpResponse *) pool_pop (producer->pool);
+	return producer ? (HttpResponse *) pool_pop (producer->pool) : NULL;
 
 }
 
-// correctly disposes a HTTP response
+// correctly disposes a HTTP response,
+// a response that no pool takes is released (it was lost)
 void http_response_return (HttpResponse *response) {
 
 	if (response) {
 		http_response_reset (response);
 
-		(void) pool_push (producer->pool, response);
+		if (!producer || pool_push (producer->pool, response)) {
+			http_response_delete (response);
+		}
 	}
 
 }
@@ -937,7 +941,9 @@ u8 http_response_compile (HttpResponse *response) {
 		response->res = malloc (response->res_len);
 		if (response->res) {
 			char *end = (char *) response->res;
-			(void) memcpy (end, response->header, response->header_len);
+
+			// a response without its header yet has only its data (memcpy () does not take a NULL source)
+			if (response->header) (void) memcpy (end, response->header, response->header_len);
 
 			if (response->data) {
 				end += response->header_len;
@@ -2626,7 +2632,22 @@ static ContentType http_response_handle_video_content (
 
 }
 
-static u8 http_response_handle_video_internal (
+// the headers of the whole video, a 200 has no Content-Range
+static void http_response_add_video_whole_headers (
+	HttpResponse *response,
+	const ContentType content_type, const BytesRange *bytes_range
+) {
+
+	(void) http_response_add_header (response, HTTP_HEADER_ACCEPT_RANGES, "bytes");
+
+	(void) http_response_add_content_type_header (response, content_type);
+
+	(void) http_response_add_content_length_header (response, (const size_t) bytes_range->chunk_size);
+
+}
+
+// pipes the bytes of the range after the header was sent
+static u8 http_response_handle_video_pipe (
 	const HttpReceive *http_receive,
 	const char *filename,
 	BytesRange *bytes_range
@@ -2634,70 +2655,199 @@ static u8 http_response_handle_video_internal (
 
 	u8 retval = 1;
 
-	// create response
-	HttpResponse *response = http_response_get ();
-
-	// generate header
-	response->status = HTTP_STATUS_PARTIAL_CONTENT;
-	const ContentType content_type = http_response_handle_video_content (filename);
-	http_response_add_video_headers (response, content_type, bytes_range);
-	http_response_compile_header (response);
-
-	// (void) printf ("\n\n%s\n\n", response->header);
-
-	// pipe header
-	if (!http_response_send_message (
-		http_receive, response->status, &response->headers,
-		response->header, response->header_len, NULL, 0,
-		HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
-	)) {
+	int video_fd = open (filename, O_RDONLY);
+	if (video_fd > -1) {
 		size_t total_sent = 0;
+		retval = http_response_send_file_pipe (
+			http_receive, video_fd,
+			&bytes_range->start, (size_t) bytes_range->chunk_size,
+			&total_sent
+		);
 
-		// open video
-		int video_fd = open (filename, O_RDONLY);
-		if (video_fd > -1) {
-			retval = http_response_send_file_pipe (
-				http_receive, video_fd,
-				&bytes_range->start, (size_t) bytes_range->chunk_size,
-				&total_sent
-			);
+		// the header was already added to the stats
+		http_response_sent_bytes (http_receive, total_sent);
 
-			// the header was already added to the stats
-			http_response_sent_bytes (http_receive, total_sent);
-
-			if (!retval) {
-				http_response_body_sent (
-					http_receive, total_sent, (size_t) bytes_range->chunk_size
-				);
-			}
-
-			(void) close (video_fd);
-		}
-
-		else {
-			cerver_log_error (
-				"http_response_handle_video () - Failed to open %s",
-				filename
+		if (!retval) {
+			http_response_body_sent (
+				http_receive, total_sent, (size_t) bytes_range->chunk_size
 			);
 		}
+
+		(void) close (video_fd);
 	}
 
-	http_response_return (response);
+	else {
+		cerver_log_error (
+			"http_response_handle_video () - Failed to open %s",
+			filename
+		);
+	}
 
 	return retval;
 
 }
 
+// a 206 with the range, or a 200 with the whole video
+static u8 http_response_handle_video_internal (
+	const HttpReceive *http_receive,
+	const char *filename,
+	BytesRange *bytes_range,
+	const http_status status
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		response->status = status;
+
+		const ContentType content_type = http_response_handle_video_content (filename);
+		if (status == HTTP_STATUS_PARTIAL_CONTENT) http_response_add_video_headers (response, content_type, bytes_range);
+		else http_response_add_video_whole_headers (response, content_type, bytes_range);
+
+		http_response_compile_header (response);
+
+		if (!http_response_send_message (
+			http_receive, response->status, &response->headers,
+			response->header, response->header_len, NULL, 0,
+			HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
+		)) {
+			// an empty video has no bytes to pipe
+			retval = bytes_range->chunk_size ?
+				http_response_handle_video_pipe (http_receive, filename, bytes_range) : 0;
+		}
+
+		http_response_return (response);
+	}
+
+	return retval;
+
+}
+
+// a range that starts after the end of the video gets a 416 with the size of the video
+static u8 http_response_handle_video_unsatisfiable (
+	const HttpReceive *http_receive, const BytesRange *bytes_range
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		response->status = HTTP_STATUS_RANGE_NOT_SATISFIABLE;
+
+		(void) http_response_add_custom_header (
+			response, HTTP_HEADER_CONTENT_RANGE, "bytes */%ld", bytes_range->file_size
+		);
+
+		(void) http_response_add_content_length_header (response, 0);
+
+		http_response_compile_header (response);
+
+		retval = http_response_send_message (
+			http_receive, response->status, &response->headers,
+			response->header, response->header_len, NULL, 0,
+			HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY
+		);
+
+		http_response_return (response);
+	}
+
+	return retval;
+
+}
+
+// bytes=N- sends at most HTTP_RESPONSE_VIDEO_CHUNK_SIZE bytes, and never after the last one of the video
+static void http_response_video_range_open (BytesRange *bytes_range) {
+
+	const long last = bytes_range->file_size - 1;
+	const long end = bytes_range->start + HTTP_RESPONSE_VIDEO_CHUNK_SIZE - 1;
+
+	bytes_range->end = (end < last) ? end : last;
+
+}
+
+// bytes=N-M includes M, and ends with the video (it sent one byte less and read after its end)
+static void http_response_video_range_full (BytesRange *bytes_range) {
+
+	const long last = bytes_range->file_size - 1;
+	if (bytes_range->end > last) bytes_range->end = last;
+
+}
+
 // the last bytes of the file, all of it when the file is smaller than the suffix:
-// the end of the range was the number of bytes, it becomes the byte after the last one
+// the end of the range was the number of bytes, it becomes the last byte of the video
 static void http_response_video_range_suffix (BytesRange *bytes_range) {
 
 	const long suffix = (bytes_range->end < bytes_range->file_size) ?
 		bytes_range->end : bytes_range->file_size;
 
-	bytes_range->chunk_size = suffix;
 	bytes_range->start = bytes_range->file_size - suffix;
-	bytes_range->end = bytes_range->file_size;
+	bytes_range->end = bytes_range->file_size - 1;
+
+}
+
+// the range of the video with its last byte, its size is what is sent
+static void http_response_video_range_resolve (BytesRange *bytes_range) {
+
+	switch (bytes_range->type) {
+		case HTTP_RANGE_TYPE_EMPTY:
+		case HTTP_RANGE_TYPE_FIRST:
+			http_response_video_range_open (bytes_range);
+			break;
+
+		case HTTP_RANGE_TYPE_FULL:
+			http_response_video_range_full (bytes_range);
+			break;
+
+		case HTTP_RANGE_TYPE_SUFFIX:
+			http_response_video_range_suffix (bytes_range);
+			break;
+
+		// without a range (or with an invalid one) the whole video
+		default:
+			bytes_range->start = 0;
+			bytes_range->end = bytes_range->file_size - 1;
+			break;
+	}
+
+	bytes_range->chunk_size = bytes_range->end - bytes_range->start + 1;
+
+}
+
+// RFC 9110: without a valid range the whole video with 200, a range inside the video with 206,
+// and one that starts after its end with 416 (it sent a 206 for everything)
+static u8 http_response_handle_video_answer (
+	const HttpReceive *http_receive,
+	const char *filename,
+	BytesRange *bytes_range
+) {
+
+	u8 retval = 1;
+
+	if (bytes_range->type == HTTP_RANGE_TYPE_NONE) {
+		retval = http_response_handle_video_internal (http_receive, filename, bytes_range, HTTP_STATUS_OK);
+	}
+
+	else if (bytes_range->start < bytes_range->file_size) {
+		retval = http_response_handle_video_internal (
+			http_receive, filename, bytes_range, HTTP_STATUS_PARTIAL_CONTENT
+		);
+	}
+
+	else {
+		retval = http_response_handle_video_unsatisfiable (http_receive, bytes_range);
+	}
+
+	return retval;
+
+}
+
+// bytes=N-M with M before N is not a range, the request gets the whole video
+static void http_response_video_range_check (BytesRange *bytes_range) {
+
+	if ((bytes_range->type == HTTP_RANGE_TYPE_FULL) && (bytes_range->end < bytes_range->start)) {
+		bytes_range->type = HTTP_RANGE_TYPE_NONE;
+	}
 
 }
 
@@ -2713,50 +2863,19 @@ u8 http_response_handle_video (
 	// check that video exists
 	struct stat filestats = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestats)) {
-		// get range
 		BytesRange bytes_range = {
 			.file_size = filestats.st_size,
 			.type = HTTP_RANGE_TYPE_NONE,
 			.start = 0, .end = 0,
-			.chunk_size = HTTP_RESPONSE_VIDEO_CHUNK_SIZE
+			.chunk_size = 0
 		};
 
-		http_request_get_bytes_range (
-			http_receive->request, &bytes_range
-		);
+		(void) http_request_get_bytes_range (http_receive->request, &bytes_range);
 
-		switch (bytes_range.type) {
-			case HTTP_RANGE_TYPE_EMPTY: {
-				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
-			} break;
+		http_response_video_range_check (&bytes_range);
+		http_response_video_range_resolve (&bytes_range);
 
-			case HTTP_RANGE_TYPE_FIRST: {
-				long bytes_left = bytes_range.file_size - bytes_range.start;
-				if (bytes_left < bytes_range.chunk_size) {
-					bytes_range.chunk_size = bytes_left;
-				}
-
-				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
-			} break;
-
-			case HTTP_RANGE_TYPE_FULL: {
-				bytes_range.chunk_size = bytes_range.end - bytes_range.start;
-			} break;
-
-			case HTTP_RANGE_TYPE_SUFFIX:
-				http_response_video_range_suffix (&bytes_range);
-				break;
-
-			default: break;
-		}
-
-		bytes_range.end -= 1;
-
-		// (void) printf ("chunk size: %ld\n", bytes_range.chunk_size);
-
-		retval = http_response_handle_video_internal (
-			http_receive, filename, &bytes_range
-		);
+		retval = http_response_handle_video_answer (http_receive, filename, &bytes_range);
 	}
 
 	else {
