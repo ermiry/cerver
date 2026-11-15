@@ -5,6 +5,7 @@
 #include "cerver/version.h"
 
 #include "cerver/core/cerver.h"
+#include "cerver/events/internal.h"
 #include "cerver/system/system.h"
 
 #include "cerver/http/core/admin.h"
@@ -12,6 +13,7 @@
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/internal.h"
 #include "cerver/http/core/metrics.h"
+#include "cerver/http/core/pool.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/core/stats.h"
 #include "cerver/http/json/json.h"
@@ -23,6 +25,7 @@
 #include "cerver/http/security/auth.h"
 #include "cerver/http/websockets/registry.h"
 
+#include "cerver/threads/thpool.h"
 #include "cerver/threads/worker.h"
 
 #include "cerver/utils/log.h"
@@ -580,6 +583,114 @@ static void http_cerver_admin_handler_web_socket_stats (
 
 }
 
+static void http_cerver_admin_value (
+	json_t *json, const char *name, const size_t value
+) {
+
+	(void) json_object_set_new (json, name, json_integer ((json_int_t) value));
+
+}
+
+// a pool that has threads: what it has now and what it did
+static json_t *http_cerver_admin_handler_pool_stats (const HttpPool *pool) {
+
+	json_t *json = json_object ();
+
+	ThpoolStats stats;
+	thpool_get_stats (pool->thpool, &stats);
+
+	(void) json_object_set_new (json, "name", json_string (pool->name));
+
+	http_cerver_admin_value (json, "threads", thpool_get_num_threads_alive (pool->thpool));
+	http_cerver_admin_value (json, "working", thpool_get_num_threads_working (pool->thpool));
+	http_cerver_admin_value (json, "queued", thpool_get_queued (pool->thpool));
+	http_cerver_admin_value (
+		json, "parked", event_loop_group_lane_parked (pool->http_cerver->cerver, pool->index)
+	);
+
+	http_cerver_admin_value (json, "n_jobs", (size_t) stats.total_jobs);
+	http_cerver_admin_value (json, "n_parked", (size_t) __atomic_load_n (&pool->n_parked, __ATOMIC_RELAXED));
+	http_cerver_admin_value (
+		json, "n_unavailable", (size_t) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED)
+	);
+
+	return json;
+
+}
+
+// the pools of the cerver that have threads, the first one is the thpool of the cerver;
+// a cerver that has not started has none
+static void http_cerver_admin_handler_pools_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	json_t *pools = json_array ();
+
+	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
+		const HttpPool *pool = http_cerver->pools[idx];
+
+		if (pool->thpool) {
+			(void) json_array_append_new (pools, http_cerver_admin_handler_pool_stats (pool));
+		}
+	}
+
+	(void) json_object_set_new (json, "pools", pools);
+
+}
+
+// the connections of the event loops: the ones that are open, the ones that wait for their next request
+// and every one that was accepted
+static void http_cerver_admin_handler_loops_stats (
+	const Cerver *cerver, json_t *connections
+) {
+
+	http_cerver_admin_value (connections, "open", event_loop_group_connections (cerver));
+	http_cerver_admin_value (connections, "idle", event_loop_group_idle (cerver));
+	http_cerver_admin_value (connections, "n_accepted", (size_t) event_loop_group_accepted (cerver));
+
+}
+
+// the connections that were reused, and the ones that ended with their requests
+static void http_cerver_admin_handler_connections_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	json_t *connections = json_object ();
+
+	size_t ended = 0;
+	for (unsigned int i = 0; i < HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS; i++) {
+		ended += CERVER_STATS_GET (http_cerver->connection_requests[i]);
+	}
+
+	http_cerver_admin_value (connections, "n_reused", CERVER_STATS_GET (http_cerver->n_reused_connections));
+	http_cerver_admin_value (connections, "n_ended", ended);
+	http_cerver_admin_value (connections, "n_requests", CERVER_STATS_GET (http_cerver->n_connection_requests));
+
+	if (http_cerver->cerver && http_cerver->cerver->event_loops) {
+		http_cerver_admin_handler_loops_stats (http_cerver->cerver, connections);
+	}
+
+	(void) json_object_set_new (json, "connections", connections);
+
+}
+
+// the requests of the health and the ready routes, and what the uploads wrote
+static void http_cerver_admin_handler_health_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	http_cerver_admin_value (json, "n_health_requests", CERVER_STATS_GET (http_cerver->n_health_requests));
+	http_cerver_admin_value (json, "n_ready_requests", CERVER_STATS_GET (http_cerver->n_ready_requests));
+	http_cerver_admin_value (json, "n_not_ready_requests", CERVER_STATS_GET (http_cerver->n_not_ready_requests));
+
+	http_cerver_admin_value (
+		json, "uploads_write_microseconds", CERVER_STATS_GET (http_cerver->uploads_write_microseconds)
+	);
+
+	http_cerver_admin_value (json, "uploads_write_bytes", CERVER_STATS_GET (http_cerver->uploads_write_bytes));
+
+}
+
 char *http_cerver_admin_generate_routes_stats_json (
 	const HttpCerver *http_cerver
 ) {
@@ -601,6 +712,12 @@ char *http_cerver_admin_generate_routes_stats_json (
 		http_cerver_admin_handler_gone_stats (http_cerver, json);
 
 		http_cerver_admin_handler_web_socket_stats (http_cerver, json);
+
+		http_cerver_admin_handler_pools_stats (http_cerver, json);
+
+		http_cerver_admin_handler_connections_stats (http_cerver, json);
+
+		http_cerver_admin_handler_health_stats (http_cerver, json);
 
 		json_string = json_dumps (json, 0);
 
