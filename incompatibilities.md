@@ -3,6 +3,62 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-16 (from 2.1b-15)
+
+Keep-alive (F4 of `roadmap.md` §4.4): a connection handles more than one request. A cerver with
+`CERVER_HANDLER_TYPE_EVENTS` keeps its connections **by default**; one with `THREADS` or `POLL` closes each one
+after its response like before, unless it is asked to keep them.
+
+- **`HttpCerver` and `HttpReceive` are bigger:** `HttpCerver` ends with `keep_alive`, `keep_alive_configured`,
+  `keep_alive_timeout`, `keep_alive_requests` and `n_reused_connections`, and `HttpReceive` with `n_requests`. The
+  fields of before keep their offsets; a binary of the 2.1b-15 that allocates one of them by itself has to be
+  built again
+- **`HttpReceive::keep_alive` is a value of each request,** false until the request is complete: the cerver decides
+  it before the request is handled (so its response says it) and `http_receive_reset ()` clears it. Code that set
+  it by hand to keep a connection open sets it again after each reset, and it only holds for a request that the
+  cerver rejects (whose response says `Connection: close` anyway): a complete request follows the decision of the
+  cerver
+- **The API:** `http_cerver_set_keep_alive ()`, `http_cerver_set_keep_alive_timeout ()` and its `_milliseconds`
+  (`HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT`, 2^7 secs), `http_cerver_set_keep_alive_requests ()`
+  (`HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS`, 2^10, 0 disables the limit), `HTTP_RESPONSE_CONNECTION_KEEP_ALIVE`
+  and the metric `cerver_http_reused_connections_total`
+
+**With `CERVER_HANDLER_TYPE_EVENTS`** (a cerver that wants the behavior of the 2.1b-15 calls
+`http_cerver_set_keep_alive (http_cerver, false)`):
+
+- **A response does not always have `Connection: close`:** it has it when the connection is closed after it (the
+  client asked for it or is HTTP/1.0 without `keep-alive`, the cerver rejected the request, the connection reached
+  its requests, the cerver stops, or keep-alive is disabled); a connection that is kept says nothing to an HTTP/1.1
+  client and `Connection: keep-alive` to an HTTP/1.0 one. A response with its own `Connection: close` closes its
+  connection
+- **A client that reads a response until the end of the connection waits** for the time that the connection is
+  kept: it has to use the `Content-Length` of the response, or to send `Connection: close`
+- **Pipelined requests are answered,** one at a time and in their order; before, everything after the first
+  request of a connection was dropped
+- **A connection is closed anyway** after a response whose end the client can not find (without `Content-Length`
+  and not a complete chunked stream), after one that could not be sent, and after an upgrade
+- **An idle connection** that does not send its next request in `keep_alive_timeout` is closed without a response,
+  like one whose cerver stops: its writes are shut down and it ends when its client closes it too. A connection
+  that ends between two requests is not logged nor counted as a request
+- **At `cerver_set_max_connections ()`** a new connection takes the place of the connection that has been idle the
+  longest; the accept only stops when no connection is idle
+- **The methods of the application that release the data of a request** (the deleters of `custom_data` and of
+  `decoded_data`) still run in the thread of the thpool that handled it, also when its connection is kept
+- **Behind a proxy that keeps its connections,** `keep_alive_timeout` has to be more than the time that the proxy
+  keeps an idle one, and `keep_alive_requests` more than the requests that the proxy sends through one: the proxy
+  is the one that closes them, a proxy that uses a connection that the cerver is closing answers 502
+
+**With `THREADS` or `POLL`,** only after `http_cerver_set_keep_alive (http_cerver, true)` (a warning is logged when
+the cerver starts): the thread that handled a request stays with its connection until its next request, so
+a connection is only kept while no other one waits for a thread (its response says `Connection: close` otherwise).
+An idle connection is never closed for one that waits: its thread gives it back to the queue of the thpool and
+takes the one that waits, so a cerver with threads keeps one idle connection for each thread. `CerverReceive` has
+two more fields for that, `n_requests` and `idle_deadline`, before `recycle_next`.
+
+**The tools:** `benchmarks/load` sends `Connection: close` with each request, and keeps a connection for each of
+its threads with `LOAD_KEEP_ALIVE` in its environment (it prints the connections that it opened);
+`benchmarks/server` takes `BENCH_KEEP_ALIVE`.
+
 ## 2.1b-15 (from 2.1b-14)
 
 The event loop (F3 of `roadmap.md` §4.3): `CERVER_HANDLER_TYPE_EVENTS`, a new handler type that is opt-in and only
