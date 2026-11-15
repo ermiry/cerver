@@ -63,10 +63,10 @@ jobs:
       - name: Disable address randomization
         run: sudo sysctl vm.mmap_rnd_bits=28
 
-      - name: Routing
+      - name: Load
         env:
           SANITIZER: thread
-        run: bash test/repeat.sh test/bin/routing 20
+        run: bash test/repeat.sh test/bin/load 20
 
       - name: Client features
         env:
