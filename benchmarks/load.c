@@ -1,17 +1,15 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <errno.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
-
 #include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 // a load generator without dependencies: every request uses its own connection,
 // like nginx does with cerver, and the latency is measured from connect () to the close

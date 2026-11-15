@@ -1,15 +1,19 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
-#include <cerver/balancer.h>
-#include <cerver/cerver.h>
-#include <cerver/events.h>
 #include <cerver/version.h>
+
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/handler/events.h>
+#include <cerver/load/balancer.h>
+#include <cerver/load/end.h>
+#include <cerver/load/service.h>
+#include <cerver/load/start.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
