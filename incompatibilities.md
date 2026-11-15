@@ -3,6 +3,41 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-4 (from 3.0b-3)
+
+The backlog of the review of the code: the fixes of the 1.9b-2 (`core`) and of the 2.0b-75 (`http`), what had no
+use is removed, and the owner of a stream of WebSocket. The wire of HTTP changes for the videos (RFC 9110), some
+structs change their fields (a binary built with the 3.0b-3 is built again) and some functions go away.
+
+- **Removed** (they had no use; `core` and `http` deprecated them): `cerver_set_sockets_pool_init ()` and
+  `CERVER_DEFAULT_SOCKETS_INIT`; `lobby_stats_set_threshold_time ()`; `lobby_get ()` and `lobby_search_with_id ()`
+  (`lobby_get_reference ()` and `lobby_search_with_id_reference ()` take the reference with the lock);
+  `timer_get_gmt_time ()` and `timer_get_local_time ()` (`timer_get_gmt_time_r ()` and `timer_get_local_time_r ()`);
+  `game_set_player_comparator ()` and `GameCerver::player_comparator`; the field `threshold_time` of
+  `ConnectionStats`, `ClientStats`, `AdminCerverStats` and `LobbyStats` (only `CerverStats` has it, and it works);
+  `CONNECTION_DEFAULT_BAD_PACKETS`, `SERVICE_CONNECTION_NAME_SIZE`, `SERVICE_DEFAULT_MAX_SLEEP`, the
+  `GAME_DEFAULT_*` macros and `ClientEvent::request_type`
+- **The videos follow RFC 9110:** `http_response_handle_video ()` answers a request without a Range (or with an
+  invalid one) with 200 and the whole video, the last byte of `bytes=N-M` is included and a range never goes after
+  the end of the video, and a range that starts after its end gets 416 with the size of the video
+- **A stream of WebSocket belongs to the thread that began it:** `http_web_socket_send_write ()` and
+  `http_web_socket_send_end ()` from another thread return 1 and the stream goes on (the end unlocked the mutex of
+  the owner)
+- **The core of the 1.9b-2:** `Cerver` has `stop_pipe[2]` instead of `stop_mutex` / `stop_cond` and no `auth_packet`;
+  `CerverStats` has `threshold_start`; `JobQueue` has `requests`; the events and the errors have `shared_args`;
+  **the admin limits are enforced and `ADMIN_CERVER_DEFAULT_MAX_ADMINS` is 1**; replacing a handler, a received data
+  or a custom data of an endpoint or a group deletes the old one when it is another pointer; a files cerver without
+  an uploads path rejects an upload and ends its connection; `str_set ()` grows, `str_split ()` without the delimiter
+  gives 1 token; `config.h` needs `-D _GNU_SOURCE` (an `#error` without it); `"Timeout"` in `RECEIVE_ERROR_MAP`;
+  what fails without memory returns NULL or keeps what it had (the list is in the `incompatibilities.md` of `core`,
+  «1.9b-2»)
+- **The HTTP of the 2.0b-75:** `http_response_get ()` is NULL without an HTTP cerver, `http_response_return ()` and
+  `http_cerver_auth_jwt_delete ()` release what the pool does not take, `http_request_set_dirname ()` keeps its last
+  character, the timeouts do not warn when they are not a power of 2, and `thirdparty.md` has multipart-parser-c
+- **New:** `c_string_copy_bounded ()`, `dlist_get_apply ()`, `htab_get_apply ()`, `avl_get_node_data_apply ()`,
+  `lobby_get_reference ()`, `lobby_search_with_id_reference ()`, `timer_get_gmt_time_r ()` and
+  `timer_get_local_time_r ()`; the static analyzers (`test/analyze.sh`)
+
 ## 3.0b-3 (from 3.0b-2)
 
 The documentation of the headers: the symbols of `libcerver.so` and the wire are the ones of the 3.0b-2, only the
