@@ -55,6 +55,7 @@ void event_loop_delete (EventLoop *loop) {
 
 		(void) pthread_mutex_destroy (&loop->completed_mutex);
 		(void) pthread_mutex_destroy (&loop->recycled_mutex);
+		(void) pthread_mutex_destroy (&loop->idle_mutex);
 
 		free (loop);
 	}
@@ -80,6 +81,7 @@ EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatche
 
 		(void) pthread_mutex_init (&loop->completed_mutex, NULL);
 		(void) pthread_mutex_init (&loop->recycled_mutex, NULL);
+		(void) pthread_mutex_init (&loop->idle_mutex, NULL);
 
 		loop->poller = event_poller_create (EVENT_POLLER_DEFAULT_EVENTS);
 
@@ -129,6 +131,24 @@ unsigned int event_loop_connections (const EventLoop *loop) {
 unsigned int event_loop_parked (const EventLoop *loop) {
 
 	return loop ? __atomic_load_n (&loop->n_parked, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+unsigned int event_loop_idle (const EventLoop *loop) {
+
+	return loop ? __atomic_load_n (&loop->n_idle, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+u64 event_loop_idle_closed_total (const EventLoop *loop) {
+
+	return loop ? __atomic_load_n (&loop->n_idle_closed, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+void event_loop_idle_closed (EventLoop *loop) {
+
+	(void) __atomic_add_fetch (&loop->n_idle_closed, 1, __ATOMIC_RELEASE);
 
 }
 
@@ -278,6 +298,176 @@ void event_loop_connection_release (EventLoop *loop, struct HttpConnection *conn
 	event_loop_connections_remove (loop);
 
 	if (__atomic_load_n (&loop->stopping, __ATOMIC_ACQUIRE)) event_poller_wake (loop->poller);
+
+}
+
+#pragma endregion
+
+#pragma region idle
+
+// the idle connections are kept in the order that they became idle: the first one is the one that has waited
+// the longest for its next request, and the one whose time ends first (they all wait the same time)
+// the list has its mutex: the thread of the pool that answered a request adds its connection by itself,
+// and whoever takes a connection out of the list owns it
+
+// with the mutex of the idle connections
+static void event_loop_idle_link (EventLoop *loop, HttpConnection *connection) {
+
+	connection->idle_next = NULL;
+	connection->idle_previous = loop->idle_tail;
+
+	if (loop->idle_tail) loop->idle_tail->idle_next = connection;
+	else loop->idle_head = connection;
+
+	loop->idle_tail = connection;
+
+	connection->idle = true;
+
+	(void) __atomic_add_fetch (&loop->n_idle, 1, __ATOMIC_RELEASE);
+
+}
+
+// with the mutex of the idle connections
+static void event_loop_idle_unlink (EventLoop *loop, HttpConnection *connection) {
+
+	if (connection->idle_previous) connection->idle_previous->idle_next = connection->idle_next;
+	else loop->idle_head = connection->idle_next;
+
+	if (connection->idle_next) connection->idle_next->idle_previous = connection->idle_previous;
+	else loop->idle_tail = connection->idle_previous;
+
+	connection->idle_next = NULL;
+	connection->idle_previous = NULL;
+
+	connection->idle = false;
+
+	(void) __atomic_sub_fetch (&loop->n_idle, 1, __ATOMIC_RELEASE);
+
+}
+
+// the socket of an idle connection is reported once: the loop gives a connection that was reported
+// to the pool without a system call, and the thread that gives it back arms its socket again
+static unsigned int event_loop_idle_arm (EventLoop *loop, HttpConnection *connection) {
+
+	EventSource *source = &connection->source;
+
+	return source->registered ?
+		event_poller_modify (loop->poller, source, EVENT_LOOP_IDLE_INTEREST) :
+		event_poller_add (loop->poller, source, connection->peer->socket->sock_fd, EVENT_LOOP_IDLE_INTEREST);
+
+}
+
+// the socket is armed with the mutex: the loop can only be told about the connection
+// (and take it) once it is one of its idle ones
+unsigned int event_loop_idle_enter (
+	EventLoop *loop, struct HttpConnection *connection, const u64 timeout
+) {
+
+	(void) pthread_mutex_lock (&loop->idle_mutex);
+
+	connection->idle_deadline = loop->clock () + timeout;
+
+	event_loop_idle_link (loop, connection);
+
+	const unsigned int retval = event_loop_idle_arm (loop, connection);
+	if (retval) event_loop_idle_unlink (loop, connection);
+
+	(void) pthread_mutex_unlock (&loop->idle_mutex);
+
+	// the loop is woken up only for the first idle connection, to start checking them
+	if (!retval && !__atomic_exchange_n (&loop->idle_watching, true, __ATOMIC_ACQ_REL)) {
+		event_poller_wake (loop->poller);
+	}
+
+	return retval;
+
+}
+
+bool event_loop_idle_claim (EventLoop *loop, struct HttpConnection *connection) {
+
+	(void) pthread_mutex_lock (&loop->idle_mutex);
+
+	const bool claimed = connection->idle;
+	if (claimed) event_loop_idle_unlink (loop, connection);
+
+	(void) pthread_mutex_unlock (&loop->idle_mutex);
+
+	return claimed;
+
+}
+
+// takes the connection that has been idle the longest out of the idle ones: the loop owns it again
+// with expired, only when the time that it can wait ended
+static HttpConnection *event_loop_idle_take (EventLoop *loop, const bool expired) {
+
+	(void) pthread_mutex_lock (&loop->idle_mutex);
+
+	HttpConnection *connection = loop->idle_head;
+	if (connection && expired && (connection->idle_deadline > loop->now)) connection = NULL;
+
+	if (connection) event_loop_idle_unlink (loop, connection);
+
+	(void) pthread_mutex_unlock (&loop->idle_mutex);
+
+	if (connection) event_loop_connection_attach (loop, connection);
+
+	return connection;
+
+}
+
+// the idle connections are checked every few milliseconds while the loop has them: the thread of the pool
+// that adds one does not wake the loop up, so the loop can not arm a timer for each one
+static void event_loop_idle_watch (EventLoop *loop) {
+
+	if (
+		__atomic_load_n (&loop->idle_watching, __ATOMIC_ACQUIRE)
+		&& !loop->idle_timer.armed
+	) {
+		event_wheel_add (&loop->wheel, &loop->idle_timer, loop->now + EVENT_LOOP_IDLE_SWEEP);
+	}
+
+}
+
+// the loop stops checking its idle connections when it has none: the one that is added
+// after the loop said so wakes it up, and one that was added right before is seen here
+static void event_loop_idle_rest (EventLoop *loop) {
+
+	if (!event_loop_idle (loop)) {
+		__atomic_store_n (&loop->idle_watching, false, __ATOMIC_RELEASE);
+
+		if (event_loop_idle (loop)) __atomic_store_n (&loop->idle_watching, true, __ATOMIC_RELEASE);
+	}
+
+}
+
+// ends the idle connections whose time ended
+static void event_loop_idle_sweep (EventLoop *loop) {
+
+	HttpConnection *connection = NULL;
+	while ((connection = event_loop_idle_take (loop, true))) {
+		http_connection_idle_expired (connection);
+	}
+
+	event_loop_idle_rest (loop);
+
+}
+
+// at the limit of connections of the cerver, the one that has been idle the longest gives its place to a new one
+static void event_loop_idle_evict (EventLoop *loop) {
+
+	HttpConnection *connection = event_loop_idle_take (loop, false);
+	if (connection) http_connection_evict (connection);
+
+}
+
+// a loop that stops does not keep the connections that wait for their next request:
+// each one is closed once its client closes it too, a proxy takes it out of the ones that it reuses
+static void event_loop_idle_end (EventLoop *loop) {
+
+	HttpConnection *connection = NULL;
+	while ((connection = event_loop_idle_take (loop, false))) {
+		http_connection_abort (connection);
+	}
 
 }
 
@@ -645,38 +835,68 @@ static bool event_loop_accept_failed (EventLoop *loop, const int error, bool *pa
 
 }
 
-// at the limit of connections of the cerver the loop stops accepting for a while,
-// the new connections wait in the listen backlog
 static bool event_loop_is_at_limit (const EventLoop *loop) {
 
 	return event_loop_total_connections (loop) >= loop->cerver->max_connections;
 
 }
 
+// at the limit of connections of the cerver, a new connection can only take the place of a connection
+// of the loop that waits idle for its next request: the idle ones never keep new clients out
+static bool event_loop_accept_has_place (const EventLoop *loop, const bool at_limit) {
+
+	return !at_limit || event_loop_idle (loop);
+
+}
+
+// accepts the next connection that waits; at the limit of connections, the connection of the loop that has
+// waited the longest for its next request is closed to give its place to it, once the new one was accepted:
+// an idle connection is never closed for a client that is not there
+// returns true when the loop can accept another connection, pause is the one of event_loop_accept_failed ()
+static bool event_loop_accept_next (EventLoop *loop, const bool at_limit, bool *pause) {
+
+	bool again = true;
+
+	struct sockaddr_storage address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
+	socklen_t address_length = sizeof (struct sockaddr_storage);
+
+	const int fd = accept4 (
+		loop->listen_fd, (struct sockaddr *) &address, &address_length,
+		SOCK_NONBLOCK | SOCK_CLOEXEC
+	);
+
+	if (fd > -1) {
+		if (at_limit) event_loop_idle_evict (loop);
+
+		(void) event_loop_adopt (loop, fd, &address);
+	}
+
+	else {
+		again = event_loop_accept_failed (loop, errno, pause);
+	}
+
+	return again;
+
+}
+
 // accepts the connections that wait, some at a time: the loop also has to handle the ones that it has
+// without a place for a new one the loop stops accepting for a while, the new connections wait in the listen backlog
 static void event_loop_accept (EventLoop *loop) {
 
 	bool again = !event_loop_is_stopping (loop);
 	bool pause = false;
 
 	for (unsigned int count = 0; again && (count < EVENT_LOOP_ACCEPT_BATCH); count++) {
-		if (event_loop_is_at_limit (loop)) {
-			pause = true;
-			again = false;
+		const bool at_limit = event_loop_is_at_limit (loop);
+
+		if (event_loop_accept_has_place (loop, at_limit)) {
+			again = event_loop_accept_next (loop, at_limit, &pause);
 		}
 
 		else {
-			struct sockaddr_storage address;
-			(void) memset (&address, 0, sizeof (struct sockaddr_storage));
-			socklen_t address_length = sizeof (struct sockaddr_storage);
-
-			const int fd = accept4 (
-				loop->listen_fd, (struct sockaddr *) &address, &address_length,
-				SOCK_NONBLOCK | SOCK_CLOEXEC
-			);
-
-			if (fd > -1) (void) event_loop_adopt (loop, fd, &address);
-			else again = event_loop_accept_failed (loop, errno, &pause);
+			pause = true;
+			again = false;
 		}
 	}
 
@@ -737,6 +957,8 @@ static void event_loop_stop_check (EventLoop *loop) {
 	if (event_loop_is_stopping (loop)) {
 		if (loop->listen_fd > -1) event_loop_accept_end (loop);
 
+		event_loop_idle_end (loop);
+
 		if (__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE)) event_loop_reject_pending (loop);
 	}
 
@@ -751,23 +973,31 @@ static void event_loop_timer_expired (EventTimer *timer, void *loop_ptr) {
 	EventLoop *loop = (EventLoop *) loop_ptr;
 
 	if (timer == &loop->accept_timer) event_loop_accept_resume (loop);
+	else if (timer == &loop->idle_timer) event_loop_idle_sweep (loop);
 	else http_connection_timeout ((HttpConnection *) timer->owner);
 
 }
 
-static void event_loop_ready_handle (EventLoop *loop, const EventReady *ready) {
+// the connections that were reported are handled before the new ones are accepted: a new connection
+// at the limit closes an idle one, and its memory can be the one of the new connection in the same step,
+// so nothing that was reported before is left for a connection that ended
+static void event_loop_ready_handle (EventLoop *loop, const int n_ready) {
 
-	switch (ready->source->type) {
-		case EVENT_SOURCE_TYPE_LISTEN:
-			event_loop_accept (loop);
-			break;
+	bool accept = false;
 
-		case EVENT_SOURCE_TYPE_CONNECTION:
+	for (int idx = 0; idx < n_ready; idx++) {
+		const EventReady *ready = &loop->ready[idx];
+
+		if (ready->source->type == EVENT_SOURCE_TYPE_CONNECTION) {
 			http_connection_ready ((HttpConnection *) ready->source->owner, ready->ready);
-			break;
+		}
 
-		default: break;
+		else if (ready->source->type == EVENT_SOURCE_TYPE_LISTEN) {
+			accept = true;
+		}
 	}
+
+	if (accept) event_loop_accept (loop);
 
 }
 
@@ -811,13 +1041,13 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 
 		handled = (n_ready > 0) ? n_ready : 0;
 
-		for (int idx = 0; idx < n_ready; idx++) {
-			event_loop_ready_handle (loop, &loop->ready[idx]);
-		}
+		event_loop_ready_handle (loop, n_ready);
 
 		handled += event_loop_completed_handle (loop);
 
 		handled += (int) event_wheel_advance (&loop->wheel, loop->now, event_loop_timer_expired, loop);
+
+		event_loop_idle_watch (loop);
 
 		event_loop_stop_check (loop);
 

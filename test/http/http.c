@@ -725,12 +725,20 @@ static void http_tests_main (void) {
 // the full matrix of test/disconnect.sh runs alone, without the other suites
 #define DISCONNECT_ONLY_VARIABLE			"DISCONNECT_ONLY"
 
+// the connections that are kept run alone to be repeated, they hand each connection between threads
+#define KEEPALIVE_ONLY_VARIABLE				"KEEPALIVE_ONLY"
+
 int main (void) {
 
 	test_output_init ();
 
 	if (getenv (DISCONNECT_ONLY_VARIABLE)) {
 		http_tests_disconnect ();
+		return 0;
+	}
+
+	if (getenv (KEEPALIVE_ONLY_VARIABLE)) {
+		http_tests_keepalive ();
 		return 0;
 	}
 
@@ -773,6 +781,9 @@ int main (void) {
 
 	// a real cerver: deadlines, overload policies, drain and signals
 	http_tests_server ();
+
+	// the connections that are kept between requests
+	http_tests_keepalive ();
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();

@@ -554,6 +554,68 @@ CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max)
 
 ### 4.4 F4 — Keep-alive real (2.1b-16)
 
+**Implementado en la 2.1b-16.** Una conexión atiende más de una petición: por default con
+`CERVER_HANDLER_TYPE_EVENTS`, y solo si se pide (`http_cerver_set_keep_alive ()`) con los demás handler types. El
+diseño de abajo es el del plan; lo que la implementación cambió contra él:
+
+1. **La decisión va en dos pasos.** `http_receive_keep_alive_decide ()` corre al completar la petición, antes de
+   atenderla: deja `HttpReceive::keep_alive` (ahora un valor de cada petición) y así la respuesta lleva su
+   `Connection`. `http_receive_keeps_connection ()` la confirma después de la respuesta: contestada, delimitada,
+   sin falla de envío, atendida (también un 404 de cerver), sin upgrade, con el cliente conectado y sin stop. Una
+   respuesta con su propio `Connection: close` cierra.
+2. **El stop se lee de `stop_requested`** (`cerver_is_stopping ()`, oculto), no de `cerver_is_running ()`, que es
+   falso en un cerver que no ha arrancado.
+3. **La conexión conservada regresa a su loop sin despertarlo.** El hilo del pool que contestó hace el log y
+   `http_receive_reset ()` (los deleters de la aplicación nunca corren en el hilo de I/O), agrega la conexión a las
+   ociosas de su loop y arma su socket él mismo (`event_loop_idle_enter ()`, con el mutex de esa lista); el loop la
+   encuentra cuando su cliente manda la siguiente petición y la reclama con el mismo mutex
+   (`event_loop_idle_claim ()`). El socket de una ociosa se reporta una sola vez (`EVENT_INTEREST_ONCE`,
+   `EPOLLONESHOT`): queda registrado y silencioso, así el traspaso al pool no cuesta una syscall. Por la cola de
+   completados solo regresa la que trae bytes detrás (una petición en pipeline) o la de un loop que se detiene.
+   La primera versión regresaba todas por la cola con su eventfd; esta casi duplicó los req/s con keep-alive.
+4. **El camino del cierre no cambió:** una conexión que no se conserva la termina el hilo del pool, como en F3.
+5. **Las ociosas no tienen timer propio:** el loop las revisa cada `EVENT_LOOP_IDLE_SWEEP` (2^8 ms) mientras
+   tenga alguna, y solo la primera ociosa lo despierta. Vencen en orden (todas esperan lo mismo).
+6. **El tope de conexiones:** el loop acepta la conexión nueva y entonces cierra su ociosa más antigua; solo sin
+   ociosas pausa el accept. Las conexiones reportadas se atienden antes de aceptar.
+7. **El cierre de una ociosa** (su tiempo, un stop) es `shutdown (SHUT_WR)` y esperar el cierre del cliente, sin
+   reset; la que cede su lugar en el tope se cierra de inmediato. Una conexión que termina entre dos peticiones no
+   se registra ni se cuenta como petición (`EventLoop::n_idle_closed`).
+8. **Las peticiones en pipeline** se atienden una a la vez; la que sigue a una que el loop contestó solo espera al
+   siguiente paso del loop, sin recursión.
+9. **THREADS, opt-in:** el hilo se queda con la conexión entre peticiones (`cerver_receive_http_idle ()`, `poll ()`
+   en tramos de 2^6 ms). Una conexión solo se conserva si ninguna otra espera un hilo en la cola del pool: bajo
+   carga degrada a cerrar por petición, avisando con `Connection: close`. Una ociosa **nunca se cierra** para la
+   que espera (la primera versión lo hacía: detrás de nginx, que reusaba esa conexión en ese instante, eran 502,
+   24 de 7,680 con la máquina cargada): su hilo la regresa a la cola del thpool tal como está, con sus peticiones
+   y su deadline (`CerverReceive::n_requests`, `idle_deadline`; `cerver_receive_http_yield ()`), y toma la que
+   espera; el hilo que la saca sigue esperando su siguiente petición. Antes de cederla espera un tramo corto
+   (2^2 ms), así los hilos se turnan las ociosas sin girar. Como la ociosa encolada cuenta como una que espera,
+   un cerver con hilos conserva una conexión ociosa por hilo y cierra las demás al contestarlas.
+10. **nginx en los tests** ya tenía `proxy_http_version 1.1`; cambió `keepalive_requests` a 512 (menos que cerver),
+    `test/nginx/run.sh` mide el reuso con `cerver_http_reused_connections_total`, corre también THREADS con
+    keep-alive (`keep`) y la configuración `restart`: dos cervers que se reinician bajo carga, sin ninguna falla.
+11. **Un rechazo siempre anuncia su cierre.** `http_receive_reject ()` deja el status de la petición antes de
+    enviar, y una respuesta a una petición que no quedó `COMPLETED` ni `UNHANDLED` lleva `Connection: close`
+    aunque `keep_alive` esté encendido (`http_receive_was_handled ()`, la misma condición con la que
+    `http_receive_keeps_connection ()` cierra después). Faltaba en un caso: con EVENTS una petición sin body se
+    autoriza junto con su handler, cuando el cerver ya había decidido conservar la conexión; su 401 salía sin
+    `Connection: close` y la conexión se cerraba después (detrás de un proxy, un 502 en la siguiente petición que
+    la reusa). Lo encontró un mutante que sobrevivió; `test_keepalive_rejected` lo cubre y falla contra el código
+    anterior. `keep_alive` no se toca en el rechazo: quien lo sostiene a mano lo conserva.
+
+**La API** (`include/cerver/http/core/limits.h`, `@since 2.1b-16`): `http_cerver_set_keep_alive ()`,
+`http_cerver_set_keep_alive_timeout ()` y `_milliseconds` (2^7 s), `http_cerver_set_keep_alive_requests ()` (2^10).
+
+**Los tests:** `test/http/keepalive.c` (un cerver real en los dos modelos: N peticiones, pipelining, HTTP/1.0, el
+close del cliente, el máximo, el idle, sin delimitar, sin respuesta, el estado entre peticiones, los rechazos, el
+drenado, el tope, THREADS bajo presión); la región `kept` de `test/http/receive.c` (el loop con el despachador
+manual y el reloj propio); el fuzzer `loop` con varias peticiones por conexión; `test/performance.sh` exige que
+las conexiones conservadas den al menos el 150 % de los req/s de una conexión por petición, con las mismas
+asignaciones (GET 0, POST JSON 14).
+
+#### El diseño del plan
+
 **`http_receive_reset ()`, entre peticiones de una conexión** (existe desde F1, §4.1; F4 es quien la llama):
 
 - reinicia `receive_status`, `type`, `dispatch`, `node`, `endpoint`, `route`, `served_file`, `head`,

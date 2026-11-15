@@ -25,6 +25,8 @@
 
 #include "cerver/connection/connection.h"
 #include "cerver/connection/end.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/internal.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/handler.h"
@@ -67,6 +69,7 @@
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/websocket.h"
 
+#include "cerver/threads/thpool.h"
 #include "cerver/threads/worker.h"
 
 #include "cerver/utils/base64.h"
@@ -218,6 +221,9 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
 
+	// decided when the request is complete, the response of a request that is rejected before closes
+	http_receive->keep_alive = false;
+
 	http_receive->keep_alive_requested = false;
 	http_receive->unparsed = 0;
 
@@ -293,8 +299,6 @@ static void http_receive_init (HttpReceive *http_receive) {
 	if (http_receive) {
 		http_receive->cr = NULL;
 
-		http_receive->keep_alive = false;
-
 		http_receive->handler = NULL;
 
 		http_receive->http_cerver = NULL;
@@ -316,6 +320,8 @@ static void http_receive_init (HttpReceive *http_receive) {
 		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
 
 		http_receive->connection = NULL;
+
+		http_receive->n_requests = 0;
 
 		http_receive_request_init (http_receive);
 	}
@@ -624,6 +630,19 @@ u8 http_receive_reset (HttpReceive *http_receive) {
 	}
 
 	return retval;
+
+}
+
+void http_receive_request_arrived (HttpReceive *http_receive) {
+
+	http_receive_request_begin (http_receive);
+
+}
+
+bool http_receive_is_between_requests (const HttpReceive *http_receive) {
+
+	return http_receive->n_requests && !http_receive->received
+		&& (http_receive->receive_status == HTTP_RECEIVE_STATUS_NONE);
 
 }
 
@@ -2054,6 +2073,76 @@ void http_receive_dispatch (HttpReceive *http_receive) {
 
 }
 
+// a connection that is not in an event loop keeps its thread while it waits for its next request,
+// so it is not kept while another connection waits in the queue of the pool for a thread:
+// under load the cerver closes each connection after its response, and says it
+static bool http_receive_thread_is_needed (const HttpReceive *http_receive) {
+
+	return !http_receive->connection
+		&& (thpool_get_queued (http_receive->cr->cerver->thpool) > 0);
+
+}
+
+// the connection can handle another request: the cerver keeps its connections, the client asked for it,
+// the connection has not reached its requests and the cerver is not stopping
+// the bytes that follow an upgrade are not a request
+static bool http_receive_keep_alive_allowed (const HttpReceive *http_receive) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	return http_cerver->keep_alive
+		&& http_receive->keep_alive_requested
+		&& !http_receive->parser.upgrade
+		&& (
+			!http_cerver->keep_alive_requests
+			|| (http_receive->n_requests < http_cerver->keep_alive_requests)
+		)
+		&& !cerver_is_stopping (http_receive->cr->cerver)
+		&& !http_receive_thread_is_needed (http_receive);
+
+}
+
+// the request is complete: the cerver decides whether its connection is kept before the request is handled,
+// so its response says it; the requests after the first one of a connection reused it
+static void http_receive_keep_alive_decide (HttpReceive *http_receive) {
+
+	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive)
+	http_receive->keep_alive_requested = llhttp_should_keep_alive (&http_receive->parser);
+
+	http_receive->n_requests += 1;
+
+	if (http_receive->n_requests > 1) {
+		CERVER_STATS_ADD (http_receive->http_cerver->n_reused_connections, 1);
+	}
+
+	http_receive->keep_alive = http_receive_keep_alive_allowed (http_receive);
+
+}
+
+// the request was received completely and it was not rejected: its handler answers it,
+// or cerver when no route matched it
+bool http_receive_was_handled (const HttpReceive *http_receive) {
+
+	return (http_receive->receive_status == HTTP_RECEIVE_STATUS_COMPLETED)
+		|| (http_receive->receive_status == HTTP_RECEIVE_STATUS_UNHANDLED);
+
+}
+
+bool http_receive_keeps_connection (HttpReceive *http_receive) {
+
+	if (http_receive->keep_alive) {
+		http_receive->keep_alive = http_receive->responded && http_receive->framed
+			&& !http_receive->response_failed
+			&& http_receive_was_handled (http_receive)
+			&& !http_receive->upgraded
+			&& (http_receive->client_state == HTTP_CLIENT_STATE_CONNECTED)
+			&& !cerver_is_stopping (http_receive->cr->cerver);
+	}
+
+	return http_receive->keep_alive;
+
+}
+
 // the endpoint and its authentication were resolved in on_headers_complete,
 // now that the body is complete the request is handled
 // the request of an event loop is not handled in the parser: its loop answers it or gives it to the pool
@@ -2064,15 +2153,13 @@ static int http_receive_handle_message_completed (llhttp_t *parser) {
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 	http_receive->stage = HTTP_STAGE_HANDLER;
 
-	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive),
-	// the connection is still closed after the response
-	http_receive->keep_alive_requested = llhttp_should_keep_alive (parser);
+	http_receive_keep_alive_decide (http_receive);
 
 	if (http_receive->connection) http_receive->pause = HTTP_RECEIVE_PAUSE_MESSAGE;
 	else http_receive_dispatch (http_receive);
 
-	// only one request is handled by connection,
-	// the parser pauses here, so a pipelined request in the same buffer is never parsed
+	// one request is handled at a time: the parser pauses here, and the owner of the connection
+	// starts the next request (a pipelined one in the same buffer) once this one was answered
 	// (a callback can not call llhttp_pause (), it returns HPE_PAUSED)
 	return HPE_PAUSED;
 
@@ -2289,7 +2376,9 @@ void http_receive_handle (
 
 			// the connection belongs to its WebSocket now, with the bytes that followed the request
 			if (http_receive->upgraded) http_receive_web_socket_pending (http_receive, packet_buffer + n_parsed);
-			else http_receive_close (http_receive, false);
+
+			// a connection that is kept stays open: its owner starts its next request with those bytes
+			else if (!http_receive_keeps_connection (http_receive)) http_receive_close (http_receive, false);
 			break;
 
 		default:

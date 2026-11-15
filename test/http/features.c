@@ -20,6 +20,7 @@
 #include <cerver/http/core/admin.h>
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
@@ -443,6 +444,10 @@ static void features_cerver_start (void) {
 	cerver_set_thpool_n_threads (features_cerver, 2);
 
 	HttpCerver *http_cerver = (HttpCerver *) features_cerver->cerver_data;
+
+	// the clients of these tests read each response until the cerver closes its connection,
+	// the connections that are kept have their own tests (keepalive.c)
+	http_cerver_set_keep_alive (http_cerver, false);
 
 	http_cerver_set_request_id (http_cerver, true);
 

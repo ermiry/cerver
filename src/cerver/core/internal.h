@@ -44,6 +44,18 @@ CERVER_HIDDEN void cerver_set_running (Cerver *cerver, bool value);
 
 /**
  * @internal
+ * @brief Returns whether a stop of the cerver was requested (cerver_stop_request ()), with __atomic: a web
+ * cerver that stops does not keep its connections for another request.
+ *
+ * A cerver that has not started is not stopping.
+ *
+ * @param[in] cerver the cerver
+ * @return true after a stop was requested, false for a NULL cerver
+ */
+CERVER_HIDDEN bool cerver_is_stopping (const Cerver *cerver);
+
+/**
+ * @internal
  * @brief Ignores SIGPIPE when the cerver is configured to and the process has the default handler for it.
  *
  * @param[in] cerver the cerver

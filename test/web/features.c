@@ -15,6 +15,7 @@
 #include <cerver/http/core/admin.h>
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
@@ -207,6 +208,8 @@ static void features_routes (HttpCerver *http_cerver) {
 }
 
 static void features_configure (HttpCerver *http_cerver) {
+
+	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
 
 	http_cerver_set_not_found_handler (http_cerver);
 

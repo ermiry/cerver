@@ -59,6 +59,14 @@
 /** @brief The Connection header of #HTTP_RESPONSE_CONNECTION_CLOSE, with its line end. */
 #define HTTP_RESPONSE_CONNECTION_CLOSE_HEADER	"Connection: " HTTP_RESPONSE_CONNECTION_CLOSE "\r\n"
 
+/**
+ * @brief The value of the Connection header of a response to an HTTP/1.0 client whose connection cerver keeps for
+ * its next request; an HTTP/1.1 client keeps its connection without the header.
+ *
+ * @since 2.1b-16
+ */
+#define HTTP_RESPONSE_CONNECTION_KEEP_ALIVE		"keep-alive"
+
 /** @brief The size of the digits of the biggest length of a body. */
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		32
 

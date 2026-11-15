@@ -42,6 +42,13 @@ extern "C" {
 #define EVENT_INTEREST_READ				(1u << 0)
 /** @internal @brief Report when the source can be written. */
 #define EVENT_INTEREST_WRITE			(1u << 1)
+/**
+ * @internal
+ * @brief Report the source only once: after it, the source stays registered but silent (not even its errors
+ * are reported) until its interest is set again with event_poller_modify (). A source that is silent can be
+ * given to another thread without a system call, and that thread arms it again when it gives it back.
+ */
+#define EVENT_INTEREST_ONCE				(1u << 2)
 
 /** @internal @brief The source can be read (or its peer closed, a read tells). */
 #define EVENT_READY_READ				(1u << 0)
@@ -84,6 +91,12 @@ typedef struct EventSource {
 	unsigned int interest;
 	/** @internal @brief The source is registered in a poller. */
 	bool registered;
+	/**
+	 * @internal
+	 * @brief The source was registered with #EVENT_INTEREST_ONCE and it was reported: it is silent until its
+	 * interest is set again. Its owner sets it when it handles the report.
+	 */
+	bool silent;
 	/** @internal @brief The owner of the source. */
 	void *owner;
 
@@ -147,12 +160,15 @@ CERVER_PRIVATE unsigned int event_poller_add (
 
 /**
  * @internal
- * @brief Changes the interest of a registered source, nothing is done when it is the same.
+ * @brief Changes the interest of a registered source, nothing is done when it is the same; an interest with
+ * #EVENT_INTEREST_ONCE is always set again, it arms a source that is silent.
  *
  * @param[in,out] poller the poller
  * @param[in,out] source the source
  * @param[in] interest EVENT_INTEREST_* flags
  * @return 0 on success, 1 on error
+ * @threadsafety The thread that owns the source calls it, also one that is not the one that waits in the
+ * poller: the system call is safe from any thread.
  */
 CERVER_PRIVATE unsigned int event_poller_modify (
 	EventPoller *poller, EventSource *source, const unsigned int interest
@@ -162,13 +178,24 @@ CERVER_PRIVATE unsigned int event_poller_modify (
  * @internal
  * @brief Stops watching a source, nothing is done when it is not registered.
  *
- * It must be called before the file descriptor is given to another thread or closed.
+ * It must be called before the file descriptor is given to another thread or closed, unless the source is
+ * silent (#EVENT_INTEREST_ONCE): a silent source can be given to another thread as it is, and the close of
+ * its file descriptor takes it out of the poller (event_source_forget ()).
  *
  * @param[in,out] poller the poller
  * @param[in,out] source the source
  * @return 0 on success, 1 on error
  */
 CERVER_PRIVATE unsigned int event_poller_remove (EventPoller *poller, EventSource *source);
+
+/**
+ * @internal
+ * @brief Forgets the registration of a source whose file descriptor was closed: the close took it out of its
+ * poller, no system call is needed.
+ *
+ * @param[in,out] source the source
+ */
+CERVER_PRIVATE void event_source_forget (EventSource *source);
 
 /**
  * @internal
@@ -329,6 +356,17 @@ CERVER_PRIVATE u64 event_clock_milliseconds (void);
 /** @internal @brief The connections without use that a loop keeps to be used again. */
 #define EVENT_LOOP_RECYCLE_LIMIT			FREELIST_RECYCLE_LIMIT (1 << 10)
 
+/**
+ * @internal
+ * @brief The milliseconds between the checks of the idle connections of a loop: a loop that only has idle
+ * connections wakes up that often, and one whose time ended is closed at most that long (and a tick of the
+ * timers) after it.
+ */
+#define EVENT_LOOP_IDLE_SWEEP				EVENT_WHEEL_TICK
+
+/** @internal @brief How the socket of an idle connection is watched: its next request, reported once. */
+#define EVENT_LOOP_IDLE_INTEREST			(EVENT_INTEREST_READ | EVENT_INTEREST_ONCE)
+
 struct _Cerver;
 struct _HttpReceive;
 struct HttpConnection;
@@ -427,6 +465,27 @@ typedef struct EventLoop {
 
 	/** @internal @brief The first connection that the loop can still end: the ones whose request is not being handled. */
 	struct HttpConnection *active;
+
+	/**
+	 * @internal
+	 * @brief Protects the idle connections: the thread of the pool that answered a request adds its connection
+	 * and arms its socket, and the loop takes a connection out when its client sends its next request, when
+	 * its time ends, for a new connection at the limit, or when the loop stops. Whoever takes a connection out
+	 * owns it.
+	 */
+	pthread_mutex_t idle_mutex;
+	/** @internal @brief The connection that has waited the longest for its next request, the first one that is closed for a new connection. */
+	struct HttpConnection *idle_head;
+	/** @internal @brief The connection that became idle last. */
+	struct HttpConnection *idle_tail;
+	/** @internal @brief The idle connections; atomic. */
+	unsigned int n_idle;
+	/** @internal @brief Ends the idle connections whose time ended, every #EVENT_LOOP_IDLE_SWEEP milliseconds while the loop has idle connections. */
+	EventTimer idle_timer;
+	/** @internal @brief The loop checks its idle connections; atomic: the thread that adds the first one sets it and wakes the loop up. */
+	bool idle_watching;
+	/** @internal @brief Every connection that was closed while it was idle: its client left, its time ended, the cerver stopped or a new connection took its place; atomic. */
+	u64 n_idle_closed;
 
 	/** @internal @brief Protects #recycled and #n_recycled: the threads of the pool give back the connections that they end. */
 	pthread_mutex_t recycled_mutex;
@@ -592,6 +651,40 @@ CERVER_HIDDEN void event_loop_unpark (EventLoop *loop, struct HttpConnection *co
 
 /**
  * @internal
+ * @brief Adds a connection at the end of the idle ones and arms its socket to be reported once: it was kept
+ * and its client has not sent its next request. The loop owns it from this call.
+ *
+ * @param[in,out] loop the loop
+ * @param[in,out] connection the connection, that the caller owns; it does not use it after a success
+ * @param[in] timeout the milliseconds that the connection can wait
+ * @return 0 on success, 1 when its socket could not be armed (the caller still owns it)
+ * @threadsafety The thread that owns the connection calls it: its loop, or the thread of the pool that
+ * answered its request, that gives it back without waking its loop up.
+ */
+CERVER_HIDDEN unsigned int event_loop_idle_enter (
+	EventLoop *loop, struct HttpConnection *connection, const u64 timeout
+);
+
+/**
+ * @internal
+ * @brief Takes a connection out of the idle ones, when it is one of them: its loop owns it again.
+ *
+ * @param[in,out] loop the loop, the caller is its thread
+ * @param[in,out] connection the connection that was reported, or that ends
+ * @return true when it was idle
+ */
+CERVER_HIDDEN bool event_loop_idle_claim (EventLoop *loop, struct HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Counts an idle connection that was closed.
+ *
+ * @param[in,out] loop the loop
+ */
+CERVER_HIDDEN void event_loop_idle_closed (EventLoop *loop);
+
+/**
+ * @internal
  * @brief Gives a connection without use: one that was kept or a new one. It is counted by the loop and it is one
  * of the connections that the loop can end.
  *
@@ -689,6 +782,26 @@ CERVER_PRIVATE unsigned int event_loop_connections (const EventLoop *loop);
  * @threadsafety Safe from any thread.
  */
 CERVER_PRIVATE unsigned int event_loop_parked (const EventLoop *loop);
+
+/**
+ * @internal
+ * @brief The connections of the loop that were kept and wait for their next request.
+ *
+ * @param[in] loop the loop
+ * @return the count
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_idle (const EventLoop *loop);
+
+/**
+ * @internal
+ * @brief Every connection of the loop that was closed while it was idle.
+ *
+ * @param[in] loop the loop
+ * @return the count
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE u64 event_loop_idle_closed_total (const EventLoop *loop);
 
 /** @} */
 

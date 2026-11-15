@@ -29,6 +29,7 @@
 #include "cerver/http/core/connection.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/utils.h"
 #include "cerver/http/headers/buffer.h"
@@ -46,11 +47,16 @@
 #include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/tree.h"
 #include "cerver/http/security/origin.h"
+#include "cerver/http/websockets/handshake.h"
 
 #include "cerver/utils/utils.h"
 
 // the separators ", " and ": " of the json bodies, as they were written before
 #define HTTP_RESPONSE_JSON_DUMP_FLAGS		0
+
+// the version of the clients that close their connection unless its response says "keep-alive": HTTP/1.0
+#define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR		1
+#define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR		0
 
 typedef struct HttpResponseProducer {
 
@@ -1491,20 +1497,58 @@ static void http_response_extra_vary (
 
 }
 
-// a connection that is closed after the response says so, as it is known when it is sent,
-// a response with its own Connection header keeps it
-static void http_response_extra_connection (
+// an HTTP/1.0 client only keeps its connection when the response says so
+static bool http_response_client_needs_keep_alive (const HttpReceive *http_receive) {
+
+	return (http_receive->parser.http_major == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
+		&& (http_receive->parser.http_minor == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
+
+}
+
+// the connection is closed after the response: the cerver did not keep it, or the request was rejected
+// (a complete one that is rejected later, like an authentication that runs with its handler, was going to keep it)
+static bool http_response_closes_connection (const HttpReceive *http_receive) {
+
+	return !http_receive->keep_alive || !http_receive_was_handled (http_receive);
+
+}
+
+// what cerver knows about the connection when the response is sent: one that is closed after it says so,
+// one that is kept says nothing to an HTTP/1.1 client (it is its default) and "keep-alive" to an HTTP/1.0 one
+static void http_response_extra_connection_add (
 	const HttpReceive *http_receive, HttpResponseMessage *message
 ) {
 
-	if (
-		!http_receive->keep_alive
-		&& !http_response_message_has (message, HTTP_HEADER_CONNECTION)
-	) {
+	if (http_response_closes_connection (http_receive)) {
 		http_response_extra_add_header (
 			&message->extra, HTTP_HEADER_CONNECTION,
 			HTTP_RESPONSE_CONNECTION_CLOSE, sizeof (HTTP_RESPONSE_CONNECTION_CLOSE) - 1
 		);
+	}
+
+	else if (http_response_client_needs_keep_alive (http_receive)) {
+		http_response_extra_add_header (
+			&message->extra, HTTP_HEADER_CONNECTION,
+			HTTP_RESPONSE_CONNECTION_KEEP_ALIVE, sizeof (HTTP_RESPONSE_CONNECTION_KEEP_ALIVE) - 1
+		);
+	}
+
+}
+
+// a response with its own Connection header keeps it, and its "close" closes the connection after it
+static void http_response_extra_connection (
+	const HttpReceive *http_receive, HttpResponseMessage *message
+) {
+
+	const char *value = NULL;
+	size_t value_length = 0;
+
+	if (!http_response_message_find_type (message, HTTP_HEADER_CONNECTION, &value, &value_length)) {
+		http_response_extra_connection_add (http_receive, message);
+	}
+
+	else if (http_web_socket_header_has_token (value, value_length, HTTP_RESPONSE_CONNECTION_CLOSE)) {
+		((HttpReceive *) http_receive)->keep_alive = false;
 	}
 
 }

@@ -172,7 +172,13 @@ struct _HttpReceive {
 	/** @brief The cerver receive of the connection. */
 	CerverReceive *cr;
 
-	/** @brief Keep the connection alive: it is not closed after the request ends. */
+	/**
+	 * @brief The connection is kept after the response of the request, for the next one of its client.
+	 *
+	 * A value of each request: false until the request is complete, when the cerver decides it before the response
+	 * is sent (so the response says it in its Connection header); a response whose end the client can not find,
+	 * one that failed, one with its own "Connection: close" or a cerver that stops close the connection anyway.
+	 */
 	bool keep_alive;
 
 	/** @brief Handles each buffer that the connection receives. */
@@ -188,7 +194,7 @@ struct _HttpReceive {
 	/** @brief The callbacks of the parser. */
 	llhttp_settings_t settings;
 
-	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()); the connection is still closed after the response. */
+	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()): HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
 	bool keep_alive_requested;
 
 	/** @brief The bytes of the last buffer that were not parsed after the request was completed (a pipelined request). */
@@ -353,6 +359,14 @@ struct _HttpReceive {
 	 * @since 2.1b-15
 	 */
 	bool authorize_pending;
+
+	/**
+	 * @brief The requests that were completed in the connection, with the one that is being handled; a value of
+	 * the connection.
+	 *
+	 * @since 2.1b-16
+	 */
+	unsigned int n_requests;
 
 };
 

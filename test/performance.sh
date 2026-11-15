@@ -25,6 +25,11 @@ COMPARE_REQUESTS=65536
 COMPARE_RUNS=5
 EVENTS_MINIMUM_PERCENT=90
 
+KEEP_ALIVE=0
+KEEP_ALIVE_MODES=(0 1)
+KEEP_ALIVE_REQUESTS=1024
+KEEP_ALIVE_MINIMUM_PERCENT=150
+
 TREE_ROUNDS=1024
 TREE_MINIMUM_SPEEDUP=2
 
@@ -94,10 +99,23 @@ allocations_snapshot () {
 	grep -m 1 "^totals:" "$file" | awk '{ print $5 }'
 }
 
+# the load with a connection for each request, or with the connections kept between requests
+load () {
+	if [ "$KEEP_ALIVE" -ne 0 ]; then
+		LOAD_KEEP_ALIVE=1 ./benchmarks/bin/load "$@"
+	else
+		./benchmarks/bin/load "$@"
+	fi
+}
+
+connections_name () {
+	[ "$KEEP_ALIVE" -ne 0 ] && echo "kept connections" || echo "a connection by request"
+}
+
 allocations_load () {
 	local concurrency="$1" requests="$2" method="$3" path="$4" body="$5"
 
-	local result=$(./benchmarks/bin/load $PORT $concurrency "$requests" $method "$path" "$body")
+	local result=$(load $PORT $concurrency "$requests" $method "$path" "$body")
 	load_succeeded "$result" "$requests" || { echo "the load of $requests requests failed: $result" >&2; return 1; }
 }
 
@@ -116,15 +134,15 @@ check_allocations () {
 	server_stop || loaded=1
 
 	if [ $loaded -ne 0 ] || ! [[ "$base" =~ ^[0-9]+$ ]] || ! [[ "$total" =~ ^[0-9]+$ ]]; then
-		fail "$HANDLER $method $path allocations were not counted"
+		fail "$HANDLER $method $path allocations with $(connections_name) were not counted"
 		return
 	fi
 
 	local allocations=$(( total - base ))
 	local per_request=$(awk -v allocations="$allocations" -v requests=$ALLOCATION_REQUESTS 'BEGIN { printf "%.3f", allocations / requests }')
 
-	echo "$method $path - $per_request allocations per request ($allocations for $ALLOCATION_REQUESTS, maximum $maximum)"
-	[ "$allocations" -le $(( maximum * ALLOCATION_REQUESTS + ALLOCATION_SLACK )) ] || fail "$HANDLER $method $path allocations"
+	echo "$method $path with $(connections_name) - $per_request allocations per request ($allocations for $ALLOCATION_REQUESTS, maximum $maximum)"
+	[ "$allocations" -le $(( maximum * ALLOCATION_REQUESTS + ALLOCATION_SLACK )) ] || fail "$HANDLER $method $path allocations with $(connections_name)"
 }
 
 baseline_value () {
@@ -141,7 +159,7 @@ check_load () {
 	local method="$1" path="$2" body="$3" concurrency="$4"
 
 	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(./benchmarks/bin/load $PORT "$concurrency" $LOAD_REQUESTS $method "$path" "$body")
+	local result=$(load $PORT "$concurrency" $LOAD_REQUESTS $method "$path" "$body")
 	server_stop || fail "$HANDLER $method $path concurrency $concurrency: the server ended with an error"
 
 	echo "$method $path - $result"
@@ -170,10 +188,18 @@ load_per_second () {
 	local method="$1" path="$2" body="$3" concurrency="$4"
 
 	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(./benchmarks/bin/load $PORT "$concurrency" $COMPARE_REQUESTS $method "$path" "$body")
+	local result=$(load $PORT "$concurrency" $COMPARE_REQUESTS $method "$path" "$body")
 	server_stop || return 1
 
 	load_succeeded "$result" $COMPARE_REQUESTS || return 1
+
+	# a load that keeps its connections opens one for each of its threads,
+	# and one more each time that the cerver closes one that reached its requests
+	local connections=$(( concurrency + COMPARE_REQUESTS / KEEP_ALIVE_REQUESTS ))
+	if [ "$KEEP_ALIVE" -ne 0 ] && [ "$(field "$result" connections)" -gt "$connections" ]; then
+		echo "the load opened $(field "$result" connections) connections, more than $connections" >&2
+		return 1
+	fi
 
 	echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/'
 }
@@ -208,6 +234,38 @@ check_events () {
 	echo "$method $path concurrency $concurrency - threads $threads_median req/s - events $events_median req/s - $percent %"
 	[ "$percent" -ge $EVENTS_MINIMUM_PERCENT ] \
 		|| fail "$method $path concurrency $concurrency: events $events_median req/s < $EVENTS_MINIMUM_PERCENT % of threads $threads_median"
+}
+
+# the connections that are kept against a connection for each request, with the event loops:
+# the median of some loads of each one, taken in turns so both see the same machine
+check_keep_alive () {
+	local method="$1" path="$2" body="$3" concurrency="$4"
+	local closed=() kept=() value
+
+	HANDLER=events
+
+	for (( run = 0; run < COMPARE_RUNS; run++ )); do
+		for KEEP_ALIVE in "${KEEP_ALIVE_MODES[@]}"; do
+			value=$(load_per_second "$method" "$path" "$body" "$concurrency") \
+				|| { fail "$method $path concurrency $concurrency: the load with $(connections_name) failed"; KEEP_ALIVE=0; return; }
+
+			if [ "$KEEP_ALIVE" -ne 0 ]; then
+				kept+=("$value")
+			else
+				closed+=("$value")
+			fi
+		done
+	done
+
+	KEEP_ALIVE=0
+
+	local closed_median=$(median "${closed[@]}")
+	local kept_median=$(median "${kept[@]}")
+	local percent=$(( kept_median * 100 / closed_median ))
+
+	echo "$method $path concurrency $concurrency - a connection by request $closed_median req/s - kept connections $kept_median req/s - $percent %"
+	[ "$percent" -ge $KEEP_ALIVE_MINIMUM_PERCENT ] \
+		|| fail "$method $path concurrency $concurrency: kept connections $kept_median req/s < $KEEP_ALIVE_MINIMUM_PERCENT % of a connection by request $closed_median"
 }
 
 count_web_socket_allocations () {
@@ -287,6 +345,15 @@ for HANDLER in "${HANDLERS[@]}"; do
 	check_web_socket_allocations
 done
 
+HANDLER=events
+KEEP_ALIVE=1
+
+echo "Allocations with $HANDLER and $(connections_name)..."
+check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
+check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+
+KEEP_ALIVE=0
+
 for HANDLER in "${HANDLERS[@]}"; do
 	echo "Load on $ARCHITECTURE with $HANDLER..."
 	for concurrency in "${CONCURRENCIES[@]}"; do
@@ -300,6 +367,12 @@ echo "Event loops against threads..."
 for concurrency in "${CONCURRENCIES[@]}"; do
 	check_events GET $GET_PATH "" "$concurrency"
 	check_events POST $POST_PATH "$JSON_BODY" "$concurrency"
+done
+
+echo "Kept connections against a connection by request..."
+for concurrency in "${CONCURRENCIES[@]}"; do
+	check_keep_alive GET $GET_PATH "" "$concurrency"
+	check_keep_alive POST $POST_PATH "$JSON_BODY" "$concurrency"
 done
 
 HANDLER=threads

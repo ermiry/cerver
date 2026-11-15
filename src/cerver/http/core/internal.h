@@ -675,6 +675,52 @@ CERVER_HIDDEN bool http_receive_dispatch_is_inline (const HttpReceive *http_rece
 
 /**
  * @internal
+ * @brief Returns whether the request was received completely and it was not rejected: its handler answers it, or
+ * cerver when no route matched it.
+ *
+ * A response that is sent to a request that was not handled says that its connection is closed, whatever
+ * HttpReceive::keep_alive has.
+ *
+ * @param[in] http_receive the receive
+ * @return true with HTTP_RECEIVE_STATUS_COMPLETED or HTTP_RECEIVE_STATUS_UNHANDLED
+ */
+CERVER_HIDDEN bool http_receive_was_handled (const HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Returns whether the connection of a request that was answered is kept for the next request of its
+ * client, and updates HttpReceive::keep_alive with it.
+ *
+ * The cerver decided it when the request was completed; a request that was not answered, a response whose end
+ * the client can not find or that could not be sent, an upgrade, a client that left or a cerver that stops
+ * close the connection anyway.
+ *
+ * @param[in,out] http_receive the receive, after its request was handled
+ * @return true when the owner of the connection starts its next request with http_receive_reset ()
+ */
+CERVER_HIDDEN bool http_receive_keeps_connection (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Starts the clock and the deadlines of a request again, when the first bytes of the next request of a
+ * connection that was kept arrive: the time that the connection waited idle is not the one of the request.
+ *
+ * @param[in,out] http_receive the receive, after http_receive_reset ()
+ */
+CERVER_HIDDEN void http_receive_request_arrived (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Returns whether the connection of a receive is between two requests: it handled one and nothing of
+ * the next one has arrived. A connection that ends there has no request to log or to count.
+ *
+ * @param[in] http_receive the receive
+ * @return true for a connection that was kept and waits for its next request
+ */
+CERVER_HIDDEN bool http_receive_is_between_requests (const HttpReceive *http_receive);
+
+/**
+ * @internal
  * @brief Ends a connection that is not kept alive: it shuts down its writes, reads what the client still sends and
  * ends the connection.
  *

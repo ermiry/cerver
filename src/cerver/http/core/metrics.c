@@ -94,6 +94,10 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_failed_responses_total", "The responses that could not be sent completely.",
 		offsetof (HttpCerver, n_failed_responses)
+	},
+	{
+		"cerver_http_reused_connections_total", "The requests that arrived in a connection that had already handled another one.",
+		offsetof (HttpCerver, n_reused_connections)
 	}
 };
 

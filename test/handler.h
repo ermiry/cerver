@@ -1,6 +1,7 @@
 #ifndef _CERVER_TESTS_HANDLER_H_
 #define _CERVER_TESTS_HANDLER_H_
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +31,31 @@ static inline unsigned int test_io_threads (void) {
 	const char *threads = getenv (TEST_IO_THREADS_VARIABLE);
 
 	return (threads && threads[0]) ? (unsigned int) strtoul (threads, NULL, TEST_IO_THREADS_BASE) : 0;
+
+}
+
+// whether a web server of the tests keeps its connections between requests: "1" asks for it and "0"
+// closes each one after its response; without the variable the cerver decides, only the event loops keep them
+#define TEST_KEEP_ALIVE_VARIABLE			"CERVER_TEST_KEEP_ALIVE"
+#define TEST_KEEP_ALIVE_ENABLED				"1"
+
+// returns true when the variable is set: the server calls http_cerver_set_keep_alive () with test_keep_alive ()
+static inline bool test_keep_alive_is_set (void) {
+
+	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
+
+	return keep_alive && keep_alive[0];
+
+}
+
+// what the server does with its connections, that its client expects in its responses
+static inline bool test_keep_alive (void) {
+
+	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
+
+	return (keep_alive && keep_alive[0]) ?
+		!strcmp (keep_alive, TEST_KEEP_ALIVE_ENABLED) :
+		(test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
 
 }
 
