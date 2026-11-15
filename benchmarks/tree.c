@@ -1,16 +1,17 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <cerver/types/string.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/request.h>
-#include <cerver/http/route.h>
-#include <cerver/http/tree.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/utils.h>
 
