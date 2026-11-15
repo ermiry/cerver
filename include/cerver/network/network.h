@@ -3,13 +3,12 @@
 
 #include <stdbool.h>
 
-#include <unistd.h>
-#include <fcntl.h>
-
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "cerver/config.h"
 

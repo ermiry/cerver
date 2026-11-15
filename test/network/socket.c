@@ -1,25 +1,23 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
-#include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <unistd.h>
-
-#include <pthread.h>
-
-#include <sys/socket.h>
-#include <sys/uio.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
-#include <cerver/network.h>
-#include <cerver/socket.h>
+#include <cerver/network/network.h>
+#include <cerver/network/socket.h>
 
-#include "test.h"
+#include "../test.h"
+#include "network.h"
 
 // more than any socket buffer of a socketpair
 #define SOCKET_TEST_LARGE_SIZE				(1 << 23)
@@ -619,12 +617,7 @@ static void test_socket_send_file_tcp_deadline (void) {
 
 }
 
-int main (int argc, char **argv) {
-
-	(void) argc;
-	(void) argv;
-
-	test_output_init ();
+void socket_tests (void) {
 
 	(void) printf ("Testing SOCKET...\n");
 
@@ -649,7 +642,5 @@ int main (int argc, char **argv) {
 	test_socket_send_file_tcp_deadline ();
 
 	(void) printf ("\nDone with SOCKET tests!\n\n");
-
-	return 0;
 
 }
