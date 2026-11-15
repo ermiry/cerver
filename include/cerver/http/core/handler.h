@@ -92,9 +92,21 @@ typedef enum HttpReceiveDispatch {
 	HTTP_RECEIVE_DISPATCH_CATCH_ALL				= 4,
 	/** @brief A redirect of its trailing slash. */
 	HTTP_RECEIVE_DISPATCH_REDIRECT				= 5,
+	/**
+	 * @brief The health route of the cerver (http_cerver_set_health_route ()).
+	 *
+	 * @since 2.1b-17
+	 */
+	HTTP_RECEIVE_DISPATCH_HEALTH				= 6,
+	/**
+	 * @brief The ready route of the cerver (http_cerver_set_ready_route ()).
+	 *
+	 * @since 2.1b-17
+	 */
+	HTTP_RECEIVE_DISPATCH_READY					= 7,
 
 	/** @brief The number of dispatches, the first value that is not valid. */
-	HTTP_RECEIVE_DISPATCH_MAX					= 6
+	HTTP_RECEIVE_DISPATCH_MAX					= 8
 
 } HttpReceiveDispatch;
 

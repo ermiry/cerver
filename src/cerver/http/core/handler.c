@@ -1259,8 +1259,51 @@ static void http_receive_select_method (
 
 }
 
+static bool http_receive_select_is_route (const String *route, const HttpRequest *request) {
+
+	return route && (route->len == request->url->len)
+		&& !memcmp (route->str, request->url->str, route->len);
+
+}
+
+static HttpReceiveDispatch http_receive_select_own_route (
+	const HttpCerver *http_cerver, const HttpRequest *request
+) {
+
+	HttpReceiveDispatch dispatch = HTTP_RECEIVE_DISPATCH_NONE;
+
+	if (http_receive_select_is_route (http_cerver->health_route, request)) dispatch = HTTP_RECEIVE_DISPATCH_HEALTH;
+	else if (http_receive_select_is_route (http_cerver->ready_route, request)) dispatch = HTTP_RECEIVE_DISPATCH_READY;
+
+	return dispatch;
+
+}
+
+// the health and the ready routes are answered by cerver, before the routes tree:
+// a GET or a HEAD of their exact path, without an endpoint and without an authentication
+// returns whether the request is one of them
+static bool http_receive_select_own (HttpReceive *http_receive) {
+
+	const HttpRequest *request = http_receive->request;
+
+	HttpReceiveDispatch dispatch = HTTP_RECEIVE_DISPATCH_NONE;
+
+	if ((request->method == REQUEST_METHOD_GET) || (request->method == REQUEST_METHOD_HEAD)) {
+		dispatch = http_receive_select_own_route (http_receive->http_cerver, request);
+	}
+
+	const bool selected = (dispatch != HTTP_RECEIVE_DISPATCH_NONE);
+	if (selected) {
+		http_receive->dispatch = dispatch;
+		http_receive->head = (request->method == REQUEST_METHOD_HEAD);
+	}
+
+	return selected;
+
+}
+
 // selects how the request will be answered with the routes tree
-static void http_receive_select (HttpReceive *http_receive) {
+static void http_receive_select_tree (HttpReceive *http_receive) {
 
 	HttpRequest *request = http_receive->request;
 	const HttpTree *tree = http_receive->http_cerver->tree;
@@ -1292,12 +1335,27 @@ static void http_receive_select (HttpReceive *http_receive) {
 
 }
 
+// selects how the request will be answered: by cerver, or with the routes tree
+static void http_receive_select (HttpReceive *http_receive) {
+
+	if (!http_receive_select_own (http_receive)) http_receive_select_tree (http_receive);
+
+}
+
+static bool http_receive_dispatch_is_own (const HttpReceive *http_receive) {
+
+	return (http_receive->dispatch == HTTP_RECEIVE_DISPATCH_HEALTH)
+		|| (http_receive->dispatch == HTTP_RECEIVE_DISPATCH_READY);
+
+}
+
 // a GET (or HEAD) with a file extension that no endpoint handles is served from the static paths
 static bool http_receive_is_static_file (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
 	return (http_receive->dispatch != HTTP_RECEIVE_DISPATCH_ENDPOINT)
+		&& !http_receive_dispatch_is_own (http_receive)
 		&& ((request->method == REQUEST_METHOD_GET) || (request->method == REQUEST_METHOD_HEAD))
 		&& http_receive->http_cerver->static_paths->size
 		&& strrchr (request->url->str, static_file_extension_separator);
@@ -1950,10 +2008,47 @@ static void http_receive_handle_redirect (HttpReceive *http_receive) {
 
 }
 
+// the health route: the cerver runs
+static void http_receive_handle_health (HttpReceive *http_receive) {
+
+	CERVER_STATS_ADD (http_receive->http_cerver->n_health_requests, 1);
+
+	(void) http_response_send (oki_doki, http_receive);
+
+}
+
+// the ready route: 200 when the cerver can take a request,
+// 503 when one of its pools has no place for one or the cerver is stopping
+static void http_receive_handle_ready (HttpReceive *http_receive) {
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+
+	if (http_cerver_is_ready (http_cerver)) {
+		CERVER_STATS_ADD (http_cerver->n_ready_requests, 1);
+
+		(void) http_response_send (oki_doki, http_receive);
+	}
+
+	else {
+		CERVER_STATS_ADD (http_cerver->n_not_ready_requests, 1);
+
+		(void) http_response_send (not_ready_error, http_receive);
+	}
+
+}
+
 // answers a request that matched a path of the routes tree, or the catch all handler
 static void http_receive_handle_dispatch (HttpReceive *http_receive) {
 
 	switch (http_receive->dispatch) {
+		case HTTP_RECEIVE_DISPATCH_HEALTH:
+			http_receive_handle_health (http_receive);
+			break;
+
+		case HTTP_RECEIVE_DISPATCH_READY:
+			http_receive_handle_ready (http_receive);
+			break;
+
 		case HTTP_RECEIVE_DISPATCH_ENDPOINT:
 			http_receive_handle_route (http_receive);
 			break;
@@ -2021,6 +2116,8 @@ static bool http_receive_dispatch_is_short (const HttpReceive *http_receive) {
 
 		case HTTP_RECEIVE_DISPATCH_OPTIONS:
 		case HTTP_RECEIVE_DISPATCH_REDIRECT:
+		case HTTP_RECEIVE_DISPATCH_HEALTH:
+		case HTTP_RECEIVE_DISPATCH_READY:
 			is_short = true;
 			break;
 
