@@ -927,6 +927,10 @@ static Cerver *server_test_cerver_create (
 	http_cerver_set_request_timeout (http_cerver, options->request_timeout);
 	http_cerver_set_send_timeout_milliseconds (http_cerver, options->response_send_timeout);
 
+	// the clients of these tests read each response until the cerver closes its connection,
+	// the connections that are kept have their own tests (keepalive.c)
+	http_cerver_set_keep_alive (http_cerver, false);
+
 	server_test_routes (http_cerver);
 
 	return cerver;

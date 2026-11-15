@@ -1452,6 +1452,10 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
 	http_cerver_set_headers_timeout_milliseconds (http_cerver, DISCONNECT_HEADERS_TIMEOUT);
 
+	// the clients of these tests read each response until the cerver closes its connection,
+	// the connections that are kept have their own tests (keepalive.c)
+	http_cerver_set_keep_alive (http_cerver, false);
+
 	http_cerver_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
 	http_cerver_set_default_uploads_filename_generator (http_cerver);
 	http_cerver_set_default_uploads_dirname_generator (http_cerver);
