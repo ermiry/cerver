@@ -1,10 +1,9 @@
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <cerver/collections/dlist.h>
 
 #include "../test.h"
-
 #include "check.h"
 
 static void collections_check_dlist_empty (const DoubleList *dlist) {

@@ -245,4 +245,4 @@ Build the image with `--build-arg SANITIZER=address,undefined` (or `thread`) to 
 
 ## License
 
-Copyright (C) 2018 Ermiry, see [LICENSE.md](./LICENSE.md). Find more about cerver at [cerver.ermiry.com](https://cerver.ermiry.com).
+Copyright 2018-2026 Ermiry. Licensed under the Apache License, Version 2.0, see [LICENSE.md](./LICENSE.md) and [NOTICE](./NOTICE); the code of other projects that cerver includes keeps its own license, see [thirdparty.md](./thirdparty.md). Find more about cerver at [cerver.ermiry.com](https://cerver.ermiry.com).

@@ -1,21 +1,26 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <time.h>
-#include <signal.h>
 
-#include <cerver/cerver.h>
-#include <cerver/handler.h>
 #include <cerver/version.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/route.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
 
-#include <cerver/utils/utils.h>
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/stats.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/routes/route.h>
+
 #include <cerver/utils/log.h>
+#include <cerver/utils/utils.h>
 
 #include "../address.h"
 

@@ -1,21 +1,18 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <unistd.h>
-
-#include <sys/resource.h>
-#include <sys/wait.h>
 
 #include <pthread.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <cerver/threads/thpool.h>
 
 #include "../test.h"
-
 #include "threads.h"
 
 // bugs that this suite pinned:

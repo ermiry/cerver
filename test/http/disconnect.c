@@ -1,43 +1,48 @@
+#include <errno.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <signal.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-
-#include <pthread.h>
-
-#include <cerver/cerver.h>
-#include <cerver/files.h>
-#include <cerver/network.h>
+#include <unistd.h>
 
 #include <cerver/types/string.h>
+
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/files/files.h>
+#include <cerver/network/network.h>
+
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
+#include <cerver/http/core/metrics.h>
+#include <cerver/http/core/public.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/responses/stream.h>
+#include <cerver/http/routes/route.h>
+#include <cerver/http/security/auth.h>
 
 #include <cerver/threads/jobs.h>
 #include <cerver/threads/thpool.h>
 
-#include <cerver/http/auth.h>
-#include <cerver/http/http.h>
-#include <cerver/http/metrics.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
-#include <cerver/http/route.h>
-#include <cerver/http/stream.h>
-
 #include "../test.h"
-
 #include "http.h"
 
 // a client that leaves in every part of the HTTP process: at each byte of a request,

@@ -3,7 +3,7 @@
 
 #include <cerver/types/types.h>
 
-#include <cerver/serializer.h>
+#include <cerver/packets/serializer.h>
 
 #define USERNAME_SIZE		256
 #define PASSWORD_SIZE		256

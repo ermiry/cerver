@@ -1,20 +1,19 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <pthread.h>
 
 #include <cerver/http/json/config.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
 
-#include "json.h"
-
 #include "../test.h"
+#include "json.h"
 
 // threads that create the first objects of the process at the same time
 #define SAFETY_SEED_THREADS				8

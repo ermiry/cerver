@@ -5,14 +5,12 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include <stdlib.h>
-#include <string.h>
-
 #include <limits.h>
 #include <math.h>
-
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/config.h"
 

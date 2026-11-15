@@ -3,6 +3,34 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-74 (from 2.0b-73)
+
+The structure, the documentation and the license of the other lines (`core` 1.9b-1, `labs` 3.0b-3): every header
+changes its path and the functions with `_by_` are named with `_with_`; the wire does not change.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`, `thirdparty.md`)
+- **Every include changes:** the core in `core/`, `admin/`, `auth/`, `client/`, `connection/`, `files/`, `handler/`,
+  `load/`, `network/`, `packets/`, `system/`, the files that the 1.9b-1 of `core` lists; HTTP in `http/core/` (the
+  `HttpCerver`, split in `http`, `pairs`, `public`, `routes`, `uploads`, `limits`, `settings`, `stats`, `admin`,
+  `handler`, with `custom`, `metrics` and `utils`), `http/headers/` (`types`, `header`, `buffer`),
+  `http/requests/` (`request`, `method`, `url`, `multipart`, `content`), `http/responses/` (`response`, `status`,
+  `stream`, `compression`, `conditional`, `date`), `http/routes/` (`tree`, `route`, `middleware`, `validator`),
+  `http/security/` (`auth`, `origin`, `proxy`) and `http/parser/http_parser.h`; `json/` and `jwt/` do not change.
+  There are no headers with the old paths
+- **`<cerver/cerver.h>` is the umbrella of the core and `<cerver/http/http.h>` the one of HTTP**; the `HttpCerver`
+  is declared in `cerver/http/core/http.h`
+- **Headers that are not installed anymore:** `cerver/http/admin.h`, `cerver/http/compatibility.h` and
+  `cerver/http/recycle.h` (their functions are `CERVER_PRIVATE`, still exported) are in `src/`
+- **The functions with `_by_` are named with `_with_`:** the ones of the core of the 1.9b-1 and
+  `http_content_type_with_extension ()`, `http_content_type_with_mime ()`,
+  `http_content_type_mime_with_extension ()` and `http_header_type_with_string ()`
+- **New:** `cerver/crypto/random.h` with `cerver_crypto_random_bytes ()`, the random bytes of the session ids
+- The headers are documented with Doxygen (`make docs`, `Doxyfile`, `Dockerfile.docs`, the `docs` job of
+  `build.yml`), and every clang build adds `-Wdocumentation`
+- The tests binaries follow the folders (`test/bin/connection`, `files`, `handler`, `load`, `network`, `packets`,
+  `system`, `crypto`); `test/http/` has the subfolders of `src/cerver/http/` in the same `test/bin/http`; the
+  handler pair is `cerver/handler`
+
 ## 2.0b-73 (from 2.0b-72)
 
 The fixes that the documentation of the headers found in the other lines (`labs` 3.0b-3, `core` 1.9b-1), each one with

@@ -1,34 +1,40 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
-
 #include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-#include <cerver/cerver.h>
-#include <cerver/network.h>
 #include <cerver/version.h>
 
-#include <cerver/http/compression.h>
-#include <cerver/http/conditional.h>
-#include <cerver/http/date.h>
-#include <cerver/http/headers.h>
-#include <cerver/http/http.h>
-#include <cerver/http/metrics.h>
-#include <cerver/http/request.h>
-#include <cerver/http/response.h>
-#include <cerver/http/stream.h>
-#include <cerver/http/tree.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/network/network.h>
+
+#include <cerver/http/core/admin.h>
+#include <cerver/http/core/handler.h>
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/metrics.h>
+#include <cerver/http/core/public.h>
+#include <cerver/http/core/routes.h>
+#include <cerver/http/core/settings.h>
+#include <cerver/http/headers/buffer.h>
+#include <cerver/http/headers/header.h>
+#include <cerver/http/requests/request.h>
+#include <cerver/http/responses/compression.h>
+#include <cerver/http/responses/conditional.h>
+#include <cerver/http/responses/date.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/responses/stream.h>
+#include <cerver/http/routes/tree.h>
 
 #include "../test.h"
-
 #include "http.h"
 
 // a real web cerver with the headers that cerver adds to every response

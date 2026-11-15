@@ -5,7 +5,7 @@
 
 #include <curl/curl.h>
 
-#include <cerver/http/status.h>
+#include <cerver/http/responses/status.h>
 
 // the port of the web cerver of an integration pair
 #define WEB_TEST_PORT					8080
