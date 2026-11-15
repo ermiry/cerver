@@ -82,6 +82,13 @@
 #define KEEPALIVE_MAX_REQUESTS				3
 #define KEEPALIVE_PIPELINED					3
 
+// the buckets of the connections that ended: the ones with one request, and the ones with up to 2^2 of them
+#define KEEPALIVE_SINGLE_BUCKET				0
+#define KEEPALIVE_MAX_REQUESTS_BUCKET		2
+// the connections with one request of the test of a thread that is needed: the one that waits for the cerver
+// and the one that got the thread
+#define KEEPALIVE_NEEDED_SINGLE				2
+
 #define KEEPALIVE_THREADS					4
 #define KEEPALIVE_QUEUE_SIZE				(1 << 4)
 
@@ -1461,6 +1468,27 @@ static void test_keepalive_threads_needed (void) {
 	keepalive_client_send (&idle, keepalive_ok_request);
 	keepalive_client_expect_close (&idle, "HTTP/1.1 200", NULL);
 	keepalive_client_expect_closed (&idle);
+
+	// each connection was counted once, when it ended: the idle one with the requests that it handled
+	// with two threads, not when it went back to the thpool
+	// (a client sees its connection closed before its thread counts it)
+	const HttpCerver *http_cerver = server->http_cerver;
+	(void) test_wait_counter_64 (
+		(const uint64_t *) &http_cerver->n_connection_requests,
+		KEEPALIVE_MAX_REQUESTS + KEEPALIVE_NEEDED_SINGLE, TEST_WAIT_SECONDS
+	);
+
+	test_check_unsigned_eq (
+		CERVER_STATS_GET (http_cerver->connection_requests[KEEPALIVE_SINGLE_BUCKET]), KEEPALIVE_NEEDED_SINGLE, NULL
+	);
+
+	test_check_unsigned_eq (
+		CERVER_STATS_GET (http_cerver->connection_requests[KEEPALIVE_MAX_REQUESTS_BUCKET]), 1, NULL
+	);
+
+	test_check_unsigned_eq (
+		CERVER_STATS_GET (http_cerver->n_connection_requests), KEEPALIVE_MAX_REQUESTS + KEEPALIVE_NEEDED_SINGLE, NULL
+	);
 
 	keepalive_client_end (&idle);
 	keepalive_client_end (&waiting);
