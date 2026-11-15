@@ -22,6 +22,7 @@
 #include "cerver/client/client.h"
 #include "cerver/connection/connection.h"
 #include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
 #include "cerver/core/update.h"
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
@@ -206,23 +207,30 @@ void admin_cerver_set_poll_timeout (
 
 }
 
+// the admin cerver owns its handlers: a different one deletes the one it replaces,
+// the same one again is kept
+static void admin_cerver_handler_replace (
+	AdminCerver *admin_cerver, Handler **slot, Handler *handler
+) {
+
+	if (*slot && (*slot != handler)) handler_delete (*slot);
+
+	*slot = handler;
+	if (handler) {
+		handler->type = HANDLER_TYPE_ADMIN;
+		handler->cerver = admin_cerver->cerver;
+	}
+
+}
+
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void admin_cerver_set_app_handlers (
 	AdminCerver *admin_cerver, Handler *app_handler, Handler *app_error_handler
 ) {
 
 	if (admin_cerver) {
-		admin_cerver->app_packet_handler = app_handler;
-		if (admin_cerver->app_packet_handler) {
-			admin_cerver->app_packet_handler->type = HANDLER_TYPE_ADMIN;
-			admin_cerver->app_packet_handler->cerver = admin_cerver->cerver;
-		}
-
-		admin_cerver->app_error_packet_handler = app_error_handler;
-		if (admin_cerver->app_error_packet_handler) {
-			admin_cerver->app_error_packet_handler->type = HANDLER_TYPE_ADMIN;
-			admin_cerver->app_error_packet_handler->cerver = admin_cerver->cerver;
-		}
+		admin_cerver_handler_replace (admin_cerver, &admin_cerver->app_packet_handler, app_handler);
+		admin_cerver_handler_replace (admin_cerver, &admin_cerver->app_error_packet_handler, app_error_handler);
 	}
 
 }
@@ -255,11 +263,7 @@ void admin_cerver_set_custom_handler (
 ) {
 
 	if (admin_cerver) {
-		admin_cerver->custom_packet_handler = custom_handler;
-		if (admin_cerver->custom_packet_handler) {
-			admin_cerver->custom_packet_handler->type = HANDLER_TYPE_ADMIN;
-			admin_cerver->custom_packet_handler->cerver = admin_cerver->cerver;
-		}
+		admin_cerver_handler_replace (admin_cerver, &admin_cerver->custom_packet_handler, custom_handler);
 	}
 
 }
@@ -458,13 +462,45 @@ u8 admin_cerver_broadcast_to_admins_pieces (
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
 // returns 0 on success, 1 on error
+// the limits of the admin cerver, 0 is no limit
+static bool admin_cerver_register_allowed (
+	const AdminCerver *admin_cerver, const Admin *admin
+) {
+
+	bool allowed = true;
+
+	if (admin_cerver->max_admins && (dlist_size (admin_cerver->admins) >= admin_cerver->max_admins)) {
+		cerver_log_warning (
+			"Cerver %s ADMIN has reached its %u admins",
+			admin_cerver->cerver->info->name, (unsigned int) admin_cerver->max_admins
+		);
+
+		allowed = false;
+	}
+
+	else if (
+		admin_cerver->max_admin_connections
+		&& (dlist_size (admin->client->connections) > admin_cerver->max_admin_connections)
+	) {
+		cerver_log_warning (
+			"Cerver %s ADMIN rejected an admin with more than %u connections",
+			admin_cerver->cerver->info->name, (unsigned int) admin_cerver->max_admin_connections
+		);
+
+		allowed = false;
+	}
+
+	return allowed;
+
+}
+
 u8 admin_cerver_register_admin (
 	AdminCerver *admin_cerver, Admin *admin
 ) {
 
 	u8 retval = 1;
 
-	if (admin_cerver && admin) {
+	if (admin_cerver && admin && admin->client && admin_cerver_register_allowed (admin_cerver, admin)) {
 		if (!admin_cerver_poll_register_connection (
 			admin_cerver,
 			(Connection *) dlist_start (admin->client->connections)->data
@@ -473,15 +509,15 @@ u8 admin_cerver_register_admin (
 
 			admin->admin_cerver = admin_cerver;
 
-			admin_cerver->stats->current_connected_admins += 1;
-			admin_cerver->stats->total_n_admins += 1;
+			CERVER_STATS_ADD (admin_cerver->stats->current_connected_admins, 1);
+			CERVER_STATS_ADD (admin_cerver->stats->total_n_admins, 1);
 
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %lu",
 				admin_cerver->cerver->info->name,
-				admin_cerver->stats->current_connected_admins
+				CERVER_STATS_GET (admin_cerver->stats->current_connected_admins)
 			);
 			#endif
 
@@ -515,14 +551,14 @@ u8 admin_cerver_unregister_admin (
 
 			admin->admin_cerver = NULL;
 
-			admin_cerver->stats->current_connected_admins -= 1;
+			CERVER_STATS_SUBTRACT (admin_cerver->stats->current_connected_admins, 1);
 
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %lu",
 				admin_cerver->cerver->info->name,
-				admin_cerver->stats->current_connected_admins
+				CERVER_STATS_GET (admin_cerver->stats->current_connected_admins)
 			);
 			#endif
 

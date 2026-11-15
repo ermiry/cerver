@@ -262,9 +262,10 @@ AdminConnectionsStatus admin_remove_connection_with_sock_fd (
 				status = ADMIN_CONNECTIONS_STATUS_DROPPED;
 			} break;
 
+			// the only connection is removed when it has the socket (any one was removed)
 			case 1: {
-				connection = (Connection *) admin->client->connections->start->data;
-				if (!admin_cerver_poll_unregister_connection (
+				connection = admin_connection_get_with_sock_fd (admin, sock_fd);
+				if (connection && !admin_cerver_poll_unregister_connection (
 					admin_cerver, connection
 				)) {
 					// remove, close & delete the connection

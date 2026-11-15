@@ -1,8 +1,11 @@
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#include <pthread.h>
 
 #include <cerver/collections/dlist.h>
 
@@ -13,12 +16,14 @@
 #include <cerver/client/connect.h>
 #include <cerver/client/events.h>
 #include <cerver/core/cerver.h>
+#include <cerver/core/data.h>
 #include <cerver/core/end.h>
 #include <cerver/core/report.h>
 #include <cerver/core/serialization.h>
 #include <cerver/core/start.h>
 #include <cerver/handler/errors.h>
 #include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
 
 #include "../test.h"
 
@@ -114,6 +119,196 @@ static void test_cerver_lifecycle_null (void) {
 	test_check_unsigned_eq (cerver_start (NULL), 1, "started a NULL cerver");
 	test_check_unsigned_eq (cerver_shutdown (NULL), 1, "shut down a NULL cerver");
 	test_check_unsigned_eq (cerver_teardown (NULL), 1, "tore down a NULL cerver");
+
+}
+
+#define CERVER_STOP_NAME				"test-cerver-stop"
+#define CERVER_STOP_PORT				7402
+#define CERVER_STOP_SLEEP_SECONDS		16
+#define CERVER_STOP_JOIN_SECONDS		8
+#define CERVER_STOP_SIGNAL_NANOSECONDS	256000000L
+#define CERVER_STOP_POLL_NANOSECONDS	1000000L
+#define CERVER_STOP_POLLS				(1 << 13)
+#define CERVER_STOP_POLL_TIMEOUT		200
+
+static Cerver *stop_cerver = NULL;
+static u8 stop_cerver_result = 0;
+static unsigned int stop_sleep_done = 0;
+
+// what a signal handler of an application does: cerver_shutdown () must be async-signal-safe
+static void test_cerver_stop_signal (int signal_number) {
+
+	(void) signal_number;
+
+	(void) cerver_shutdown (stop_cerver);
+
+}
+
+static void *test_cerver_stop_start (void *cerver_ptr) {
+
+	stop_cerver_result = cerver_start ((Cerver *) cerver_ptr);
+
+	return NULL;
+
+}
+
+static void *test_cerver_stop_sleep (void *cerver_ptr) {
+
+	cerver_sleep ((Cerver *) cerver_ptr, CERVER_STOP_SLEEP_SECONDS);
+
+	test_counter_add (&stop_sleep_done);
+
+	return NULL;
+
+}
+
+static void test_cerver_stop_nap (const long nanoseconds) {
+
+	const struct timespec interval = { 0, nanoseconds };
+	(void) nanosleep (&interval, NULL);
+
+}
+
+static void test_cerver_stop_join (pthread_t thread, const char *message) {
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += CERVER_STOP_JOIN_SECONDS;
+
+	test_check_int_eq (pthread_timedjoin_np (thread, NULL, &deadline), 0, message);
+
+}
+
+// a cerver_start () that fails returns at once: its result says why the cerver is not running
+static void test_cerver_stop_wait_running (pthread_t start_thread) {
+
+	for (unsigned int i = 0; (i < CERVER_STOP_POLLS) && !cerver_is_running (stop_cerver); i++) {
+		test_cerver_stop_nap (CERVER_STOP_POLL_NANOSECONDS);
+	}
+
+	if (!cerver_is_running (stop_cerver)) {
+		test_cerver_stop_join (start_thread, "cerver_start () did not return");
+		test_check_unsigned_eq (stop_cerver_result, 0, "cerver_start () failed");
+	}
+
+	test_check (cerver_is_running (stop_cerver), "the cerver did not start");
+
+}
+
+// a signal that arrives at the thread that sleeps in cerver_sleep () stops the cerver from its handler,
+// and the sleep wakes up long before its time: the stop never takes a lock that the sleep could hold
+static void test_cerver_stop_from_signal (void) {
+
+	stop_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM, CERVER_STOP_NAME,
+		CERVER_STOP_PORT, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE
+	);
+
+	test_check_ptr (stop_cerver);
+
+	cerver_set_reusable_address_flags (stop_cerver, true);
+	cerver_set_handler_type (stop_cerver, CERVER_HANDLER_TYPE_POLL);
+	cerver_set_poll_time_out (stop_cerver, CERVER_STOP_POLL_TIMEOUT);
+
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (action));
+	action.sa_handler = test_cerver_stop_signal;
+	(void) sigemptyset (&action.sa_mask);
+	test_check_int_eq (sigaction (SIGUSR1, &action, NULL), 0, NULL);
+
+	pthread_t start_thread = 0;
+	test_check_int_eq (pthread_create (&start_thread, NULL, test_cerver_stop_start, stop_cerver), 0, NULL);
+
+	test_cerver_stop_wait_running (start_thread);
+
+	pthread_t sleep_thread = 0;
+	test_check_int_eq (pthread_create (&sleep_thread, NULL, test_cerver_stop_sleep, stop_cerver), 0, NULL);
+
+	test_cerver_stop_nap (CERVER_STOP_SIGNAL_NANOSECONDS);
+	test_check_int_eq (pthread_kill (sleep_thread, SIGUSR1), 0, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&stop_sleep_done, 1, CERVER_STOP_JOIN_SECONDS),
+		1, "the sleep did not wake up when the cerver stopped from a signal handler"
+	);
+
+	test_cerver_stop_join (sleep_thread, "the sleep did not return");
+	test_cerver_stop_join (start_thread, "cerver_start () did not return");
+
+	test_check_unsigned_eq (stop_cerver_result, 0, NULL);
+	test_check_unsigned_eq (cerver_teardown (stop_cerver), 0, NULL);
+
+	(void) signal (SIGUSR1, SIG_DFL);
+
+}
+
+static void test_cerver_handler_method (void *data) {
+
+	(void) data;
+
+}
+
+// a different handler deletes the one it replaces (a leak before), the same one again is kept
+static void test_cerver_handlers_replaced (void) {
+
+	Cerver *cerver = test_cerver_create ();
+
+	cerver_set_app_handlers (
+		cerver,
+		handler_create (test_cerver_handler_method), handler_create (test_cerver_handler_method)
+	);
+
+	cerver_set_app_handlers (
+		cerver,
+		handler_create (test_cerver_handler_method), handler_create (test_cerver_handler_method)
+	);
+
+	Handler *custom = handler_create (test_cerver_handler_method);
+	cerver_set_custom_handler (cerver, custom);
+	cerver_set_custom_handler (cerver, custom);
+	test_check (cerver->custom_packet_handler == custom, "the same handler was not kept");
+	cerver_set_custom_handler (cerver, handler_create (test_cerver_handler_method));
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	admin_cerver_set_custom_handler (cerver->admin, handler_create (test_cerver_handler_method));
+	admin_cerver_set_custom_handler (cerver->admin, handler_create (test_cerver_handler_method));
+	admin_cerver_set_app_handlers (
+		cerver->admin,
+		handler_create (test_cerver_handler_method), handler_create (test_cerver_handler_method)
+	);
+
+	admin_cerver_set_app_handlers (cerver->admin, NULL, NULL);
+
+	(void) cerver_teardown (cerver);
+
+}
+
+#define CERVER_THRESHOLD_SECONDS		1
+#define CERVER_THRESHOLD_WAIT_SECONDS	2
+#define CERVER_THRESHOLD_COUNT			5
+
+// the counters that grow are reset after the threshold time, the current ones stay (it was only stored)
+static void test_cerver_stats_threshold (void) {
+
+	Cerver *cerver = test_cerver_create ();
+
+	cerver_stats_set_threshold_time (cerver, CERVER_THRESHOLD_SECONDS);
+	cerver->stats->total_n_clients = CERVER_THRESHOLD_COUNT;
+	cerver->stats->unique_clients = CERVER_THRESHOLD_COUNT;
+	cerver->stats->current_n_connected_clients = CERVER_THRESHOLD_COUNT;
+
+	cerver_stats_print (cerver, false, false);
+	test_check_unsigned_eq ((unsigned int) cerver->stats->total_n_clients, CERVER_THRESHOLD_COUNT, "reset before the time");
+
+	const struct timespec threshold = { CERVER_THRESHOLD_WAIT_SECONDS, 0 };
+	(void) nanosleep (&threshold, NULL);
+
+	cerver_stats_print (cerver, false, false);
+	test_check_unsigned_eq ((unsigned int) cerver->stats->total_n_clients, 0, "the stats were not reset after the time");
+	test_check_unsigned_eq ((unsigned int) cerver->stats->unique_clients, 0, NULL);
+	test_check_unsigned_eq ((unsigned int) cerver->stats->current_n_connected_clients, CERVER_THRESHOLD_COUNT, NULL);
+
+	(void) cerver_teardown (cerver);
 
 }
 
@@ -362,6 +557,53 @@ static void test_cerver_events_dropped (void) {
 
 }
 
+static void *test_cerver_replaced_action (void *data) {
+
+	cerver_event_data_delete ((CerverEventData *) data);
+
+	return NULL;
+
+}
+
+// the arguments of an event or an error that is replaced while the thread of its trigger still runs
+// live until the action releases its data (they were released by the replace)
+static void test_cerver_events_replaced (void) {
+
+	Cerver *cerver = test_cerver_create ();
+
+	test_cerver_dropped_reset ();
+	test_check_unsigned_eq (
+		cerver_event_register (
+			cerver, CERVER_EVENT_STARTED, test_cerver_dropped_event,
+			&dropped_args, test_cerver_dropped_args_delete, true, false
+		), 0, NULL
+	);
+
+	cerver_event_trigger (CERVER_EVENT_STARTED, cerver, NULL, NULL);
+	test_check_unsigned_eq (
+		cerver_event_register (cerver, CERVER_EVENT_STARTED, test_cerver_replaced_action, NULL, NULL, false, false),
+		0, NULL
+	);
+
+	test_cerver_dropped_check ("the arguments of a replaced cerver event were released before its action");
+
+	test_cerver_dropped_reset ();
+	test_check_unsigned_eq (
+		cerver_error_event_register (
+			cerver, CERVER_ERROR_PACKET_ERROR, test_cerver_dropped_error,
+			&dropped_args, test_cerver_dropped_args_delete, true, false
+		), 0, NULL
+	);
+
+	cerver_error_event_trigger (CERVER_ERROR_PACKET_ERROR, cerver, NULL, NULL, NULL);
+	test_check_unsigned_eq (cerver_error_event_unregister (cerver, CERVER_ERROR_PACKET_ERROR), 0, NULL);
+
+	test_cerver_dropped_check ("the arguments of an unregistered cerver error were released before its action");
+
+	(void) cerver_teardown (cerver);
+
+}
+
 #define CERVER_SESSION_IDS				1024
 #define CERVER_SESSION_ID_LENGTH		64
 
@@ -475,11 +717,15 @@ int main (void) {
 	test_cerver_base_configuration ();
 	test_cerver_setters_invalid ();
 	test_cerver_lifecycle_null ();
+	test_cerver_stop_from_signal ();
+	test_cerver_handlers_replaced ();
+	test_cerver_stats_threshold ();
 	test_cerver_admin_enable_twice ();
 	test_cerver_admin_lookups ();
 	test_cerver_session_default_ids ();
 	test_cerver_events_out_of_range ();
 	test_cerver_events_dropped ();
+	test_cerver_events_replaced ();
 	test_cerver_deserialize ();
 
 	(void) printf ("\nDone with CERVER tests!\n\n");
