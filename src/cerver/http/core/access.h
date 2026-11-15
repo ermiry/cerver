@@ -1,3 +1,9 @@
+/**
+ * @file http/core/access.h
+ * @internal
+ * @brief The accounting of the requests that ended: their line in the log and their stats.
+ */
+
 #ifndef _CERVER_HTTP_ACCESS_H_
 #define _CERVER_HTTP_ACCESS_H_
 
@@ -5,7 +11,7 @@
 
 #include "cerver/connection/connection.h"
 
-// the address of the client and the one of the proxy that forwarded its request
+/** @internal @brief The size of the address of the client and the one of the proxy that forwarded its request. */
 #define HTTP_ACCESS_CLIENT_SIZE			((2 * CONNECTION_IP_SIZE) + 8)
 
 #ifdef __cplusplus
@@ -14,10 +20,15 @@ extern "C" {
 
 struct _HttpReceive;
 
-// accounts for a request that ended: its line in the log (its client, its method,
-// its path, the bytes that were received, the time that it took, its status
-// and the bytes that were sent) and the stats of its endpoint and of its cerver
-// it is called once for each request, before its data is released
+/**
+ * @internal
+ * @brief Accounts for a request that ended: its line in the log and the stats of its endpoint and of its cerver.
+ *
+ * The line has its client, its method, its path, the bytes that were received, the time that it took, its status
+ * and the bytes that were sent. It is called once for each request, before its data is released.
+ *
+ * @param[in] http_receive the receive of the request
+ */
 CERVER_PRIVATE void http_access_request (
 	const struct _HttpReceive *http_receive
 );
