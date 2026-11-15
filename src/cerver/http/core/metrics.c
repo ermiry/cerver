@@ -134,6 +134,10 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_uploads_write_bytes_total", "The bytes of the files of the uploads that were written.",
 		offsetof (HttpCerver, uploads_write_bytes)
+	},
+	{
+		"cerver_http_followed_requests_total", "The requests that the thread that answered the one before them in their connection handled, without their event loop.",
+		offsetof (HttpCerver, n_followed_requests)
 	}
 };
 
