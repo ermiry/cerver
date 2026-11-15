@@ -141,10 +141,29 @@ extern void *avl_get_node_data (
  * @param[in] id the query, compared with the data of each node
  * @param[in] comparator compares the data of a node with the query, NULL to use the comparator of the tree
  * @return the data of the node, NULL if it was not found
- * @warning The data is returned after the mutex is released: another thread can remove it.
+ * @warning The data is returned after the mutex is released: another thread can remove it; use
+ * avl_get_node_data_apply () to use the data with the mutex.
  */
 extern void *avl_get_node_data_safe (
 	AVLTree *tree, void *id, Comparator comparator
+);
+
+/**
+ * @brief Searches the data of a node and runs a method with it while the mutex of the tree is held, so another
+ * thread can not remove it in between.
+ *
+ * @param[in] tree the tree
+ * @param[in] id the query, compared with the data of each node
+ * @param[in] comparator compares the data of a node with the query, NULL to use the comparator of the tree
+ * @param[in] method gets the data of the node and the method args; it must not change the same tree
+ * @param[in] method_args the second argument of the method
+ * @retval 0 the node was found and the method ran
+ * @retval 1 it was not found or an argument is NULL
+ * @since 1.9b-2
+ */
+extern unsigned int avl_get_node_data_apply (
+	AVLTree *tree, void *id, Comparator comparator,
+	void (*method)(void *data, void *method_args), void *method_args
 );
 
 /**
