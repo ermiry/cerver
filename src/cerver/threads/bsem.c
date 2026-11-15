@@ -99,7 +99,7 @@ void bsem_post_all (bsem *bsem_p) {
 
 }
 
-// waits on semaphore until semaphore has value 0
+// waits on semaphore until semaphore has value 1, and takes it back to 0
 void bsem_wait (bsem *bsem_p) {
 
 	if (bsem_p) {
