@@ -132,21 +132,11 @@ static inline void lobby_stats_delete (LobbyStats *stats) {
 
 }
 
-// sets the lobby stats threshold time (how often the stats get reset)
-void lobby_stats_set_threshold_time (Lobby *lobby, time_t threshold_time) {
-
-	if (lobby) {
-		if (lobby->stats) lobby->stats->threshold_time = threshold_time;
-	}
-
-}
-
 void lobby_stats_print (Lobby *lobby) {
 
 	if (lobby) {
 		if (lobby->stats) {
-			(void) printf ("\nLobby's %s stats: ", lobby->id->str);
-			(void) printf ("\nThreshold time:            %ld\n", (long) lobby->stats->threshold_time);
+			(void) printf ("\nLobby's %s stats:\n", lobby->id->str);
 
 			(void) printf ("Total packets received:        %lu\n", lobby->stats->n_packets_received);
 			(void) printf ("Total receives done:           %lu\n", lobby->stats->n_receives_done);
@@ -388,7 +378,8 @@ bool lobby_is_running (const Lobby *lobby) {
 }
 
 // searches a lobby in the game cerver and returns a reference to it
-Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
+// the reference is taken with the lock, so the lobby can not be released before its caller has it
+Lobby *lobby_get_reference (GameCerver *game_cerver, Lobby *query) {
 
 	Lobby *found = NULL;
 
@@ -399,6 +390,8 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 			if (!lobby_comparator (le->data, query)) found = (Lobby *) le->data;
 		}
 
+		if (found) (void) lobby_reference (found);
+
 		(void) pthread_mutex_unlock (&game_cerver->lock);
 	}
 
@@ -406,8 +399,8 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 
 }
 
-// seraches for a lobby with matching id
-Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
+// searches a lobby with an id and returns a reference to it, taken with the lock
+Lobby *lobby_search_with_id_reference (Cerver *cerver, const char *id) {
 
 	Lobby *found = NULL;
 
@@ -420,6 +413,8 @@ Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
 			Lobby *lobby = (Lobby *) le->data;
 			if (!strcmp (lobby->id->str, id)) found = lobby;
 		}
+
+		if (found) (void) lobby_reference (found);
 
 		game_cerver_unlock (cerver);
 	}
