@@ -1,3 +1,8 @@
+/**
+ * @file cerver/http/responses/status.h
+ * @brief The status codes of the HTTP responses.
+ */
+
 #ifndef _CERVER_HTTP_STATUS_H_
 #define _CERVER_HTTP_STATUS_H_
 
@@ -7,6 +12,16 @@
 extern "C" {
 #endif
 
+/**
+ * @defgroup http_responses_status Status
+ * @ingroup http_responses
+ * @brief The status codes and their reason phrases.
+ * @{
+ */
+
+/**
+ * @brief The X-macro table of the status codes: the number, the name and the reason phrase of each one.
+ */
 #define HTTP_STATUS_MAP(XX)													\
 	XX(0,   NONE,                            Undefined)                       \
 	XX(100, CONTINUE,                        Continue)                        \
@@ -69,6 +84,9 @@ extern "C" {
 	XX(510, NOT_EXTENDED,                    Not Extended)                    \
 	XX(511, NETWORK_AUTHENTICATION_REQUIRED, Network Authentication Required)
 
+/**
+ * @brief A status code, one `HTTP_STATUS_<name>` for each row of #HTTP_STATUS_MAP.
+ */
 enum http_status {
 
 	#define XX(num, name, string) HTTP_STATUS_##name = num,
@@ -77,12 +95,21 @@ enum http_status {
 
 };
 
+/** @brief A status code, see enum http_status. */
 typedef enum http_status http_status;
 
-// returns a string version of the HTTP status code
+/**
+ * @brief Returns the reason phrase of a status code.
+ *
+ * @param[in] status the status code
+ * @return the phrase of its row in #HTTP_STATUS_MAP, or "Undefined" (HTTP_STATUS_NONE) for a code out of the
+ * table; a static string that must not be freed
+ */
 CERVER_PUBLIC const char *http_status_string (
 	const http_status status
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

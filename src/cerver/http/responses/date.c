@@ -1,10 +1,9 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <ctype.h>
 #include <time.h>
 
-#include "cerver/http/date.h"
+#include "cerver/http/responses/date.h"
 
 static const char *http_date_days[] = {
 	"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"

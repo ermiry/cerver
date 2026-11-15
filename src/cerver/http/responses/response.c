@@ -1,48 +1,49 @@
+#include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <stdio.h>
-#include <strings.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
 #include <time.h>
 
+#include <fcntl.h>
+#include <poll.h>
+#include <strings.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/arena.h"
 #include "cerver/collections/pool.h"
 
-#include "cerver/cerver.h"
-#include "cerver/errors.h"
-#include "cerver/files.h"
 #include "cerver/version.h"
 
-#include "cerver/http/compression.h"
-#include "cerver/http/conditional.h"
-#include "cerver/http/content.h"
-#include "cerver/http/date.h"
-#include "cerver/http/headers.h"
-#include "cerver/http/http.h"
-#include "cerver/http/origin.h"
-#include "cerver/http/recycle.h"
-#include "cerver/http/request.h"
-#include "cerver/http/response.h"
-#include "cerver/http/status.h"
-#include "cerver/http/stream.h"
-#include "cerver/http/tree.h"
-#include "cerver/http/utils.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/start.h"
+#include "cerver/files/files.h"
+#include "cerver/handler/errors.h"
 
+#include "cerver/http/core/handler.h"
+#include "cerver/http/core/http.h"
+#include "cerver/http/core/recycle.h"
+#include "cerver/http/core/utils.h"
+#include "cerver/http/headers/buffer.h"
+#include "cerver/http/headers/header.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
+#include "cerver/http/requests/content.h"
+#include "cerver/http/requests/request.h"
+#include "cerver/http/responses/compression.h"
+#include "cerver/http/responses/conditional.h"
+#include "cerver/http/responses/date.h"
+#include "cerver/http/responses/response.h"
+#include "cerver/http/responses/status.h"
+#include "cerver/http/responses/stream.h"
+#include "cerver/http/routes/tree.h"
+#include "cerver/http/security/origin.h"
 
 #include "cerver/utils/utils.h"
 
@@ -2179,7 +2180,7 @@ static ContentType http_response_handle_video_content (
 	);
 
 	if (ext) {
-		content_type = http_content_type_by_extension (ext);
+		content_type = http_content_type_with_extension (ext);
 	}
 
 	return content_type;

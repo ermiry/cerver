@@ -1,20 +1,19 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <cerver/version.h>
 
-#include <cerver/http/http.h>
-#include <cerver/http/origin.h>
-#include <cerver/http/response.h>
-
+#include <cerver/http/core/http.h>
+#include <cerver/http/core/settings.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/json/value.h>
+#include <cerver/http/responses/response.h>
+#include <cerver/http/security/origin.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 #define TEST_HEADER_LEN		256
 
