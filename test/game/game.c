@@ -152,6 +152,9 @@ static void test_game_types (void) {
 	test_check_bool_eq (second->use_default_handler, false, NULL);
 	test_check_unsigned_eq (second->max_players, GAME_TEST_MAX_PLAYERS, NULL);
 
+	// a NULL game type has no lobby config to add
+	test_check_int_eq (game_type_add_lobby_config (NULL, false, NULL, GAME_TEST_MAX_PLAYERS), 1, NULL);
+
 	test_check_int_eq (game_type_register (game_types, first), 0, NULL);
 	test_check_int_eq (game_type_register (game_types, second), 0, NULL);
 
