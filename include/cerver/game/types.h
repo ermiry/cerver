@@ -1,14 +1,14 @@
-#ifndef _CERVER_GAME_GAMETYPE_H_
-#define _CERVER_GAME_GAMETYPE_H_
+#ifndef _CERVER_GAME_TYPES_H_
+#define _CERVER_GAME_TYPES_H_
 
 #include <stdbool.h>
 
-#include "cerver/config.h"
-
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
+
+#include "cerver/config.h"
 
 // 0 keeps the players that do not send packets
 #define GAME_TYPE_DEFAULT_PLAYER_TIMEOUT	0
@@ -102,7 +102,7 @@ CERVER_EXPORT int game_type_register (DoubleList *game_types, GameType *game_typ
 CERVER_EXPORT int game_type_unregister (DoubleList *game_types, const char *name);
 
 // gets a registered game type by its name
-CERVER_EXPORT GameType *game_type_get_by_name (DoubleList *game_types, const char *name);
+CERVER_EXPORT GameType *game_type_get_with_name (DoubleList *game_types, const char *name);
 
 #ifdef __cplusplus
 }

@@ -3,18 +3,18 @@
 
 #include <time.h>
 
+#include "cerver/types/string.h"
+#include "cerver/types/types.h"
+
+#include "cerver/collections/dlist.h"
+
 #include "cerver/config.h"
 
-#include "cerver/types/types.h"
-#include "cerver/types/string.h"
-
-#include "cerver/cerver.h"
-#include "cerver/packets.h"
+#include "cerver/core/cerver.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
-
-#include "cerver/collections/dlist.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,7 +53,7 @@ CERVER_EXPORT void player_set_id (Player *player, const char *id);
 CERVER_EXPORT void player_set_data (Player *player, void *data, Action data_delete);
 
 // compares two players by their ids
-CERVER_EXPORT int player_comparator_by_id (const void *a, const void *b);
+CERVER_EXPORT int player_comparator_with_id (const void *a, const void *b);
 
 // compares two players by their clients ids
 CERVER_EXPORT int player_comparator_client_id (const void *a, const void *b);
@@ -86,7 +86,7 @@ CERVER_EXPORT Player *player_get_from_lobby (struct _Lobby *lobby, Player *query
 CERVER_EXPORT ListElement *player_get_le_from_lobby (struct _Lobby *lobby, Player *player);
 
 // gets a player from the lobby player's list suing the sock fd
-CERVER_EXPORT Player *player_get_by_sock_fd_list (struct _Lobby *lobby, i32 sock_fd);
+CERVER_EXPORT Player *player_get_with_sock_fd_list (struct _Lobby *lobby, i32 sock_fd);
 
 // broadcasts a packet to all the players in the lobby
 CERVER_EXPORT void player_broadcast_to_all (
