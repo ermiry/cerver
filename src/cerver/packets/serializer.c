@@ -1,18 +1,20 @@
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/cerver.h"
-#include "cerver/errors.h"
-#include "cerver/files.h"
-#include "cerver/serializer.h"
-#include "cerver/sessions.h"
+#include "cerver/collections/arena.h"
+
+#include "cerver/auth/sessions.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/serialization.h"
+#include "cerver/files/files.h"
+#include "cerver/files/send.h"
+#include "cerver/handler/errors.h"
+#include "cerver/packets/serializer.h"
 
 #include "cerver/game/lobby.h"
-
-#include "cerver/collections/arena.h"
 
 // the major types of CBOR that the serializer uses
 #define SERIALIZER_MAJOR_UNSIGNED				0
