@@ -78,6 +78,8 @@ COMMON		:= -Wall -Wno-unknown-pragmas \
 
 ifeq ($(findstring clang,$(CC)),)
 	COMMON += -Wmaybe-uninitialized
+else
+	COMMON += -Wdocumentation -Wdocumentation-unknown-command -Wno-documentation-deprecated-sync -fcomment-block-commands=threadsafety
 endif
 
 ifeq ($(WERROR), 1)
@@ -525,10 +527,20 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
 
-clear: clean-objects clean-examples clean-tests clean-coverage clean-bench
+# the reference of the public headers, with doxygen
+DOCSDIR		:= reference
+
+docs:
+	@mkdir -p ./$(DOCSDIR)
+	doxygen Doxyfile
+
+clear: clean-objects clean-examples clean-tests clean-coverage clean-bench clean-docs
 
 clean: clear
 	@$(RM) -rf $(TARGETDIR)
+
+clean-docs:
+	@$(RM) -rf $(DOCSDIR)
 
 clean-objects:
 	@$(RM) -rf $(BUILDDIR)
@@ -548,4 +560,4 @@ clean-bench:
 	@$(RM) -rf $(BENCHBUILD)
 	@$(RM) -rf $(BENCHTARGET)
 
-.PHONY: all clean clear examples test coverage bench fuzz
+.PHONY: all clean clear examples test coverage bench fuzz docs
