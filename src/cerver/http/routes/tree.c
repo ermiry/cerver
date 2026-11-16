@@ -10,9 +10,8 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/core/pool.h"
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/value.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/routes/compatibility.h"
 #include "cerver/http/routes/middleware.h"
@@ -21,6 +20,9 @@
 #include "cerver/http/routes/validator.h"
 #include "cerver/http/security/auth.h"
 #include "cerver/http/websockets/internal.h"
+
+#include "cerver/json/json.h"
+#include "cerver/json/writer.h"
 
 #include "cerver/utils/log.h"
 
@@ -2277,116 +2279,103 @@ size_t http_tree_get_n_endpoints (const HttpTree *tree) {
 #pragma region json
 
 // the WebSocket settings of an endpoint: its protocols, compression and limits
-static json_t *http_tree_web_socket_json (const HttpEndpoint *endpoint) {
+static void http_tree_web_socket_json (
+	CerverJsonWriter *writer, const HttpEndpoint *endpoint
+) {
 
 	const HttpWebSocketSettings *settings = &endpoint->resolved.web_socket;
 
-	json_t *web_socket = json_object ();
-	if (web_socket) {
-		json_t *protocols = json_array ();
-		for (unsigned int i = 0; protocols && (i < settings->n_protocols); i++) {
-			(void) json_array_append_new (protocols, json_string (settings->protocols[i]));
-		}
+	cerver_json_writer_key (writer, "websocket");
+	cerver_json_writer_object_begin (writer);
 
-		(void) json_object_set_new (web_socket, "protocols", protocols);
-		(void) json_object_set_new (web_socket, "compression", json_boolean (settings->compression.enabled));
-		(void) json_object_set_new (web_socket, "origin_check", json_boolean (settings->origin_check));
-		(void) json_object_set_new (web_socket, "max_message", json_integer ((json_int_t) settings->max_message));
-		(void) json_object_set_new (web_socket, "ping_interval", json_integer ((json_int_t) settings->ping_interval));
+	cerver_json_writer_key (writer, "protocols");
+	cerver_json_writer_array_begin (writer);
+
+	// a protocol is a token, so it is always written
+	for (unsigned int i = 0; i < settings->n_protocols; i++) {
+		cerver_json_writer_string (writer, settings->protocols[i], strlen (settings->protocols[i]));
 	}
 
-	return web_socket;
+	cerver_json_writer_array_end (writer);
+
+	http_json_member_boolean (writer, "compression", settings->compression.enabled);
+	http_json_member_boolean (writer, "origin_check", settings->origin_check);
+	http_json_member_integer (writer, "max_message", (i64) settings->max_message);
+	http_json_member_integer (writer, "ping_interval", (i64) settings->ping_interval);
+
+	cerver_json_writer_object_end (writer);
 
 }
 
-static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
+static void http_tree_endpoint_json (
+	CerverJsonWriter *writer, const HttpEndpoint *endpoint
+) {
 
-	json_t *endpoint_object = json_object ();
-	if (endpoint_object) {
-		(void) json_object_set_new (
-			endpoint_object, "method", json_string (http_request_method_str (endpoint->method))
-		);
+	cerver_json_writer_object_begin (writer);
 
-		(void) json_object_set_new (
-			endpoint_object, "path", json_string (endpoint->path->str)
-		);
+	http_json_member_string (writer, "method", http_request_method_str (endpoint->method));
+	http_json_member_string (writer, "path", endpoint->path->str);
+	http_json_member_string (writer, "auth", http_route_auth_type_to_string (endpoint->resolved.auth_type));
+	http_json_member_string (writer, "modifier", http_route_modifier_to_string (endpoint->resolved.modifier));
 
-		(void) json_object_set_new (
-			endpoint_object, "auth",
-			json_string (http_route_auth_type_to_string (endpoint->resolved.auth_type))
-		);
+	http_json_member_boolean (writer, "compatibility", endpoint->route != NULL);
+	http_json_member_boolean (writer, "cors", endpoint->resolved.cors);
+	http_json_member_boolean (writer, "etag", endpoint->resolved.etag);
+	http_json_member_boolean (writer, "compression", endpoint->resolved.compression);
 
-		(void) json_object_set_new (
-			endpoint_object, "modifier",
-			json_string (http_route_modifier_to_string (endpoint->resolved.modifier))
-		);
-
-		(void) json_object_set_new (
-			endpoint_object, "compatibility", json_boolean (endpoint->route != NULL)
-		);
-
-		(void) json_object_set_new (endpoint_object, "cors", json_boolean (endpoint->resolved.cors));
-		(void) json_object_set_new (endpoint_object, "etag", json_boolean (endpoint->resolved.etag));
-		(void) json_object_set_new (
-			endpoint_object, "compression", json_boolean (endpoint->resolved.compression)
-		);
-
-		if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
-			(void) json_object_set_new (endpoint_object, "websocket", http_tree_web_socket_json (endpoint));
-		}
+	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
+		http_tree_web_socket_json (writer, endpoint);
 	}
 
-	return endpoint_object;
+	cerver_json_writer_object_end (writer);
 
 }
 
 static void http_tree_node_json (
-	const HttpRouteNode *node, json_t *endpoints_array
+	CerverJsonWriter *writer, const HttpRouteNode *node
 ) {
 
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 		const HttpEndpoint *endpoint = node->endpoints[method];
-		if (endpoint) {
-			(void) json_array_append_new (endpoints_array, http_tree_endpoint_json (endpoint));
-		}
+		if (endpoint) http_tree_endpoint_json (writer, endpoint);
 	}
 
 	for (size_t idx = 0; idx < node->n_statics; idx++) {
-		http_tree_node_json (node->statics[idx], endpoints_array);
+		http_tree_node_json (writer, node->statics[idx]);
 	}
 
 	for (size_t idx = 0; idx < node->n_params; idx++) {
-		http_tree_node_json (node->params[idx], endpoints_array);
+		http_tree_node_json (writer, node->params[idx]);
 	}
 
-	if (node->wildcard) http_tree_node_json (node->wildcard, endpoints_array);
+	if (node->wildcard) http_tree_node_json (writer, node->wildcard);
+
+}
+
+// the compiled endpoints of a tree, in the order of its nodes
+static void http_tree_write_json (
+	CerverJsonWriter *writer, const void *tree_ptr
+) {
+
+	const HttpTree *tree = (const HttpTree *) tree_ptr;
+
+	cerver_json_writer_object_begin (writer);
+
+	http_json_member_integer (writer, "n_endpoints", (i64) tree->n_endpoints);
+
+	cerver_json_writer_key (writer, "endpoints");
+	cerver_json_writer_array_begin (writer);
+	http_tree_node_json (writer, tree->root);
+	cerver_json_writer_array_end (writer);
+
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the compiled endpoints as a json string, NULL if the tree is not compiled
 char *http_tree_generate_json (const HttpTree *tree) {
 
-	char *json_string = NULL;
-
-	if (tree && tree->root) {
-		json_t *json = json_object ();
-		if (json) {
-			(void) json_object_set_new (
-				json, "n_endpoints", json_integer ((json_int_t) tree->n_endpoints)
-			);
-
-			json_t *endpoints_array = json_array ();
-			http_tree_node_json (tree->root, endpoints_array);
-
-			(void) json_object_set_new (json, "endpoints", endpoints_array);
-
-			json_string = json_dumps (json, 0);
-
-			json_decref (json);
-		}
-	}
-
-	return json_string;
+	return (tree && tree->root) ? http_json_generate (http_tree_write_json, tree) : NULL;
 
 }
 
