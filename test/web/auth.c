@@ -20,6 +20,8 @@
 #include <cerver/http/routes/route.h>
 #include <cerver/http/security/auth.h>
 
+#include <cerver/jwt/jwt.h>
+
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
@@ -183,7 +185,7 @@ int main (void) {
 		HttpCerver *http_cerver = (HttpCerver *) auth_cerver->cerver_data;
 
 		// bearer token auth configuration
-		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
 		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.pub");
 
