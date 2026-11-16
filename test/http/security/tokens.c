@@ -10,14 +10,18 @@
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 
+#include <cerver/crypto/key.h>
+#include <cerver/crypto/signature.h>
+
 #include <cerver/http/core/http.h>
-#include <cerver/http/jwt/alg.h>
-#include <cerver/http/jwt/jwt.h>
-#include <cerver/http/jwt/key.h>
 #include <cerver/http/security/auth.h>
 
 #include <cerver/json/json.h>
 #include <cerver/json/value.h>
+
+#include <cerver/jwt/jwt.h>
+#include <cerver/jwt/key.h>
+#include <cerver/jwt/sign.h>
 
 #include <cerver/utils/base64.h>
 
@@ -32,16 +36,26 @@
 #define TOKENS_SECRET					"0123456789abcdef0123456789abcdef"
 #define TOKENS_SHORT_SECRET				"0123456789abcdef"
 
+// the same secret as a JWK, and the JWK of a secret that is shorter
+#define TOKENS_SECRET_JWK				"{\"kty\":\"oct\",\"k\":\"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY\"}"
+#define TOKENS_SHORT_SECRET_JWK			"{\"kty\":\"oct\",\"k\":\"MDEyMzQ1Njc4OWFiY2RlZg\"}"
+
 #define TOKENS_SECRET_FILE				"/tmp/cerver-tokens-secret"
 #define TOKENS_SHORT_SECRET_FILE		"/tmp/cerver-tokens-short-secret"
 #define TOKENS_EMPTY_FILE				"/tmp/cerver-tokens-empty"
+#define TOKENS_SECRET_JWK_FILE			"/tmp/cerver-tokens-secret-jwk"
+#define TOKENS_SHORT_SECRET_JWK_FILE	"/tmp/cerver-tokens-short-secret-jwk"
 
 #define TOKENS_RSA_PRIVATE_FILE			"./test/http/keys/key.key"
 #define TOKENS_RSA_PUBLIC_FILE			"./test/http/keys/key.pub"
-#define TOKENS_RSA_WEAK_FILE			"./test/jwt/keys/rsa_key_1024.pem"
-#define TOKENS_P256_PRIVATE_FILE		"./test/jwt/keys/ec_key_prime256v1.pem"
-#define TOKENS_P256_PUBLIC_FILE			"./test/jwt/keys/ec_key_prime256v1-pub.pem"
-#define TOKENS_P384_PUBLIC_FILE			"./test/jwt/keys/ec_key_secp384r1-pub.pem"
+#define TOKENS_RSA_WEAK_FILE			"./test/crypto/keys/weak.key"
+#define TOKENS_RSA_WEAK_PUBLIC_FILE		"./test/crypto/keys/weak.pub"
+#define TOKENS_P256_PRIVATE_FILE		"./test/crypto/keys/p256.key"
+#define TOKENS_P256_PUBLIC_FILE			"./test/crypto/keys/p256.pub"
+#define TOKENS_P384_PUBLIC_FILE			"./test/crypto/keys/p384.pub"
+#define TOKENS_ED25519_PRIVATE_FILE		"./test/crypto/keys/ed25519.key"
+#define TOKENS_ED25519_PUBLIC_FILE		"./test/crypto/keys/ed25519.pub"
+#define TOKENS_ENCRYPTED_FILE			"./test/crypto/keys/encrypted.key"
 
 #define TOKENS_FILE_SIZE				(1 << 14)
 #define TOKENS_TOKEN_SIZE				(1 << 14)
@@ -53,7 +67,11 @@
 #define TOKENS_LEEWAY_SECONDS			(TOKENS_HOUR_SECONDS * 2)
 
 #define TOKENS_ISSUER					"https://issuer.cerver"
+#define TOKENS_SUBJECT					"user-7"
 #define TOKENS_AUDIENCE					"cerver-tests"
+
+// the tokens of a key with a random part that are signed and verified
+#define TOKENS_RANDOM_SIGNATURES		(1 << 5)
 
 // a username of "ñ" longer than a value of a jwt
 #define TOKENS_TWO_BYTES				"\xc3\xb1"
@@ -89,44 +107,16 @@ static size_t tokens_file_read (
 
 }
 
-static JwtKey *tokens_key_create (
-	const jwt_alg_t alg, const JwtKeyType type, const char *filename, JwtKeyError *error
-) {
+// a token with the claims of the json as they are, signed with the key
+static char *tokens_sign (const CerverJwtKey *key, const char *claims) {
 
-	unsigned char material[TOKENS_FILE_SIZE] = { 0 };
-	const size_t length = tokens_file_read (filename, material, sizeof (material));
-
-	return jwt_key_create (alg, type, material, length, error);
-
-}
-
-static JwtKey *tokens_secret_key (const char *secret) {
-
-	JwtKeyError error = JWT_KEY_ERROR_NONE;
-	JwtKey *key = jwt_key_create (
-		JWT_ALG_HS256, JWT_KEY_TYPE_PRIVATE,
-		(const unsigned char *) secret, strlen (secret), &error
-	);
-
-	test_check_ptr (key);
-	test_check_int_eq (error, JWT_KEY_ERROR_NONE, NULL);
-
-	return key;
-
-}
-
-// a token with the grants of the json, signed with the key
-static char *tokens_sign (const JwtKey *key, const char *grants) {
-
-	jwt_t *jwt = NULL;
-	test_check_int_eq (jwt_new (&jwt), 0, NULL);
-
-	if (grants) test_check_int_eq (jwt_add_grants_json (jwt, grants), 0, NULL);
-
-	char *token = jwt_encode_with_key (jwt, key);
+	char *token = (char *) calloc (TOKENS_TOKEN_SIZE, 1);
 	test_check_ptr (token);
 
-	jwt_free (jwt);
+	size_t length = 0;
+	test_check_int_eq (
+		cerver_jwt_sign (key, claims, strlen (claims), token, TOKENS_TOKEN_SIZE, &length), CERVER_JWT_ERROR_NONE, claims
+	);
 
 	return token;
 
@@ -144,31 +134,24 @@ static char *tokens_forge (
 	token[position++] = '.';
 	position += base64url_encode (token + position, (const unsigned char *) payload, strlen (payload));
 
-	JwtKey *key = tokens_secret_key (secret);
+	CerverCryptoKey *key = cerver_crypto_key_create_secret (secret, strlen (secret), NULL);
+	test_check_ptr (key);
 
-	unsigned char *signature = NULL;
+	u8 signature[CERVER_CRYPTO_SIGNATURE_SIZE_MAX] = { 0 };
 	size_t signature_length = 0;
-	test_check_int_eq (jwt_key_sign (key, token, position, &signature, &signature_length), 0, NULL);
+	test_check_true (
+		cerver_crypto_sign (
+			key, CERVER_CRYPTO_SIGNATURE_HMAC_SHA256, token, position,
+			signature, sizeof (signature), &signature_length
+		)
+	);
 
 	token[position++] = '.';
 	(void) base64url_encode (token + position, signature, signature_length);
 
-	free (signature);
-	jwt_key_delete (key);
+	cerver_crypto_key_delete (key);
 
 	return token;
-
-}
-
-static int tokens_decode (const char *token, const JwtKey *key) {
-
-	jwt_t *jwt = NULL;
-	const int result = jwt_decode_with_key (&jwt, token, strlen (token), key);
-
-	if (result) test_check_null_ptr (jwt);
-	jwt_free (jwt);
-
-	return result;
 
 }
 
@@ -188,17 +171,32 @@ static Cerver *tokens_cerver_create (void) {
 
 // a cerver with the keys of the algorithm, returns the result of its init
 static u8 tokens_cerver_init (
-	Cerver *cerver, const jwt_alg_t alg,
+	Cerver *cerver, const CerverJwtAlgorithm algorithm,
 	const char *private_file, const char *public_file
 ) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, alg), 0, NULL);
+	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, algorithm), 0, NULL);
 	if (private_file) http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_file);
 	if (public_file) http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_file);
 
 	return http_cerver_init (http_cerver);
+
+}
+
+// a cerver with those keys starts, or it does not
+static void tokens_cerver_starts (
+	const CerverJwtAlgorithm algorithm,
+	const char *private_file, const char *public_file, const bool expected
+) {
+
+	Cerver *cerver = tokens_cerver_create ();
+
+	const u8 result = tokens_cerver_init (cerver, algorithm, private_file, public_file);
+	test_check_bool_eq (result == 0, expected, private_file ? private_file : public_file);
+
+	(void) cerver_teardown (cerver);
 
 }
 
@@ -232,72 +230,96 @@ static const CerverJsonValue *tokens_cerver_verified_claims (
 
 }
 
-#pragma endregion
+// a cerver of HS256 with the secret of the tests
+static Cerver *tokens_secret_cerver_create (void) {
 
-#pragma region jwt
+	Cerver *cerver = tokens_cerver_create ();
 
-// a token without grants was encoded into a buffer one byte shorter than its base64
-static void tokens_encode_empty (void) {
-
-	jwt_t *jwt = NULL;
-	test_check_int_eq (jwt_new (&jwt), 0, NULL);
-	test_check_int_eq (
-		jwt_set_alg (jwt, JWT_ALG_HS256, (const unsigned char *) TOKENS_SECRET, strlen (TOKENS_SECRET)),
-		0, NULL
+	test_check_unsigned_eq (
+		tokens_cerver_init (cerver, CERVER_JWT_ALGORITHM_HS256, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE), 0, NULL
 	);
 
-	char *token = jwt_encode_str (jwt);
+	return cerver;
+
+}
+
+#pragma endregion
+
+#pragma region tokens
+
+// a token without values has the header of its algorithm and the claims of an empty object
+static void tokens_encode_empty (void) {
+
+	Cerver *cerver = tokens_secret_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	HttpJwt *http_jwt = (HttpJwt *) http_jwt_new ();
+
+	char *token = http_cerver_auth_generate_jwt (http_cerver, http_jwt);
 	test_check_ptr (token);
 	test_check (!strncmp (token, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.", strlen ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.")), token);
 
-	JwtKey *key = tokens_secret_key (TOKENS_SECRET);
-	test_check_int_eq (tokens_decode (token, key), 0, NULL);
+	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
 
-	jwt_key_delete (key);
-	jwt_free_str (token);
-	jwt_free (jwt);
+	free (token);
+	http_jwt_delete (http_jwt);
+
+	(void) cerver_teardown (cerver);
 
 }
 
 // a signature that is changed, cut or longer is rejected
 static void tokens_hmac_signature (void) {
 
-	JwtKey *key = tokens_secret_key (TOKENS_SECRET);
-	char *token = tokens_sign (key, "{\"id\": \"tokens\"}");
-	test_check_int_eq (tokens_decode (token, key), 0, NULL);
+	Cerver *cerver = tokens_secret_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	char *token = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
+	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
 
 	const size_t length = strlen (token);
 
 	char *changed = strdup (token);
 	changed[length - 2] = (changed[length - 2] == 'A') ? 'B' : 'A';
-	test_check_int_ne (tokens_decode (changed, key), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, changed), NULL);
 	free (changed);
 
 	char *cut = strndup (token, length - 4);
-	test_check_int_ne (tokens_decode (cut, key), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, cut), NULL);
 	free (cut);
 
 	char *longer = (char *) calloc (length + 8, 1);
 	(void) snprintf (longer, length + 8, "%sAAAA", token);
-	test_check_int_ne (tokens_decode (longer, key), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, longer), NULL);
 	free (longer);
 
 	// without a signature
 	char *unsigned_token = strndup (token, (size_t) (strrchr (token, '.') - token) + 1);
-	test_check_int_ne (tokens_decode (unsigned_token, key), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, unsigned_token), NULL);
 	free (unsigned_token);
 
+	// the token of another secret
+	char *other = tokens_forge (
+		"fedcba9876543210fedcba9876543210", "{\"alg\":\"HS256\",\"typ\":\"JWT\"}", "{\"id\":\"tokens\"}"
+	);
+
+	test_check (!tokens_cerver_verifies (http_cerver, other), NULL);
+	free (other);
+
 	free (token);
-	jwt_key_delete (key);
+
+	(void) cerver_teardown (cerver);
 
 }
 
 // a token never chooses how it is verified
 static void tokens_algorithm (void) {
 
-	JwtKeyError error = JWT_KEY_ERROR_NONE;
-	JwtKey *public_key = tokens_key_create (JWT_ALG_RS256, JWT_KEY_TYPE_PUBLIC, TOKENS_RSA_PUBLIC_FILE, &error);
-	test_check_ptr (public_key);
+	Cerver *cerver = tokens_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	test_check_unsigned_eq (
+		tokens_cerver_init (cerver, CERVER_JWT_ALGORITHM_RS256, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE), 0, NULL
+	);
 
 	// HS256 signed with the public PEM as its secret, the classic confusion
 	unsigned char pem[TOKENS_FILE_SIZE] = { 0 };
@@ -307,136 +329,153 @@ static void tokens_algorithm (void) {
 		"{\"alg\":\"HS256\",\"typ\":\"JWT\"}", "{\"id\":\"tokens\"}"
 	);
 
-	test_check_int_ne (tokens_decode (confused, public_key), 0);
-
-	jwt_t *jwt = NULL;
-	test_check_int_ne (jwt_decode (&jwt, confused, pem, strlen ((const char *) pem)), 0);
-	test_check_null_ptr (jwt);
-
+	test_check (!tokens_cerver_verifies (http_cerver, confused), "the public key as the secret of an HMAC");
 	free (confused);
 
+	// the same HMAC under the header of the cerver
+	confused = tokens_forge (
+		(const char *) pem,
+		"{\"alg\":\"RS256\",\"typ\":\"JWT\"}", "{\"id\":\"tokens\"}"
+	);
+
+	test_check (!tokens_cerver_verifies (http_cerver, confused), "an HMAC as the signature of RS256");
+	free (confused);
+
+	// its own tokens
+	char *valid = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
+	test_check (tokens_cerver_verifies (http_cerver, valid), NULL);
+	free (valid);
+
+	(void) cerver_teardown (cerver);
+
 	// "none" and the names in other cases are not accepted
+	cerver = tokens_secret_cerver_create ();
+	http_cerver = (HttpCerver *) cerver->cerver_data;
+
 	char *none = tokens_forge (TOKENS_SECRET, "{\"alg\":\"none\"}", "{\"id\":\"tokens\"}");
-	JwtKey *secret = tokens_secret_key (TOKENS_SECRET);
-	test_check_int_ne (tokens_decode (none, secret), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, none), NULL);
 	free (none);
 
 	char *lower = tokens_forge (TOKENS_SECRET, "{\"alg\":\"hs256\"}", "{\"id\":\"tokens\"}");
-	test_check_int_ne (tokens_decode (lower, secret), 0);
-	test_check_int_eq (jwt_str_alg ("hs256"), JWT_ALG_INVAL, NULL);
-	test_check_int_eq (jwt_str_alg ("None"), JWT_ALG_INVAL, NULL);
-	test_check_int_eq (jwt_str_alg ("none"), JWT_ALG_NONE, NULL);
+	test_check (!tokens_cerver_verifies (http_cerver, lower), NULL);
 	free (lower);
 
-	char *valid = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\"}", "{\"id\":\"tokens\"}");
-	test_check_int_eq (tokens_decode (valid, secret), 0, NULL);
+	char *other = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS384\"}", "{\"id\":\"tokens\"}");
+	test_check (!tokens_cerver_verifies (http_cerver, other), NULL);
+	free (other);
+
+	valid = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\"}", "{\"id\":\"tokens\"}");
+	test_check (tokens_cerver_verifies (http_cerver, valid), NULL);
 	free (valid);
 
-	jwt_key_delete (secret);
-	jwt_key_delete (public_key);
+	// a token of the cerver of RS256 is not one of this cerver
+	test_check (!tokens_cerver_verifies (http_cerver, base_token), NULL);
+
+	(void) cerver_teardown (cerver);
 
 }
 
 // the parts are canonical base64url and json objects without repeated keys
 static void tokens_parts (void) {
 
-	JwtKey *secret = tokens_secret_key (TOKENS_SECRET);
+	Cerver *cerver = tokens_secret_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	char *duplicated = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\",\"alg\":\"none\"}", "{\"id\":\"tokens\"}");
-	test_check_int_ne (tokens_decode (duplicated, secret), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, duplicated), NULL);
 	free (duplicated);
 
 	char *array = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\"}", "[\"tokens\"]");
-	test_check_int_ne (tokens_decode (array, secret), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, array), NULL);
 	free (array);
 
 	char *repeated = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\"}", "{\"id\":\"one\",\"id\":\"two\"}");
-	test_check_int_ne (tokens_decode (repeated, secret), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, repeated), NULL);
 	free (repeated);
 
+	char *critical = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\",\"crit\":[\"exp\"]}", "{\"id\":\"tokens\"}");
+	test_check (!tokens_cerver_verifies (http_cerver, critical), NULL);
+	free (critical);
+
 	char *token = tokens_forge (TOKENS_SECRET, "{\"alg\":\"HS256\"}", "{\"id\":\"tokens\"}");
+	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
+
 	const size_t length = strlen (token);
 
 	// a fourth part
-	char *four = (char *) calloc (length + 4, 1);
-	(void) snprintf (four, length + 4, "%s.e30", token);
-	test_check_int_ne (tokens_decode (four, secret), 0);
+	char *four = (char *) calloc (length + 5, 1);
+	(void) snprintf (four, length + 5, "%s.e30", token);
+	test_check (!tokens_cerver_verifies (http_cerver, four), NULL);
 	free (four);
 
 	// the padding of base64
 	const char *first_separator = strchr (token, '.');
 	char *padded = (char *) calloc (length + 4, 1);
 	(void) snprintf (padded, length + 4, "%.*s==%s", (int) (first_separator - token), token, first_separator);
-	test_check_int_ne (tokens_decode (padded, secret), 0);
+	test_check (!tokens_cerver_verifies (http_cerver, padded), NULL);
 	free (padded);
 
 	free (token);
-	jwt_key_delete (secret);
+
+	(void) cerver_teardown (cerver);
 
 }
 
-// each key is checked against its algorithm
-static void tokens_keys (void) {
+// a cerver with a key that has a random part signs and verifies its own tokens: ES256 and PS256
+static void tokens_random_signatures (
+	const CerverJwtAlgorithm algorithm, const char *private_file, const char *public_file
+) {
 
-	JwtKeyError error = JWT_KEY_ERROR_NONE;
+	Cerver *cerver = tokens_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	test_check_unsigned_eq (tokens_cerver_init (cerver, algorithm, private_file, public_file), 0, private_file);
 
-	test_check_null_ptr (jwt_key_create (JWT_ALG_NONE, JWT_KEY_TYPE_PRIVATE, (const unsigned char *) TOKENS_SECRET, strlen (TOKENS_SECRET), &error));
-	test_check_int_eq (error, JWT_KEY_ERROR_ALGORITHM, NULL);
-
-	test_check_null_ptr (jwt_key_create (JWT_ALG_HS256, JWT_KEY_TYPE_PRIVATE, NULL, 0, &error));
-	test_check_int_eq (error, JWT_KEY_ERROR_EMPTY, NULL);
-
-	test_check_null_ptr (jwt_key_create (JWT_ALG_RS256, JWT_KEY_TYPE_PUBLIC, (const unsigned char *) TOKENS_SECRET, strlen (TOKENS_SECRET), &error));
-	test_check_int_eq (error, JWT_KEY_ERROR_PEM, NULL);
-
-	test_check_null_ptr (tokens_key_create (JWT_ALG_ES256, JWT_KEY_TYPE_PUBLIC, TOKENS_RSA_PUBLIC_FILE, &error));
-	test_check_int_eq (error, JWT_KEY_ERROR_TYPE, NULL);
-
-	test_check_null_ptr (tokens_key_create (JWT_ALG_ES256, JWT_KEY_TYPE_PUBLIC, TOKENS_P384_PUBLIC_FILE, &error));
-	test_check_int_eq (error, JWT_KEY_ERROR_CURVE, NULL);
-
-	JwtKey *es256 = tokens_key_create (JWT_ALG_ES256, JWT_KEY_TYPE_PUBLIC, TOKENS_P256_PUBLIC_FILE, &error);
-	test_check_ptr (es256);
-	test_check_int_eq (jwt_key_check_strength (es256), JWT_KEY_ERROR_NONE, NULL);
-	jwt_key_delete (es256);
-
-	JwtKey *weak = tokens_key_create (JWT_ALG_RS256, JWT_KEY_TYPE_PRIVATE, TOKENS_RSA_WEAK_FILE, &error);
-	test_check_ptr (weak);
-	test_check_int_eq (jwt_key_check_strength (weak), JWT_KEY_ERROR_STRENGTH, NULL);
-	jwt_key_delete (weak);
-
-	JwtKey *short_secret = tokens_secret_key (TOKENS_SHORT_SECRET);
-	test_check_int_eq (jwt_key_check_strength (short_secret), JWT_KEY_ERROR_STRENGTH, NULL);
-	jwt_key_delete (short_secret);
-
-	unsigned char pem[TOKENS_FILE_SIZE] = { 0 };
-	(void) tokens_file_read (TOKENS_RSA_PUBLIC_FILE, pem, sizeof (pem) - 1);
-	JwtKey *pem_secret = tokens_secret_key ((const char *) pem);
-	test_check_int_eq (jwt_key_check_strength (pem_secret), JWT_KEY_ERROR_SECRET, NULL);
-	jwt_key_delete (pem_secret);
-
-	test_check_str_eq (jwt_key_error_to_string (JWT_KEY_ERROR_CURVE), "The curve of the key does not match the algorithm", NULL);
-
-}
-
-// ES256 signs with its curve and with a low S, and verifies its own signatures
-static void tokens_ecdsa (void) {
-
-	JwtKeyError error = JWT_KEY_ERROR_NONE;
-	JwtKey *private_key = tokens_key_create (JWT_ALG_ES256, JWT_KEY_TYPE_PRIVATE, TOKENS_P256_PRIVATE_FILE, &error);
-	JwtKey *public_key = tokens_key_create (JWT_ALG_ES256, JWT_KEY_TYPE_PUBLIC, TOKENS_P256_PUBLIC_FILE, &error);
-	test_check_ptr (private_key);
-	test_check_ptr (public_key);
-
-	// the signatures are random, many of them have a high S before it is lowered
-	for (int i = 0; i < (1 << 5); i++) {
-		char *token = tokens_sign (private_key, "{\"id\": \"tokens\"}");
-		test_check_int_eq (tokens_decode (token, public_key), 0, NULL);
+	for (int i = 0; i < TOKENS_RANDOM_SIGNATURES; i++) {
+		char *token = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
+		test_check (tokens_cerver_verifies (http_cerver, token), private_file);
 		free (token);
 	}
 
-	jwt_key_delete (private_key);
-	jwt_key_delete (public_key);
+	(void) cerver_teardown (cerver);
+
+}
+
+// a cerver verifies with its public key and only with it: the one that has just the public key of a pair takes
+// the tokens of the one that signs with its private key, that has nothing to verify its own with
+static void tokens_public_key (void) {
+
+	Cerver *signer = tokens_cerver_create ();
+	HttpCerver *signer_http = (HttpCerver *) signer->cerver_data;
+	test_check_unsigned_eq (
+		tokens_cerver_init (signer, CERVER_JWT_ALGORITHM_ES256, TOKENS_P256_PRIVATE_FILE, NULL), 0, NULL
+	);
+
+	Cerver *verifier = tokens_cerver_create ();
+	HttpCerver *verifier_http = (HttpCerver *) verifier->cerver_data;
+	test_check_unsigned_eq (
+		tokens_cerver_init (verifier, CERVER_JWT_ALGORITHM_ES256, NULL, TOKENS_P256_PUBLIC_FILE), 0, NULL
+	);
+
+	test_check_null_ptr (verifier_http->jwt_private_key);
+	test_check_null_ptr (signer_http->jwt_public_key);
+
+	char *token = tokens_sign (signer_http->jwt_private_key, "{\"id\": \"tokens\"}");
+	test_check_bool_eq (tokens_cerver_verifies (verifier_http, token), true, NULL);
+	test_check_bool_eq (tokens_cerver_verifies (signer_http, token), false, NULL);
+	free (token);
+
+	(void) cerver_teardown (verifier);
+	(void) cerver_teardown (signer);
+
+}
+
+static void tokens_signatures (void) {
+
+	tokens_random_signatures (CERVER_JWT_ALGORITHM_ES256, TOKENS_P256_PRIVATE_FILE, TOKENS_P256_PUBLIC_FILE);
+	tokens_random_signatures (CERVER_JWT_ALGORITHM_PS256, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE);
+	tokens_random_signatures (CERVER_JWT_ALGORITHM_EDDSA, TOKENS_ED25519_PRIVATE_FILE, TOKENS_ED25519_PUBLIC_FILE);
+
+	tokens_public_key ();
 
 }
 
@@ -450,40 +489,92 @@ static void tokens_cerver_keys (void) {
 	tokens_file_write (TOKENS_SECRET_FILE, TOKENS_SECRET);
 	tokens_file_write (TOKENS_SHORT_SECRET_FILE, TOKENS_SHORT_SECRET);
 	tokens_file_write (TOKENS_EMPTY_FILE, "");
+	tokens_file_write (TOKENS_SECRET_JWK_FILE, " " TOKENS_SECRET_JWK "\n");
+	tokens_file_write (TOKENS_SHORT_SECRET_JWK_FILE, TOKENS_SHORT_SECRET_JWK);
 
-	Cerver *cerver = tokens_cerver_create ();
-	test_check_unsigned_ne (tokens_cerver_init (cerver, JWT_ALG_ES256, NULL, TOKENS_RSA_PUBLIC_FILE), 0);
-	(void) cerver_teardown (cerver);
+	// the key of another type, of another curve, and one of RSA with less bits
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_ES256, NULL, TOKENS_RSA_PUBLIC_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_ES256, NULL, TOKENS_P384_PUBLIC_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS256, TOKENS_RSA_WEAK_FILE, TOKENS_RSA_WEAK_PUBLIC_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_PS256, NULL, TOKENS_RSA_WEAK_PUBLIC_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_EDDSA, NULL, TOKENS_P256_PUBLIC_FILE, false);
 
-	cerver = tokens_cerver_create ();
-	test_check_unsigned_ne (tokens_cerver_init (cerver, JWT_ALG_HS256, TOKENS_SHORT_SECRET_FILE, TOKENS_SHORT_SECRET_FILE), 0);
-	(void) cerver_teardown (cerver);
-
-	cerver = tokens_cerver_create ();
-	test_check_unsigned_ne (tokens_cerver_init (cerver, JWT_ALG_HS256, NULL, TOKENS_EMPTY_FILE), 0);
-	(void) cerver_teardown (cerver);
+	// a secret that is shorter than its digest, an empty file and a file that is not there
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, TOKENS_SHORT_SECRET_FILE, TOKENS_SHORT_SECRET_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, NULL, TOKENS_EMPTY_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, NULL, TOKENS_EMPTY_FILE "-missing", false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS384, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE, false);
 
 	// the public PEM as the secret of an HS256 cerver
-	cerver = tokens_cerver_create ();
-	test_check_unsigned_ne (tokens_cerver_init (cerver, JWT_ALG_HS256, NULL, TOKENS_RSA_PUBLIC_FILE), 0);
-	(void) cerver_teardown (cerver);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, NULL, TOKENS_RSA_PUBLIC_FILE, false);
 
-	cerver = tokens_cerver_create ();
+	// a public key can not be the private key of a cerver, nor a private PEM its public key;
+	// a PEM with a passphrase is never decrypted
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS256, TOKENS_RSA_PUBLIC_FILE, NULL, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS256, NULL, TOKENS_RSA_PRIVATE_FILE, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS256, TOKENS_ENCRYPTED_FILE, NULL, false);
+
+	// the keys of each kind of algorithm
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE, true);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS512, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE, true);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_PS384, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE, true);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_ES256, TOKENS_P256_PRIVATE_FILE, TOKENS_P256_PUBLIC_FILE, true);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_EDDSA, TOKENS_ED25519_PRIVATE_FILE, TOKENS_ED25519_PUBLIC_FILE, true);
+
+	// a file that starts an object is a JWK, also for a secret
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, TOKENS_SECRET_JWK_FILE, TOKENS_SECRET_JWK_FILE, true);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_HS256, TOKENS_SHORT_SECRET_JWK_FILE, NULL, false);
+	tokens_cerver_starts (CERVER_JWT_ALGORITHM_RS256, TOKENS_SECRET_JWK_FILE, NULL, false);
+
+	Cerver *cerver = tokens_cerver_create ();
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_NONE), 1, NULL);
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_INVAL), 1, NULL);
-	test_check_int_eq (http_cerver->jwt_alg, JWT_DEFAULT_ALG, NULL);
-	test_check_unsigned_eq (tokens_cerver_init (cerver, JWT_ALG_RS256, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE), 0, NULL);
+	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_NONE), 1, NULL);
+	test_check_unsigned_eq (
+		http_cerver_auth_set_jwt_algorithm (http_cerver, (CerverJwtAlgorithm) CERVER_JWT_ALGORITHMS), 1, NULL
+	);
+	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (NULL, CERVER_JWT_ALGORITHM_HS256), 1, NULL);
+	test_check_int_eq (http_cerver->jwt_alg, HTTP_CERVER_DEFAULT_JWT_ALGORITHM, NULL);
+	test_check_unsigned_eq (
+		tokens_cerver_init (cerver, CERVER_JWT_ALGORITHM_RS256, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE), 0, NULL
+	);
 	(void) cerver_teardown (cerver);
 
 }
 
-// "exp", "nbf", "iss", "aud" and the size with the settings of the cerver
+// the secret of a JWK is the secret of its bytes: the tokens of one cerver are the ones of the other
+static void tokens_cerver_jwk (void) {
+
+	Cerver *secret_cerver = tokens_secret_cerver_create ();
+	HttpCerver *secret_http = (HttpCerver *) secret_cerver->cerver_data;
+
+	char *token = tokens_sign (secret_http->jwt_private_key, "{\"id\": \"tokens\"}");
+
+	(void) cerver_teardown (secret_cerver);
+
+	Cerver *jwk_cerver = tokens_cerver_create ();
+	HttpCerver *jwk_http = (HttpCerver *) jwk_cerver->cerver_data;
+	test_check_unsigned_eq (
+		tokens_cerver_init (jwk_cerver, CERVER_JWT_ALGORITHM_HS256, TOKENS_SECRET_JWK_FILE, TOKENS_SECRET_JWK_FILE),
+		0, NULL
+	);
+
+	test_check (tokens_cerver_verifies (jwk_http, token), NULL);
+
+	char *again = tokens_sign (jwk_http->jwt_private_key, "{\"id\": \"tokens\"}");
+	test_check_str_eq (again, token, NULL);
+
+	free (again);
+	free (token);
+
+	(void) cerver_teardown (jwk_cerver);
+
+}
+
+// "exp", "nbf", "iat", "iss", "sub", "aud" and the size with the settings of the cerver
 static void tokens_cerver_claims (void) {
 
-	Cerver *cerver = tokens_cerver_create ();
+	Cerver *cerver = tokens_secret_cerver_create ();
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	test_check_unsigned_eq (tokens_cerver_init (cerver, JWT_ALG_HS256, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE), 0, NULL);
 
 	const long now = (long) time (NULL);
 	char grants[TOKENS_FILE_SIZE] = { 0 };
@@ -506,7 +597,27 @@ static void tokens_cerver_claims (void) {
 	(void) snprintf (grants, sizeof (grants), "{\"nbf\": %ld}", now + TOKENS_HOUR_SECONDS);
 	char *early = tokens_sign (http_cerver->jwt_private_key, grants);
 	test_check (!tokens_cerver_verifies (http_cerver, early), NULL);
+
+	// and one that is ahead
+	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
+	test_check (tokens_cerver_verifies (http_cerver, early), NULL);
+	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, 0);
 	free (early);
+
+	// a token that was issued in the future is not valid, one that was issued before is
+	(void) snprintf (grants, sizeof (grants), "{\"iat\": %ld}", now + TOKENS_HOUR_SECONDS);
+	char *issued = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (!tokens_cerver_verifies (http_cerver, issued), "a token that was issued in the future");
+
+	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
+	test_check (tokens_cerver_verifies (http_cerver, issued), NULL);
+	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, 0);
+	free (issued);
+
+	(void) snprintf (grants, sizeof (grants), "{\"iat\": %ld}", now - TOKENS_HOUR_SECONDS);
+	issued = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (tokens_cerver_verifies (http_cerver, issued), NULL);
+	free (issued);
 
 	// time claims that are not integers fail closed
 	char *text_nbf = tokens_sign (http_cerver->jwt_private_key, "{\"nbf\": \"0\"}");
@@ -530,14 +641,19 @@ static void tokens_cerver_claims (void) {
 	test_check (!tokens_cerver_verifies (http_cerver, exponent_nbf), "a \"nbf\" with an exponent");
 	free (exponent_nbf);
 
+	char *real_iat = tokens_sign (http_cerver->jwt_private_key, "{\"iat\": 0.5}");
+	test_check (!tokens_cerver_verifies (http_cerver, real_iat), "a real \"iat\"");
+	free (real_iat);
+
 	// a claim that the cerver does not check can be of any type
-	token = tokens_sign (http_cerver->jwt_private_key, "{\"iat\": 0.5, \"sub\": 7, \"values\": [1.5, null, true]}");
+	token = tokens_sign (http_cerver->jwt_private_key, "{\"iss\": 0.5, \"sub\": 7, \"aud\": null, \"values\": [1.5, null, true]}");
 	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
 	free (token);
 
 	// the claims are read in an arena: without one there are none
 	token = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
 	test_check_null_ptr (http_cerver_auth_jwt_verify (http_cerver, NULL, token, strlen (token)));
+	test_check_null_ptr (http_cerver_auth_jwt_verify (NULL, NULL, token, strlen (token)));
 	free (token);
 
 	test_check_null_ptr (http_decode_data_into_json (NULL));
@@ -551,6 +667,34 @@ static void tokens_cerver_claims (void) {
 	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld}", TOKENS_FAR_EXPIRATION);
 	token = tokens_sign (http_cerver->jwt_private_key, grants);
 	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
+	free (token);
+
+	// the subject
+	http_cerver_auth_set_jwt_subject (http_cerver, TOKENS_SUBJECT);
+
+	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"sub\": \"%s\"}", TOKENS_FAR_EXPIRATION, TOKENS_SUBJECT);
+	token = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (tokens_cerver_verifies (http_cerver, token), "the subject of the cerver");
+	free (token);
+
+	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"sub\": \"%s-other\"}", TOKENS_FAR_EXPIRATION, TOKENS_SUBJECT);
+	token = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (!tokens_cerver_verifies (http_cerver, token), "another subject");
+	free (token);
+
+	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"sub\": 7}", TOKENS_FAR_EXPIRATION);
+	token = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (!tokens_cerver_verifies (http_cerver, token), "a subject that is a number");
+	free (token);
+
+	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld}", TOKENS_FAR_EXPIRATION);
+	token = tokens_sign (http_cerver->jwt_private_key, grants);
+	test_check (!tokens_cerver_verifies (http_cerver, token), "a token without its subject");
+
+	// without a subject any token is taken again
+	http_cerver_auth_set_jwt_subject (http_cerver, NULL);
+	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
+	http_cerver_auth_set_jwt_subject (NULL, TOKENS_SUBJECT);
 	free (token);
 
 	// the issuer and the audience
@@ -627,6 +771,10 @@ static void tokens_cerver_claims (void) {
 	test_check (tokens_cerver_verifies (http_cerver, token), "a token with the size of the limit");
 	http_cerver_auth_set_jwt_max_size (http_cerver, strlen (token) - 1);
 	test_check (!tokens_cerver_verifies (http_cerver, token), "a token over the limit");
+
+	// without a limit of the cerver the one of every token is the limit
+	http_cerver_auth_set_jwt_max_size (http_cerver, 0);
+	test_check (tokens_cerver_verifies (http_cerver, token), "a token without a limit of the cerver");
 	http_cerver_auth_set_jwt_max_size (http_cerver, HTTP_CERVER_DEFAULT_JWT_MAX_SIZE);
 	free (token);
 
@@ -708,9 +856,8 @@ static void tokens_nested_claims (char *claims, const size_t arrays) {
 // the claims have at most HTTP_JWT_CLAIMS_DEPTH levels, their object is the first one
 static void tokens_cerver_depth (void) {
 
-	Cerver *cerver = tokens_cerver_create ();
+	Cerver *cerver = tokens_secret_cerver_create ();
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	test_check_unsigned_eq (tokens_cerver_init (cerver, JWT_ALG_HS256, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE), 0, NULL);
 
 	char claims[TOKENS_FILE_SIZE] = { 0 };
 
@@ -744,9 +891,8 @@ static void tokens_cerver_bearer (void) {
 
 	(void) cerver_teardown (cerver);
 
-	cerver = tokens_cerver_create ();
+	cerver = tokens_secret_cerver_create ();
 	http_cerver = (HttpCerver *) cerver->cerver_data;
-	test_check_unsigned_eq (tokens_cerver_init (cerver, JWT_ALG_HS256, TOKENS_SECRET_FILE, TOKENS_SECRET_FILE), 0, NULL);
 
 	// values that are not a bearer, before they were read past their end
 	test_check (!http_cerver_auth_validate_jwt (http_cerver, "", NULL, NULL), NULL);
@@ -767,6 +913,15 @@ static void tokens_cerver_bearer (void) {
 
 	test_check_unsigned_eq (http_jwt->bearer_len, strlen (http_jwt->bearer), NULL);
 	test_check_unsigned_eq (http_jwt->json_len, strlen (http_jwt->json), NULL);
+
+	// the bearer of these values, byte by byte: the keys sorted ("exp" before "id") and the HMAC of the
+	// openssl tool over its first two parts
+	test_check_str_eq (
+		http_jwt->bearer,
+		"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImlkIjoidG9rZW5zIn0."
+		"plge7FblP7anBnUIBlG_Ab4Y_mHaOvd8t8Z0mtl6cKw",
+		NULL
+	);
 
 	char expected[TOKENS_TOKEN_SIZE] = { 0 };
 	(void) snprintf (
@@ -879,11 +1034,40 @@ static void tokens_cerver_bearer (void) {
 
 	http_jwt_delete (http_jwt);
 
+	// the values of a token with every character as its longest escape fit in its claims, not in its bearer
+	http_jwt = (HttpJwt *) http_jwt_new ();
+
+	char control[HTTP_JWT_VALUE_VALUE_SIZE] = { 0 };
+	(void) memset (control, '\x01', HTTP_JWT_VALUE_VALUE_SIZE - 1);
+
+	for (unsigned int i = 0; i < HTTP_JWT_VALUES_SIZE; i++) {
+		char key[HTTP_JWT_VALUE_KEY_SIZE] = { 0 };
+		(void) memset (key, '\x02', HTTP_JWT_VALUE_KEY_SIZE - 1);
+		key[0] = (char) ('a' + i);
+
+		http_cerver_auth_jwt_add_value (http_jwt, key, control);
+	}
+
+	test_check_unsigned_eq (http_jwt->n_values, HTTP_JWT_VALUES_SIZE, NULL);
+
+	char *large = http_cerver_auth_generate_jwt (http_cerver, http_jwt);
+	test_check_ptr (large);
+	test_check (strlen (large) > HTTP_JWT_BEARER_SIZE, "the token of the largest values fits in a bearer");
+	free (large);
+
+	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 1, "a bearer that does not fit");
+	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
+	test_check_str_eq (http_jwt->bearer, "", NULL);
+
+	http_jwt_delete (http_jwt);
+
 	(void) cerver_teardown (cerver);
 
 	(void) remove (TOKENS_SECRET_FILE);
 	(void) remove (TOKENS_SHORT_SECRET_FILE);
 	(void) remove (TOKENS_EMPTY_FILE);
+	(void) remove (TOKENS_SECRET_JWK_FILE);
+	(void) remove (TOKENS_SHORT_SECRET_JWK_FILE);
 
 }
 
@@ -893,13 +1077,16 @@ void http_tests_tokens (void) {
 
 	(void) printf ("Testing HTTP tokens...\n");
 
+	// the files of the secrets of every test
+	tokens_file_write (TOKENS_SECRET_FILE, TOKENS_SECRET);
+
+	test_run (tokens_cerver_keys);
+	test_run (tokens_cerver_jwk);
 	test_run (tokens_encode_empty);
 	test_run (tokens_hmac_signature);
 	test_run (tokens_algorithm);
 	test_run (tokens_parts);
-	test_run (tokens_keys);
-	test_run (tokens_ecdsa);
-	test_run (tokens_cerver_keys);
+	test_run (tokens_signatures);
 	test_run (tokens_cerver_claims);
 	test_run (tokens_cerver_depth);
 	test_run (tokens_cerver_bearer);

@@ -4,10 +4,10 @@
 #include <string.h>
 
 #include <cerver/http/core/http.h>
-#include <cerver/http/jwt/alg.h>
-#include <cerver/http/jwt/jwt.h>
-#include <cerver/http/jwt/key.h>
 #include <cerver/http/security/auth.h>
+
+#include <cerver/jwt/jwt.h>
+#include <cerver/jwt/key.h>
 
 #include "../../test.h"
 #include "../http.h"
@@ -17,7 +17,6 @@ static HttpJwt *test_http_jwt_new (void) {
 	HttpJwt *http_jwt = (HttpJwt *) http_jwt_new ();
 
 	test_check_ptr (http_jwt);
-	test_check_null_ptr (http_jwt->jwt);
 	test_check_int_eq (http_jwt->n_values, 0, NULL);
 
 	return http_jwt;
@@ -191,7 +190,7 @@ static void test_http_jwt_generate_internal (HttpJwt *http_jwt) {
 }
 
 // the RS256 private key of the tests, parsed once as the cerver does
-static JwtKey *test_http_jwt_private_key (void) {
+static CerverJwtKey *test_http_jwt_private_key (void) {
 
 	size_t private_key_len = 0;
 	char *private_key = http_cerver_auth_load_key (
@@ -201,28 +200,28 @@ static JwtKey *test_http_jwt_private_key (void) {
 	test_check_ptr (private_key);
 	test_check_int_ne ((int) private_key_len, 0);
 
-	JwtKeyError error = JWT_KEY_ERROR_NONE;
-	JwtKey *key = jwt_key_create (
-		JWT_ALG_RS256, JWT_KEY_TYPE_PRIVATE,
-		(const unsigned char *) private_key, private_key_len, &error
+	CerverJwtError error = CERVER_JWT_ERROR_MEMORY;
+	CerverJwtKey *key = cerver_jwt_key_create_pem (
+		CERVER_JWT_ALGORITHM_RS256, private_key, private_key_len, true, &error
 	);
 
 	free (private_key);
 
 	test_check_ptr (key);
-	test_check_int_eq (error, JWT_KEY_ERROR_NONE, NULL);
+	test_check_int_eq (error, CERVER_JWT_ERROR_NONE, NULL);
 
 	return key;
 
 }
 
+// the token of the 2.x, byte by byte: RS256 has no random part
 static void test_http_jwt_generate (void) {
 
 	HttpJwt *http_jwt = test_http_jwt_new ();
 
 	test_http_jwt_generate_internal (http_jwt);
 
-	JwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_http_jwt_private_key ();
 
 	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
 
@@ -230,7 +229,7 @@ static void test_http_jwt_generate (void) {
 	test_check_str_eq (token, base_token, NULL);
 	test_check_str_len (token, strlen (base_token), NULL);
 
-	// a second call replaces the first jwt, it is not lost
+	// a second call generates the same token
 	char *again = http_cerver_auth_generate_jwt_actual (http_jwt, key);
 	test_check_ptr (again);
 	test_check_str_eq (again, base_token, NULL);
@@ -238,7 +237,7 @@ static void test_http_jwt_generate (void) {
 	free (again);
 	free (token);
 
-	jwt_key_delete (key);
+	cerver_jwt_key_delete (key);
 
 	http_jwt_delete (http_jwt);
 
@@ -251,7 +250,7 @@ static void test_http_jwt_generate_bearer (void) {
 	// add values to token
 	test_http_jwt_generate_internal (http_jwt);
 
-	JwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_http_jwt_private_key ();
 
 	// generate bearer token
 	u8 result = http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key);
@@ -265,9 +264,92 @@ static void test_http_jwt_generate_bearer (void) {
 	test_check_str_len (http_jwt->bearer, strlen (expected_token), NULL);
 	test_check_unsigned_eq (http_jwt->bearer_len, strlen (expected_token), NULL);
 
-	jwt_key_delete (key);
+	cerver_jwt_key_delete (key);
 
 	http_jwt_delete (http_jwt);
+
+}
+
+// the claims of a token are written with their keys sorted: the values in any order make the same token
+static void test_http_jwt_generate_sorted (void) {
+
+	HttpJwt *http_jwt = test_http_jwt_new ();
+
+	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	http_cerver_auth_jwt_add_value (http_jwt, "role", "common");
+	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	http_cerver_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
+	http_cerver_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
+
+	CerverJwtKey *key = test_http_jwt_private_key ();
+
+	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	test_check_ptr (token);
+	test_check_str_eq (token, base_token, NULL);
+	free (token);
+
+	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key), 0, NULL);
+	test_check_str_eq (http_jwt->bearer + HTTP_JWT_BEARER_PREFIX_LENGTH, base_token, NULL);
+
+	cerver_jwt_key_delete (key);
+
+	http_jwt_delete (http_jwt);
+
+}
+
+// an HttpJwt with a value that is not a claim has no token and no bearer
+static void test_http_jwt_not_generated (HttpJwt *http_jwt, const CerverJwtKey *key) {
+
+	test_check_null_ptr (http_cerver_auth_generate_jwt_actual (http_jwt, key));
+
+	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key), 1, NULL);
+	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
+	test_check_str_empty (http_jwt->bearer);
+
+	http_jwt_delete (http_jwt);
+
+}
+
+// a key more than once, a value without a key and a text that is not UTF-8 are not claims
+static void test_http_jwt_generate_invalid (void) {
+
+	CerverJwtKey *key = test_http_jwt_private_key ();
+
+	HttpJwt *http_jwt = test_http_jwt_new ();
+	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	http_cerver_auth_jwt_add_value (http_jwt, "role", "common");
+	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	test_http_jwt_not_generated (http_jwt, key);
+
+	// the same key with values of other types
+	http_jwt = test_http_jwt_new ();
+	http_cerver_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
+	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	http_cerver_auth_jwt_add_value_bool (http_jwt, "iat", true);
+	test_http_jwt_not_generated (http_jwt, key);
+
+	http_jwt = test_http_jwt_new ();
+	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	http_cerver_auth_jwt_add_value (http_jwt, "", "value");
+	test_http_jwt_not_generated (http_jwt, key);
+
+	http_jwt = test_http_jwt_new ();
+	http_cerver_auth_jwt_add_value (http_jwt, "id", "not \xff UTF-8");
+	test_http_jwt_not_generated (http_jwt, key);
+
+	http_jwt = test_http_jwt_new ();
+	http_cerver_auth_jwt_add_value_int (http_jwt, "not \xc3 UTF-8", STATIC_DATE);
+	test_http_jwt_not_generated (http_jwt, key);
+
+	// a token without values has the claims of an empty object
+	http_jwt = test_http_jwt_new ();
+	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	test_check_ptr (token);
+	test_check (strstr (token, ".e30.") != NULL, token);
+	free (token);
+	http_jwt_delete (http_jwt);
+
+	cerver_jwt_key_delete (key);
 
 }
 
@@ -287,30 +369,9 @@ static void test_http_jwt_generate_without_key (void) {
 
 }
 
-// {"typ": "JWT"} as the header, a token without "alg" (found by the jwt fuzzer)
-static const char *token_without_alg = { "eyJ0eXAiOiJKV1QifQ.e30." };
-
-static const char *jwt_test_key = { "not-a-key" };
-
-static void test_http_jwt_decode_without_alg (void) {
-
-	jwt_t *jwt = NULL;
-	test_check_int_ne (
-		jwt_decode (&jwt, token_without_alg, (const unsigned char *) jwt_test_key, (int) strlen (jwt_test_key)),
-		0
-	);
-
-	test_check_null_ptr (jwt);
-
-	test_check_int_eq (jwt_str_alg (NULL), JWT_ALG_INVAL, NULL);
-
-}
-
 void http_tests_jwt (void) {
 
 	(void) printf ("Testing HTTP jwt...\n");
-
-	test_http_jwt_decode_without_alg ();
 
 	test_http_jwt_add_value ();
 
@@ -325,6 +386,10 @@ void http_tests_jwt (void) {
 	test_http_jwt_generate ();
 
 	test_http_jwt_generate_bearer ();
+
+	test_http_jwt_generate_sorted ();
+
+	test_http_jwt_generate_invalid ();
 
 	test_http_jwt_generate_without_key ();
 

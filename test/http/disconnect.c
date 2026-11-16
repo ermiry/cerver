@@ -41,6 +41,8 @@
 #include <cerver/http/routes/route.h>
 #include <cerver/http/security/auth.h>
 
+#include <cerver/jwt/jwt.h>
+
 #include <cerver/threads/jobs.h>
 #include <cerver/threads/thpool.h>
 
@@ -1462,7 +1464,7 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 
 	test_check_ptr (http_cerver_static_path_add (http_cerver, DISCONNECT_PUBLIC_PATH));
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
 	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 

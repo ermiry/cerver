@@ -10,6 +10,8 @@
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/security/auth.h>
 
+#include <cerver/jwt/jwt.h>
+
 #include <cerver/threads/worker.h>
 
 #include "../test.h"
@@ -55,7 +57,7 @@ static void test_http_cerver_new (void) {
 
 	test_check (http_cerver->uploads_delete_when_done == HTTP_CERVER_DEFAULT_UPLOADS_DELETE, NULL);
 
-	test_check (http_cerver->jwt_alg == JWT_ALG_NONE, NULL);
+	test_check (http_cerver->jwt_alg == CERVER_JWT_ALGORITHM_NONE, NULL);
 
 	test_check_null_ptr (http_cerver->jwt_opt_key_name);
 	test_check_null_ptr (http_cerver->jwt_private_key);
@@ -143,7 +145,8 @@ static HttpCerver *test_http_cerver_create (void) {
 
 	test_check (http_cerver->uploads_delete_when_done == HTTP_CERVER_DEFAULT_UPLOADS_DELETE, NULL);
 
-	test_check (http_cerver->jwt_alg == JWT_DEFAULT_ALG, NULL);
+	test_check (http_cerver->jwt_alg == HTTP_CERVER_DEFAULT_JWT_ALGORITHM, NULL);
+	test_check (http_cerver->jwt_alg == CERVER_JWT_ALGORITHM_HS256, NULL);
 
 	test_check_null_ptr (http_cerver->jwt_opt_key_name);
 	test_check_null_ptr (http_cerver->jwt_private_key);

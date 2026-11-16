@@ -36,7 +36,6 @@
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/headers/fields.h>
-#include <cerver/http/jwt/alg.h>
 #include <cerver/http/requests/multipart.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
@@ -49,6 +48,8 @@
 
 #include <cerver/json/json.h>
 #include <cerver/json/value.h>
+
+#include <cerver/jwt/jwt.h>
 
 #include "../test.h"
 #include "http.h"
@@ -2216,6 +2217,33 @@ static void test_receive_bearer_decode_delete (void *data) {
 
 }
 
+// what the handler of the bearer route found in the claims of its request: its id and whether it has its "exp"
+static char test_receive_bearer_request_claim[TEST_RECEIVE_PATH_SIZE] = { 0 };
+static bool test_receive_bearer_request_expires = false;
+static bool test_receive_bearer_request_claims = false;
+
+// the handler of the bearer route has the claims of its token while its request lives
+static void test_receive_bearer_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	const CerverJsonValue *claims = http_request_claims (request);
+	const CerverJsonValue *id = cerver_json_object_get (claims, "id");
+
+	test_receive_bearer_request_claims = cerver_json_is_object (claims);
+
+	(void) snprintf (
+		test_receive_bearer_request_claim, TEST_RECEIVE_PATH_SIZE, "%s",
+		cerver_json_is_string (id) ? cerver_json_string_value (id) : ""
+	);
+
+	test_receive_bearer_request_expires =
+		cerver_json_type (cerver_json_object_get (claims, "exp")) == CERVER_JSON_TYPE_INTEGER;
+
+	test_receive_echo_handler (http_receive, request);
+
+}
+
 static Cerver *test_receive_bearer_cerver_create (void) {
 
 	Cerver *cerver = cerver_create (
@@ -2226,12 +2254,12 @@ static Cerver *test_receive_bearer_cerver_create (void) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	HttpRoute *bearer_route = http_route_create (REQUEST_METHOD_POST, "bearer", test_receive_echo_handler);
+	HttpRoute *bearer_route = http_route_create (REQUEST_METHOD_POST, "bearer", test_receive_bearer_handler);
 	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
 	http_route_set_decode_data (bearer_route, test_receive_bearer_decode, test_receive_bearer_decode_delete);
 	http_cerver_route_register (http_cerver, bearer_route);
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
 	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 
@@ -2276,6 +2304,10 @@ static void test_receive_bearer_case (
 	test_receive_bearer_data = NULL;
 	test_receive_bearer_deleted = 0;
 
+	test_receive_bearer_request_claim[0] = '\0';
+	test_receive_bearer_request_expires = false;
+	test_receive_bearer_request_claims = false;
+
 	test_receive_whole_case (cerver, name, request);
 
 	test_receive_expect (test_receive_status_is (status));
@@ -2283,21 +2315,28 @@ static void test_receive_bearer_case (
 }
 
 // the decode data of the route got the claims of the bearer, and what it gave was the data of the request,
-// released with it
+// released with it; its handler read the same claims from its request (http_request_claims ())
 static void test_receive_bearer_expect_decoded (const char *claim) {
 
 	test_receive_expect (!strcmp (test_receive_bearer_claim, claim));
 	test_receive_expect (test_receive_bearer_data != NULL);
 	test_receive_expect (test_receive_bearer_deleted == 1);
 
+	test_receive_expect (test_receive_bearer_request_claims);
+	test_receive_expect (!strcmp (test_receive_bearer_request_claim, claim));
+	test_receive_expect (test_receive_bearer_request_expires);
+
 }
 
-// a bearer that is not valid never reaches the decode data of its route
+// a bearer that is not valid never reaches the decode data of its route, nor its handler
 static void test_receive_bearer_expect_not_decoded (void) {
 
 	test_receive_expect (test_receive_bearer_claim[0] == '\0');
 	test_receive_expect (test_receive_bearer_data == NULL);
 	test_receive_expect (test_receive_bearer_deleted == 0);
+
+	test_receive_expect (!test_receive_bearer_request_claims);
+	test_receive_expect (test_receive_bearer_request_claim[0] == '\0');
 
 }
 
@@ -2432,7 +2471,7 @@ static void test_receive_static_bearer_authentication (void) {
 	Cerver *cerver = test_receive_static_cerver_create (HTTP_ROUTE_AUTH_TYPE_BEARER, &private_path);
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
 	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 
