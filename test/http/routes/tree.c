@@ -8,13 +8,13 @@
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
-#include <cerver/http/json/json.h>
-#include <cerver/http/json/value.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/routes/middleware.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/routes/validator.h>
+#include <cerver/http/websockets/frame.h>
+#include <cerver/http/websockets/settings.h>
 
 #include "../../test.h"
 
@@ -36,6 +36,14 @@
 static const char *test_tree_fuzz_alphabet[] = { "a", "b", "users", "items", "1", "me" };
 static const size_t test_tree_fuzz_alphabet_size = 6;
 
+// the settings of the WebSocket endpoint of the routes json
+#define TEST_TREE_PROTOCOLS					2
+#define TEST_TREE_MAX_MESSAGE				1024
+#define TEST_TREE_PING_INTERVAL				500
+#define TEST_TREE_PONG_TIMEOUT				250
+
+static const char * const test_tree_protocols[TEST_TREE_PROTOCOLS] = { "chat", "the.second" };
+
 static const char *test_tree_objectid = { "5f9b1c2d3e4f5a6b7c8d9e0f" };
 
 // the order in which the middlewares ran
@@ -48,6 +56,18 @@ static void test_tree_handler (
 
 	(void) http_receive;
 	(void) request;
+
+}
+
+static void test_tree_web_socket_message (
+	struct _HttpWebSocket *web_socket,
+	HttpWebSocketOpcode type, const void *data, size_t size
+) {
+
+	(void) web_socket;
+	(void) type;
+	(void) data;
+	(void) size;
 
 }
 
@@ -837,28 +857,8 @@ static void test_tree_admin_groups (void) {
 
 }
 
-static const json_t *test_tree_json_endpoint (
-	const json_t *endpoints, const char *method, const char *path
-) {
-
-	const json_t *found = NULL;
-
-	for (size_t idx = 0; idx < json_array_size (endpoints); idx++) {
-		const json_t *endpoint = json_array_get (endpoints, idx);
-		if (
-			!strcmp (json_string_value (json_object_get (endpoint, "method")), method)
-			&& !strcmp (json_string_value (json_object_get (endpoint, "path")), path)
-		) {
-			found = endpoint;
-			break;
-		}
-	}
-
-	return found;
-
-}
-
-// the compiled endpoints as json, with their auth, modifier and if they come from the first API
+// the compiled endpoints as json, byte by byte: their auth, their modifier, if they come from the first API,
+// the settings that a group gives and the ones that an endpoint replaces, and the ones of a WebSocket
 static void test_tree_json (void) {
 
 	HttpCerver *http_cerver = test_tree_cerver ();
@@ -883,6 +883,20 @@ static void test_tree_json (void) {
 	test_check_ptr (internal);
 	http_endpoint_set_auth (internal, HTTP_ROUTE_AUTH_TYPE_NONE);
 
+	HttpWebSocketHandlers handlers;
+	(void) memset (&handlers, 0, sizeof (HttpWebSocketHandlers));
+	handlers.on_message = test_tree_web_socket_message;
+
+	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &handlers);
+	test_check_ptr (socket);
+	test_check_unsigned_eq (
+		http_endpoint_set_web_socket_protocols (socket, test_tree_protocols, TEST_TREE_PROTOCOLS), 0, NULL
+	);
+	http_endpoint_set_web_socket_compression (socket, false);
+	http_endpoint_set_web_socket_origin_check (socket, true);
+	http_endpoint_set_web_socket_max_message (socket, TEST_TREE_MAX_MESSAGE);
+	http_endpoint_set_web_socket_ping_milliseconds (socket, TEST_TREE_PING_INTERVAL, TEST_TREE_PONG_TIMEOUT);
+
 	HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "api/main", test_tree_handler);
 	http_cerver_route_register (http_cerver, main_route);
 
@@ -891,40 +905,27 @@ static void test_tree_json (void) {
 	char *json_string = http_cerver_routes_generate_json (http_cerver);
 	test_check_ptr (json_string);
 
-	json_error_t error = CERVER_ZERO_INITIALIZER;
-	json_t *json = json_loads (json_string, 0, &error);
-	test_check_ptr (json);
+	// the endpoints are in the order of the tree, the settings of the group are inherited
+	// and an endpoint can replace them
+	test_check_str_eq (
+		json_string,
+		"{\"n_endpoints\": 5, \"endpoints\": ["
+		"{\"method\": \"GET\", \"path\": \"/api/main\", \"auth\": \"None\", \"modifier\": \"None\", "
+		"\"compatibility\": true, \"cors\": false, \"etag\": false, \"compression\": false}, "
+		"{\"method\": \"GET\", \"path\": \"/api/service\", \"auth\": \"Custom\", \"modifier\": \"None\", "
+		"\"compatibility\": false, \"cors\": false, \"etag\": true, \"compression\": true}, "
+		"{\"method\": \"POST\", \"path\": \"/api/service/internal\", \"auth\": \"None\", \"modifier\": \"None\", "
+		"\"compatibility\": false, \"cors\": false, \"etag\": true, \"compression\": true}, "
+		"{\"method\": \"GET\", \"path\": \"/api/service/socket\", \"auth\": \"Custom\", \"modifier\": \"WebSocket\", "
+		"\"compatibility\": false, \"cors\": false, \"etag\": true, \"compression\": true, "
+		"\"websocket\": {\"protocols\": [\"chat\", \"the.second\"], \"compression\": false, "
+		"\"origin_check\": true, \"max_message\": 1024, \"ping_interval\": 500}}, "
+		"{\"method\": \"POST\", \"path\": \"/api/service/upload\", \"auth\": \"Custom\", \"modifier\": \"Multi-Part\", "
+		"\"compatibility\": false, \"cors\": true, \"etag\": false, \"compression\": false}"
+		"]}",
+		NULL
+	);
 
-	const json_t *endpoints = json_object_get (json, "endpoints");
-	test_check_unsigned_eq (json_integer_value (json_object_get (json, "n_endpoints")), 4, NULL);
-	test_check_unsigned_eq (json_array_size (endpoints), 4, NULL);
-
-	const json_t *root = test_tree_json_endpoint (endpoints, "GET", "/api/service");
-	test_check_ptr (root);
-	test_check_str_eq (json_string_value (json_object_get (root, "auth")), http_route_auth_type_to_string (HTTP_ROUTE_AUTH_TYPE_CUSTOM), NULL);
-	test_check (json_is_false (json_object_get (root, "compatibility")), NULL);
-
-	// the settings of the group are inherited, an endpoint can replace them
-	test_check (json_is_true (json_object_get (root, "etag")), NULL);
-	test_check (json_is_true (json_object_get (root, "compression")), NULL);
-	test_check (json_is_false (json_object_get (root, "cors")), NULL);
-
-	const json_t *upload_json = test_tree_json_endpoint (endpoints, "POST", "/api/service/upload");
-	test_check_ptr (upload_json);
-	test_check_str_eq (json_string_value (json_object_get (upload_json, "modifier")), http_route_modifier_to_string (HTTP_ROUTE_MODIFIER_MULTI_PART), NULL);
-	test_check (json_is_false (json_object_get (upload_json, "etag")), NULL);
-	test_check (json_is_false (json_object_get (upload_json, "compression")), NULL);
-	test_check (json_is_true (json_object_get (upload_json, "cors")), NULL);
-
-	const json_t *internal_json = test_tree_json_endpoint (endpoints, "POST", "/api/service/internal");
-	test_check_ptr (internal_json);
-	test_check_str_eq (json_string_value (json_object_get (internal_json, "auth")), http_route_auth_type_to_string (HTTP_ROUTE_AUTH_TYPE_NONE), NULL);
-
-	const json_t *main_json = test_tree_json_endpoint (endpoints, "GET", "/api/main");
-	test_check_ptr (main_json);
-	test_check (json_is_true (json_object_get (main_json, "compatibility")), NULL);
-
-	json_decref (json);
 	http_cerver_routes_json_delete (json_string);
 
 	http_cerver_delete (http_cerver);
