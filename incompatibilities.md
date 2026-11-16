@@ -3,6 +3,71 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-5 (from 3.0b-4)
+
+The event loop, keep-alive and the named pools of `nightly` (its F3, F4 and F5, the 2.1b-15 to the 2.1b-17), ported
+by hand with the stop of the 3.0b-4: `CERVER_HANDLER_TYPE_EVENTS`, a new handler type that is opt-in and only for a
+web cerver. Some structs are bigger (a binary built with the 3.0b-4 is built again); the entries «2.1b-15», «2.1b-16»
+and «2.1b-17» of the `incompatibilities.md` of `nightly` have every detail.
+
+**The structs and the API**
+
+- **The structs are bigger, and some fields moved:** `Cerver` ends with `n_io_threads`, `max_connections`,
+  `overload_wait_timeout` and `event_loops`; `HttpReceive` with `connection`, `pause` (the new enum
+  `HttpReceivePause`), `authorize_pending` and `n_requests`; `HttpCerver` with the keep-alive settings, the pools,
+  the health and ready routes and their counters; `Thpool` with `queue_awaited`; `CerverReceive` has `n_requests`
+  and `idle_deadline` before `recycle_next`. `HttpRouteSettings` has `pool_name` and `pool` before its middlewares,
+  so `middlewares` and `web_socket` moved in it, and with them the fields of `HttpEndpoint` and `HttpGroup` after
+  their settings; `HttpRoute` has `pool_name`
+- **`CERVER_HANDLER_TYPE_MAP` has a fourth row,** `CERVER_HANDLER_TYPE_EVENTS` = 3, with `cerver_set_io_threads ()`
+  (`CERVER_DEFAULT_IO_THREADS`, 1), `cerver_set_max_connections ()` (`CERVER_DEFAULT_MAX_CONNECTIONS`, 2^14) and
+  `cerver_set_overload_wait_timeout ()` (`CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT`, 2^5 secs); the other handler types
+  ignore the three. `cerver_start ()` fails with EVENTS in a cerver that is not `CERVER_TYPE_WEB` or that has no
+  thpool threads
+- **`HttpReceiveDispatch` has two more values,** `HTTP_RECEIVE_DISPATCH_HEALTH` (6) and `HTTP_RECEIVE_DISPATCH_READY`
+  (7), and `HTTP_RECEIVE_DISPATCH_MAX` is 8
+- **New:** `http_cerver_set_keep_alive ()`, `http_cerver_set_keep_alive_timeout ()` and its `_milliseconds`,
+  `http_cerver_set_keep_alive_requests ()`, `http_cerver_set_keep_alive_follow ()`,
+  `HTTP_RESPONSE_CONNECTION_KEEP_ALIVE`; `cerver/http/core/pool.h` (in the umbrella `cerver/http/http.h`) with
+  `HttpPool`, `http_cerver_pool_create ()` and its setters, `http_group_set_pool ()`, `http_endpoint_set_pool ()`
+  and `http_route_set_pool ()`; `http_cerver_set_health_route ()`, `http_cerver_set_ready_route ()` and
+  `http_cerver_is_ready ()`; `thpool_has_queued ()`
+- **The metrics and the stats of the admin routes have new series and keys,** none changed: the pools, the
+  connections, the health and ready requests, the reused and the followed requests and the time of the writes of
+  the uploads. A client that rejects a key that it does not know has to accept them
+
+**With `CERVER_HANDLER_TYPE_EVENTS`** (what is different from THREADS in the same cerver)
+
+- `decode_data` of a route with a Bearer token and the uploads generators run in an I/O thread, so they must not
+  wait; the custom authentication, the handlers, the middlewares and the static files run in the thpool or in the
+  pool of their route
+- `CERVER_OVERLOAD_POLICY_WAIT` parks a request in its loop up to `cerver_set_overload_wait_timeout ()` and then
+  answers 503 with `Retry-After`, the accept is not stopped; the requests go to the thpool in the order that they
+  are complete; `SO_REUSEPORT` is set with more than one I/O thread
+- **The stop wakes up the loops with the stop pipe of the 3.0b-4:** the thread in `cerver_start ()` waits on its
+  read end too, so `cerver_stop_request ()` from a signal handler stops a cerver with event loops; a cerver whose
+  pipe could not be created does not start its event loops
+- **Keep-alive is on:** a response has `Connection: close` only when its connection is closed after it (an HTTP/1.1
+  client that is kept gets no header, an HTTP/1.0 one `Connection: keep-alive`), pipelined requests are answered
+  in their order, an idle connection is closed after `keep_alive_timeout` without a response, and at
+  `cerver_set_max_connections ()` a new connection takes the place of the one that has been idle the longest. A
+  client that reads a response until the end of its connection has to use its `Content-Length` or send
+  `Connection: close`; a cerver that wants the close of before calls `http_cerver_set_keep_alive (http_cerver, false)`
+- **The named pools only start with EVENTS;** with `THREADS` or `POLL` a cerver logs a warning and every request
+  runs in the thread of its connection. A route with a pool that the cerver does not have stops the cerver when it
+  starts. A path set as the health or the ready route is answered by cerver for GET and HEAD before the routes tree
+  (the ready route answers 503 without closing its connection)
+
+**With `THREADS` or `POLL`,** only after `http_cerver_set_keep_alive (http_cerver, true)`: the thread that handled a
+request stays with its connection until its next request while no other connection waits for a thread.
+
+**Tests and scripts:** the web servers of the tests take their handler type from `CERVER_TEST_HANDLER` (`threads`
+by default, `events`) and their I/O threads from `CERVER_TEST_IO_THREADS`; `test/integration.sh` and
+`test/nginx/run.sh` run the web pairs once per handler (`HANDLERS`); `test/performance.sh` also fails when EVENTS is
+below 90 % of the req/s of THREADS, and below 150 % with a connection that is kept; `benchmarks/load` takes
+`LOAD_KEEP_ALIVE` and `benchmarks/server` the handler type, its I/O threads and `BENCH_KEEP_ALIVE`. `make
+DEFINES="…"` keeps the `-D CERVER_CRYPTO_OPENSSL` of the provider (`override`).
+
 ## 3.0b-4 (from 3.0b-3)
 
 The backlog of the review of the code: the fixes of the 1.9b-2 (`core`) and of the 2.0b-75 (`http`), what had no
