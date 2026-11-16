@@ -3,6 +3,8 @@
 #include <stdlib.h>
 
 #include "../test.h"
+#include "core.h"
+#include "http.h"
 #include "websockets.h"
 
 int main (void) {
@@ -14,6 +16,8 @@ int main (void) {
 
 	(void) printf ("Testing FAULTS...\n");
 
+	faults_tests_core ();
+	faults_tests_http ();
 	faults_tests_websockets ();
 
 	(void) printf ("\nDone with FAULTS tests!\n\n");
