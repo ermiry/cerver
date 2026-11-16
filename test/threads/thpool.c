@@ -171,6 +171,9 @@ static void thpool_test_fill (Thpool *thpool, ThpoolTestGate *gate) {
 
 	test_check_unsigned_eq (thpool_get_queued (thpool), THPOOL_SMALL_QUEUE, NULL);
 
+	// what a thread asks without the mutex
+	test_check_true (thpool_has_queued (thpool));
+
 }
 
 #pragma endregion
@@ -301,6 +304,10 @@ static void test_thpool_add_work (void) {
 	thpool_test_wait_working (thpool, 1);
 	test_check_false (thpool_is_empty (thpool));
 	test_check_unsigned_eq (thpool_get_queued (thpool), 0, NULL);
+
+	// the job that runs left the queue: none waits for a thread
+	test_check_false (thpool_has_queued (thpool));
+	test_check_false (thpool_has_queued (NULL));
 
 	thpool_test_gate_open (&gate);
 	thpool_wait (thpool);
