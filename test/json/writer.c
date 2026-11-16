@@ -10,9 +10,6 @@
 
 #include <cerver/collections/arena.h>
 
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/value.h"
-
 #include <cerver/json/document.h>
 #include <cerver/json/json.h>
 #include <cerver/json/value.h>
@@ -1162,8 +1159,9 @@ static void test_writer_values_depth (void) {
 
 }
 
-// the texts that the JSON of the responses of cerver writes today: the same bytes
-static void test_writer_compatible (void) {
+// the texts that the JSON of the responses of cerver wrote with the copy of Jansson (the 2.x and until the
+// 3.0b-7, where both wrote them with the same bytes): read and written again, they are the same bytes
+static void test_writer_texts (void) {
 
 	static const char *texts[] = {
 		"{\"value\": 7}", "{\"value\": 4102444800}", "{\"value\": 1.5}", "{\"value\": \"text\"}",
@@ -1172,59 +1170,21 @@ static void test_writer_compatible (void) {
 		"[]", "{}", "[1, \"two\", [3, {\"four\": 4}], {}, []]",
 		"{\"escaped\": \"a\\\"b\\\\c\\n\\td\\u0001/\", \"unicode\": \"\xC3\xA9\xF0\x9F\x98\x80\"}",
 		"{\"token\": \"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.c2lnbmF0dXJl\"}",
-		"[0.5, 2.25, -100.125, 1e+100, 1024.0]"
-	};
-
-	static const size_t flags[][2] = {
-		{ 0, CERVER_JSON_FLAGS_NONE },
-		{ JSON_COMPACT, CERVER_JSON_WRITE_COMPACT },
-		{ JSON_ESCAPE_SLASH, CERVER_JSON_WRITE_ESCAPE_SLASH },
-		{ JSON_ENSURE_ASCII, CERVER_JSON_WRITE_ENSURE_ASCII }
+		"[0.5, 2.25, -100.125, 1e100, 1024.0]"
 	};
 
 	char buffer[WRITER_TEST_BUFFER_SIZE];
-	json_error_t error;
 
 	for (size_t i = 0; i < (sizeof (texts) / sizeof (texts[0])); i++) {
 		CerverJsonDocument *document = json_test_parse (texts[i]);
 
-		json_t *json = json_loads (texts[i], JSON_DECODE_ANY, &error);
-		test_check_ptr (json);
+		test_check_unsigned_eq (
+			cerver_json_write (cerver_json_document_root (document), buffer, sizeof (buffer), CERVER_JSON_FLAGS_NONE),
+			strlen (texts[i]), texts[i]
+		);
 
-		for (size_t flag = 0; flag < (sizeof (flags) / sizeof (flags[0])); flag++) {
-			char *expected = json_dumps (json, flags[flag][0] | JSON_ENCODE_ANY);
-			test_check_ptr (expected);
+		test_check_str_eq (buffer, texts[i], NULL);
 
-			(void) cerver_json_write (
-				cerver_json_document_root (document), buffer, sizeof (buffer), (unsigned int) flags[flag][1]
-			);
-
-			if (strcmp (buffer, expected)) {
-				(void) fprintf (stderr, "<%s> is written as <%s> and it was <%s>\n", texts[i], buffer, expected);
-				exit (1);
-			}
-
-			free (expected);
-		}
-
-		// with each value in its line
-		char *expected = json_dumps (json, JSON_INDENT (4) | JSON_ENCODE_ANY);
-		test_check_ptr (expected);
-
-		CerverJsonWriter writer;
-		cerver_json_writer_init (&writer, buffer, sizeof (buffer), CERVER_JSON_FLAGS_NONE);
-		cerver_json_writer_set_indent (&writer, 4);
-		cerver_json_writer_value (&writer, cerver_json_document_root (document));
-		test_check_unsigned_eq (cerver_json_writer_end (&writer), CERVER_JSON_ERROR_NONE, NULL);
-
-		if (strcmp (buffer, expected)) {
-			(void) fprintf (stderr, "<%s> is written as <%s> and it was <%s>\n", texts[i], buffer, expected);
-			exit (1);
-		}
-
-		free (expected);
-
-		json_decref (json);
 		cerver_json_document_delete (document);
 	}
 
@@ -1260,6 +1220,6 @@ void json_tests_writer (void) {
 	test_run (test_writer_values);
 	test_run (test_writer_values_inside);
 	test_run (test_writer_values_depth);
-	test_run (test_writer_compatible);
+	test_run (test_writer_texts);
 
 }
