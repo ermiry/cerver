@@ -409,8 +409,10 @@ Packet *packet_create (
 		packet->packet_type = type;
 		packet->req_type = req_type;
 
-		if (data) {
-			packet_append_data (packet, data, data_size);
+		// a packet without the data that it was created with is not returned
+		if (data && packet_append_data (packet, data, data_size)) {
+			packet_delete (packet);
+			packet = NULL;
 		}
 	}
 
@@ -693,6 +695,7 @@ u8 packet_append_data (
 				retval = 0;
 			}
 
+			// a buffer that could not grow is kept with its data (it was lost)
 			else {
 				#ifdef PACKETS_DEBUG
 				cerver_log (
@@ -700,8 +703,6 @@ u8 packet_append_data (
 					"Failed to realloc packet data!"
 				);
 				#endif
-				packet->data = NULL;
-				packet->data_size = 0;
 			}
 		}
 

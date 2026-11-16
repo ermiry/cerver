@@ -143,8 +143,8 @@ CERVER_EXPORT u8 file_cerver_add_path (
  *
  * @param[in,out] file_cerver the files cerver
  * @param[in] uploads_path the path, it is copied; NULL keeps the current one
- * @warning Without an uploads path, the default upload handler dereferences it: a client that uploads a file to
- * the cerver crashes it. Set it, or a custom upload handler, before cerver_start ().
+ * @note Without an uploads path, the default upload handler rejects every upload: the client gets a
+ * `CERVER_ERROR_SEND_FILE` and its connection is ended, because the bytes of the file follow its packet.
  */
 CERVER_EXPORT void file_cerver_set_uploads_path (
 	FileCerver *file_cerver, const char *uploads_path

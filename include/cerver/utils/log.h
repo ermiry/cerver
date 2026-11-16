@@ -24,6 +24,9 @@
 /** @brief The default directory of the log files. */
 #define LOG_DEFAULT_PATH		"/var/log/cerver"
 
+/** @brief The mode of the directory that cerver_log_set_path () creates. */
+#define LOG_PATH_MODE			0755
+
 /** @brief The size of the path of a log file. */
 #define LOG_FILENAME_SIZE		1024
 
@@ -139,8 +142,8 @@ CERVER_EXPORT void cerver_log_set_output_type (
  * @param[in] pathname the directory, the default is #LOG_DEFAULT_PATH
  * @retval 0 the directory was set
  * @retval 1 a NULL path or the directory could not be created
- * @note Call it before cerver_init (), that opens the file; cerver_end () goes back to the default path.
- * @warning A second call does not release the path of the first one.
+ * @note Call it before cerver_init (), that opens the file; cerver_end () goes back to the default path. A second
+ * call releases the path of the first one.
  */
 CERVER_EXPORT unsigned int cerver_log_set_path (
 	const char *pathname
@@ -216,8 +219,7 @@ CERVER_EXPORT void cerver_log_set_time_config (const LogTimeType type);
  * @brief Sets whether the time of the messages is the local time or UTC (the default).
  *
  * @param[in] value true for the local time
- * @warning The time is taken with localtime () or gmtime (), which share a static buffer: messages with time from
- * many threads at the same time can get the time of another one.
+ * @note The time is taken with localtime_r () or gmtime_r (), in the struct of each message.
  */
 CERVER_EXPORT void cerver_log_set_local_time (const bool value);
 

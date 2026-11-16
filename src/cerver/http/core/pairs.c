@@ -104,6 +104,24 @@ KeyValuePair *key_value_pair_create (
 
 }
 
+// a String with the characters between the two pointers, NULL without memory
+static String *key_value_pair_piece (const char *first, const char *after) {
+
+	String *piece = str_new (NULL);
+	if (piece) {
+		str_n_replace_with (piece, first, (size_t) (after - first));
+
+		if (!piece->str) {
+			str_delete (piece);
+			piece = NULL;
+		}
+	}
+
+	return piece;
+
+}
+
+// a pair without memory for its key or its value is not returned (it wrote in NULL)
 static KeyValuePair *key_value_pair_create_pieces (
 	const char *key_first, const char *key_after,
 	const char *value_first, const char *value_after
@@ -114,15 +132,13 @@ static KeyValuePair *key_value_pair_create_pieces (
 	if (key_first && key_after && value_first && value_after) {
 		kvp = key_value_pair_new ();
 		if (kvp) {
-			kvp->key = str_new (NULL);
-			kvp->key->len = key_after - key_first;
-			kvp->key->str = (char *) calloc (kvp->key->len + 1, sizeof (char));
-			(void) memcpy (kvp->key->str, key_first, kvp->key->len);
+			kvp->key = key_value_pair_piece (key_first, key_after);
+			kvp->value = key_value_pair_piece (value_first, value_after);
 
-			kvp->value = str_new (NULL);
-			kvp->value->len = value_after - value_first;
-			kvp->value->str = (char *) calloc (kvp->value->len + 1, sizeof (char));
-			(void) memcpy (kvp->value->str, value_first, kvp->value->len);
+			if (!kvp->key || !kvp->value) {
+				key_value_pair_delete (kvp);
+				kvp = NULL;
+			}
 		}
 	}
 
@@ -179,6 +195,18 @@ void key_value_pairs_print (const DoubleList *pairs) {
 
 }
 
+// a pair that the list does not take is deleted (it was lost)
+static void http_query_pairs_insert (
+	DoubleList *pairs,
+	const char *key_first, const char *key_after,
+	const char *value_first, const char *value_after
+) {
+
+	KeyValuePair *kvp = key_value_pair_create_pieces (key_first, key_after, value_first, value_after);
+	if (kvp && dlist_insert_at_end (pairs, kvp)) key_value_pair_delete (kvp);
+
+}
+
 DoubleList *http_parse_query_into_pairs (
 	const char *first, const char *last
 ) {
@@ -200,13 +228,7 @@ DoubleList *http_parse_query_into_pairs (
 					if (value_first != NULL) value_after = walk;
 					else key_after = walk;
 
-					(void) dlist_insert_at_end (
-						pairs,
-						key_value_pair_create_pieces (
-							key_first, key_after,
-							value_first, value_after
-						)
-					);
+					http_query_pairs_insert (pairs, key_first, key_after, value_first, value_after);
 
 					if (walk + 1 < last) key_first = walk + 1;
 					else key_first = NULL;
@@ -233,13 +255,7 @@ DoubleList *http_parse_query_into_pairs (
 		if (value_first != NULL) value_after = walk;
 		else key_after = walk;
 
-		(void) dlist_insert_at_end (
-			pairs,
-			key_value_pair_create_pieces (
-				key_first, key_after,
-				value_first, value_after
-			)
-		);
+		http_query_pairs_insert (pairs, key_first, key_after, value_first, value_after);
 	}
 
 	return pairs;

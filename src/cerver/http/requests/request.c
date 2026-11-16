@@ -799,8 +799,10 @@ void http_request_set_dirname (
 
 		HttpRequest *request = (HttpRequest *) http_request;
 
+		// the whole buffer, so a directory of REQUEST_DIRNAME_SIZE - 1 characters fits
+		// and a longer one has a length that the cerver rejects (it was cut by one without being detected)
 		request->dirname_len = vsnprintf (
-			request->dirname, REQUEST_DIRNAME_SIZE - 1,
+			request->dirname, REQUEST_DIRNAME_SIZE,
 			format, args
 		);
 

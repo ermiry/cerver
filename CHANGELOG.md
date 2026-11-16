@@ -1,30 +1,32 @@
 ## General
-- Updated roadmap & CLAUDE.md with pools & health of F5
-- Added 2.1b-17 pools & health changes to incompatibilities
+- Added a bounded copy to the utils & fixed the limits of ints
+- Using localtime_r in the log & reentrant times in the timers
+- Removed the defines of glibc from config.h with an #error
+- Fixed the str_set that grows & str_split without a delimiter
+- Fixed the locks of the collections & their new safe variants
+- Fixed the requests of jobs, the semaphores & each worker
+- Added the references to the arguments of events & errors
+- Fixed the stop from a signal, the stats & the core handlers
+- Added the limits of the admins & its own check of packets
+- Fixed the drop of the poll of the clients & of their requests
+- Releasing the old received data that a connection replaces
+- Keeping the data of packets that can't grow & their copies
+- Rejecting uploads without a path & taking the plain names
+- Added the references of lobbies & the checks of the score
+- Using the bounded copy in sessions & in the load services
+- Quoted the finds of the makefile & kept its crypto provider
+- Updated roadmap & CLAUDE.md with the ports of 2.1b-18
+- Added the ported 2.1b-18 changes to the incompatibilities
 
 ## HTTP
-- Added the pools of threads of the HttpCerver & their lanes
-- Added a pool setting to the groups, endpoints & old routes
-- Answering health & ready routes in the loop without a pool
-- Added pools, connections & health series into the metrics
-- Counting requests of a connection of threads when it ends
-- Measuring the time & the bytes of the files of every upload
-- Added pools, connections & health into admin routes stats
-- Added thpool_has_queued () to ask for jobs with no mutex
-- Following a kept connection in the thread that answered it
-- Added followed requests counter to metrics & admin stats
+- Answering the videos with RFC 9110 & checking the pools
+- Releasing the custom data the endpoints & groups replace
+- Keeping the last character of the dirname of a request too
+- Removed the warning of timeouts that are not powers of 2
+- Checking the memory of the query & of the multipart pairs
+- Added the MIT notice of the multipart parser to the source
+- Keeping each websocket stream in the thread that owns it
 
 ## Tests
-- Reading the parked requests of its lane in the receive tests
-- Added HTTP tests of pools, their drain & the health routes
-- Registered the pools tests & a run alone in the HTTP tests
-- Testing that an idle connection that yields is counted once
-- Added HTTP tests of the thread that follows its connection
-- Testing thpool_has_queued () with jobs in a queue & none
-- Added web pools server that answers with its thread name
-- Added the client of web pools pair that expects its threads
-- Registered the web pools pair in the makefile & integration
-- Choosing a pool for each endpoint in the route tree fuzzer
-- Looking once for the next request in the loop fuzzer's jobs
-- Added a slow route with its pool to the benchmarks server
-- Sizing the allocation slack with a new connection of a loop
+- Added the tests of the faults of allocations to the core too
+- Added the static analyzers with their suppressions & a job

@@ -388,7 +388,8 @@ bool lobby_is_running (const Lobby *lobby) {
 }
 
 // searches a lobby in the game cerver and returns a reference to it
-Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
+// the reference is taken with the lock, so the lobby can not be released before its caller has it
+static Lobby *lobby_get_internal (GameCerver *game_cerver, Lobby *query, const bool reference) {
 
 	Lobby *found = NULL;
 
@@ -399,6 +400,8 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 			if (!lobby_comparator (le->data, query)) found = (Lobby *) le->data;
 		}
 
+		if (found && reference) (void) lobby_reference (found);
+
 		(void) pthread_mutex_unlock (&game_cerver->lock);
 	}
 
@@ -406,8 +409,19 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 
 }
 
-// seraches for a lobby with matching id
-Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
+Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
+
+	return lobby_get_internal (game_cerver, query, false);
+
+}
+
+Lobby *lobby_get_reference (GameCerver *game_cerver, Lobby *query) {
+
+	return lobby_get_internal (game_cerver, query, true);
+
+}
+
+static Lobby *lobby_search_with_id_internal (Cerver *cerver, const char *id, const bool reference) {
 
 	Lobby *found = NULL;
 
@@ -421,10 +435,25 @@ Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
 			if (!strcmp (lobby->id->str, id)) found = lobby;
 		}
 
+		if (found && reference) (void) lobby_reference (found);
+
 		game_cerver_unlock (cerver);
 	}
 
 	return found;
+
+}
+
+// seraches for a lobby with matching id
+Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
+
+	return lobby_search_with_id_internal (cerver, id, false);
+
+}
+
+Lobby *lobby_search_with_id_reference (Cerver *cerver, const char *id) {
+
+	return lobby_search_with_id_internal (cerver, id, true);
 
 }
 

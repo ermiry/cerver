@@ -273,7 +273,7 @@ CERVER_EXPORT HttpJwt *http_cerver_auth_jwt_new (void);
  * @brief Gives an HttpJwt back to the pool, empty.
  *
  * @param[in] http_jwt the HttpJwt, it can be NULL
- * @warning After the last HTTP cerver ended, or when the pool can not take it, the HttpJwt is not released (a leak).
+ * @note After the last HTTP cerver ended, or when the pool can not take it, the HttpJwt is released.
  */
 CERVER_EXPORT void http_cerver_auth_jwt_delete (HttpJwt *http_jwt);
 

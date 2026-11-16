@@ -89,13 +89,14 @@ CERVER_PUBLIC String *str_allocate (
 );
 
 /**
- * @brief Writes a printf () format into the room of a String, truncated to max_len - 2 characters.
+ * @brief Writes a printf () format into a String.
  *
- * @param[in,out] str the String, with its max_len (str_allocate (), str_reserve ())
+ * @param[in,out] str the String
  * @param[in] format the format
  * @param[in] ... the arguments of the format
- * @note A String without its max_len (max_len is 0) or without characters is not changed; use str_replace () to
- * set any String.
+ * @note A String with its max_len (str_allocate (), str_reserve ()) is written in its room, truncated to
+ * max_len - 2 characters; the others (max_len is 0: str_new (), str_create ()) get a new buffer with the size of
+ * the value, and keep the value they had if it could not be allocated.
  */
 CERVER_PUBLIC void str_set (
 	String *str, const char *format, ...
@@ -104,7 +105,7 @@ CERVER_PUBLIC void str_set (
 /**
  * @brief Works as str_set () with a va_list.
  *
- * @param[in,out] str the String, with its max_len
+ * @param[in,out] str the String
  * @param[in] format the format
  * @param[in] args the arguments of the format
  */
@@ -117,8 +118,8 @@ CERVER_PUBLIC void str_set_with_args (
  *
  * @param[in] s1 the first String
  * @param[in] s2 the second String
- * @return like strcmp (); a NULL String goes after the other one, and two NULL Strings are equal
- * @warning The characters (str) of two Strings that are not NULL must not be NULL.
+ * @return like strcmp (); a NULL String, or a String with NULL characters, goes after the other one, and two NULL
+ * Strings are equal
  */
 CERVER_PUBLIC int str_compare (
 	const String *s1, const String *s2
@@ -139,8 +140,8 @@ CERVER_PUBLIC int str_comparator (
  * @brief Replaces the characters of a String with a copy of the ones of another.
  *
  * @param[in,out] to the String that is replaced, its max_len goes back to 0
- * @param[in] from the String that is copied
- * @warning The new characters are not checked: if they can not be allocated, it crashes.
+ * @param[in] from the String that is copied, NULL (or with NULL characters) keeps to as it is
+ * @note If the copy can not be allocated, to keeps its characters.
  */
 CERVER_PUBLIC void str_copy (
 	String *to, const String *from
@@ -150,9 +151,9 @@ CERVER_PUBLIC void str_copy (
  * @brief Replaces the characters of a String with a copy of the first n of another.
  *
  * @param[in,out] to the String that is replaced, its max_len goes back to 0
- * @param[in] from the String that is copied
+ * @param[in] from the String that is copied, NULL (or with NULL characters) keeps to as it is
  * @param[in] n the characters to copy; when from is shorter, the len of to is the one of what was copied
- * @warning The new characters are not checked: if they can not be allocated, it crashes.
+ * @note If the copy can not be allocated, to keeps its characters.
  */
 CERVER_PUBLIC void str_n_copy (
 	String *to, const String *from, const size_t n
@@ -185,7 +186,7 @@ CERVER_PUBLIC void str_replace (
  *
  * @param[in,out] str the String, its max_len goes back to 0
  * @param[in] c_str the C string, NULL keeps the String as it is
- * @note If the characters can not be allocated, the String is left empty (str is NULL and len is 0).
+ * @note If the copy can not be allocated, the String keeps its characters.
  */
 CERVER_PUBLIC void str_replace_with (
 	String *str, const char *c_str
@@ -197,7 +198,7 @@ CERVER_PUBLIC void str_replace_with (
  * @param[in,out] str the String, its max_len goes back to 0
  * @param[in] c_str the C string, NULL keeps the String as it is
  * @param[in] n the characters to copy; when c_str is shorter, the len of the String is the one of what was copied
- * @warning The new characters are not checked: if they can not be allocated, it crashes.
+ * @note If the copy can not be allocated, the String keeps its characters.
  */
 CERVER_PUBLIC void str_n_replace_with (
 	String *str, const char *c_str, const size_t n
@@ -320,10 +321,10 @@ CERVER_PUBLIC void str_to_lower (String *string);
  *
  * @param[in] string the String, it is not changed
  * @param[in] delim the delimiter
- * @param[out] n_tokens the number of tokens, it can be NULL; it is only set when the String has the delimiter
- * @return a new array of n_tokens C strings, each one and the array released with free (); NULL for a NULL String,
- * one of less than 2 characters, without the delimiter, of only delimiters, or if it could not be allocated
- * @note A String without the delimiter returns NULL, not a single token.
+ * @param[out] n_tokens the number of tokens, it can be NULL
+ * @return a new array of n_tokens C strings, each one and the array released with free (); a String without the
+ * delimiter is its only token; NULL for a NULL String, one of less than 2 characters, of only delimiters, or if it
+ * could not be allocated
  */
 CERVER_PUBLIC char **str_split (
 	String *string, const char delim, int *n_tokens
@@ -332,7 +333,7 @@ CERVER_PUBLIC char **str_split (
 /**
  * @brief Removes every occurrence of a character from a String.
  *
- * @param[in,out] string the String, NULL is ignored; its characters must not be NULL
+ * @param[in,out] string the String, NULL (or with NULL characters) is ignored
  * @param[in] garbage the character to remove
  */
 CERVER_PUBLIC void str_remove_char (
@@ -343,8 +344,7 @@ CERVER_PUBLIC void str_remove_char (
  * @brief Removes the last character of a String and shrinks it.
  *
  * @param[in,out] string the String, NULL or an empty one is ignored; its max_len goes back to 0
- * @warning If the shrinking reallocation fails, the String loses its characters (str is NULL) and they are not
- * released.
+ * @note If the shrinking reallocation fails, the String is not changed.
  */
 CERVER_PUBLIC void str_remove_last_char (
 	String *string

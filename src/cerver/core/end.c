@@ -1,12 +1,12 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
@@ -57,27 +57,93 @@
 
 #pragma region end
 
-static void cerver_stop_wake_threads (Cerver *cerver) {
+static const char CERVER_STOP_PIPE_BYTE = 1;
 
-	if (cerver->stop_mutex && cerver->stop_cond) {
-		(void) pthread_mutex_lock (cerver->stop_mutex);
-		(void) pthread_cond_broadcast (cerver->stop_cond);
-		(void) pthread_mutex_unlock (cerver->stop_mutex);
+static const i64 CERVER_STOP_MICROSECONDS_PER_SECOND = 1000000;
+static const i64 CERVER_STOP_NANOSECONDS_PER_MICROSECOND = 1000;
+static const i64 CERVER_STOP_NANOSECONDS_PER_SECOND = 1000000000;
+
+void cerver_stop_pipe_create (Cerver *cerver) {
+
+	if (pipe2 (cerver->stop_pipe, O_CLOEXEC | O_NONBLOCK)) {
+		cerver->stop_pipe[CERVER_STOP_PIPE_READ] = -1;
+		cerver->stop_pipe[CERVER_STOP_PIPE_WRITE] = -1;
 	}
 
 }
 
-static const uint64_t cerver_stop_wake_value = 1;
+void cerver_stop_pipe_close (Cerver *cerver) {
 
-// a cerver with event loops waits in cerver_start () for its eventfd,
-// a write () can be called from a signal handler; a counter that is full already ended the wait
-static void cerver_stop_wake_start (const Cerver *cerver) {
-
-	const i32 stop_fd = __atomic_load_n (&cerver->stop_fd, __ATOMIC_SEQ_CST);
-	if (stop_fd >= 0) {
-		while (write (stop_fd, &cerver_stop_wake_value, sizeof (cerver_stop_wake_value)) < 0) {
-			if (errno != EINTR) break;
+	for (unsigned int end = 0; end < CERVER_STOP_PIPE_ENDS; end++) {
+		if (cerver->stop_pipe[end] >= 0) {
+			(void) close (cerver->stop_pipe[end]);
+			cerver->stop_pipe[end] = -1;
 		}
+	}
+
+}
+
+// a byte in the stop pipe wakes up every sleep and the wait of cerver_start () with event loops,
+// and the pipe stays readable, so a sleep that starts after the stop returns at once
+// write () is async-signal-safe: the stop can be requested from a signal handler,
+// the old condition variable needed a mutex that the sleeping thread could hold
+static void cerver_stop_wake_threads (Cerver *cerver) {
+
+	const i32 write_end = cerver->stop_pipe[CERVER_STOP_PIPE_WRITE];
+	if (write_end >= 0) {
+		const ssize_t written = write (write_end, &CERVER_STOP_PIPE_BYTE, sizeof (CERVER_STOP_PIPE_BYTE));
+		(void) written;
+	}
+
+}
+
+// the time left from now until the deadline, false when it already passed
+static bool cerver_stop_wait_remaining (
+	const struct timespec *deadline, struct timespec *remaining
+) {
+
+	struct timespec now = CERVER_ZERO_INITIALIZER;
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	i64 nanoseconds = ((i64) (deadline->tv_sec - now.tv_sec) * CERVER_STOP_NANOSECONDS_PER_SECOND)
+		+ (i64) (deadline->tv_nsec - now.tv_nsec);
+
+	if (nanoseconds <= 0) return false;
+
+	remaining->tv_sec = (time_t) (nanoseconds / CERVER_STOP_NANOSECONDS_PER_SECOND);
+	remaining->tv_nsec = (long) (nanoseconds % CERVER_STOP_NANOSECONDS_PER_SECOND);
+
+	return true;
+
+}
+
+static void cerver_stop_wait_deadline (struct timespec *deadline, i64 microseconds) {
+
+	(void) clock_gettime (CLOCK_MONOTONIC, deadline);
+
+	const i64 nanoseconds = (i64) deadline->tv_nsec
+		+ ((microseconds % CERVER_STOP_MICROSECONDS_PER_SECOND) * CERVER_STOP_NANOSECONDS_PER_MICROSECOND);
+
+	deadline->tv_sec += (time_t) (microseconds / CERVER_STOP_MICROSECONDS_PER_SECOND)
+		+ (time_t) (nanoseconds / CERVER_STOP_NANOSECONDS_PER_SECOND);
+	deadline->tv_nsec = (long) (nanoseconds % CERVER_STOP_NANOSECONDS_PER_SECOND);
+
+}
+
+// a signal interrupts the poll with EINTR, the wait goes on with the time that is left
+void cerver_stop_wait (Cerver *cerver, i64 microseconds) {
+
+	struct timespec deadline = CERVER_ZERO_INITIALIZER;
+	cerver_stop_wait_deadline (&deadline, microseconds);
+
+	struct pollfd stop_poll = CERVER_ZERO_INITIALIZER;
+	stop_poll.fd = cerver->stop_pipe[CERVER_STOP_PIPE_READ];
+	stop_poll.events = POLLIN;
+
+	struct timespec remaining = CERVER_ZERO_INITIALIZER;
+	while (cerver_is_running (cerver) && cerver_stop_wait_remaining (&deadline, &remaining)) {
+		const int result = ppoll (&stop_poll, 1, &remaining, NULL);
+		if ((result != -1) || (errno != EINTR)) break;
 	}
 
 }
@@ -87,7 +153,8 @@ static void cerver_stop_wake_start (const Cerver *cerver) {
 // so its fd can not be reused while another thread is inside accept ()
 // a request before cerver_start () cancels the start
 // it is called from signal handlers, so it keeps the errno of the thread that it interrupted,
-// the shutdown () of an UDP socket that is not connected fails with ENOTCONN
+// the shutdown () of an UDP socket that is not connected fails with ENOTCONN,
+// and it only uses atomics, shutdown () and write (), never a lock
 void cerver_stop_request (Cerver *cerver) {
 
 	const int saved_errno = errno;
@@ -103,8 +170,6 @@ void cerver_stop_request (Cerver *cerver) {
 		if (sock >= 0) {
 			(void) shutdown (sock, SHUT_RDWR);
 		}
-
-		cerver_stop_wake_start (cerver);
 
 		cerver_stop_wake_threads (cerver);
 	}

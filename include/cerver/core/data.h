@@ -63,11 +63,16 @@ struct _PacketsPerType;
 typedef struct CerverStats {
 
 	/**
-	 * @brief How often the stats should be reset.
-	 *
-	 * @warning It is only stored and printed: it starts at 0 and cerver does not reset the stats with it.
+	 * @brief The seconds after which the counters that grow (not the current ones nor the packets by type) are
+	 * reset, 0 never resets them (the default); see cerver_stats_set_threshold_time ().
 	 */
 	time_t threshold_time;
+	/**
+	 * @brief When the current threshold time started, in seconds of CLOCK_MONOTONIC; read and written with
+	 * __atomic.
+	 * @since 1.9b-2
+	 */
+	time_t threshold_start;
 
 	/** @brief The packets received from the clients. */
 	u64 client_n_packets_received;
@@ -105,11 +110,7 @@ typedef struct CerverStats {
 	u64 total_on_hold_connections;
 	/** @brief The clients that were registered to the cerver. */
 	u64 total_n_clients;
-	/**
-	 * @brief The unique clients connected in a threshold time.
-	 *
-	 * @warning cerver does not count it yet, it stays at 0.
-	 */
+	/** @brief The clients that were registered in the current threshold time (all of them without one). */
 	u64 unique_clients;
 	/** @brief The client connections that were made to the cerver. */
 	u64 total_client_connections;
@@ -127,8 +128,9 @@ typedef struct CerverStats {
  * @brief Sets how often the stats of the cerver should be reset.
  *
  * @param[in,out] cerver the cerver
- * @param[in] threshold_time the seconds
- * @warning The value is only stored and printed, see CerverStats::threshold_time.
+ * @param[in] threshold_time the seconds, 0 never resets them; the threshold time starts now
+ * @note The counters are reset at the first registration of a client, or the first cerver_stats_print (), after
+ * the threshold time passed: a cerver without clients keeps them until then.
  */
 CERVER_EXPORT void cerver_stats_set_threshold_time (
 	struct _Cerver *cerver, time_t threshold_time

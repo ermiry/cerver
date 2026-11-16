@@ -80,7 +80,14 @@ AVLTree *avl_init (
 		tree->destroy = destroy;
 
 		tree->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		(void) pthread_mutex_init (tree->mutex, NULL);
+		if (tree->mutex) {
+			(void) pthread_mutex_init (tree->mutex, NULL);
+		}
+
+		else {
+			free (tree);
+			tree = NULL;
+		}
 	}
 
 	return tree;
@@ -171,6 +178,33 @@ void *avl_get_node_data_safe (
 		Comparator comp = comparator ? comparator : tree->comparator;
 		if (comp) {
 			retval = avl_internal_get_node_data (tree, id, comp);
+		}
+
+		(void) pthread_mutex_unlock (tree->mutex);
+	}
+
+	return retval;
+
+}
+
+// runs the method with the data of the node while the tree is locked,
+// so another thread can not remove it in between
+// returns 0 when the node was found, 1 when it was not or on error
+unsigned int avl_get_node_data_apply (
+	AVLTree *tree, void *id, Comparator comparator,
+	void (*method)(void *data, void *method_args), void *method_args
+) {
+
+	unsigned int retval = 1;
+
+	if (tree && id && method) {
+		(void) pthread_mutex_lock (tree->mutex);
+
+		Comparator comp = comparator ? comparator : tree->comparator;
+		void *data = comp ? avl_internal_get_node_data (tree, id, comp) : NULL;
+		if (data) {
+			method (data, method_args);
+			retval = 0;
 		}
 
 		(void) pthread_mutex_unlock (tree->mutex);

@@ -259,8 +259,7 @@ CERVER_PUBLIC void packet_delete (void *ptr);
  * @param[in] req_type the request type
  * @param[in] data the data, copied into the packet; NULL for a packet without data
  * @param[in] data_size the size of the data
- * @return the new packet, NULL if it could not be allocated
- * @warning A failed copy of the data is not reported: the packet is returned without data.
+ * @return the new packet, NULL if it or the copy of its data could not be allocated
  */
 CERVER_EXPORT Packet *packet_create (
 	const PacketType type, const u32 req_type,
@@ -414,8 +413,8 @@ CERVER_PRIVATE u8 packet_add_data (
  * @param[in] data_size the size of the data
  * @retval 0 the data was appended
  * @retval 1 a NULL argument, a total size that does not fit in a size_t, or it could not be allocated
- * @warning It does not work after packet_set_data_ref (). When the buffer can not grow, the packet loses its data
- * (its data and size are set to 0).
+ * @note When the buffer can not grow, the packet keeps its data as it was.
+ * @warning It does not work after packet_set_data_ref ().
  */
 CERVER_EXPORT u8 packet_append_data (
 	Packet *packet,

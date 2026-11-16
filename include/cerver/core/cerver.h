@@ -300,10 +300,14 @@ struct _Cerver {
 	/** @brief The SO_SNDTIMEO in seconds of the accepted connections, 0 disables it. */
 	u32 send_timeout;
 
-	/** @brief Wakes up the threads of the cerver that sleep when the cerver stops, with #stop_cond. */
-	pthread_mutex_t *stop_mutex;
-	/** @brief Signaled when the cerver stops. */
-	pthread_cond_t *stop_cond;
+	/**
+	 * @brief The pipe that wakes up the threads of the cerver that sleep when the cerver stops: the stop writes a
+	 * byte in its write end, which is async-signal-safe, and the sleeps poll its read end; -1 if it could not be
+	 * created (the sleeps then wait their whole time). With CERVER_HANDLER_TYPE_EVENTS, cerver_start () waits on
+	 * its read end too.
+	 * @since 1.9b-2
+	 */
+	i32 stop_pipe[2];
 
 	/** @brief The connected clients. */
 	AVLTree *clients;
@@ -359,10 +363,11 @@ struct _Cerver {
 	/** @brief Protects the array of the main poll. */
 	pthread_mutex_t *poll_lock;
 
-	/** @brief The cerver requires its clients to authenticate. */
+	/**
+	 * @brief The cerver requires its clients to authenticate: the info of the cerver says so, and a connection
+	 * without auth data stays on hold until its timeout.
+	 */
 	bool auth_required;
-	/** @brief The packet that requests the authentication of a new connection. */
-	struct _Packet *auth_packet;
 	/** @brief The failed authentications that a new connection can have before it is dropped. */
 	u8 max_auth_tries;
 	/** @brief The method of the application that authenticates a connection. */
@@ -517,14 +522,6 @@ struct _Cerver {
 	 * @since 2.1b-15
 	 */
 	u32 overload_wait_timeout;
-
-	/**
-	 * @brief The eventfd that ends the wait of cerver_start () with CERVER_HANDLER_TYPE_EVENTS, -1 without one;
-	 * read and written with __atomic, cerver_stop_request () writes to it.
-	 *
-	 * @since 2.1b-15
-	 */
-	i32 stop_fd;
 
 	/**
 	 * @brief The event loops of a cerver with CERVER_HANDLER_TYPE_EVENTS while it runs.
@@ -808,9 +805,9 @@ CERVER_EXPORT void cerver_set_send_timeout (
  * @param[in] n_sockets ignored
  * @deprecated The sockets pool was removed, every connection owns its socket.
  */
-CERVER_EXPORT void cerver_set_sockets_pool_init (
+DEPRECATED (CERVER_EXPORT void cerver_set_sockets_pool_init (
 	Cerver *cerver, unsigned int n_sockets
-);
+));
 
 /**
  * @brief Enables the check of the inactive clients: the clients that have not sent or received a packet in some
@@ -1051,7 +1048,8 @@ CERVER_EXPORT void cerver_set_max_received_packet_size (
  * @param[in] app_handler the handler of the PACKET_TYPE_APP packets, the cerver owns it from now on; it can be NULL
  * @param[in] app_error_handler the handler of the PACKET_TYPE_APP_ERROR packets, the cerver owns it from now on; it
  * can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before cerver_start ().
  */
 CERVER_EXPORT void cerver_set_app_handlers (
 	Cerver *cerver,
@@ -1084,7 +1082,8 @@ CERVER_EXPORT void cerver_set_app_error_handler_delete (
  *
  * @param[in,out] cerver the cerver
  * @param[in] custom_handler the handler, the cerver owns it from now on; it can be NULL
- * @warning A handler that was already set is replaced without being deleted.
+ * @note A different handler deletes the one that was already set; the same handler again is kept. Set them
+ * before cerver_start ().
  */
 CERVER_EXPORT void cerver_set_custom_handler (
 	Cerver *cerver, struct _Handler *custom_handler

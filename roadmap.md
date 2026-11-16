@@ -8,7 +8,7 @@
 > | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1; los arreglos de la revisión, §4.12); 2026-11-14 (la estructura y la documentación; F3, el event loop) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70. Desde la 2.1b-15 `nightly` no mergea `http`: sus arreglos se portan a mano |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3); F4, el keep-alive, la 2.1b-16 (§4.4); F5, los pools, health y las métricas, la 2.1b-17 (§4.5); los arreglos de la auditoría de las otras líneas, la 2.1b-18 (§4.13) |
 
 **Las citas `archivo:línea`:**
 
@@ -129,15 +129,19 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F3** | 2.1b-15 | Event loop, cerrando por petición | F1 |
 | **F4** | 2.1b-16 | Keep-alive real | F3 |
 | **F5** | 2.1b-17 | Pools nombrados, health / ready, métricas | F4 |
-| **F6b** | 2.1b-18 | WebSocket sobre el loop | F4, F6a |
-| **F8a** | 2.1b-19 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
-| **F8b** | 2.1b-20 | TLS no bloqueante en el loop | F4, F8a |
-| **F9a** | 2.1b-21 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
-| **F9b** | 2.1b-22 | HTTP/2 en el loop | F8b, F9a |
-| **F7** | 2.1b-23 | Auth asíncrona | F5 |
+| **Arreglos** | 2.1b-18 | Los arreglos de la auditoría de las otras líneas (§4.13): el core de la 1.9b-2 (con el stop por un pipe), el HTTP de la 2.0b-75 y el dueño del stream de WebSocket de la 3.0b-4 | F5 |
+| **F4b** | 2.1b-19 | La forma completa del keep-alive: el pool lee, parsea y contesta la siguiente petición de una conexión conservada (§4.4, punto 12) | 2.1b-18 |
+| **F6b** | 2.1b-20 | WebSocket sobre el loop | F4, F6a |
+| **F8a** | 2.1b-21 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
+| **F8b** | 2.1b-22 | TLS no bloqueante en el loop | F4, F8a |
+| **F9a** | 2.1b-23 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
+| **F9b** | 2.1b-24 | HTTP/2 en el loop | F8b, F9a |
+| **F7** | 2.1b-25 | Auth asíncrona | F5 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
-- **La 2.1b-14 fue la estructura,** así que F3 y las fases que siguen se recorren una beta.
+- **La 2.1b-14 fue la estructura,** así que F3 y las fases que siguen se recorren una beta; **la 2.1b-18 (los arreglos
+  de las otras líneas) y la 2.1b-19 (la forma completa del keep-alive)** recorren F6b y las fases que siguen dos
+  betas más.
 - **`nightly` ya no mergea `http`** (desde la 2.1b-15): el código de las dos líneas ya es otro (llhttp, la lista de
   cabeceras, la estructura por dominios, el loop), y un merge solo trae conflictos. Los arreglos de `http` se portan
   a mano, archivo por archivo, como en la 2.1b-12 y la 2.1b-13 (§4.12) y como hace `labs`. El `.gitattributes` con
@@ -614,6 +618,9 @@ diseño de abajo es el del plan; lo que la implementación cambió contra él:
     máquina; con 8 conexiones tarda ~44 µs contra ~63 µs de una con su propia conexión. Con 64 conexiones el
     límite es el hilo de I/O (2 hilos de I/O suben los dos modos juntos: 188 k y 278 k req/s). El techo sin esos
     cruces lo da THREADS con keep-alive, donde el mismo hilo lee y contesta: 440–590 k req/s contra 110–155 k.
+    **La decisión (2026-11-15):** el mínimo del 150 % no se baja, y la forma completa (el loop entrega al pool
+    una conexión ociosa que se puede leer, el pool la lee, la parsea y la contesta, y la devuelve cuando la
+    petición no está completa, necesita su autenticación o es de otro pool) es su propia beta, **la 2.1b-19 (F4b)**.
 13. **El hilo que sigue a su conexión** (implementado en la 2.1b-17, **apagado por default**:
     `http_cerver_set_keep_alive_follow (microsegundos)`, `HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT` = 2^6). El hilo del
     pool que contestó una petición de una conexión conservada busca la siguiente en su socket durante ese tiempo,
@@ -895,7 +902,7 @@ cliente: 517 casos cada uno, 514 OK y 3 INFORMATIONAL, sin NON-STRICT, FAILED ni
 en las dos familias; nginx con `Upgrade`; `performance.sh` con 0 asignaciones por mensaje y ~1.9 M mensajes/s
 (`benchmarks/messages.c`); `benchmarks/frames.c`.
 
-#### F6b — WebSocket sobre el loop (2.1b-18)
+#### F6b — WebSocket sobre el loop (2.1b-20)
 
 **La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
 pool de la ruta.
@@ -909,7 +916,7 @@ de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
 `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
 
-### 4.7 F7 — Auth asíncrona (2.1b-23)
+### 4.7 F7 — Auth asíncrona (2.1b-25)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
@@ -922,9 +929,9 @@ TLS en proceso para **todos los cervers TCP** (`CUSTOM`, `GAME`, `WEB`, `FILES`,
 cliente TCP, el cliente WebSocket con `wss://` y el cliente HTTP de F9a). UDP queda fuera (DTLS no está en el alcance).
 Se parte como WebSocket:
 
-- **F8a (2.1b-19): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
+- **F8a (2.1b-21): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
   que hoy hace `recv`, con las deadlines que ya existen.
-- **F8b (2.1b-20): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
+- **F8b (2.1b-22): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
 
 #### 4.8.1 Los requisitos (las RFC)
 
@@ -1103,9 +1110,9 @@ CERVER_EXPORT void cerver_tls_set_reload_watch (Cerver *cerver, bool enable, uns
 HTTP/2 (RFC 9113) con HPACK (RFC 7541) **escritos por cerver**, como WebSocket: frames, HPACK con el Huffman de la
 RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. También partido:
 
-- **F9a (2.1b-21): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
+- **F9a (2.1b-23): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
   un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
-- **F9b (2.1b-22): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
+- **F9b (2.1b-24): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
 
 #### 4.9.1 Los requisitos (las RFC)
 
@@ -1294,6 +1301,28 @@ esos cambios ya están aquí.
 **Queda para después** (anotado, no entra antes del loop): el backpressure de los envíos (con F6b); `on_fragment`
 que se detiene dentro de un mensaje comprimido; el búfer del mensaje que no se encoge; el cliente que ofrece
 `client_max_window_bits` y no acepta 8; los ids de las conexiones y su búsqueda; el rediseño de los streams.
+
+### 4.13 Los arreglos de la auditoría de las otras líneas (2.1b-18)
+
+**Implementado en la 2.1b-18.** La revisión completa del código que hicieron `labs` y `core` al documentarlo
+(la 3.0b-3 y la 1.9b-1) dejó un backlog que se arregló primero en las otras líneas: el core en la 1.9b-2 de `core`,
+HTTP en la 2.0b-75 de `http` y lo de WebSocket en la 3.0b-4 de `labs`. Aquí se porta a mano, sin merges:
+
+- **Los archivos del core que esta línea no había cambiado se copian de la 1.9b-2,** como en las otras líneas desde la
+  2.1b-14; los que F3–F5 cambiaron (`core/{cerver,start,end}.c`, `core/internal.h`, `core/cerver.h`,
+  `handler/handler.{h,c}`, `threads/thpool.c`, el `makefile`) reciben el cambio a mano, cada uno comparado con un
+  merge de tres vías contra la 3.0b-4 de `labs`, que parte del mismo código.
+- **`handler/internal.h` es uno solo:** las referencias de los argumentos de las acciones (`CerverActionArgs`) de la
+  1.9b-2 y el fd de reserva del accept de F3.
+- **El stop es el `stop_pipe` de la 1.9b-2 también aquí:** el hilo de `cerver_start ()` con EVENTS espera en su extremo
+  de lectura en lugar del eventfd `stop_fd`; `stop_mutex` y `stop_cond` ya no existen. El handler de una señal puede
+  detener el cerver sin tomar un candado (antes se bloqueaba si interrumpía a un hilo dormido con el mutex).
+- **HTTP y WebSocket:** el video con RFC 9110, los custom data que liberan el anterior, el pool de las respuestas sin
+  un cerver HTTP, el header NULL de `http_response_compile ()`, `http_request_set_dirname ()`, los pares y los
+  atributos sin memoria, el aviso MIT de multipart-parser-c y el dueño del stream de WebSocket.
+- **Las herramientas:** `test/faults/core.c` y `test/faults/http.c` con los de WebSocket, los analizadores
+  (`test/analyze.sh`, `test/suppressions.txt`, el job `analyzers`) y el `override` del proveedor de la
+  criptografía en el `makefile` (un `DEFINES` de la línea de comandos ya no lo pierde).
 
 ## 5. Plan de tests y el gate de `nightly`
 
