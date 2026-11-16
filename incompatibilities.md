@@ -3,6 +3,23 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-76 (from 2.0b-75)
+
+The ports of the 2.1b-17 (`nightly`) and of the 3.0b-4 (`labs`) and the names of `json.c`: `Thpool` has a new field
+at its end (a binary that allocates a `Thpool` itself is built again), the rest keeps its ABI.
+
+- **`Thpool` has `queue_awaited`** at its end, the count of the jobs in its queue that `thpool_has_queued ()` reads
+  without the mutex of the queue. **New:** `thpool_has_queued ()`
+- `http_response_compile ()` of a response whose header could not be allocated compiles only its data (it copied
+  from the NULL header)
+- The parameters of `json.h` and of `json/private.h` have full words (`format`, `arguments`, `message`,
+  `buffer_length`, `string`, `length`, `pointer`, `precision`), like the names inside `json.c`; the functions, the
+  types and what they do are the same
+- The docs of `cerver_stop_request ()` and `cerver_shutdown ()` say what they do since the 2.0b-75 (its stop pipe):
+  the request is async-signal-safe, and the shutdown too without `CERVER_DEBUG`
+- `test/http/disconnect.c` drains the half-closed clients of a batch while the rest of it starts (one that was
+  already cut kept its response unread under a loaded machine)
+
 ## 2.0b-75 (from 2.0b-74)
 
 The fixes of the audit of the code, the ones of the core of the 1.9b-2 (`core`) and the ones of HTTP: the wire of
