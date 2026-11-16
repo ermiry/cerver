@@ -7,6 +7,7 @@ ARG WERROR=1
 RUN apt-get update && apt-get install -y libssl-dev zlib1g-dev && apt-get clean
 
 ENV JSON_TEST_SUITE_COMMIT=1ef36fa01286573e846ac449e8683f8833c5b26a
+ENV WYCHEPROOF_COMMIT=65ca494727a52944c204441c860b039e6786b99b
 
 ENV CONFORMANCE=/opt/conformance
 
@@ -14,6 +15,8 @@ WORKDIR ${CONFORMANCE}
 
 RUN curl -fsSL https://github.com/nst/JSONTestSuite/archive/${JSON_TEST_SUITE_COMMIT}.tar.gz | tar xz \
 	&& mv JSONTestSuite-${JSON_TEST_SUITE_COMMIT} json
+RUN curl -fsSL https://github.com/C2SP/wycheproof/archive/${WYCHEPROOF_COMMIT}.tar.gz | tar xz \
+	&& mv wycheproof-${WYCHEPROOF_COMMIT} wycheproof
 
 WORKDIR /opt/cerver
 

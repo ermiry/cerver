@@ -1,0 +1,106 @@
+# the decisions of cerver for the vectors of Wycheproof (C2SP/wycheproof, the commit of Dockerfile.conformance)
+# suite <file> <valid> <invalid> <acceptable>: the tests of the file that are run
+# accept | reject <file>:<test> <why>: what cerver does with a test that the suite leaves to the implementation,
+# or with one where it does not do what the suite says
+
+# the HMAC of cerver is never cut: only the groups whose tag has the bits of its digest are run
+suite hmac_sha256_test.json 33 54 0
+suite hmac_sha384_test.json 33 54 0
+suite hmac_sha512_test.json 33 54 0
+
+suite rsa_signature_2048_sha256_test.json 9 249 1
+suite rsa_signature_2048_sha384_test.json 7 250 1
+suite rsa_signature_2048_sha512_test.json 8 250 1
+suite rsa_signature_3072_sha256_test.json 8 250 1
+suite rsa_signature_3072_sha384_test.json 7 251 1
+suite rsa_signature_3072_sha512_test.json 8 251 1
+suite rsa_signature_4096_sha256_test.json 7 250 1
+suite rsa_signature_4096_sha384_test.json 7 251 1
+suite rsa_signature_4096_sha512_test.json 7 251 1
+
+reject rsa_signature_2048_sha256_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_2048_sha384_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_2048_sha512_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_3072_sha256_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_3072_sha384_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_3072_sha512_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_4096_sha256_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_4096_sha384_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+reject rsa_signature_4096_sha512_test.json:8 the DigestInfo of a signature has the NULL of its algorithm: the legacy encoding without it is not taken
+
+# PSS with the salt of its digest and MGF1 with the same digest, the one of RFC 7518
+suite rsa_pss_2048_sha256_mgf1_32_test.json 63 45 0
+suite rsa_pss_3072_sha256_mgf1_32_test.json 63 45 0
+suite rsa_pss_4096_sha256_mgf1_32_test.json 63 45 0
+suite rsa_pss_2048_sha384_mgf1_48_test.json 95 46 0
+suite rsa_pss_4096_sha384_mgf1_48_test.json 95 46 0
+suite rsa_pss_4096_sha512_mgf1_64_test.json 132 47 0
+
+# PSS without a salt: every signature of the file is refused, the valid ones because their salt is not the one
+# of their digest
+suite rsa_pss_2048_sha256_mgf1_0_test.json 61 42 0
+accept rsa_pss_2048_sha256_mgf1_0_test.json:69 the suite changed its salt to the 32 bytes of the digest: it is a signature that cerver takes
+
+suite ecdsa_secp256r1_sha256_p1363_test.json 173 89 0
+suite ecdsa_secp384r1_sha384_p1363_test.json 193 87 0
+suite ecdsa_secp521r1_sha512_p1363_test.json 231 87 0
+
+suite ed25519_test.json 117 64 29
+suite ed448_test.json 17 70 0
+
+# a public key of small order, or with a part of small order: the provider takes every signature that satisfies
+# the equation of RFC 8032 section 5.1.7, and the public key of a cerver is the one that its operator sets
+accept ed25519_test.json:152 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:153 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:154 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:155 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:156 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:157 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:158 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:159 the signature satisfies the equation of RFC 8032 with a public key of small order
+accept ed25519_test.json:160 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:161 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:162 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:163 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:164 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:165 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:166 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:167 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:168 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:169 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:170 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:171 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:172 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:173 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:174 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:175 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:176 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:177 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:178 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:179 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+accept ed25519_test.json:180 the signature satisfies the equation of RFC 8032 with a public key of mixed order
+
+# the tokens: a test is taken when its signature is verified (its payload is not the claims of a JWT)
+suite json_web_signature_test.json 46 355 0
+
+# a token with an empty second part has no claims: the three parts of a token have characters
+reject json_web_signature_test.json:259 a token without a payload is not three parts with characters
+reject json_web_signature_test.json:264 a token without a payload is not three parts with characters
+reject json_web_signature_test.json:268 a token without a payload is not three parts with characters
+reject json_web_signature_test.json:272 a token without a payload is not three parts with characters
+reject json_web_signature_test.json:320 a token without a payload is not three parts with characters
+reject json_web_signature_test.json:325 a token without a payload is not three parts with characters
+
+# the example of RFC 7520 section 4.2 is PS384, and the suite gives the key of its group the alg PS256
+reject json_web_signature_test.json:346 the alg of the token (PS384) is not the one that the suite gives its key (PS256): a token never chooses its algorithm
+reject json_web_signature_test.json:350 the alg of the token (PS384) is not the one that the suite gives its key (PS256): a token never chooses its algorithm
+
+# the padding that the name of these tests says is not in their vector: the token is three parts of canonical
+# base64url, and its HMAC is the one of what it has
+accept json_web_signature_test.json:367 the token of the vector has no padding and its HMAC is the one of its two parts
+accept json_web_signature_test.json:370 the token of the vector has no padding and its HMAC is the one of its two parts
+
+# a character that is not of base64url is never skipped, so the part is not canonical; and the HMAC of these
+# tokens is the one of the text without that character, not the one of what was sent
+reject json_web_signature_test.json:372 a character that is not of base64url in the header is not skipped
+reject json_web_signature_test.json:373 a character that is not of base64url in the payload is not skipped
