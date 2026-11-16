@@ -462,6 +462,7 @@ static void features_cerver_start (void) {
 	(void) http_cerver_static_path_add (http_cerver, "./test/web/public");
 
 	http_cerver_enable_admin_routes (http_cerver, true);
+	http_cerver_enable_admin_info_route (http_cerver, true);
 	http_cerver_enable_admin_head_handlers (http_cerver, true);
 
 	features_routes (http_cerver);
@@ -1157,9 +1158,61 @@ static void test_features_connection (void) {
 	features_expect_close (&response);
 	test_check_str_eq (response.body, features_stream_first, NULL);
 
-	// the admin routes
-	features_get ("/cerver/stats", NULL, &response);
+	// the admin routes, that are endpoints of the first group of the cerver
+	features_get ("/features/cerver/stats", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
 	features_expect_close (&response);
+
+}
+
+static void features_head (const char *path, FeaturesResponse *response) {
+
+	char request[FEATURES_TEST_RESPONSE_SIZE] = { 0 };
+	const int written = snprintf (
+		request, FEATURES_TEST_RESPONSE_SIZE,
+		"HEAD %s HTTP/1.1\r\nHost: localhost\r\n\r\n", path
+	);
+
+	features_request (request, (size_t) written, response);
+
+}
+
+// the json of an admin route: its GET has it whole, with its length, and its HEAD has only the headers;
+// a json that does not change between two requests is the expected one and has the same length in both
+static void features_admin_route (const char *path, const char *start, const char *expected) {
+
+	FeaturesResponse response;
+
+	features_get (path, NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_header (&response, "Content-Type", "application/json");
+	test_check_unsigned_eq (response.body_length, features_content_length (&response), NULL);
+	test_check (!strncmp (response.body, start, strlen (start)), response.body);
+	test_check (response.body[response.body_length - 1] == '}', response.body);
+
+	if (expected) test_check_str_eq (response.body, expected, NULL);
+
+	features_head (path, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	features_expect_header (&response, "Content-Type", "application/json");
+	test_check_unsigned_eq (response.body_length, 0, "a HEAD with a body");
+	test_check (features_content_length (&response) > 0, "a HEAD without the length of its json");
+
+	if (expected) {
+		test_check_unsigned_eq (
+			features_content_length (&response), strlen (expected), "the length of a HEAD is not the one of its GET"
+		);
+	}
+
+}
+
+// the admin routes answer with their json, written in the arena of the request
+static void test_features_admin (void) {
+
+	features_admin_route ("/features/cerver/info", "{\"name\": \"", NULL);
+	features_admin_route ("/features/cerver/stats", "{\"main_routes\": ", NULL);
+	features_admin_route ("/features/cerver/stats/filesystems", "{\"filesystems\": [", "{\"filesystems\": []}");
+	features_admin_route ("/features/cerver/stats/workers", "{\"workers\": [", "{\"workers\": []}");
 
 }
 
@@ -1248,6 +1301,7 @@ static void features_tests_model (const CerverHandlerType handler_type) {
 	test_features_chunked_body ();
 	test_features_metrics ();
 	test_features_connection ();
+	test_features_admin ();
 	test_features_repeated_headers ();
 	test_features_without_date ();
 
