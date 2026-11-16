@@ -618,7 +618,7 @@ CERVER_PUBLIC void *job_queue_pull_interruptible (
  * @param[in,out] job_queue a queue of JOB_QUEUE_TYPE_JOBS
  * @param[in] job_id the id
  * @return the job, NULL for a NULL queue
- * @warning Only one thread can wait for a request at a time: a second one replaces the id of the first one.
+ * @note Several threads can wait at the same time, each one with its own request (JobQueue::requests).
  */
 CERVER_PUBLIC void *job_queue_request (
 	JobQueue *job_queue, const u64 job_id
@@ -631,7 +631,7 @@ CERVER_PUBLIC void *job_queue_request (
  * @param[in] job_id the id
  * @param[in] timeout the milliseconds, or #JOB_QUEUE_WAIT_FOREVER
  * @return the job, NULL if it did not arrive before the deadline or for a NULL queue
- * @warning Only one thread can wait for a request at a time, like job_queue_request ().
+ * @note Several threads can wait at the same time, like in job_queue_request ().
  */
 CERVER_PUBLIC void *job_queue_request_timeout (
 	JobQueue *job_queue, const u64 job_id, const u32 timeout
@@ -687,6 +687,8 @@ CERVER_PUBLIC void job_queue_wait (JobQueue *job_queue);
  * @brief Wakes up every thread that waits in the queue, for a job or for a request.
  *
  * @param[in,out] job_queue the queue, it can be NULL
+ * @note A thread in job_queue_request () or job_queue_request_timeout () waits again until its job arrives or its
+ * timeout ends: the signal does not make it return NULL.
  */
 CERVER_PUBLIC void job_queue_signal (JobQueue *job_queue);
 

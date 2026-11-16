@@ -79,8 +79,8 @@ CERVER_PRIVATE struct _Packet *file_header_packet_create (
  * @param[in] connection the connection
  * @param[in] filename the path of the file
  * @return the bytes of the file that were sent, -1 for a NULL filename or connection or on error
- * @warning A filename without '/' is never sent: its name after the last '/' is NULL, so its FileHeader can not be
- * created and it returns -1.
+ * @note The name that is sent is the one after the last '/', or the whole filename when it has none; a filename that
+ * ends with '/' has no name, and it returns -1.
  * @threadsafety It holds the write lock of the socket of the connection while it sends.
  */
 CERVER_PUBLIC ssize_t file_send (
