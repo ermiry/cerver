@@ -230,9 +230,15 @@ static void test_game_lobbies (void) {
 	game_cerver_register_lobby (game, first);
 	test_check_unsigned_eq (dlist_size (game->current_lobbys), 2, "a lobby was registered twice");
 
+	// the lobby is found with a reference that its caller releases
 	Lobby *query = lobby_new ();
 	query->id = str_new (second_type);
-	test_check_ptr_eq (lobby_get (game, query), second);
+	const unsigned int references = __atomic_load_n (&second->references, __ATOMIC_SEQ_CST);
+	test_check_ptr_eq (lobby_get_reference (game, query), second);
+	test_check_unsigned_eq (
+		__atomic_load_n (&second->references, __ATOMIC_SEQ_CST), references + 1, "the lobby was found without a reference"
+	);
+	lobby_release (second);
 	lobby_delete (query);
 
 	game_cerver_unregister_lobby (game, second);

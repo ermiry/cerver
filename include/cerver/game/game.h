@@ -39,16 +39,32 @@
  * @{
  */
 
-/** @brief A default player timeout in seconds. @warning cerver does not use it: the game types have their own. */
+/**
+ * @brief A default player timeout in seconds.
+ * @warning cerver does not use it: the game types have their own.
+ * @deprecated It goes away in the 3.0.
+ */
 #define GAME_DEFAULT_PLAYER_TIMEOUT		30
 
-/** @brief A default fps. @warning cerver does not use it: the game types have their own. */
+/**
+ * @brief A default fps.
+ * @warning cerver does not use it: the game types have their own.
+ * @deprecated It goes away in the 3.0.
+ */
 #define GAME_DEFAULT_FPS				20
 
-/** @brief A default of the least players of a game. @warning cerver does not use it. */
+/**
+ * @brief A default of the least players of a game.
+ * @warning cerver does not use it.
+ * @deprecated It goes away in the 3.0.
+ */
 #define GAME_DEFAULT_MIN_PLAYERS		2
 
-/** @brief A default of the most players of a game. @warning cerver does not use it: the lobbies use LOBBY_DEFAULT_MAX_PLAYERS. */
+/**
+ * @brief A default of the most players of a game.
+ * @warning cerver does not use it: the lobbies use LOBBY_DEFAULT_MAX_PLAYERS.
+ * @deprecated It goes away in the 3.0.
+ */
 #define GAME_DEFAULT_MAX_PLAYERS		4
 
 #ifdef __cplusplus
@@ -68,11 +84,7 @@ typedef struct GameCerverStats {
 
 	/** @brief The lobbies that are registered now. */
 	u32 current_active_lobbys;
-	/**
-	 * @brief The lobbies that were created in the life of the cerver.
-	 *
-	 * @warning cerver does not count it yet, it stays at 0.
-	 */
+	/** @brief The lobbies that the players created in the life of the cerver, written with __atomic. */
 	u32 lobbys_created;
 
 } GameCerverStats;
@@ -201,10 +213,11 @@ CERVER_EXPORT void game_set_lobby_id_generator (
  * @param[in,out] game_cerver the game cerver
  * @param[in] player_comparator the comparator
  * @warning cerver does not use it: the players of each lobby are compared by the ids of their clients.
+ * @deprecated It goes away in the 3.0.
  */
-CERVER_EXPORT void game_set_player_comparator (
+DEPRECATED (CERVER_EXPORT void game_set_player_comparator (
 	GameCerver *game_cerver, Comparator player_comparator
-);
+));
 
 /**
  * @brief Sets how the data of the game is loaded and released.

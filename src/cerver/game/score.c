@@ -105,6 +105,12 @@ ScoreBoard *game_score_create (unsigned int playersNum, unsigned int scoresNum, 
 		sb->scores = htab_create (playersNum, NULL, game_score_player_delete);
 		sb->scoreTypes = (char **) calloc (scoresNum ? scoresNum : 1, sizeof (char *));
 
+		// a board without memory for its scores or its types is not returned
+		if (!sb->scores || !sb->scoreTypes) {
+			game_score_delete (sb);
+			return NULL;
+		}
+
 		va_list valist;
 		va_start (valist, scoresNum);
 
