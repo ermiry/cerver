@@ -34,6 +34,7 @@
 #include <cerver/utils/log.h>
 
 #include "../address.h"
+#include "../handler.h"
 
 // a cerver behind nginx (test/nginx) whose clients leave in every part of the process,
 // it tells what it saw: the states that its handler found, the files left in its uploads path
@@ -300,13 +301,16 @@ static void disconnect_configure (Cerver *cerver) {
 
 	(void) cerver_set_bind_address (cerver, test_address ());
 	cerver_set_thpool_n_threads (cerver, DISCONNECT_THREADS);
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (cerver, test_handler_type ());
+	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	cerver_set_send_timeout (cerver, DISCONNECT_SEND_TIMEOUT);
 	cerver_set_drain_policy (cerver, CERVER_DRAIN_POLICY_RUN);
 	cerver_set_drain_timeout (cerver, DISCONNECT_DRAIN_TIMEOUT);
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
 
 	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
 
