@@ -104,6 +104,28 @@
  */
 #define CERVER_OVERLOAD_WAIT_TIMEOUT				1024
 
+/**
+ * @brief The default seconds that a connection of a cerver with CERVER_HANDLER_TYPE_EVENTS waits for a place in a
+ * full thpool with CERVER_OVERLOAD_POLICY_WAIT.
+ *
+ * @since 3.0b-5
+ */
+#define CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT		(1 << 5)
+
+/**
+ * @brief The default I/O threads of a cerver with CERVER_HANDLER_TYPE_EVENTS.
+ *
+ * @since 3.0b-5
+ */
+#define CERVER_DEFAULT_IO_THREADS					1
+
+/**
+ * @brief The default limit of connections of a cerver with CERVER_HANDLER_TYPE_EVENTS.
+ *
+ * @since 3.0b-5
+ */
+#define CERVER_DEFAULT_MAX_CONNECTIONS				(1 << 14)
+
 /** @brief The default drain policy. */
 #define CERVER_DEFAULT_DRAIN_POLICY					CERVER_DRAIN_POLICY_RUN
 
@@ -274,7 +296,8 @@ struct _Cerver {
 	/**
 	 * @brief The pipe that wakes up the threads of the cerver that sleep when the cerver stops: the stop writes a
 	 * byte in its write end, which is async-signal-safe, and the sleeps poll its read end; -1 if it could not be
-	 * created (the sleeps then wait their whole time).
+	 * created (the sleeps then wait their whole time). With CERVER_HANDLER_TYPE_EVENTS, cerver_start () waits on
+	 * its read end too.
 	 * @since 1.9b-2
 	 */
 	i32 stop_pipe[2];
@@ -471,6 +494,35 @@ struct _Cerver {
 	/** @brief The load balancer that the cerver belongs to, NULL if it does not belong to one. */
 	struct _Balancer *balancer;
 
+	/**
+	 * @brief The I/O threads of a cerver with CERVER_HANDLER_TYPE_EVENTS.
+	 *
+	 * @since 3.0b-5
+	 */
+	unsigned int n_io_threads;
+
+	/**
+	 * @brief The connections that a cerver with CERVER_HANDLER_TYPE_EVENTS has at most at the same time.
+	 *
+	 * @since 3.0b-5
+	 */
+	unsigned int max_connections;
+
+	/**
+	 * @brief The seconds that a connection of a cerver with CERVER_HANDLER_TYPE_EVENTS waits for a place in the
+	 * thpool with CERVER_OVERLOAD_POLICY_WAIT before it is answered with 503.
+	 *
+	 * @since 3.0b-5
+	 */
+	u32 overload_wait_timeout;
+
+	/**
+	 * @brief The event loops of a cerver with CERVER_HANDLER_TYPE_EVENTS while it runs.
+	 *
+	 * @since 3.0b-5
+	 */
+	struct EventLoopGroup *event_loops;
+
 };
 
 /** @brief A cerver, see struct _Cerver. */
@@ -649,6 +701,55 @@ CERVER_EXPORT void cerver_set_thpool_queue_size (
  */
 CERVER_EXPORT void cerver_set_overload_policy (
 	Cerver *cerver, CerverOverloadPolicy policy
+);
+
+/**
+ * @brief Sets how long a connection of a cerver with CERVER_HANDLER_TYPE_EVENTS waits for a place in a full
+ * thpool with CERVER_OVERLOAD_POLICY_WAIT.
+ *
+ * The connection waits in its event loop without using a thread; when the time ends it is answered with 503 and a
+ * Retry-After header.
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] seconds the seconds, 0 answers 503 as soon as the thpool has no place; the default is
+ * #CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT
+ * @note The other handler types ignore it: with them the cerver stops accepting connections until the thpool has
+ * space, without a limit.
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void cerver_set_overload_wait_timeout (
+	Cerver *cerver, u32 seconds
+);
+
+/**
+ * @brief Sets the I/O threads of a cerver with CERVER_HANDLER_TYPE_EVENTS: each one is an event loop that accepts
+ * connections and reads their requests.
+ *
+ * With more than one, each loop listens in its own socket with SO_REUSEPORT and the kernel shares the new
+ * connections among them.
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] n_threads the threads, 0 keeps the current value; the default is #CERVER_DEFAULT_IO_THREADS
+ * @note Call it before cerver_start (). The other handler types ignore it.
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void cerver_set_io_threads (
+	Cerver *cerver, unsigned int n_threads
+);
+
+/**
+ * @brief Sets the connections that a cerver with CERVER_HANDLER_TYPE_EVENTS has at most at the same time.
+ *
+ * At the limit the cerver stops accepting, and the new connections wait in the listen backlog until one ends.
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] max_connections the limit, 0 keeps the current value; the default is
+ * #CERVER_DEFAULT_MAX_CONNECTIONS
+ * @note Call it before cerver_start (). The other handler types ignore it.
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void cerver_set_max_connections (
+	Cerver *cerver, unsigned int max_connections
 );
 
 /**

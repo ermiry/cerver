@@ -493,6 +493,22 @@ typedef struct CerverReceive {
 	/** @brief The lobby of the connection. */
 	struct _Lobby *lobby;
 
+	/**
+	 * @brief The requests that a web connection that is kept has handled: its thread gives the connection back to
+	 * the thpool between two requests when another connection waits for a thread, and the thread that takes it
+	 * again continues from here.
+	 *
+	 * @since 3.0b-5
+	 */
+	unsigned int n_requests;
+	/**
+	 * @brief When the wait of that connection for its next request ends, in the secs of the monotonic clock;
+	 * 0 while it does not wait.
+	 *
+	 * @since 3.0b-5
+	 */
+	double idle_deadline;
+
 	/** @brief The next deleted receive that waits to be reused. */
 	struct CerverReceive *recycle_next;
 
