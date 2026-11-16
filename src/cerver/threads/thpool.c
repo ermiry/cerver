@@ -146,6 +146,10 @@ static Thpool *thpool_new (void) {
 		(void) memset (&thpool->stats, 0, sizeof (ThpoolStats));
 
 		thpool->queue_awaited = 0;
+
+		(void) memset (&thpool->waiter, 0, sizeof (ThpoolWaiter));
+		thpool->num_threads_waiting = 0;
+		thpool->waiter_wakes = 0;
 	}
 
 	return thpool;
@@ -298,6 +302,26 @@ static void thpool_queue_push (
 
 	(void) pthread_cond_signal (thpool->has_jobs);
 
+	// a thread that waits on the waiter does not see the condition: one more wake up only when no other one
+	// is already going to wake each of them
+	if (thpool->waiter.wake && (thpool->num_threads_waiting > thpool->waiter_wakes)) {
+		thpool->waiter_wakes += 1;
+		thpool->waiter.wake (thpool->waiter.args, 1);
+	}
+
+}
+
+// wakes up every thread that waits on the waiter, with the mutex
+static void thpool_waiter_wake_all (Thpool *thpool, const ThpoolWaiter *waiter) {
+
+	const unsigned int missing = (thpool->num_threads_waiting > thpool->waiter_wakes) ?
+		(thpool->num_threads_waiting - thpool->waiter_wakes) : 0;
+
+	if (waiter->wake && missing) {
+		thpool->waiter_wakes += missing;
+		waiter->wake (waiter->args, missing);
+	}
+
 }
 
 static ThpoolJob thpool_queue_pop (Thpool *thpool) {
@@ -349,15 +373,68 @@ static bool thpool_queue_is_full (const Thpool *thpool) {
 
 }
 
-// waits for a job, returns false when the thread must exit
-// must be called with the mutex locked
-static bool thread_do_wait (Thpool *thpool) {
+static void thread_do_waiting_set (Thpool *thpool, const unsigned int waiting) {
 
-	while (!thpool->queue_count && thpool->keep_alive) {
-		(void) pthread_cond_wait (thpool->has_jobs, thpool->mutex);
+	__atomic_store_n (&thpool->num_threads_waiting, waiting, __ATOMIC_RELEASE);
+
+}
+
+// the thread waits on the waiter without the mutex; one that clears the waiter waits until none uses it
+// must be called with the mutex locked, returns true with a work for the thread in job
+static bool thread_do_wait_waiter (Thpool *thpool, ThpoolJob *job) {
+
+	const ThpoolWaiter waiter = thpool->waiter;
+
+	thread_do_waiting_set (thpool, thpool->num_threads_waiting + 1);
+
+	(void) pthread_mutex_unlock (thpool->mutex);
+
+	const ThpoolWaited waited = waiter.wait (waiter.args, job);
+
+	(void) pthread_mutex_lock (thpool->mutex);
+
+	thread_do_waiting_set (thpool, thpool->num_threads_waiting - 1);
+
+	if ((waited == THPOOL_WAITED_WOKEN) && thpool->waiter_wakes) thpool->waiter_wakes -= 1;
+
+	if (!thpool->num_threads_waiting) (void) pthread_cond_broadcast (thpool->threads_all_idle);
+
+	return (waited == THPOOL_WAITED_WORK);
+
+}
+
+// the work that the waiter gave is a job that entered and left at once: it never waited in the queue
+static void thread_do_waiter_job (Thpool *thpool) {
+
+	thpool->stats.total_jobs += 1;
+
+}
+
+// waits for a job: the one of the queue goes first, then the waiter, or the condition without it
+// returns false when the thread must exit, with the mutex locked
+static bool thread_do_wait (Thpool *thpool, ThpoolJob *job) {
+
+	bool has_job = false;
+
+	while (!has_job && (thpool->queue_count || thpool->keep_alive)) {
+		if (thpool->queue_count) {
+			*job = thpool_queue_pop (thpool);
+			thpool_stats_waited (thpool, job);
+
+			has_job = true;
+		}
+
+		else if (thpool->waiter.wait) {
+			has_job = thread_do_wait_waiter (thpool, job);
+			if (has_job) thread_do_waiter_job (thpool);
+		}
+
+		else {
+			(void) pthread_cond_wait (thpool->has_jobs, thpool->mutex);
+		}
 	}
 
-	return (thpool->queue_count > 0);
+	return has_job;
 
 }
 
@@ -391,11 +468,9 @@ static void *thread_do (void *thread_ptr) {
 
 	// the queued jobs are still executed after keep_alive is false,
 	// except when thpool_destroy () rejected them first
-	while (thread_do_wait (thpool)) {
-		ThpoolJob job = thpool_queue_pop (thpool);
+	ThpoolJob job = { NULL, NULL, NULL, { 0, 0 } };
+	while (thread_do_wait (thpool, &job)) {
 		thpool->num_threads_working += 1;
-
-		thpool_stats_waited (thpool, &job);
 
 		(void) pthread_mutex_unlock (thpool->mutex);
 
@@ -431,6 +506,8 @@ static void thpool_threads_stop (Thpool *thpool) {
 	(void) pthread_cond_broadcast (thpool->has_jobs);
 	(void) pthread_cond_broadcast (thpool->has_space);
 	thpool_space_notify (thpool);
+
+	thpool_waiter_wake_all (thpool, &thpool->waiter);
 
 	(void) pthread_mutex_unlock (thpool->mutex);
 
@@ -700,6 +777,57 @@ unsigned int thpool_get_queued (Thpool *thpool) {
 bool thpool_has_queued (const Thpool *thpool) {
 
 	return thpool && (__atomic_load_n (&thpool->queue_awaited, __ATOMIC_ACQUIRE) > 0);
+
+}
+
+// the threads that wait on the waiter that is cleared are woken up, and none of them uses it after the call:
+// they wait on the condition of the queue from now on
+// must be called with the mutex locked
+static void thpool_waiter_clear (Thpool *thpool) {
+
+	const ThpoolWaiter waiter = thpool->waiter;
+
+	(void) memset (&thpool->waiter, 0, sizeof (ThpoolWaiter));
+
+	thpool_waiter_wake_all (thpool, &waiter);
+
+	while (thpool->num_threads_waiting) {
+		(void) pthread_cond_wait (thpool->threads_all_idle, thpool->mutex);
+	}
+
+}
+
+unsigned int thpool_set_waiter (Thpool *thpool, const ThpoolWaiter *waiter) {
+
+	unsigned int retval = 1;
+
+	const bool sets = waiter && waiter->wait;
+
+	if (thpool && (!sets || waiter->wake)) {
+		(void) pthread_mutex_lock (thpool->mutex);
+
+		if (thpool->waiter.wait) thpool_waiter_clear (thpool);
+
+		// the wake ups of a waiter that was cleared are not the ones of another
+		thpool->waiter_wakes = 0;
+
+		if (sets) thpool->waiter = *waiter;
+
+		// the threads that wait on the condition wait on the waiter from now on
+		(void) pthread_cond_broadcast (thpool->has_jobs);
+
+		(void) pthread_mutex_unlock (thpool->mutex);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+unsigned int thpool_get_num_threads_waiting (const Thpool *thpool) {
+
+	return thpool ? __atomic_load_n (&thpool->num_threads_waiting, __ATOMIC_ACQUIRE) : 0;
 
 }
 
