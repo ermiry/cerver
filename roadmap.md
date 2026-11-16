@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, en dos betas: la 3.0b-6 (el módulo, hecho y medido, §4.1) y la 3.0b-7 (la migración) |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); sigue L2, el JWT propio (§4.2) |
 
 **Las citas `archivo:línea`:**
 
@@ -423,11 +423,26 @@ segundo en la búsqueda de 4 claves del documento chico). `legacy` es la copia d
 **La 3.0b-7:**
 
 - `http/core/admin.c`, `http/routes/tree.c`, `http/security/auth.c` y `http/responses/response.c` sobre el escritor
-  nuevo, con los mismos bytes;
-- los `decode_data` reciben los claims como un valor del JSON nuevo;
-- Jansson interno: sus headers a `src/`, sus símbolos ocultos, fuera de `include/` y del paraguas `http/http.h`;
+  nuevo, con los mismos bytes:
+  - los tests de cadena exacta de cada documento (la info, las stats, los file systems y los workers de admin, el
+    JSON de las rutas, los cuerpos de `http_response_json_*`, el JSON de un token) se escribieron primero y pasaron
+    contra Jansson antes de migrar;
+  - la única diferencia es la decidida en la 3.0b-6: un real sale con los menos dígitos que lo leen igual;
+  - un miembro cuya cadena no es UTF-8 o cuyo real no es un número se sigue omitiendo de las stats, como hacía
+    Jansson (`http_json_member_string ()` y `http_json_member_real ()`): el escritor fallaría el texto entero;
+  - un GET de admin escribe su JSON en la arena de la petición, sin el árbol intermedio ni un `malloc ()` por
+    valor, y un HEAD solo cuenta los bytes;
+- los `decode_data` reciben los claims como un valor del JSON nuevo: el tipo `HttpDecodeData`
+  (`void *(*) (const CerverJsonValue *claims)`), válido durante la llamada; los claims de un bearer se leen en la
+  arena de la petición, sin claves repetidas ni NUL y con a lo más `HTTP_JWT_CLAIMS_DEPTH` (2^5) niveles;
+- Jansson interno: sus headers en `src/cerver/http/json/`, sus objetos con `-fvisibility=hidden` (como el parser),
+  fuera de `include/` y del paraguas `http/http.h`: `libcerver.so` exporta 87 símbolos menos, los `json_*`. Solo lo
+  usa `http/jwt/jwt.c`, hasta L2;
 - los tests, los examples y los benchmarks sin `json_*`; `incompatibilities.md` con la tabla de equivalencias;
-- la rama `labs` de pycerver.
+- **la línea base de L2:** `GET /bench/auth` de `benchmarks/server` (un bearer HS256) cuesta 39 asignaciones por
+  petición con el JWT derivado de libjwt, en los tres modos (`AUTH_MAX_ALLOCATIONS` de `test/performance.sh`);
+- la rama `labs` de pycerver pasa a después de L2 (decisión del 2026-11-15): la 3.0b-7 y la 3.0b-8 cambian lo
+  que liga (los `decode_data`, los nombres de los algoritmos del JWT).
 
 **La meta de L1,** que sigue después de las dos betas: le gana a yyjson y a simdjson en lectura y escritura, con las
 cifras de la máquina oficial.
