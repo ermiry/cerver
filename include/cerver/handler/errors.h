@@ -142,7 +142,8 @@ CERVER_EXPORT u8 cerver_error_event_register (
 );
 
 /**
- * @brief Unregisters the action of an error and releases its arguments with its delete_action_args.
+ * @brief Unregisters the action of an error; its arguments are released with its delete_action_args once every
+ * trigger that still runs is done with them.
  *
  * @param[in,out] cerver the cerver
  * @param[in] error_type the error
