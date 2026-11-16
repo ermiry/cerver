@@ -39,6 +39,7 @@ LOGS=${LOGS:-/tmp/performance}
 BUILD=${BUILD:-1}
 
 GET_PATH=/bench
+GET_QUERY_PATH='/bench?first=one&second=two%20words'
 POST_PATH=/bench/json
 JSON_BODY='{"name": "cerver", "values": [1, 2, 3]}'
 
@@ -341,6 +342,7 @@ check_tree () {
 for HANDLER in "${HANDLERS[@]}"; do
 	echo "Allocations with $HANDLER..."
 	check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
+	check_allocations GET "$GET_QUERY_PATH" "" $GET_MAX_ALLOCATIONS
 	check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
 	check_web_socket_allocations
 done

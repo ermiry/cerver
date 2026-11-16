@@ -24,6 +24,9 @@ struct EventPoller {
 	struct epoll_event *events;
 	int max_events;
 
+	// each wake up makes one wait return (the eventfd is a semaphore)
+	bool counted;
+
 };
 
 static const uint64_t event_poller_wake_value = 1;
@@ -41,6 +44,7 @@ void event_source_init (
 		source->registered = false;
 		source->silent = false;
 		source->owner = owner;
+		source->poller = NULL;
 	}
 
 }
@@ -58,6 +62,8 @@ static EventPoller *event_poller_new (void) {
 
 		poller->events = NULL;
 		poller->max_events = 0;
+
+		poller->counted = false;
 	}
 
 	return poller;
@@ -94,7 +100,7 @@ static unsigned int event_poller_open (EventPoller *poller, const int max_events
 	unsigned int retval = 1;
 
 	poller->epoll_fd = epoll_create1 (EPOLL_CLOEXEC);
-	poller->wake_fd = eventfd (0, EFD_NONBLOCK | EFD_CLOEXEC);
+	poller->wake_fd = eventfd (0, EFD_NONBLOCK | EFD_CLOEXEC | (poller->counted ? EFD_SEMAPHORE : 0));
 
 	poller->events = (struct epoll_event *) calloc ((size_t) max_events, sizeof (struct epoll_event));
 	poller->max_events = max_events;
@@ -107,10 +113,12 @@ static unsigned int event_poller_open (EventPoller *poller, const int max_events
 
 }
 
-EventPoller *event_poller_create (const unsigned int max_events) {
+static EventPoller *event_poller_create_actual (const unsigned int max_events, const bool counted) {
 
 	EventPoller *poller = event_poller_new ();
 	if (poller) {
+		poller->counted = counted;
+
 		if (event_poller_open (poller, (int) (max_events ? max_events : EVENT_POLLER_DEFAULT_EVENTS))) {
 			event_poller_delete (poller);
 			poller = NULL;
@@ -118,6 +126,18 @@ EventPoller *event_poller_create (const unsigned int max_events) {
 	}
 
 	return poller;
+
+}
+
+EventPoller *event_poller_create (const unsigned int max_events) {
+
+	return event_poller_create_actual (max_events, false);
+
+}
+
+EventPoller *event_poller_create_counted (const unsigned int max_events) {
+
+	return event_poller_create_actual (max_events, true);
 
 }
 
@@ -165,6 +185,7 @@ unsigned int event_poller_add (
 			source->interest = interest;
 			source->registered = true;
 			source->silent = false;
+			source->poller = poller;
 		}
 	}
 
@@ -189,7 +210,7 @@ unsigned int event_poller_modify (
 		retval = 0;
 
 		if (event_poller_modify_is_needed (source, interest)) {
-			retval = event_poller_control (poller, EPOLL_CTL_MOD, source, source->fd, interest);
+			retval = event_poller_control (source->poller, EPOLL_CTL_MOD, source, source->fd, interest);
 			if (!retval) {
 				source->interest = interest;
 				source->silent = false;
@@ -209,10 +230,30 @@ unsigned int event_poller_remove (EventPoller *poller, EventSource *source) {
 		retval = 0;
 
 		if (source->registered) {
-			retval = event_poller_control (poller, EPOLL_CTL_DEL, source, source->fd, EVENT_INTEREST_NONE);
+			retval = event_poller_control (
+				source->poller, EPOLL_CTL_DEL, source, source->fd, EVENT_INTEREST_NONE
+			);
 
 			event_source_forget (source);
 		}
+	}
+
+	return retval;
+
+}
+
+unsigned int event_poller_watch (
+	EventPoller *poller, EventSource *source, const int fd, const unsigned int interest
+) {
+
+	unsigned int retval = 1;
+
+	if (poller && source) {
+		if (source->registered && (source->poller != poller)) (void) event_poller_remove (poller, source);
+
+		retval = source->registered ?
+			event_poller_modify (poller, source, interest) :
+			event_poller_add (poller, source, fd, interest);
 	}
 
 	return retval;
@@ -226,6 +267,7 @@ void event_source_forget (EventSource *source) {
 		source->interest = EVENT_INTEREST_NONE;
 		source->registered = false;
 		source->silent = false;
+		source->poller = NULL;
 	}
 
 }
@@ -257,25 +299,42 @@ static void event_poller_wake_consume (const EventPoller *poller) {
 
 }
 
+// a wake up that is not consumed stays for the ones that wait on the poller
 static int event_poller_collect (
-	const EventPoller *poller, const int n_events, EventReady *ready
+	const EventPoller *poller, const struct epoll_event *events, const int n_events,
+	EventReady *ready, const bool consume_wake
 ) {
 
 	int n_ready = 0;
 
 	for (int idx = 0; idx < n_events; idx++) {
-		EventSource *source = (EventSource *) poller->events[idx].data.ptr;
+		EventSource *source = (EventSource *) events[idx].data.ptr;
 
 		if (source) {
 			ready[n_ready].source = source;
-			ready[n_ready].ready = event_poller_ready_flags (poller->events[idx].events);
+			ready[n_ready].ready = event_poller_ready_flags (events[idx].events);
 			n_ready += 1;
 		}
 
-		else {
+		else if (consume_wake) {
 			event_poller_wake_consume (poller);
 		}
 	}
+
+	return n_ready;
+
+}
+
+// a signal is not an error of the poller, its loop decides what to do
+static int event_poller_waited (
+	const EventPoller *poller, const struct epoll_event *events, const int n_events,
+	EventReady *ready, const bool consume_wake
+) {
+
+	int n_ready = -1;
+
+	if (n_events >= 0) n_ready = event_poller_collect (poller, events, n_events, ready, consume_wake);
+	else if (errno == EINTR) n_ready = 0;
 
 	return n_ready;
 
@@ -294,28 +353,85 @@ int event_poller_wait (
 			timeout
 		);
 
-		if (n_events >= 0) n_ready = event_poller_collect (poller, n_events, ready);
-
-		// a signal is not an error of the poller, its loop decides what to do
-		else if (errno == EINTR) n_ready = 0;
+		n_ready = event_poller_waited (poller, poller->events, n_events, ready, true);
 	}
 
 	return n_ready;
 
 }
 
+int event_poller_wait_one (const EventPoller *poller, EventReady *ready, const int timeout) {
+
+	int result = EVENT_POLLER_WAITED_NOTHING;
+
+	if (poller && ready) {
+		struct epoll_event event;
+		(void) memset (&event, 0, sizeof (struct epoll_event));
+
+		// its only event is a source or the wake up
+		if (epoll_wait (poller->epoll_fd, &event, 1, timeout) > 0) {
+			EventSource *source = (EventSource *) event.data.ptr;
+
+			if (source) {
+				ready->source = source;
+				ready->ready = event_poller_ready_flags (event.events);
+
+				result = EVENT_POLLER_WAITED_SOURCE;
+			}
+
+			else {
+				event_poller_wake_consume (poller);
+
+				result = EVENT_POLLER_WAITED_WAKE;
+			}
+		}
+	}
+
+	return result;
+
+}
+
+int event_poller_take (const EventPoller *poller, EventReady *ready, const int max) {
+
+	int n_ready = -1;
+
+	if (poller && ready && (max > 0)) {
+		struct epoll_event events[EVENT_POLLER_TAKE_EVENTS];
+		(void) memset (events, 0, sizeof (events));
+
+		const int n_events = epoll_wait (
+			poller->epoll_fd, events, (max < EVENT_POLLER_TAKE_EVENTS) ? max : EVENT_POLLER_TAKE_EVENTS, 0
+		);
+
+		n_ready = event_poller_waited (poller, events, n_events, ready, false);
+	}
+
+	return n_ready;
+
+}
+
+static void event_poller_wake_write (const EventPoller *poller, const uint64_t value) {
+
+	const int error = errno;
+
+	// a full counter (EAGAIN) already wakes the poller up
+	while (write (poller->wake_fd, &value, sizeof (value)) < 0) {
+		if (errno != EINTR) break;
+	}
+
+	errno = error;
+
+}
+
 void event_poller_wake (const EventPoller *poller) {
 
-	if (poller) {
-		const int error = errno;
+	if (poller) event_poller_wake_write (poller, event_poller_wake_value);
 
-		// a full counter (EAGAIN) already wakes the poller up
-		while (write (poller->wake_fd, &event_poller_wake_value, sizeof (event_poller_wake_value)) < 0) {
-			if (errno != EINTR) break;
-		}
+}
 
-		errno = error;
-	}
+void event_poller_wake_many (const EventPoller *poller, const unsigned int count) {
+
+	if (poller && count) event_poller_wake_write (poller, (uint64_t) count);
 
 }
 

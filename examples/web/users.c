@@ -50,8 +50,8 @@ void users_login_handler (
 ) {
 
 	// get the user values from the request
-	const String *username = http_query_pairs_get_value (request->body_values, "username");
-	const String *password = http_query_pairs_get_value (request->body_values, "password");
+	const String *username = http_request_body_get_value (request, "username");
+	const String *password = http_request_body_get_value (request, "password");
 
 	if (username && password) {
 		// get user by username
@@ -155,9 +155,9 @@ void users_register_handler (
 ) {
 
 	// get the user values from the request
-	const String *name = http_query_pairs_get_value (request->body_values, "name");
-	const String *username = http_query_pairs_get_value (request->body_values, "username");
-	const String *password = http_query_pairs_get_value (request->body_values, "password");
+	const String *name = http_request_body_get_value (request, "name");
+	const String *username = http_request_body_get_value (request, "username");
+	const String *password = http_request_body_get_value (request, "password");
 
 	if (name && username && password) {
 		// register a new user

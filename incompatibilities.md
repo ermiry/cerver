@@ -3,6 +3,61 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-19 (from 2.1b-18)
+
+The whole form of keep-alive (F4b of `roadmap.md` §4.4b) and the backlog of performance and of tests. Some structs
+change their fields (a binary built with the 2.1b-18 is built again), and two fields of a request are not set when
+it is parsed anymore.
+
+**Keep-alive**
+
+- **The threads of the pools read the next request of an idle connection:** with `CERVER_HANDLER_TYPE_EVENTS` and
+  connections that are kept (the default), the threads of each pool wait for the sockets of the idle connections
+  whose last request was of the pool when the queue of the pool is empty, and the one that gets a socket reads,
+  parses and handles its request without the event loop. The loop reads it when no thread of its pool waits (in its
+  idle check, every 2^8 ms at most), when requests of that pool wait in the loop or when the loop rejects them, so a
+  request still waits for a place and is refused like any other. `http_cerver_set_keep_alive_pool_read (false)`
+  gives back the reads of the 2.1b-18 (every request is read by its loop)
+- **The authentication before the body of the next request of a kept connection runs in the thread that reads it**
+  (or that follows its connection), when the request is of the pool of that thread: it went back to its loop, that
+  gave it to the pool as another job
+- **A thpool can wait on something else than its queue:** `Thpool` has `waiter`, `num_threads_waiting` and
+  `waiter_wakes` at its end (`ThpoolWaiter`, `ThpoolWaited`, `thpool_set_waiter ()`,
+  `thpool_get_num_threads_waiting ()`, `CERVER_PRIVATE`); a work of the waiter is counted in `total_jobs` and
+  `completed_jobs` and in the run histogram, not in the wait one
+- **The memory of a connection of an event loop is released with its loop:** one that its recycled connections do not
+  keep (beyond 2^10) loses its arena and its buffers but keeps its struct, so a thread that still has its pointer
+  reads that it is not idle
+- `HttpCerver` has `keep_alive_pool_read` and `n_pool_read_requests` at its end; the metric
+  `cerver_http_pool_read_requests_total` and `n_pool_read` in the `connections` of the admin stats count those
+  requests
+
+**HTTP**
+
+- **The query params and the values of a form live in the arena of the request:** `HttpRequest::query_params` and
+  `body_values` are NULL until `http_request_get_query_params ()` and `http_request_get_body_values ()` create them (a
+  copy of each pair), so code that read the fields reads the getters; `http_request_query_params_get_value ()` and
+  `http_request_body_get_value ()` read the pairs of the arena without allocating (`HttpRequest::query_pairs`,
+  `n_query_pairs`, `body_pairs` and `n_body_pairs` at its end). A value of a form is parsed with the length of the
+  body (it stopped at its first `'\0'`)
+- `cerver_http_pool_parked_seconds{pool}`: the time that the requests of each pool waited in the event loops for a
+  place (the struct of a pool has its histogram); `parked_microseconds` in the pools of the admin stats
+
+**The event loops**
+
+- **The pause of the accept is 2^4 ms** (`EVENT_LOOP_ACCEPT_BACKOFF`): without fds or at the limit of connections a
+  loop waits that time in its poller, not a tick of its timers (2^8 ms); `EventLoop` has `accept_resume` instead of
+  `accept_timer`
+- `EventSource` has `poller`: modify and remove act where the source is registered, whatever poller is named
+
+**The tests**
+
+- The macros `test_check_ptr_eq`, `_ptr_ne`, `_unsigned_ne`, `_unsigned_gt`, `_int_ne` and `_int_gt` of `test/test.h`
+  put their arguments in parentheses
+- The send timeout of `test/http/disconnect.c` scales with `test_time_scale ()`
+- The routing test of the balancer (`test/load/routing.c`) waits for the counter of the packets that it sent, that the
+  balancer adds after its send returns (under valgrind the client had the last echo first)
+
 ## 2.1b-18 (from 2.1b-17)
 
 The fixes of the audit of the code that the other lines made: the core of the 1.9b-2 (`core`), the HTTP of the

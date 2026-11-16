@@ -52,9 +52,10 @@ static inline void test_output_init (void) {
 		}															\
 	})
 
-#define test_check_ptr_eq(X, Y) test_check (X == Y, NULL)
+// the arguments in parentheses: an expression with an operator weaker than the comparison is compared whole
+#define test_check_ptr_eq(X, Y) test_check ((X) == (Y), NULL)
 
-#define test_check_ptr_ne(X, Y) test_check (X != Y, NULL)
+#define test_check_ptr_ne(X, Y) test_check ((X) != (Y), NULL)
 
 #define																\
 	test_check_ptr(ptr)												\
@@ -132,9 +133,9 @@ static inline void test_output_init (void) {
 		}															\
 	})
 
-#define test_check_unsigned_ne(X, Y) test_check (X != Y, NULL)
+#define test_check_unsigned_ne(X, Y) test_check ((X) != (Y), NULL)
 
-#define test_check_unsigned_gt(X, Y) test_check (X > Y, NULL)
+#define test_check_unsigned_gt(X, Y) test_check ((X) > (Y), NULL)
 
 #define																\
 	test_check_int_eq(value, expected, msg)							\
@@ -153,9 +154,9 @@ static inline void test_output_init (void) {
 		}															\
 	})
 
-#define test_check_int_ne(X, Y) test_check (X != Y, NULL)
+#define test_check_int_ne(X, Y) test_check ((X) != (Y), NULL)
 
-#define test_check_int_gt(X, Y) test_check (X > Y, NULL)
+#define test_check_int_gt(X, Y) test_check ((X) > (Y), NULL)
 
 #define																\
 	test_check_long_int_eq(value, expected, msg)					\

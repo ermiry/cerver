@@ -138,6 +138,10 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_followed_requests_total", "The requests that the thread that answered the one before them in their connection handled, without their event loop.",
 		offsetof (HttpCerver, n_followed_requests)
+	},
+	{
+		"cerver_http_pool_read_requests_total", "The requests of connections that were kept that a thread of a pool read and handled, without their event loop.",
+		offsetof (HttpCerver, n_pool_read_requests)
 	}
 };
 
@@ -648,6 +652,36 @@ static void http_metrics_pools_histogram (
 
 }
 
+#define HTTP_METRICS_POOL_PARKED_SECONDS_NAME		"cerver_http_pool_parked_seconds"
+
+// the time that the requests of each pool that has threads waited in the event loops for a place in it,
+// in buckets of 2^i ms like the histograms of the thpools
+static void http_metrics_pools_parked_histogram (String *metrics, const HttpCerver *http_cerver) {
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_POOL_PARKED_SECONDS_NAME,
+		"The time that the requests waited in the event loops for a place in each pool.",
+		http_metrics_type_histogram
+	);
+
+	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
+		const HttpPool *pool = http_cerver->pools[idx];
+
+		if (pool->thpool) {
+			u64 histogram[THPOOL_HISTOGRAM_BUCKETS] = { 0 };
+			for (unsigned int bucket = 0; bucket < THPOOL_HISTOGRAM_BUCKETS; bucket++) {
+				histogram[bucket] = __atomic_load_n (&pool->parked_histogram[bucket], __ATOMIC_RELAXED);
+			}
+
+			http_metrics_pool_histogram (
+				metrics, HTTP_METRICS_POOL_PARKED_SECONDS_NAME, pool->name, histogram,
+				__atomic_load_n (&pool->parked_total_microseconds, __ATOMIC_RELAXED)
+			);
+		}
+	}
+
+}
+
 // the pools of the cerver by their name, the default one is the thpool of the cerver
 static void http_metrics_pools (String *metrics, const HttpCerver *http_cerver) {
 
@@ -665,6 +699,8 @@ static void http_metrics_pools (String *metrics, const HttpCerver *http_cerver) 
 	for (size_t i = 0; i < http_metrics_n_pools_histograms; i++) {
 		http_metrics_pools_histogram (metrics, http_cerver, &http_metrics_pools_histograms[i]);
 	}
+
+	http_metrics_pools_parked_histogram (metrics, http_cerver);
 
 }
 

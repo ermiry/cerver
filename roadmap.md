@@ -130,7 +130,7 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F4** | 2.1b-16 | Keep-alive real | F3 |
 | **F5** | 2.1b-17 | Pools nombrados, health / ready, métricas | F4 |
 | **Arreglos** | 2.1b-18 | Los arreglos de la auditoría de las otras líneas (§4.13): el core de la 1.9b-2 (con el stop por un pipe), el HTTP de la 2.0b-75 y el dueño del stream de WebSocket de la 3.0b-4 | F5 |
-| **F4b** | 2.1b-19 | La forma completa del keep-alive: el pool lee, parsea y contesta la siguiente petición de una conexión conservada (§4.4, punto 12) | 2.1b-18 |
+| **F4b** | 2.1b-19 | La forma completa del keep-alive: los hilos del pool leen, parsean y contestan la siguiente petición de una conexión conservada (§4.4b); con el backlog de rendimiento y de tests | 2.1b-18 |
 | **F6b** | 2.1b-20 | WebSocket sobre el loop | F4, F6a |
 | **F8a** | 2.1b-21 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
 | **F8b** | 2.1b-22 | TLS no bloqueante en el loop | F4, F8a |
@@ -729,6 +729,76 @@ CERVER_EXPORT void http_cerver_set_keep_alive (HttpCerver *http_cerver, bool ena
 CERVER_EXPORT void http_cerver_set_keep_alive_timeout (HttpCerver *http_cerver, unsigned int seconds);   // 2^7
 CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver, unsigned int max);      // 2^10
 ```
+
+### 4.4b F4b — La forma completa del keep-alive (2.1b-19)
+
+**Implementado en la 2.1b-19.** La siguiente petición de una conexión conservada la leen, la parsean y la contestan los
+hilos del pool de la petición anterior, sin su loop. Es por default con EVENTS y keep-alive, y
+`http_cerver_set_keep_alive_pool_read (false)` vuelve a la 2.1b-18. Se hicieron y se midieron las dos formas del
+punto 12 de §4.4:
+
+1. **A, el loop entrega la ociosa:** el loop que recibe el reporte de una ociosa (su socket ya está silencioso,
+   `EPOLLONESHOT`, sin syscall) le da al pool de su carril un job nuevo, `HTTP_CONNECTION_JOB_READ`, y el hilo hace un
+   `recv ()` sin esperar y sigue el camino del hilo que sigue a su conexión (`http_connection_follow_received ()`):
+   la contesta, o la regresa con `READING`, `PAUSED` o `FAILED`. Sin bytes, la conexión vuelve a ociosa; con el
+   cliente ido, se termina en el hilo. Si el pool está lleno, si hay estacionadas en ese carril o si el loop rechaza,
+   el loop la lee él mismo. Siguen siendo tres cruces de hilos.
+2. **B, los hilos del pool esperan en las ociosas:** el thpool tiene un waiter opcional (`ThpoolWaiter`,
+   `thpool_set_waiter ()`): sin jobs en su cola, cada hilo espera en un poller contado de su pool
+   (`src/cerver/events/idle.c`, un eventfd con `EFD_SEMAPHORE`), donde se arman las ociosas cuya última petición fue
+   de ese pool. El hilo que recibe un socket reclama la conexión con el mutex de las ociosas de su loop
+   (`http_connection_reported ()`) y la atiende como en A. Son dos cruces: el del cliente y el del hilo. La cola del
+   thpool siempre va primero, y una petición que llega con todos los hilos ocupados la toma su loop en su chequeo
+   de las ociosas (`event_idle_rescue ()`), así espera su lugar o recibe su 503 como cualquier otra.
+
+**Lo que la implementación cambió contra el diseño del punto 12:**
+
+- **La auth antes del body la corre el hilo** cuando la petición es de su pool (también el hilo que sigue a su
+  conexión): ya no regresa `PAUSED` para que el loop la mande como otro job.
+- **Las estacionadas van primero:** un hilo que reclama una ociosa de un carril con estacionadas se la deja a su loop
+  (`HTTP_CONNECTION_OUTCOME_REPORTED`), que la lee y la estaciona detrás.
+- **La memoria de una conexión no se libera mientras su loop corre:** un hilo puede tener el puntero de una que su
+  loop cerró. La que las recicladas no guardan pierde su arena y sus búferes y conserva su struct
+  (`EventLoop::stripped`).
+- **Cada `EventSource` sabe en qué poller está** (`event_poller_watch ()` lo mueve entre el del loop y el del pool).
+- **Los waiters arrancan después de los hilos de los loops** y se quitan al final de `event_loop_group_finish ()`;
+  el grupo se borra después del `thpool_destroy ()`.
+- **El job `READ` de A queda para los loops sin grupo** (el despachador manual de los tests y el fuzzer).
+
+**El backlog que entró:** el histograma `cerver_http_pool_parked_seconds{pool}`; la pausa del accept de 2^4 ms
+(`EventLoop::accept_resume`) en lugar de un tick; los pares del query y del formulario en la arena de la petición
+(`query_params` y `body_values` solo los crean sus getters, y `performance.sh` mide un GET con dos params); el send
+timeout de `disconnect.c` escalado; la espera del registro antes del stop de `test_client_reconnect`; el timeout del
+connect de T11; los paréntesis de `test/test.h`.
+
+**Las cifras** (las comparaciones de `test/performance.sh`, el servidor de benchmarks de 4 hilos y 1 hilo de I/O, la
+mediana de 5 cargas de cada modo tomadas por turnos, con la carga de otra sesión en la máquina: solo valen las
+razones de una misma corrida). Las conexiones conservadas contra una conexión por petición, y EVENTS contra THREADS
+con una conexión por petición:
+
+| Caso | A, conservadas | B, conservadas | A, EVENTS / THREADS | B, EVENTS / THREADS |
+|---|---|---|---|---|
+| GET, 8 conexiones | 161 % | 186 % | 100 % | 96 % |
+| POST JSON, 8 conexiones | 148 % | 183 % | 103 % | 97 % |
+| GET, 64 conexiones | 165 % | 181 % | 110 % | 92 % |
+| POST JSON, 64 conexiones | 137 % | 171 % | 109 % | 91 % |
+
+**Gana B:** pasa el mínimo del 150 % en los cuatro casos (A falla dos). Su primera versión despertaba a un hilo con
+cada job que entraba a la cola mientras otros esperaban en el waiter, y esos despertares quedaban de más cuando un
+hilo ocupado tomaba el job por sí mismo: EVENTS contra THREADS con una conexión por petición bajó a 82–96 % (el POST
+con 64 conexiones, debajo del 90 %). Con la cuenta de los despertares (`Thpool::waiter_wakes`: un job solo pide uno
+cuando esperan más hilos que despertares hay, y `ThpoolWaiter::wait` dice si consumió uno, `THPOOL_WAITED_WOKEN`)
+quedó en 91–97 %: lo que falta es lo que cuesta despertar un hilo desde epoll y no desde un futex.
+
+**La API** (`@since 2.1b-19`): `http_cerver_set_keep_alive_pool_read ()` y `HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ`
+en `http/core/limits.h` y `http.h`; `ThpoolWaiter`, `thpool_set_waiter ()` y `thpool_get_num_threads_waiting ()`
+(`CERVER_PRIVATE`) en `threads/thpool.h`.
+
+**Los tests:** la región `kept` de `test/http/receive.c` (el job `READ` con el despachador manual: la lee el pool,
+llega incompleta, la autoriza, no se puede parsear, el pool sin lugar o un loop que rechaza, un job descartado),
+`test/http/keepalive.c` (`test_keepalive_events_pool_read`, con los hilos esperando en el waiter;
+`test_keepalive_events_pool_busy`, con el único hilo ocupado), `test/threads/thpool.c` (el waiter, su destroy y sus
+argumentos) y `test_pools_wait` (el histograma).
 
 ### 4.5 F5 — Pools nombrados, health y métricas (2.1b-17)
 

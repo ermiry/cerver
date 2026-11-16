@@ -614,6 +614,9 @@ static json_t *http_cerver_admin_handler_pool_stats (const HttpPool *pool) {
 	http_cerver_admin_value (
 		json, "n_unavailable", (size_t) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED)
 	);
+	http_cerver_admin_value (
+		json, "parked_microseconds", (size_t) __atomic_load_n (&pool->parked_total_microseconds, __ATOMIC_RELAXED)
+	);
 
 	return json;
 
@@ -665,6 +668,7 @@ static void http_cerver_admin_handler_connections_stats (
 
 	http_cerver_admin_value (connections, "n_reused", CERVER_STATS_GET (http_cerver->n_reused_connections));
 	http_cerver_admin_value (connections, "n_followed", CERVER_STATS_GET (http_cerver->n_followed_requests));
+	http_cerver_admin_value (connections, "n_pool_read", CERVER_STATS_GET (http_cerver->n_pool_read_requests));
 	http_cerver_admin_value (connections, "n_ended", ended);
 	http_cerver_admin_value (connections, "n_requests", CERVER_STATS_GET (http_cerver->n_connection_requests));
 
