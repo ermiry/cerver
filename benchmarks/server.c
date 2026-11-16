@@ -16,10 +16,12 @@
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
+#include <cerver/http/jwt/alg.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
+#include <cerver/http/security/auth.h>
 #include <cerver/http/websockets/websocket.h>
 
 #include <cerver/json/json.h>
@@ -38,6 +40,10 @@
 // without it that route runs in the thpool of the cerver, with the others
 // BENCH_KEEP_ALIVE_FOLLOW in the environment is the microseconds that a thread looks for the next request
 // of its connection (0 never does), without it the cerver has its default
+// BENCH_AUTH in the environment is a file with the secret of the HS256 tokens of GET /bench/auth,
+// a route that takes a bearer: without it the route is not there
+
+#define BENCH_SERVER_AUTH_VARIABLE			"BENCH_AUTH"
 
 #define BENCH_SERVER_KEEP_ALIVE_VARIABLE	"BENCH_KEEP_ALIVE"
 #define BENCH_SERVER_KEEP_ALIVE_DISABLED	"0"
@@ -119,6 +125,18 @@ static void bench_json_handler (
 
 }
 
+// GET /bench/auth
+// the bearer of the request was verified before its handler
+static void bench_auth_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) http_response_send (oki_doki, http_receive);
+
+}
+
 // GET /slow, a handler that keeps its thread for a while
 static void bench_slow_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -146,6 +164,23 @@ static const HttpWebSocketHandlers bench_web_socket_handlers = {
 	NULL, NULL, bench_web_socket_echo, NULL, NULL, NULL, NULL, NULL
 };
 
+// the route with a bearer needs the secret of its tokens, so it is there only with one:
+// the cerver signs and verifies with the same file
+static void bench_server_auth (HttpCerver *http_cerver, HttpRoute *bench_route) {
+
+	const char *secret = getenv (BENCH_SERVER_AUTH_VARIABLE);
+	if (secret) {
+		(void) http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_HS256);
+		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, secret);
+		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, secret);
+
+		HttpRoute *auth_route = http_route_create (REQUEST_METHOD_GET, "auth", bench_auth_handler);
+		http_route_set_auth (auth_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		http_route_child_add (bench_route, auth_route);
+	}
+
+}
+
 static void bench_server_routes (HttpCerver *http_cerver) {
 
 	HttpRoute *bench_route = http_route_create (REQUEST_METHOD_GET, "bench", bench_handler);
@@ -153,6 +188,8 @@ static void bench_server_routes (HttpCerver *http_cerver) {
 
 	HttpRoute *json_route = http_route_create (REQUEST_METHOD_POST, "json", bench_json_handler);
 	http_route_child_add (bench_route, json_route);
+
+	bench_server_auth (http_cerver, bench_route);
 
 	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
 	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &bench_web_socket_handlers);
