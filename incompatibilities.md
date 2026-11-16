@@ -3,6 +3,31 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-77 (from 2.0b-76)
+
+The port of the Release 1.9 of `core` and the backlog of HTTP: the wire does not change, but some structs grow (a
+binary that allocates them itself is built again) and some functions change what they do.
+
+- **A send that times out ends its connection:** a send to a peer that does not read in all its send timeout (or the
+  deadline of an HTTP response) leaves it with a part of what was sent, so its socket is shut down: the thread that
+  receives the connection ends it, and the next sends fail at once (EPIPE) instead of waiting each one for its own
+  timeout. **New:** `socket_end_on_send_timeout ()` (`CERVER_PRIVATE`)
+- **`Thpool` grows** at its end with `waiter`, `num_threads_waiting` and `waiter_wakes`, the waiter of the 2.1b-19:
+  without one, the thpool works as before. **New:** `ThpoolWaiter`, `ThpoolWaited`, `thpool_set_waiter ()` and
+  `thpool_get_num_threads_waiting ()` (`CERVER_PRIVATE`)
+- **The events and errors of a client share their arguments** like the ones of the cerver: `ClientEvent` and
+  `ClientEventData` have `shared_args` and `shared_response` at their end, `ClientError` and `ClientErrorData` have
+  `shared_args`; an event or an error that is replaced or unregistered while a trigger still runs keeps its arguments
+  (and its response) until that trigger releases its data
+- **`files_create_dir ()` of a directory that exists returns 0** (it returned 1); `file_n_read ()` sets `n_read` (it
+  added to it) and takes a NULL one; `file_receive_actual ()` removes a file that fails after it was opened; a BMP is
+  found by its bytes
+- **The JSON rejects a NUL byte after a number or a literal:** `[1\0, 2]` and `{"a": 1\0}` were read as `[1, 2]` and
+  `{"a": 1}`
+- **`http_cerver_static_path_add ()` returns NULL** when its path, its characters or its place in the list can not
+  be allocated (it returned a static path with a NULL path, that was dereferenced when it was resolved, or one that
+  was not in the list)
+
 ## 2.0b-76 (from 2.0b-75)
 
 The ports of the 2.1b-17 (`nightly`) and of the 3.0b-4 (`labs`) and the names of `json.c`: `Thpool` has a new field
