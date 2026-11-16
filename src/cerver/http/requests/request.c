@@ -94,6 +94,8 @@ static void http_request_init (HttpRequest *http_request) {
 		http_request->custom_headers = NULL;
 		http_request->current_custom_header = NULL;
 
+		http_request->claims = NULL;
+
 		http_request->decoded_data = NULL;
 		http_request->delete_decoded_data = NULL;
 
@@ -685,6 +687,14 @@ bool http_request_get_bytes_range (
 	}
 
 	return result;
+
+}
+
+const CerverJsonValue *http_request_claims (
+	const HttpRequest *http_request
+) {
+
+	return http_request ? http_request->claims : NULL;
 
 }
 

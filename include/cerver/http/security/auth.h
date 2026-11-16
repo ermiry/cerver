@@ -16,6 +16,8 @@
 
 #include "cerver/http/core/http.h"
 
+#include "cerver/jwt/jwt.h"
+
 /**
  * @defgroup http_auth Authentication
  * @ingroup http_security
@@ -45,7 +47,15 @@
  *
  * @since 3.0b-7
  */
-#define HTTP_JWT_CLAIMS_DEPTH		(1 << 5)
+#define HTTP_JWT_CLAIMS_DEPTH		CERVER_JWT_CLAIMS_DEPTH
+
+/**
+ * @brief The bytes of the buffer where the claims of an HttpJwt are written: its #HTTP_JWT_VALUES_SIZE values with
+ * every character of their keys and of their texts as its longest escape.
+ *
+ * @since 3.0b-8
+ */
+#define HTTP_JWT_CLAIMS_SIZE		(1 << 15)
 
 /** @brief The start of the value of an Authorization header with a token. */
 #define HTTP_JWT_BEARER_PREFIX			"Bearer "
@@ -55,9 +65,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-struct jwt;
-struct JwtKey;
 
 /**
  * @brief A value of a token: a text, a bool or an integer with its key.
@@ -87,9 +94,6 @@ typedef struct HttpJwtValue {
  */
 typedef struct HttpJwt {
 
-	/** @brief The token of libjwt. */
-	struct jwt *jwt;
-
 	/** @brief The values of #values. */
 	u8 n_values;
 	/** @brief The values of the token. */
@@ -115,7 +119,7 @@ typedef struct HttpJwt {
 CERVER_PRIVATE void *http_jwt_new (void);
 
 /**
- * @brief Releases an HttpJwt and its token.
+ * @brief Releases an HttpJwt.
  *
  * @param[in] http_jwt_ptr the HttpJwt, it can be NULL
  * @note For the internal methods of cerver.
@@ -177,21 +181,25 @@ CERVER_PUBLIC char *http_cerver_auth_load_key (
 /**
  * @brief Sets the algorithm that signs and verifies the tokens.
  *
- * The keys are loaded for it when the cerver starts: a secret of at least the size of the hash for HS256 / HS384 /
- * HS512, an RSA key of at least 2048 bits for RS256 / RS384 / RS512, and a key of P-256 / P-384 / P-521 for ES256 /
- * ES384 / ES512.
+ * The keys are loaded for it when the cerver starts (cerver/jwt/key.h): a secret of at least the size of the
+ * digest for HS256 / HS384 / HS512, a key of RSA of at least 2048 bits for RS256 / RS384 / RS512 and PS256 / PS384 /
+ * PS512, a key of P-256 / P-384 / P-521 for ES256 / ES384 / ES512, and a key of Ed25519 or of Ed448 for EdDSA.
  *
  * @param[in,out] http_cerver the HttpCerver
- * @param[in] jwt_alg the algorithm, the default is JWT_ALG_HS256
+ * @param[in] algorithm the algorithm, the default is CERVER_JWT_ALGORITHM_HS256
  * @retval 0 the algorithm was set
- * @retval 1 a NULL HttpCerver, JWT_ALG_NONE or a value out of the table
+ * @retval 1 a NULL HttpCerver, CERVER_JWT_ALGORITHM_NONE or a value out of the table
+ * @since 3.0b-8 it takes a CerverJwtAlgorithm, it took the jwt_alg_t of libjwt (the same numbers).
  */
 CERVER_EXPORT u8 http_cerver_auth_set_jwt_algorithm (
-	HttpCerver *http_cerver, const jwt_alg_t jwt_alg
+	HttpCerver *http_cerver, const CerverJwtAlgorithm algorithm
 );
 
 /**
  * @brief Sets the file of the private key, that signs the tokens; it is loaded when the cerver starts.
+ *
+ * The file is a JWK when its first character that is not a space is `{` (RFC 7517); if not, it is the bytes of
+ * the secret for HS256 / HS384 / HS512, as they are, and a PEM without a passphrase for the other algorithms.
  *
  * @param[in,out] http_cerver the HttpCerver, NULL is ignored
  * @param[in] filename the file, copied; NULL removes it
@@ -202,6 +210,9 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_priv_key_filename (
 
 /**
  * @brief Sets the file of the public key, that verifies the tokens; it is loaded when the cerver starts.
+ *
+ * The file is read as the one of the private key (http_cerver_auth_set_jwt_priv_key_filename ()): for HS256 /
+ * HS384 / HS512 it is the same secret, and for the other algorithms the PEM or the JWK of the public key.
  *
  * @param[in,out] http_cerver the HttpCerver, NULL is ignored
  * @param[in] filename the file, copied; NULL removes it
@@ -214,7 +225,8 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (
  * @brief Sets the longest bearer token that is decoded; a longer one is rejected without decoding it.
  *
  * @param[in,out] http_cerver the HttpCerver, NULL is ignored
- * @param[in] max_size the bytes, 0 has no limit; the default is #HTTP_CERVER_DEFAULT_JWT_MAX_SIZE
+ * @param[in] max_size the bytes, 0 is the limit of every token (#CERVER_JWT_SIZE_MAX), that is also the most; the
+ * default is #HTTP_CERVER_DEFAULT_JWT_MAX_SIZE
  */
 CERVER_EXPORT void http_cerver_auth_set_jwt_max_size (
 	HttpCerver *http_cerver, const size_t max_size
@@ -231,7 +243,7 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_require_expiration (
 );
 
 /**
- * @brief Sets the seconds of clock skew that are accepted in "exp" and "nbf".
+ * @brief Sets the seconds of clock skew that are accepted in "exp", "nbf" and "iat".
  *
  * @param[in,out] http_cerver the HttpCerver, NULL is ignored
  * @param[in] leeway_seconds the seconds, the default is #HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS
@@ -248,6 +260,17 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_leeway_seconds (
  */
 CERVER_EXPORT void http_cerver_auth_set_jwt_issuer (
 	HttpCerver *http_cerver, const char *issuer
+);
+
+/**
+ * @brief Sets the "sub" that every token must have.
+ *
+ * @param[in,out] http_cerver the HttpCerver, NULL is ignored
+ * @param[in] subject the subject, copied; NULL accepts any
+ * @since 3.0b-8
+ */
+CERVER_EXPORT void http_cerver_auth_set_jwt_subject (
+	HttpCerver *http_cerver, const char *subject
 );
 
 /**
@@ -327,13 +350,19 @@ CERVER_EXPORT void http_cerver_auth_jwt_add_value_int (
 /**
  * @brief Generates and signs a token with a key.
  *
+ * The claims of the token are its values in the compact JSON of an object, with their keys sorted. A value
+ * without a key, a key more than once, and a key or a text that is not UTF-8 are not claims: the token is not
+ * generated.
+ *
  * @param[in,out] http_jwt the HttpJwt, with its values
- * @param[in] key the key
- * @return the token, released with jwt_free_str (); NULL without a key or on error
+ * @param[in] key the key, a secret or a private one
+ * @return the token, released with free (); NULL without an HttpJwt or a key that signs, with values that are not
+ * claims, or on error
  * @note For the internal methods of cerver.
+ * @since 3.0b-8 the key is a CerverJwtKey and the token is released with free ().
  */
 CERVER_PRIVATE char *http_cerver_auth_generate_jwt_actual (
-	HttpJwt *http_jwt, const struct JwtKey *key
+	HttpJwt *http_jwt, const CerverJwtKey *key
 );
 
 /**
@@ -341,8 +370,9 @@ CERVER_PRIVATE char *http_cerver_auth_generate_jwt_actual (
  *
  * @param[in] http_cerver the HttpCerver
  * @param[in,out] http_jwt the HttpJwt, with its values
- * @return the token, released with jwt_free_str (); NULL for a NULL argument, a cerver without its private key or on
- * error
+ * @return the token, released with free (); NULL for a NULL argument, a cerver without its private key or on
+ * error (see http_cerver_auth_generate_jwt_actual ())
+ * @since 3.0b-8 the token is released with free (), it was released with jwt_free_str ().
  */
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (
 	const HttpCerver *http_cerver, HttpJwt *http_jwt
@@ -356,9 +386,10 @@ CERVER_EXPORT char *http_cerver_auth_generate_jwt (
  * @retval 0 the bearer was generated
  * @retval 1 the token could not be generated or does not fit in #HTTP_JWT_BEARER_SIZE; the bearer is empty
  * @note For the internal methods of cerver.
+ * @since 3.0b-8 the key is a CerverJwtKey.
  */
 CERVER_PRIVATE u8 http_cerver_auth_generate_bearer_jwt_actual (
-	HttpJwt *http_jwt, const struct JwtKey *key
+	HttpJwt *http_jwt, const CerverJwtKey *key
 );
 
 /**
@@ -402,11 +433,11 @@ CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
 );
 
 /**
- * @brief Verifies a token with the public key of the cerver and checks its claims: the algorithm of the cerver,
- * "exp", "nbf", "iss" and "aud" with its settings.
+ * @brief Verifies a token with the public key of the cerver (cerver_jwt_verify ()) and validates its claims with
+ * its settings: "exp", "nbf" and "iat" with its leeway, and the "iss", the "sub" and the "aud" that it asks for.
  *
- * The claims are read with the JSON of cerver in the arena: an object without a key more than once and without a
- * NUL in its strings, of at most #HTTP_JWT_CLAIMS_DEPTH levels.
+ * The claims are read with the JSON of cerver in the arena, only after the signature was verified: an object
+ * without a key more than once and without a NUL in its strings, of at most #HTTP_JWT_CLAIMS_DEPTH levels.
  *
  * @param[in] http_cerver the HttpCerver
  * @param[in,out] arena the arena where the claims are read

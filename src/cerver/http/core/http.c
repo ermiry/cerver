@@ -41,10 +41,6 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/json/json.h"
-#include "cerver/http/jwt/alg.h"
-#include "cerver/http/jwt/jwt.h"
-#include "cerver/http/jwt/key.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 #include "cerver/http/requests/method.h"
@@ -63,11 +59,17 @@
 #include "cerver/http/websockets/registry.h"
 #include "cerver/http/websockets/websocket.h"
 
+#include "cerver/jwt/jwt.h"
+#include "cerver/jwt/key.h"
+
 #include "cerver/threads/worker.h"
 
 #include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
+
+// the first character of the file of a key that is a JWK (RFC 7517): the start of its object
+#define HTTP_CERVER_JWT_JWK_START			'{'
 
 HttpResponse *oki_doki = NULL;
 HttpResponse *bad_request_error = NULL;
@@ -138,7 +140,7 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->uploads_sequence = 0;
 
-		http_cerver->jwt_alg = JWT_ALG_NONE;
+		http_cerver->jwt_alg = CERVER_JWT_ALGORITHM_NONE;
 
 		http_cerver->jwt_opt_key_name = NULL;
 		http_cerver->jwt_private_key = NULL;
@@ -150,6 +152,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_require_expiration = HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION;
 		http_cerver->jwt_leeway_seconds = HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS;
 		http_cerver->jwt_issuer = NULL;
+		http_cerver->jwt_subject = NULL;
 		http_cerver->jwt_audience = NULL;
 
 		http_cerver->n_origins = 0;
@@ -313,12 +316,13 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		dlist_delete (http_cerver->routes);
 
 		str_delete (http_cerver->jwt_opt_key_name);
-		jwt_key_delete (http_cerver->jwt_private_key);
+		cerver_jwt_key_delete (http_cerver->jwt_private_key);
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
-		jwt_key_delete (http_cerver->jwt_public_key);
+		cerver_jwt_key_delete (http_cerver->jwt_public_key);
 
 		str_delete (http_cerver->jwt_issuer);
+		str_delete (http_cerver->jwt_subject);
 		str_delete (http_cerver->jwt_audience);
 
 		if (http_cerver->custom_data) {
@@ -381,7 +385,7 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 		http_cerver->not_found = http_receive_handle_not_found_route;
 
-		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+		http_cerver->jwt_alg = HTTP_CERVER_DEFAULT_JWT_ALGORITHM;
 
 		http_cerver->admin_file_systems_stats = dlist_init (
 			http_admin_file_system_stats_delete, NULL
@@ -550,49 +554,93 @@ static unsigned int http_cerver_init_responses (void) {
 
 }
 
-// the key of the file is created for the algorithm of the cerver,
-// it must have the type, the curve and the strength that the algorithm asks
-// returns the key, or NULL and the reason in error
-static JwtKey *http_cerver_init_create_jwt_key (
-	const HttpCerver *http_cerver,
-	const unsigned char *material, const size_t material_length,
-	const JwtKeyType type, JwtKeyError *error
+// the file of a key is a JWK when its first character that is not a space starts an object
+static bool http_cerver_init_jwt_key_is_jwk (
+	const char *material, const size_t material_length
 ) {
 
-	JwtKey *key = jwt_key_create (
-		http_cerver->jwt_alg, type, material, material_length, error
+	size_t position = 0;
+	while ((position < material_length) && isspace ((unsigned char) material[position])) position += 1;
+
+	return (position < material_length) && (material[position] == HTTP_CERVER_JWT_JWK_START);
+
+}
+
+// the algorithms whose key is a secret: its file is its bytes, as they are
+static bool http_cerver_init_jwt_key_is_secret (const CerverJwtAlgorithm algorithm) {
+
+	return (algorithm == CERVER_JWT_ALGORITHM_HS256)
+		|| (algorithm == CERVER_JWT_ALGORITHM_HS384)
+		|| (algorithm == CERVER_JWT_ALGORITHM_HS512);
+
+}
+
+// the key of the content of a file, by what the file is: a JWK, a secret or a PEM
+static CerverJwtKey *http_cerver_init_read_jwt_key (
+	const HttpCerver *http_cerver,
+	const char *material, const size_t material_length,
+	const bool is_private, CerverJwtError *error
+) {
+
+	if (http_cerver_init_jwt_key_is_jwk (material, material_length)) {
+		return cerver_jwt_key_create_jwk (http_cerver->jwt_alg, material, material_length, error);
+	}
+
+	if (http_cerver_init_jwt_key_is_secret (http_cerver->jwt_alg)) {
+		return cerver_jwt_key_create_secret (http_cerver->jwt_alg, material, material_length, error);
+	}
+
+	return cerver_jwt_key_create_pem (http_cerver->jwt_alg, material, material_length, is_private, error);
+
+}
+
+// the key of the file is created for the algorithm of the cerver,
+// it must have the type, the curve and the strength that the algorithm asks,
+// and the one that signs the tokens must be able to: a public key is not the private key of a cerver
+// returns the key, or NULL and the reason in error
+static CerverJwtKey *http_cerver_init_create_jwt_key (
+	const HttpCerver *http_cerver,
+	const char *material, const size_t material_length,
+	const bool is_private, CerverJwtError *error
+) {
+
+	CerverJwtKey *key = http_cerver_init_read_jwt_key (
+		http_cerver, material, material_length, is_private, error
 	);
 
-	if (key) {
-		*error = jwt_key_check_strength (key);
-		if (*error != JWT_KEY_ERROR_NONE) {
-			jwt_key_delete (key);
-			key = NULL;
-		}
+	if (key && is_private && !cerver_jwt_key_is_private (key)) {
+		*error = CERVER_JWT_ERROR_KEY;
+
+		cerver_jwt_key_delete (key);
+		key = NULL;
 	}
 
 	return key;
 
 }
 
+static const char *http_cerver_init_jwt_key_name (const bool is_private) {
+
+	return is_private ? "private" : "public";
+
+}
+
 // reads the file of a key, its content is cleared after the key is created
 // returns the key, or NULL if it can not be used: the cerver does not start
-static JwtKey *http_cerver_init_load_jwt_key (
+static CerverJwtKey *http_cerver_init_load_jwt_key (
 	const HttpCerver *http_cerver,
-	const String *filename, const JwtKeyType type
+	const String *filename, const bool is_private
 ) {
 
-	JwtKey *key = NULL;
-	JwtKeyError error = JWT_KEY_ERROR_EMPTY;
+	CerverJwtKey *key = NULL;
+	CerverJwtError error = CERVER_JWT_ERROR_ARGUMENTS;
 
 	size_t material_length = 0;
 	char *material = file_read (filename->str, &material_length);
 	const bool read = (material != NULL);
 	if (read) {
 		key = http_cerver_init_create_jwt_key (
-			http_cerver,
-			(const unsigned char *) material, material_length,
-			type, &error
+			http_cerver, material, material_length, is_private, &error
 		);
 
 		cerver_crypto_cleanse (material, material_length);
@@ -603,7 +651,7 @@ static JwtKey *http_cerver_init_load_jwt_key (
 		cerver_log_success (
 			"Loaded cerver's %s http jwt %s key for %s!",
 			http_cerver->cerver->info->name,
-			jwt_key_type_to_string (type), jwt_alg_str (http_cerver->jwt_alg)
+			http_cerver_init_jwt_key_name (is_private), cerver_jwt_algorithm_to_string (http_cerver->jwt_alg)
 		);
 	}
 
@@ -611,9 +659,9 @@ static JwtKey *http_cerver_init_load_jwt_key (
 		cerver_log_error (
 			"Failed to load cerver's %s http jwt %s key %s for %s: %s",
 			http_cerver->cerver->info->name,
-			jwt_key_type_to_string (type), filename->str,
-			jwt_alg_str (http_cerver->jwt_alg),
-			read ? jwt_key_error_to_string (error) : "The file can not be read"
+			http_cerver_init_jwt_key_name (is_private), filename->str,
+			cerver_jwt_algorithm_to_string (http_cerver->jwt_alg),
+			read ? cerver_jwt_error_to_string (error) : "The file can not be read"
 		);
 	}
 
@@ -630,7 +678,7 @@ static unsigned int http_cerver_init_load_jwt_keys (
 
 	if (http_cerver->jwt_opt_key_name && !http_cerver->jwt_private_key) {
 		http_cerver->jwt_private_key = http_cerver_init_load_jwt_key (
-			http_cerver, http_cerver->jwt_opt_key_name, JWT_KEY_TYPE_PRIVATE
+			http_cerver, http_cerver->jwt_opt_key_name, true
 		);
 
 		if (!http_cerver->jwt_private_key) errors |= 1;
@@ -638,7 +686,7 @@ static unsigned int http_cerver_init_load_jwt_keys (
 
 	if (http_cerver->jwt_opt_pub_key_name && !http_cerver->jwt_public_key) {
 		http_cerver->jwt_public_key = http_cerver_init_load_jwt_key (
-			http_cerver, http_cerver->jwt_opt_pub_key_name, JWT_KEY_TYPE_PUBLIC
+			http_cerver, http_cerver->jwt_opt_pub_key_name, false
 		);
 
 		if (!http_cerver->jwt_public_key) errors |= 1;
@@ -715,9 +763,6 @@ static unsigned int http_cerver_global_init (
 ) {
 
 	unsigned int errors = 0;
-
-	// the random seed of the json objects, before the threads of the cerver use them
-	json_object_seed (0);
 
 	// init HTTP jwt pool
 	errors |= http_jwt_init_pool ();

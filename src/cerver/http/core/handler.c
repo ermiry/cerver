@@ -46,9 +46,6 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/jwt/alg.h"
-#include "cerver/http/jwt/jwt.h"
-#include "cerver/http/jwt/key.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 #include "cerver/http/requests/method.h"
@@ -1103,6 +1100,9 @@ static bool http_receive_handle_select_auth_bearer (
 	) : NULL;
 
 	if (claims) {
+		// they live as long as the request: its handler can read them
+		request->claims = claims;
+
 		if (found->decode_data) {
 			request->decoded_data = found->decode_data (claims);
 			request->delete_decoded_data = found->delete_decoded_data;

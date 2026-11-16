@@ -66,6 +66,8 @@ struct Arena;
  * @param[in] claims the claims of the token, an object of the JSON of cerver; it is valid only during the call, so
  * what is needed of it is copied
  * @return the data of the application, NULL for none
+ * @note The handler of a route with a bearer also has the claims of its request, for as long as the request
+ * lives: http_request_claims ().
  * @since 3.0b-7
  */
 typedef void *(*HttpDecodeData) (const CerverJsonValue *claims);
@@ -121,6 +123,9 @@ struct _HttpRequest {
 	HttpCustomHeader *custom_headers;
 	/** @brief The custom header that is being received. */
 	HttpCustomHeader *current_custom_header;
+
+	/** @brief The claims of its bearer token once it was verified; they live in the arena of the request. */
+	const CerverJsonValue *claims;
 
 	/** @brief The decoded data of its JWT. */
 	void *decoded_data;
@@ -481,6 +486,19 @@ CERVER_EXPORT bool http_request_content_type_is_json (
  */
 CERVER_EXPORT bool http_request_get_bytes_range (
 	const HttpRequest *http_request, BytesRange *bytes_range
+);
+
+/**
+ * @brief Returns the claims of the bearer token of a request, once the bearer authentication of its route
+ * verified it.
+ *
+ * @param[in] http_request the request
+ * @return the claims, an object of the JSON of cerver that lives as long as the request; NULL for a NULL request
+ * and for one whose route did not verify a bearer
+ * @since 3.0b-8
+ */
+CERVER_EXPORT const CerverJsonValue *http_request_claims (
+	const HttpRequest *http_request
 );
 
 /**
