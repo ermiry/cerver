@@ -31,6 +31,9 @@
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/tree.h"
 
+#include "cerver/json/json.h"
+#include "cerver/json/writer.h"
+
 #include "cerver/threads/thpool.h"
 
 /** @internal @brief The size of the path of a file system of the admin stats, with its terminator. */
@@ -44,6 +47,83 @@ struct _Cerver;
 struct _HttpCerver;
 struct _HttpGroup;
 struct _HttpRoute;
+
+/**
+ * @internal
+ * @brief Writes a member of an object with a string, when the string can be written.
+ *
+ * A member whose string is NULL or is not UTF-8 is left out, key and value: the writer stays without an error and
+ * the rest of the text is written, as the json of the stats and of the routes always was.
+ *
+ * @param[in,out] writer the writer, with an object open
+ * @param[in] key the key of the member, a literal of cerver
+ * @param[in] value the string, with its terminator; NULL leaves the member out
+ */
+CERVER_HIDDEN void http_json_member_string (
+	CerverJsonWriter *writer, const char *key, const char *value
+);
+
+/**
+ * @internal
+ * @brief Writes a member of an object with an integer.
+ *
+ * @param[in,out] writer the writer, with an object open
+ * @param[in] key the key of the member
+ * @param[in] value the integer
+ */
+CERVER_HIDDEN void http_json_member_integer (
+	CerverJsonWriter *writer, const char *key, const i64 value
+);
+
+/**
+ * @internal
+ * @brief Writes a member of an object with a real, when the real can be written.
+ *
+ * A member whose real is a NaN or an infinite is left out, key and value, like a string that is not UTF-8.
+ *
+ * @param[in,out] writer the writer, with an object open
+ * @param[in] key the key of the member
+ * @param[in] value the real
+ */
+CERVER_HIDDEN void http_json_member_real (
+	CerverJsonWriter *writer, const char *key, const double value
+);
+
+/**
+ * @internal
+ * @brief Writes a member of an object with a boolean.
+ *
+ * @param[in,out] writer the writer, with an object open
+ * @param[in] key the key of the member
+ * @param[in] value the boolean
+ */
+CERVER_HIDDEN void http_json_member_boolean (
+	CerverJsonWriter *writer, const char *key, const bool value
+);
+
+/**
+ * @internal
+ * @brief A method that writes a json text with a writer.
+ *
+ * @param[in,out] writer the writer
+ * @param[in] data what the text is written from
+ */
+typedef void (*HttpJsonWrite) (CerverJsonWriter *writer, const void *data);
+
+/**
+ * @internal
+ * @brief Writes a json text into memory of its own.
+ *
+ * The text is written once, in an arena that grows with it, and copied.
+ *
+ * @param[in] write the method that writes the text
+ * @param[in] data what the text is written from, the data of the method
+ * @return the text with its terminator, released with free (); NULL when the text could not be written (see
+ * cerver_json_writer_end ()) or without memory
+ */
+CERVER_HIDDEN char *http_json_generate (
+	const HttpJsonWrite write, const void *data
+);
 
 /**
  * @internal
