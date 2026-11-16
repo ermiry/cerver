@@ -160,6 +160,8 @@ bool measure_run (
 		qsort (rates, MEASURE_RUNS, sizeof (double), measure_compare);
 		result->items_per_second = rates[MEASURE_RUNS / 2];
 		result->megabytes_per_second = (result->items_per_second * (double) bytes) / MEASURE_MEGABYTE;
+		result->lowest = (rates[0] * (double) bytes) / MEASURE_MEGABYTE;
+		result->highest = (rates[MEASURE_RUNS - 1] * (double) bytes) / MEASURE_MEGABYTE;
 		result->rss_kib = measure_rss_kib ();
 	}
 
@@ -173,9 +175,10 @@ void measure_print (
 ) {
 
 	(void) printf (
-		"%-8s %-10s %-16s %-10s %14.1f %10.1f %10.2f %10ld\n",
+		"%-8s %-10s %-16s %-10s %14.1f %10.1f %10.1f %10.1f %10.2f %10ld\n",
 		module, name, implementation, operation,
-		result->items_per_second, result->megabytes_per_second, result->allocations, result->rss_kib
+		result->items_per_second, result->megabytes_per_second, result->lowest, result->highest,
+		result->allocations, result->rss_kib
 	);
 
 	(void) fflush (stdout);

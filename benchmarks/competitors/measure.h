@@ -24,6 +24,10 @@ typedef struct MeasureResult {
 	double items_per_second;
 	double megabytes_per_second;
 
+	// the slowest and the fastest of the runs, as megabytes per second: how much the measure moves
+	double lowest;
+	double highest;
+
 	// the allocations of one iteration, in one of the runs
 	double allocations;
 

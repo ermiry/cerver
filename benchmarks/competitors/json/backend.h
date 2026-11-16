@@ -24,6 +24,10 @@ extern void *json_backend_parse (const char *text, const size_t size);
 // returns the bytes of the text, 0 on error; the text is valid until the next serialize
 extern size_t json_backend_serialize (void *document, char **text);
 
+// searches the value of a key of the document, that is an object
+// returns whether the object has the key
+extern bool json_backend_search (void *document, const char *key);
+
 extern void json_backend_text_free (char *text);
 
 extern void json_backend_free (void *document);

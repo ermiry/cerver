@@ -17,6 +17,12 @@ static const char *json_module = { "json" };
 #define JSON_RECORDS						(1 << 8)
 #define JSON_NUMBERS						(1 << 16)
 #define JSON_STRINGS						(1 << 13)
+#define JSON_TEXTS							(1 << 11)
+
+// what a long string says, more than once
+#define JSON_TEXT_SENTENCE					\
+	"the server reads every byte of this text once and writes it back as it is, without a single escape in it, "	\
+	"as it does with the body of an article or with a file that was encoded to travel inside a document; "
 
 #define JSON_TEXT_INITIAL					(1 << 12)
 #define JSON_FORMAT_SIZE					(1 << 10)
@@ -157,19 +163,44 @@ static void json_strings (JsonText *text) {
 
 }
 
+// long strings without escapes
+static void json_texts (JsonText *text) {
+
+	json_text_append (text, "[");
+	for (unsigned int i = 0; i < JSON_TEXTS; i++) {
+		if (i) json_text_append (text, ",");
+		json_text_append (
+			text, "\"entry %u: " JSON_TEXT_SENTENCE JSON_TEXT_SENTENCE "%llu\"",
+			i, (unsigned long long) json_random ()
+		);
+	}
+
+	json_text_append (text, "]");
+
+}
+
 typedef struct JsonCase {
 
 	const char *name;
 	void (*generate) (JsonText *text);
 
+	// its document is an object, whose keys are searched
+	bool searched;
+
 } JsonCase;
 
 static const JsonCase json_cases[] = {
-	{ "small", json_small },
-	{ "records", json_records },
-	{ "numbers", json_numbers },
-	{ "strings", json_strings }
+	{ "small", json_small, true },
+	{ "records", json_records, false },
+	{ "numbers", json_numbers, false },
+	{ "strings", json_strings, false },
+	{ "texts", json_texts, false }
 };
+
+// the keys of a record that are searched: the first one, two in the middle and the last one
+static const char *json_search_keys[] = { "id", "email", "address", "tags" };
+
+#define JSON_SEARCH_KEYS					(sizeof (json_search_keys) / sizeof (json_search_keys[0]))
 
 typedef struct JsonWork {
 
@@ -198,6 +229,20 @@ static bool json_work_serialize (void *data) {
 	if (text) json_backend_text_free (text);
 
 	return (size > 0);
+
+}
+
+// every key of a record, in a document that is already parsed
+static bool json_work_search (void *data) {
+
+	JsonWork *work = (JsonWork *) data;
+
+	bool found = true;
+	for (size_t i = 0; found && (i < JSON_SEARCH_KEYS); i++) {
+		found = json_backend_search (work->document, json_search_keys[i]);
+	}
+
+	return found;
 
 }
 
@@ -249,6 +294,12 @@ static bool json_measure (const JsonCase *json_case) {
 		work.document = json_backend_parse (text.text, text.size);
 		succeeded = measure_run (json_work_serialize, &work, text.size, &result);
 		if (succeeded) measure_print (json_module, json_case->name, json_backend_name, "serialize", &result);
+
+		if (succeeded && json_case->searched) {
+			succeeded = measure_run (json_work_search, &work, text.size, &result);
+			if (succeeded) measure_print (json_module, json_case->name, json_backend_name, "search", &result);
+		}
+
 		json_backend_free (work.document);
 	}
 
