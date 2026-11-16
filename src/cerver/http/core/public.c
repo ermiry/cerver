@@ -39,7 +39,6 @@
 #include "cerver/http/core/public.h"
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/json/json.h"
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
@@ -126,7 +125,7 @@ void http_static_path_set_auth (
 
 void http_static_path_set_decode_data (
 	HttpStaticPath *static_path,
-	void *(*decode_data)(void *),
+	HttpDecodeData decode_data,
 	void (*delete_decoded_data)(void *)
 ) {
 

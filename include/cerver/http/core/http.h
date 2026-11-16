@@ -582,8 +582,8 @@ struct _HttpCerver {
 	bool enable_admin_routes_auth;
 	/** @brief How the admin routes authenticate. */
 	HttpRouteAuthType admin_auth_type;
-	/** @brief Decodes the data of the token of an admin request. */
-	void *(*admin_decode_data)(void *);
+	/** @brief Decodes the data of the token of an admin request, from its claims. */
+	HttpDecodeData admin_decode_data;
 	/** @brief Releases the decoded data of an admin request. */
 	void (*admin_delete_decoded_data)(void *);
 	/** @brief The custom authentication of the admin routes. */

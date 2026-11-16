@@ -1543,7 +1543,7 @@ void http_cerver_enable_admin_routes_authentication (
 // if no delete method is set, data won't be freed
 void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
 
 	if (http_cerver) {

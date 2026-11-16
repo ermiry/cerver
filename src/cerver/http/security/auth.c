@@ -7,17 +7,23 @@
 #include "cerver/types/string.h"
 #include "cerver/types/types.h"
 
+#include "cerver/collections/arena.h"
 #include "cerver/collections/pool.h"
 
 #include "cerver/files/files.h"
 
 #include "cerver/http/core/http.h"
-#include "cerver/http/json/json.h"
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
 #include "cerver/http/security/auth.h"
 
+#include "cerver/json/document.h"
+#include "cerver/json/json.h"
+#include "cerver/json/value.h"
+#include "cerver/json/writer.h"
+
+#include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -26,6 +32,9 @@
 #define HTTP_JWT_CLAIM_NOT_BEFORE			"nbf"
 #define HTTP_JWT_CLAIM_ISSUER				"iss"
 #define HTTP_JWT_CLAIM_AUDIENCE				"aud"
+
+// what is between the three parts of a token
+#define HTTP_JWT_PARTS_SEPARATOR			'.'
 
 // the key of the token in the json of a generated jwt
 #define HTTP_JWT_JSON_TOKEN_KEY				"token"
@@ -384,46 +393,62 @@ static void http_cerver_auth_jwt_json_clear (HttpJwt *http_jwt) {
 
 }
 
-// writes the json in the buffer of the jwt, a json that does not fit is an error
-static u8 http_cerver_auth_jwt_json_dump (
-	HttpJwt *http_jwt, const json_t *json
+// the extra value of the json of a jwt; a key that is the one of the token replaces the bearer,
+// as an object with one member for each key always did
+static void http_cerver_auth_jwt_json_write_value (
+	CerverJsonWriter *writer, const HttpJwt *http_jwt,
+	const char *key, const char *value
 ) {
 
-	u8 retval = 1;
+	const bool replaces = !strcmp (key, HTTP_JWT_JSON_TOKEN_KEY);
 
-	// one byte is left for the null
-	const size_t length = json_dumpb (json, http_jwt->json, HTTP_JWT_TOKEN_SIZE - 1, 0);
-	if (length && (length < HTTP_JWT_TOKEN_SIZE)) {
-		http_jwt->json[length] = '\0';
-		http_jwt->json_len = length;
-		retval = 0;
+	cerver_json_writer_key (writer, HTTP_JWT_JSON_TOKEN_KEY);
+
+	if (replaces) {
+		cerver_json_writer_string (writer, value, strlen (value));
 	}
 
-	return retval;
+	else {
+		cerver_json_writer_string (writer, http_jwt->bearer, http_jwt->bearer_len);
+		cerver_json_writer_key (writer, key);
+		cerver_json_writer_string (writer, value, strlen (value));
+	}
 
 }
 
 // {"token": "Bearer <jwt>"} and an extra value if the key is set,
-// the values are escaped by the json library
+// written in the buffer of the jwt: the values are escaped by the json writer,
+// and a json that does not fit or a value that is not UTF-8 is an error
 static u8 http_cerver_auth_jwt_json_set (
 	HttpJwt *http_jwt, const char *key, const char *value
 ) {
 
 	u8 retval = 1;
 
-	json_t *json = json_object ();
-	if (json) {
-		if (
-			!json_object_set_new (json, HTTP_JWT_JSON_TOKEN_KEY, json_string (http_jwt->bearer))
-			&& (!key || !json_object_set_new (json, key, json_string (value)))
-		) {
-			retval = http_cerver_auth_jwt_json_dump (http_jwt, json);
-		}
+	CerverJsonWriter writer;
+	cerver_json_writer_init (&writer, http_jwt->json, HTTP_JWT_TOKEN_SIZE, CERVER_JSON_FLAGS_NONE);
 
-		json_decref (json);
+	cerver_json_writer_object_begin (&writer);
+
+	if (key) {
+		http_cerver_auth_jwt_json_write_value (&writer, http_jwt, key, value);
 	}
 
-	if (retval) http_cerver_auth_jwt_json_clear (http_jwt);
+	else {
+		cerver_json_writer_key (&writer, HTTP_JWT_JSON_TOKEN_KEY);
+		cerver_json_writer_string (&writer, http_jwt->bearer, http_jwt->bearer_len);
+	}
+
+	cerver_json_writer_object_end (&writer);
+
+	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE) {
+		http_jwt->json_len = cerver_json_writer_length (&writer);
+		retval = 0;
+	}
+
+	else {
+		http_cerver_auth_jwt_json_clear (http_jwt);
+	}
 
 	return retval;
 
@@ -483,17 +508,18 @@ typedef enum HttpJwtClaimState {
 
 } HttpJwtClaimState;
 
-// a time claim that is in the token must be an integer
+// a time claim that is in the token must be an integer:
+// a real, a string and an integer that only fits without a sign are not
 static HttpJwtClaimState http_cerver_auth_jwt_time_claim (
-	const json_t *grants, const char *name, json_int_t *value
+	const CerverJsonValue *claims, const char *name, i64 *value
 ) {
 
 	HttpJwtClaimState state = HTTP_JWT_CLAIM_STATE_MISSING;
 
-	const json_t *claim = json_object_get (grants, name);
+	const CerverJsonValue *claim = cerver_json_object_get (claims, name);
 	if (claim) {
-		if (json_is_integer (claim)) {
-			*value = json_integer_value (claim);
+		if (cerver_json_type (claim) == CERVER_JSON_TYPE_INTEGER) {
+			*value = cerver_json_integer_value (claim);
 			state = HTTP_JWT_CLAIM_STATE_FOUND;
 		}
 
@@ -508,20 +534,20 @@ static HttpJwtClaimState http_cerver_auth_jwt_time_claim (
 
 // the token is valid while now is before "exp" plus the leeway
 static bool http_cerver_auth_jwt_check_expiration (
-	const HttpCerver *http_cerver, const json_t *grants, const json_int_t now
+	const HttpCerver *http_cerver, const CerverJsonValue *claims, const i64 now
 ) {
 
 	bool valid = false;
 
-	json_int_t expiration = 0;
-	switch (http_cerver_auth_jwt_time_claim (grants, HTTP_JWT_CLAIM_EXPIRATION, &expiration)) {
+	i64 expiration = 0;
+	switch (http_cerver_auth_jwt_time_claim (claims, HTTP_JWT_CLAIM_EXPIRATION, &expiration)) {
 		case HTTP_JWT_CLAIM_STATE_MISSING:
 			valid = !http_cerver->jwt_require_expiration;
 			break;
 
 		// the leeway is taken from now, so a large "exp" never overflows
 		case HTTP_JWT_CLAIM_STATE_FOUND:
-			valid = (now - (json_int_t) http_cerver->jwt_leeway_seconds) < expiration;
+			valid = (now - (i64) http_cerver->jwt_leeway_seconds) < expiration;
 			break;
 
 		default: break;
@@ -533,17 +559,17 @@ static bool http_cerver_auth_jwt_check_expiration (
 
 // the token is valid from "nbf" minus the leeway
 static bool http_cerver_auth_jwt_check_not_before (
-	const HttpCerver *http_cerver, const json_t *grants, const json_int_t now
+	const HttpCerver *http_cerver, const CerverJsonValue *claims, const i64 now
 ) {
 
 	bool valid = false;
 
-	json_int_t not_before = 0;
-	switch (http_cerver_auth_jwt_time_claim (grants, HTTP_JWT_CLAIM_NOT_BEFORE, &not_before)) {
+	i64 not_before = 0;
+	switch (http_cerver_auth_jwt_time_claim (claims, HTTP_JWT_CLAIM_NOT_BEFORE, &not_before)) {
 		case HTTP_JWT_CLAIM_STATE_MISSING: valid = true; break;
 
 		case HTTP_JWT_CLAIM_STATE_FOUND:
-			valid = (now + (json_int_t) http_cerver->jwt_leeway_seconds) >= not_before;
+			valid = (now + (i64) http_cerver->jwt_leeway_seconds) >= not_before;
 			break;
 
 		default: break;
@@ -554,48 +580,55 @@ static bool http_cerver_auth_jwt_check_not_before (
 }
 
 static bool http_cerver_auth_jwt_string_equals (
-	const json_t *value, const String *expected
+	const CerverJsonValue *value, const String *expected
 ) {
 
-	return json_is_string (value)
-		&& (json_string_length (value) == expected->len)
-		&& !memcmp (json_string_value (value), expected->str, expected->len);
+	return cerver_json_is_string (value)
+		&& (cerver_json_string_length (value) == expected->len)
+		&& !memcmp (cerver_json_string_value (value), expected->str, expected->len);
 
 }
 
 static bool http_cerver_auth_jwt_check_issuer (
-	const HttpCerver *http_cerver, const json_t *grants
+	const HttpCerver *http_cerver, const CerverJsonValue *claims
 ) {
 
 	return !http_cerver->jwt_issuer || http_cerver_auth_jwt_string_equals (
-		json_object_get (grants, HTTP_JWT_CLAIM_ISSUER), http_cerver->jwt_issuer
+		cerver_json_object_get (claims, HTTP_JWT_CLAIM_ISSUER), http_cerver->jwt_issuer
 	);
+
+}
+
+// one of the strings of an "aud" that is an array is the audience of the cerver
+static bool http_cerver_auth_jwt_audience_has (
+	const CerverJsonValue *audiences, const String *expected
+) {
+
+	bool found = false;
+
+	CerverJsonArrayIterator iterator = cerver_json_array_iterator (audiences);
+	const CerverJsonValue *audience = cerver_json_array_iterator_next (&iterator);
+	while (audience && !found) {
+		found = http_cerver_auth_jwt_string_equals (audience, expected);
+		audience = cerver_json_array_iterator_next (&iterator);
+	}
+
+	return found;
 
 }
 
 // "aud" is a string or an array of strings (RFC 7519 §4.1.3)
 static bool http_cerver_auth_jwt_check_audience (
-	const HttpCerver *http_cerver, const json_t *grants
+	const HttpCerver *http_cerver, const CerverJsonValue *claims
 ) {
 
 	if (!http_cerver->jwt_audience) return true;
 
-	bool valid = false;
+	const CerverJsonValue *audience = cerver_json_object_get (claims, HTTP_JWT_CLAIM_AUDIENCE);
 
-	const json_t *audience = json_object_get (grants, HTTP_JWT_CLAIM_AUDIENCE);
-	if (json_is_array (audience)) {
-		for (size_t i = 0; (i < json_array_size (audience)) && !valid; i++) {
-			valid = http_cerver_auth_jwt_string_equals (
-				json_array_get (audience, i), http_cerver->jwt_audience
-			);
-		}
-	}
-
-	else {
-		valid = http_cerver_auth_jwt_string_equals (audience, http_cerver->jwt_audience);
-	}
-
-	return valid;
+	return cerver_json_is_array (audience) ?
+		http_cerver_auth_jwt_audience_has (audience, http_cerver->jwt_audience) :
+		http_cerver_auth_jwt_string_equals (audience, http_cerver->jwt_audience);
 
 }
 
@@ -620,16 +653,15 @@ static bool http_cerver_auth_jwt_check_headers (
 }
 
 static bool http_cerver_auth_jwt_check_claims (
-	const HttpCerver *http_cerver, jwt_t *jwt
+	const HttpCerver *http_cerver, const CerverJsonValue *claims
 ) {
 
-	const json_int_t now = (json_int_t) time (NULL);
+	const i64 now = (i64) time (NULL);
 
-	return http_cerver_auth_jwt_check_expiration (http_cerver, jwt->grants, now)
-		&& http_cerver_auth_jwt_check_not_before (http_cerver, jwt->grants, now)
-		&& http_cerver_auth_jwt_check_issuer (http_cerver, jwt->grants)
-		&& http_cerver_auth_jwt_check_audience (http_cerver, jwt->grants)
-		&& http_cerver_auth_jwt_check_headers (http_cerver, jwt);
+	return http_cerver_auth_jwt_check_expiration (http_cerver, claims, now)
+		&& http_cerver_auth_jwt_check_not_before (http_cerver, claims, now)
+		&& http_cerver_auth_jwt_check_issuer (http_cerver, claims)
+		&& http_cerver_auth_jwt_check_audience (http_cerver, claims);
 
 }
 
@@ -641,29 +673,105 @@ static bool http_cerver_auth_jwt_check_size (
 
 }
 
-// decodes the token with the public key of the cerver and checks its claims:
-// the algorithm of the cerver, "exp", "nbf", "iss" and "aud" with its settings
-// returns the token, deleted with jwt_free (), or NULL if it is not valid
-jwt_t *http_cerver_auth_jwt_verify (
-	const HttpCerver *http_cerver,
+// the claims of a token as an object of the json of cerver, read in the arena inside their own text:
+// a key more than once and a NUL in a string are rejected, and so are the claims with too many levels
+static const CerverJsonValue *http_cerver_auth_jwt_claims_parse (
+	Arena *arena, char *text, const size_t length
+) {
+
+	CerverJsonLimits limits = CERVER_ZERO_INITIALIZER;
+	limits.depth = HTTP_JWT_CLAIMS_DEPTH;
+
+	const CerverJsonValue *claims = cerver_json_document_root (
+		cerver_json_parse_in_situ (
+			arena, text, length,
+			CERVER_JSON_PARSE_REJECT_DUPLICATES | CERVER_JSON_PARSE_REJECT_NUL,
+			&limits, NULL
+		)
+	);
+
+	return cerver_json_is_object (claims) ? claims : NULL;
+
+}
+
+// the second part of a token, decoded into the arena with the bytes that the reader of the json writes after it
+static const CerverJsonValue *http_cerver_auth_jwt_claims_decode (
+	Arena *arena, const char *payload, const size_t payload_length
+) {
+
+	const CerverJsonValue *claims = NULL;
+
+	size_t length = 0;
+	unsigned char *text = (unsigned char *) arena_alloc (
+		arena, base64url_decode_length (payload_length) + CERVER_JSON_PADDING
+	);
+
+	if (text && !base64url_decode (text, &length, payload, payload_length)) {
+		claims = http_cerver_auth_jwt_claims_parse (arena, (char *) text, length);
+	}
+
+	return claims;
+
+}
+
+// the claims of a token are its second part, between its two separators
+static const CerverJsonValue *http_cerver_auth_jwt_claims_read (
+	Arena *arena, const char *token, const size_t token_length
+) {
+
+	const CerverJsonValue *claims = NULL;
+
+	const char *end = token + token_length;
+	const char *payload = (const char *) memchr (token, HTTP_JWT_PARTS_SEPARATOR, token_length);
+	const char *signature = payload ?
+		(const char *) memchr (payload + 1, HTTP_JWT_PARTS_SEPARATOR, (size_t) (end - (payload + 1))) : NULL;
+
+	if (signature) {
+		claims = http_cerver_auth_jwt_claims_decode (
+			arena, payload + 1, (size_t) (signature - (payload + 1))
+		);
+	}
+
+	return claims;
+
+}
+
+// the claims of a token whose signature was verified, when the cerver takes them
+static const CerverJsonValue *http_cerver_auth_jwt_verified_claims (
+	const HttpCerver *http_cerver, Arena *arena, jwt_t *jwt,
 	const char *token, const size_t token_length
 ) {
 
-	jwt_t *jwt = NULL;
+	const CerverJsonValue *claims = http_cerver_auth_jwt_check_headers (http_cerver, jwt) ?
+		http_cerver_auth_jwt_claims_read (arena, token, token_length) : NULL;
+
+	return (claims && http_cerver_auth_jwt_check_claims (http_cerver, claims)) ? claims : NULL;
+
+}
+
+// verifies the token with the public key of the cerver and checks its claims:
+// the algorithm of the cerver, "exp", "nbf", "iss" and "aud" with its settings
+// returns the claims, that live in the arena, or NULL if the token is not valid
+const CerverJsonValue *http_cerver_auth_jwt_verify (
+	const HttpCerver *http_cerver, Arena *arena,
+	const char *token, const size_t token_length
+) {
+
+	const CerverJsonValue *claims = NULL;
 
 	if (
-		http_cerver && token && http_cerver->jwt_public_key
+		http_cerver && arena && token && http_cerver->jwt_public_key
 		&& http_cerver_auth_jwt_check_size (http_cerver, token_length)
 	) {
+		jwt_t *jwt = NULL;
 		if (!jwt_decode_with_key (&jwt, token, token_length, http_cerver->jwt_public_key)) {
-			if (!http_cerver_auth_jwt_check_claims (http_cerver, jwt)) {
-				#ifdef HTTP_AUTH_DEBUG
-				cerver_log_error ("The claims of the JWT are not valid!");
-				#endif
+			claims = http_cerver_auth_jwt_verified_claims (http_cerver, arena, jwt, token, token_length);
 
-				jwt_free (jwt);
-				jwt = NULL;
-			}
+			#ifdef HTTP_AUTH_DEBUG
+			if (!claims) cerver_log_error ("The claims of the JWT are not valid!");
+			#endif
+
+			jwt_free (jwt);
 		}
 
 		#ifdef HTTP_AUTH_DEBUG
@@ -673,7 +781,7 @@ jwt_t *http_cerver_auth_jwt_verify (
 		#endif
 	}
 
-	return jwt;
+	return claims;
 
 }
 
@@ -697,7 +805,7 @@ const char *http_cerver_auth_bearer_token (
 // that will be placed in the decoded data argument
 bool http_cerver_auth_validate_jwt (
 	HttpCerver *http_cerver, const char *bearer_token,
-	void *(*decode_data)(void *), void **decoded_data
+	HttpDecodeData decode_data, void **decoded_data
 ) {
 
 	bool retval = false;
@@ -706,20 +814,23 @@ bool http_cerver_auth_validate_jwt (
 
 	const size_t bearer_length = strlen (bearer_token);
 	const char *token = http_cerver_auth_bearer_token (bearer_token, bearer_length);
-	if (token) {
-		jwt_t *jwt = http_cerver_auth_jwt_verify (
-			http_cerver, token, bearer_length - HTTP_JWT_BEARER_PREFIX_LENGTH
+
+	// the claims live in an arena of the call, the decoded data is what is left of them
+	Arena *arena = token ? arena_create (ARENA_DEFAULT_CHUNK_SIZE) : NULL;
+	if (arena) {
+		const CerverJsonValue *claims = http_cerver_auth_jwt_verify (
+			http_cerver, arena, token, bearer_length - HTTP_JWT_BEARER_PREFIX_LENGTH
 		);
 
-		if (jwt) {
+		if (claims) {
 			if (decode_data && decoded_data) {
-				*decoded_data = decode_data (jwt->grants);
+				*decoded_data = decode_data (claims);
 			}
-
-			jwt_free (jwt);
 
 			retval = true;
 		}
+
+		arena_delete (arena);
 	}
 
 	return retval;
@@ -728,9 +839,18 @@ bool http_cerver_auth_validate_jwt (
 
 #pragma endregion
 
-void *http_decode_data_into_json (void *json_ptr) {
+// the claims are written once to count their bytes and once more into memory of that size
+void *http_decode_data_into_json (const CerverJsonValue *claims) {
 
-	return json_dumps ((json_t *) json_ptr, 0);
+	char *json = NULL;
+
+	const size_t length = cerver_json_write (claims, NULL, 0, CERVER_JSON_FLAGS_NONE);
+	if (length) {
+		json = (char *) malloc (length + 1);
+		if (json) (void) cerver_json_write (claims, json, length + 1, CERVER_JSON_FLAGS_NONE);
+	}
+
+	return json;
 
 }
 

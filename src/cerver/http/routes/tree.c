@@ -363,7 +363,7 @@ void http_endpoint_set_auth (
 
 void http_endpoint_set_decode_data (
 	HttpEndpoint *endpoint,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
 
 	if (endpoint) {
@@ -1018,7 +1018,7 @@ void http_group_set_auth (
 
 void http_group_set_decode_data (
 	HttpGroup *group,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
 
 	if (group) {

@@ -40,6 +40,13 @@
 /** @brief The size of the json with the bearer and an extra value. */
 #define HTTP_JWT_TOKEN_SIZE			(1 << 14)
 
+/**
+ * @brief The most levels of nested arrays and objects of the claims of a token; one with more is not valid.
+ *
+ * @since 3.0b-7
+ */
+#define HTTP_JWT_CLAIMS_DEPTH		(1 << 5)
+
 /** @brief The start of the value of an Authorization header with a token. */
 #define HTTP_JWT_BEARER_PREFIX			"Bearer "
 /** @brief The length of #HTTP_JWT_BEARER_PREFIX. */
@@ -395,17 +402,22 @@ CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
 );
 
 /**
- * @brief Decodes a token with the public key of the cerver and checks its claims: the algorithm of the cerver,
+ * @brief Verifies a token with the public key of the cerver and checks its claims: the algorithm of the cerver,
  * "exp", "nbf", "iss" and "aud" with its settings.
  *
+ * The claims are read with the JSON of cerver in the arena: an object without a key more than once and without a
+ * NUL in its strings, of at most #HTTP_JWT_CLAIMS_DEPTH levels.
+ *
  * @param[in] http_cerver the HttpCerver
+ * @param[in,out] arena the arena where the claims are read
  * @param[in] token the token, without "Bearer "
  * @param[in] token_length its length, within the max size of the cerver
- * @return the token, deleted with jwt_free (); NULL if it is not valid
+ * @return the claims of the token, an object that lives as long as the arena; NULL if the token is not valid
  * @note For the internal methods of cerver.
+ * @since 3.0b-7 it takes the arena and returns the claims, it returned the token of the JWT.
  */
-CERVER_PRIVATE struct jwt *http_cerver_auth_jwt_verify (
-	const HttpCerver *http_cerver,
+CERVER_PRIVATE const CerverJsonValue *http_cerver_auth_jwt_verify (
+	const HttpCerver *http_cerver, struct Arena *arena,
 	const char *token, const size_t token_length
 );
 
@@ -426,23 +438,25 @@ CERVER_PRIVATE const char *http_cerver_auth_bearer_token (
  *
  * @param[in] http_cerver the HttpCerver
  * @param[in] bearer_token the bearer: "Bearer <token>"
- * @param[in] decode_data creates the decoded data from the grants of the token, NULL to skip it
+ * @param[in] decode_data creates the decoded data from the claims of the token, NULL to skip it
  * @param[out] decoded_data the decoded data, set only when the token is valid and there is a decode method
  * @return true when the token was decoded and its claims are valid, false otherwise
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 	HttpCerver *http_cerver, const char *bearer_token,
-	void *(*decode_data)(void *), void **decoded_data
+	HttpDecodeData decode_data, void **decoded_data
 );
 
 /**
- * @brief Decodes the grants of a token into a json string.
+ * @brief Writes the claims of a token as a json string, with the members in the order of the token.
  *
- * @param[in] json_ptr the grants, a json_t
- * @return the json, released with free ()
+ * @param[in] claims the claims of the token
+ * @return the json, released with free (); NULL for claims that can not be written or without memory
  * @note For the internal methods of cerver: see http_cerver_admin_routes_auth_decode_to_json ().
+ * @since 3.0b-7 it takes the claims as a value of the JSON of cerver.
  */
-CERVER_PRIVATE void *http_decode_data_into_json (void *json_ptr);
+CERVER_PRIVATE void *http_decode_data_into_json (const CerverJsonValue *claims);
 
 /**
  * @brief Releases the pool of the HttpJwt.

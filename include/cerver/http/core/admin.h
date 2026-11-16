@@ -79,14 +79,15 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
  * @brief Sets how the data of the token of an admin request is decoded, and how it is released after use.
  *
  * @param[in,out] http_cerver the HttpCerver
- * @param[in] decode_data decodes the payload of the token
+ * @param[in] decode_data decodes the claims of the token
  * @param[in] delete_decoded_data releases the decoded data, NULL so it is not freed
  * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
  * until it returns: it must not wait.
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 );
 
 /**
