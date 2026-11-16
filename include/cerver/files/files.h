@@ -73,10 +73,12 @@ CERVER_EXPORT void files_sanitize_complete_filename (char *filename);
 /**
  * @brief Creates a directory if it does not exist.
  *
+ * A directory that already exists is a success, also when another thread or process creates it at the same time.
+ *
  * @param[in] dir_path the path of the directory
  * @param[in] mode the permissions of the new directory
- * @retval 0 the directory was created
- * @retval 1 a NULL path, the path already exists (it logs a warning) or mkdir () failed
+ * @retval 0 the directory was created or it already existed
+ * @retval 1 a NULL path, a path that exists and is not a directory, or mkdir () failed
  */
 CERVER_EXPORT unsigned int files_create_dir (
 	const char *dir_path, mode_t mode
@@ -223,7 +225,7 @@ CERVER_EXPORT char *file_read (
  *
  * @param[in] filename the path of the file
  * @param[in] n_bytes the bytes to read, at most the size of the file
- * @param[in,out] n_read the bytes that were read are added to it, so it must start at 0; it must not be NULL
+ * @param[out] n_read the bytes that were read, it can be NULL
  * @return the buffer, allocated with calloc () and released with free (); NULL for a NULL filename or a file that
  * does not exist or can not be opened
  */

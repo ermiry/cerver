@@ -34,8 +34,8 @@ extern "C" {
  * @param[in,out] saved_filename the path where the file is saved, allocated with malloc (); on error it is
  * released and set to NULL
  * @retval 0 the whole file was saved
- * @retval 1 the file could not be opened, written or received
- * @warning A file that fails after it was opened stays partially written in its path.
+ * @retval 1 the file could not be opened, written or received; a file that was opened is removed, so no partial
+ * file is left in its path
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE u8 file_receive_actual (

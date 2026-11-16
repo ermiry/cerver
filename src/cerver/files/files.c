@@ -89,43 +89,6 @@ void files_sanitize_complete_filename (char *filename) {
 
 }
 
-// check if a directory already exists, and if not, creates it
-// returns 0 on success, 1 on error
-unsigned int files_create_dir (
-	const char *dir_path, mode_t mode
-) {
-
-	unsigned int retval = 1;
-
-	if (dir_path) {
-		struct stat st = CERVER_ZERO_INITIALIZER;
-		int ret = stat (dir_path, &st);
-		switch (ret) {
-			case -1: {
-				if (!mkdir (dir_path, mode)) {
-					retval = 0;		// success
-				}
-
-				else {
-					cerver_log_error (
-						"Failed to create dir %s!", dir_path
-					);
-				}
-			} break;
-			case 0: {
-				cerver_log_warning (
-					"Dir %s already exists!", dir_path
-				);
-			} break;
-
-			default: break;
-		}
-	}
-
-	return retval;
-
-}
-
 // a directory that exists is a success, even when another thread or process
 // creates it between the stat () and the mkdir ()
 // returns 0 on success, 1 on error
@@ -140,6 +103,23 @@ static unsigned int files_create_recursive_dir_single (
 	if (!mkdir (dir_path, mode)) return 0;
 
 	return ((errno == EEXIST) && !stat (dir_path, &sb) && S_ISDIR (sb.st_mode)) ? 0 : 1;
+
+}
+
+// creates a directory if it does not exist, one that exists is a success
+// returns 0 on success, 1 on error (a path that is not a directory)
+unsigned int files_create_dir (
+	const char *dir_path, mode_t mode
+) {
+
+	unsigned int retval = 1;
+
+	if (dir_path) {
+		retval = files_create_recursive_dir_single (dir_path, mode);
+		if (retval) cerver_log_error ("Failed to create dir %s!", dir_path);
+	}
+
+	return retval;
 
 }
 
@@ -758,6 +738,7 @@ char *file_read (const char *filename, size_t *file_size) {
 }
 
 // opens and reads n bytes from a file into a buffer
+// sets n_read to the amount of bytes read
 char *file_n_read (
 	const char *filename, const size_t n_bytes, size_t *n_read
 ) {
@@ -771,9 +752,12 @@ char *file_n_read (
 
 			size_t to_read = (n_bytes > file_size) ? file_size : n_bytes;
 
+			size_t read_bytes = 0;
 			file_contents = file_read_internal (
-				filename, to_read, n_read
+				filename, to_read, &read_bytes
 			);
+
+			if (n_read) *n_read = read_bytes;
 		}
 	}
 
