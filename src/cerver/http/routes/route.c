@@ -407,6 +407,8 @@ HttpRoute *http_route_new (void) {
 		route->file_stats = NULL;
 
 		route->authentication_with_body = false;
+
+		route->pool_name = NULL;
 	}
 
 	return route;
@@ -435,6 +437,8 @@ void http_route_delete (void *route_ptr) {
 		}
 
 		http_route_file_stats_delete (route->file_stats);
+
+		str_delete (route->pool_name);
 
 		free (route_ptr);
 	}
@@ -596,6 +600,17 @@ void http_route_set_authentication_with_body (
 
 	if (route) {
 		route->authentication_with_body = authentication_with_body;
+	}
+
+}
+
+void http_route_set_pool (
+	HttpRoute *route, const char *name
+) {
+
+	if (route) {
+		str_delete (route->pool_name);
+		route->pool_name = name ? str_new (name) : NULL;
 	}
 
 }

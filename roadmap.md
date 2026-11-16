@@ -603,6 +603,60 @@ diseño de abajo es el del plan; lo que la implementación cambió contra él:
     `Connection: close` y la conexión se cerraba después (detrás de un proxy, un 502 en la siguiente petición que
     la reusa). Lo encontró un mutante que sobrevivió; `test_keepalive_rejected` lo cubre y falla contra el código
     anterior. `keep_alive` no se toca en el rechazo: quien lo sostiene a mano lo conserva.
+12. **El rendimiento medido: alrededor del 150 %, no claramente más** (2.1b-16, con el servidor de benchmarks
+    de 4 hilos y 1 hilo de I/O y `benchmarks/load` en el mismo contenedor). En unas veinte medianas los cuatro
+    casos de `test/performance.sh` (GET y POST JSON con 8 y 64 conexiones) van del 135 % al 176 %, y con cargas
+    cuatro veces más largas y 7 corridas quedan en 147 %, 146 %, 144 % y 148 %: **el mínimo del 150 % falla más o
+    menos en la mitad de las corridas.** No es ruido ni un candado (se probó un hilo del pool que busca su
+    siguiente trabajo antes de dormirse, y un loop que no duerme por el mutex de sus ociosas: ninguno movió las
+    medianas). Es la forma del camino: una petición de una conexión conservada todavía cruza tres hilos (el
+    cliente, el loop que la lee y el hilo del pool que la contesta) y despertar a cada uno cuesta ~8–10 µs en esa
+    máquina; con 8 conexiones tarda ~44 µs contra ~63 µs de una con su propia conexión. Con 64 conexiones el
+    límite es el hilo de I/O (2 hilos de I/O suben los dos modos juntos: 188 k y 278 k req/s). El techo sin esos
+    cruces lo da THREADS con keep-alive, donde el mismo hilo lee y contesta: 440–590 k req/s contra 110–155 k.
+13. **El hilo que sigue a su conexión** (implementado en la 2.1b-17, **apagado por default**:
+    `http_cerver_set_keep_alive_follow (microsegundos)`, `HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT` = 2^6). El hilo del
+    pool que contestó una petición de una conexión conservada busca la siguiente en su socket durante ese tiempo,
+    sin dormir (`recv` sin bloqueo), y si llega la parsea y la atiende él mismo: esa petición no pasa por el loop
+    ni despierta a otro hilo (`http_connection_work_follow ()` en `http/core/connection.c`).
+    - **Solo cuando ningún trabajo espera por un hilo de su pool** (`EventDispatcher::is_awaited`, que con el
+      thpool es `thpool_has_queued ()`, un valor atómico), y deja de buscar en cuanto llega uno (sin contarlo
+      como fallo) o el loop empieza a detenerse: el tiempo que un hilo busca es tiempo que no le da a una
+      petición que ya está ahí.
+    - **Un cliente que no manda a tiempo se busca menos:** cada fallo seguido dobla las peticiones que no se
+      siguen (1, 3, 7 … 63) y una que llega a tiempo lo reinicia (`HttpConnection::follow_misses`,
+      `follow_skip`).
+    - **Lo que el hilo no atiende regresa al loop tal como quedó**, con tres outcomes nuevos: `READING` (la
+      petición no está completa en lo que leyó: el loop lee el resto, con sus deadlines desde ese momento),
+      `PAUSED` (necesita otro trabajo: su auth antes del body, es de otro pool, el loop rechaza peticiones o hay
+      estacionadas esperando lugar en ese pool, que van primero) y `FAILED` (no se pudo parsear o se rechazó, el
+      hilo ya la contestó: el loop cierra con linger).
+    - **Lo medido** (el servidor de benchmarks con 4 hilos, con y sin él en la misma corrida y con las cargas de
+      otra sesión en la máquina; las cifras de esa máquina se mueven ±10 % entre corridas): con 4 conexiones,
+      78 k → 137 k req/s (de 152 % a 267 % de una conexión por petición); con 8, 133 k → 128 k (sin cambio: la
+      mitad del tiempo hay trabajos esperando); con 16, 226 k → 192 k; con 32, 251 k → 236 k; con 64, 253 k → 239 k.
+      Con más conexiones que hilos casi ninguna petición se sigue y el resultado queda igual o algo por debajo
+      (−5 % a −15 %), porque el generador de carga comparte los procesadores con los hilos que buscan. Con la
+      máquina más quieta, y antes de la regla de no seguir con trabajos esperando, 4 conexiones dieron 102 k →
+      255 k y 8 conexiones 182 k → 299 k. **Por eso queda apagado por default**: gana cuando el cerver tiene hilos
+      y procesadores libres y los clientes mandan enseguida. El caso de 64 conexiones no cambia: su límite es el
+      loop.
+    - `cerver_http_followed_requests_total` y `connections.n_followed` en las stats de admin las cuentan.
+    - En el tope de conexiones, una conexión que su hilo sigue todavía no es ociosa: el accept solo cierra
+      ociosas (o se pausa un tick si no hay).
+    - **Lo que falta para pasar del 150 % con muchas conexiones:** sacar la lectura y el parseo del loop (que el
+      loop le dé al pool la conexión ociosa que se puede leer). No está hecho.
+14. **El margen de las asignaciones de `test/performance.sh`** (2.1b-17): el chequeo de 0 asignaciones por
+    petición de GET con event loops y una conexión por petición falló en el gate con 33 asignaciones en 1024
+    peticiones (el margen eran 24: 3 por cada una de las 8 conexiones de la carga). El árbol de asignaciones de
+    valgrind las nombra: **no son de las peticiones, son conexiones que el loop crea tarde.** El loop acepta una
+    conexión mientras las anteriores todavía las cierra un hilo del pool y no han regresado a su lista de
+    recicladas, así que crea un objeto más, y cada uno son 11 asignaciones (`connection_new ()`, su socket, las 6
+    de `http_connection_new ()` y el primer crecimiento de sus tres búferes de texto). Después de la carga de
+    calentamiento el loop tenía 11 objetos para 8 conexiones, y durante la medición creó entre 0 y 3 más según la
+    corrida (la 2.1b-16 dio 0 en sus tres corridas, el árbol de la 2.1b-17 da 11 o 33). Los objetos se reciclan:
+    su número lo acota la concurrencia. `ALLOCATIONS_PER_CONNECTION` pasa de 3 a 11, lo que cuesta una conexión
+    nueva; una asignación por petición seguiría siendo 1024 contra un margen de 88.
 
 **La API** (`include/cerver/http/core/limits.h`, `@since 2.1b-16`): `http_cerver_set_keep_alive ()`,
 `http_cerver_set_keep_alive_timeout ()` y `_milliseconds` (2^7 s), `http_cerver_set_keep_alive_requests ()` (2^10).
@@ -612,7 +666,11 @@ close del cliente, el máximo, el idle, sin delimitar, sin respuesta, el estado 
 drenado, el tope, THREADS bajo presión); la región `kept` de `test/http/receive.c` (el loop con el despachador
 manual y el reloj propio); el fuzzer `loop` con varias peticiones por conexión; `test/performance.sh` exige que
 las conexiones conservadas den al menos el 150 % de los req/s de una conexión por petición, con las mismas
-asignaciones (GET 0, POST JSON 14).
+asignaciones (GET 0, POST JSON 14): **ese mínimo no se cumple de forma estable** (punto 12). El hilo que sigue a
+su conexión (punto 13, 2.1b-17) tiene sus tests en la región `kept` de `receive.c` (la atiende el hilo, llega
+incompleta, necesita otro trabajo, no se puede parsear, un trabajo espera, una estacionada va primero, el loop
+rechaza), en `keepalive.c` (las que el loop no leyó, el stop y la petición que espera) y en `pools.c` (solo las
+de su pool).
 
 #### El diseño del plan
 
@@ -666,6 +724,80 @@ CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver,
 ```
 
 ### 4.5 F5 — Pools nombrados, health y métricas (2.1b-17)
+
+**Implementado en la 2.1b-17.** Un cerver web tiene, además de su thpool (el pool `default`), los pools con nombre
+que se le crean; cada ruta corre en el pool que eligió su endpoint o uno de sus grupos, y el cerver contesta él
+mismo una ruta de salud y una de disponibilidad. El diseño de abajo es el del plan; lo que la implementación
+cambió contra él:
+
+1. **`HttpPool` es opaco** (`include/cerver/http/core/pool.h`, su struct en `src/cerver/http/core/internal.h`). El
+   primero de un cerver es siempre `default`: no tiene thpool propio, toma el del cerver cuando arranca, con sus
+   hilos, su cola, su política y su espera (`cerver_set_thpool_*`, `cerver_set_overload_*`). Los demás crean su
+   `Thpool` en `http_cerver_init ()` (hilos `thpool-<nombre>-N`). Un cerver tiene hasta `HTTP_CERVER_POOLS_SIZE`
+   (2^4) pools y solo se crean antes de arrancar.
+2. **La política y la espera de un pool son las de su cerver hasta que se fijan** (`http_pool_overload_policy ()`,
+   `http_pool_wait_timeout ()`): no hay un default propio de 2^5 s para la espera.
+3. **La setting:** `HTTP_ROUTE_SETTING_POOL` guarda el nombre (`HttpRouteSettings::pool_name`) y se hereda del
+   grupo más cercano que la fijó; el pool se busca al compilar el árbol (`http_tree_resolve_pool ()`). Un nombre
+   que ningún pool tiene es un error del árbol y el cerver no arranca; uno más largo que un nombre de pool es un
+   error al fijarlo. `NULL` o `default` regresan una ruta al thpool del cerver. Las rutas compat guardan su nombre
+   (`HttpRoute::pool_name`) y sus hijos no lo heredan.
+4. **Un carril por pool en cada loop** (`EventLane`, `src/cerver/events/internal.h`): el despachador de su pool y
+   su propia FIFO de estacionadas, en la posición del pool en su cerver. La conexión elige su carril cada vez que
+   entrega un trabajo (`http_connection_pool_select ()`), también el de su auth custom. Un pool lleno estaciona o
+   rechaza solo sus peticiones, con su política y su espera; las de los otros carriles se despachan. Un lugar que
+   se libera despierta solo a los loops con estacionadas **de ese pool** (`event_loop_space (loop, lane)`).
+5. **El drenado:** quiesce de los loops → `thpool_drain ()` del thpool del cerver → el de cada pool con nombre,
+   con una deadline común entre ellos (`http_cerver_pools_drain ()`) → finish. Sus hilos terminan con los del
+   thpool (`http_cerver_pools_end ()`).
+6. **THREADS:** los pools con nombre no arrancan (con un warning) y cada petición la atiende el hilo de su
+   conexión, como antes. Health y ready sí existen: las contesta ese hilo, con otro warning, así que esperan un
+   hilo como cualquier petición.
+7. **Health y ready** son dos despachos nuevos (`HTTP_RECEIVE_DISPATCH_HEALTH` / `_READY`) que se eligen antes del
+   árbol con la ruta exacta (sin la query) y GET o HEAD; no tienen endpoint, ni auth, ni stats de ruta. Son
+   respuestas cortas: con EVENTS las contesta el loop y conservan la conexión. Health contesta 200 siempre; ready
+   contesta 200, o 503 con `Retry-After` (una respuesta normal, **no cierra la conexión**) cuando algún pool con
+   hilos tiene su cola llena o peticiones estacionadas, o cuando el cerver se detiene (`http_cerver_is_ready ()`).
+8. **Las métricas** son aditivas: las `cerver_thpool_*` siguen siendo las del thpool del cerver, **sin etiqueta**
+   (no hay incompatibilidad), y cada pool con hilos tiene las suyas con la etiqueta `pool`:
+   `cerver_http_pool_threads`, `_threads_working`, `_queued`, `_parked`, `_jobs_total`, `_parked_total` y
+   `_unavailable_total`. Además `cerver_http_connections`, `cerver_http_connections_idle` y
+   `cerver_http_connections_accepted_total` (solo con event loops), y `cerver_http_health_requests_total`,
+   `cerver_http_ready_requests_total` y `cerver_http_not_ready_requests_total`.
+9. **Los histogramas y los uploads:**
+   - `cerver_http_pool_wait_seconds` y `cerver_http_pool_run_seconds` con la etiqueta `pool`: los histogramas del
+     thpool de cada pool (cubetas de 2^i ms), como los `cerver_thpool_*_seconds` del thpool del cerver. La espera
+     es la de la cola del pool; el tiempo que una petición pasa estacionada en su loop no está en ella (se ve en
+     `cerver_http_pool_parked` y `_parked_total`).
+   - `cerver_http_connection_requests`: las peticiones que atendió cada conexión que terminó, en cubetas de 2^i
+     hasta 2^10 (el default de `keep_alive_requests`) y `+Inf`; su suma son las peticiones y su cuenta las
+     conexiones. La cuenta `http_cerver_connection_ended ()` una vez por conexión, en el dueño que la termina: el
+     loop o el hilo del pool que la cerró (`http_connection_request_release ()`), o su hilo en THREADS
+     (`cerver_receive_http_end ()`; una conexión que regresa al thpool a esperar no ha terminado, y una que el
+     thpool descarta ahí se cuenta con las peticiones que llevaba). Una conexión sin peticiones no se cuenta.
+   - `cerver_http_uploads_write_seconds_total` y `cerver_http_uploads_write_bytes_total`: el tiempo y los bytes
+     de los archivos que el cerver escribió (`http_receive_mpart_file_write ()`, dos lecturas del reloj monotónico
+     por cada trozo). Con event loops esa escritura corre en el loop (§4.3): este contador es la medida de cuánto
+     lo bloquea el disco.
+   - **El JSON de las rutas de admin** (`cerver/stats`) tiene `pools` (un objeto por pool con hilos: `name`,
+     `threads`, `working`, `queued`, `parked`, `n_jobs`, `n_parked`, `n_unavailable`), `connections` (`n_reused`,
+     `n_ended`, `n_requests`, y con event loops `open`, `idle` y `n_accepted`), `n_health_requests`,
+     `n_ready_requests`, `n_not_ready_requests`, `uploads_write_microseconds` y `uploads_write_bytes`.
+
+**La API** (`@since 2.1b-17`): `http_cerver_pool_create ()`, `http_cerver_pool_get_with_name ()`,
+`http_pool_get_name ()`, `http_pool_set_queue_size ()`, `http_pool_set_overload_policy ()`,
+`http_pool_set_wait_timeout ()`, `http_cerver_set_health_route ()`, `http_cerver_set_ready_route ()` y
+`http_cerver_is_ready ()` en `include/cerver/http/core/pool.h`; `http_group_set_pool ()` y
+`http_endpoint_set_pool ()` en `routes/tree.h`; `http_route_set_pool ()` en `routes/route.h`.
+
+**Los tests:** `test/http/pools.c` (la API y sus límites; la herencia y las rutas compat; un pool desconocido en
+un endpoint, un grupo y una ruta compat; cada ruta y su auth en los hilos de su pool; el aislamiento con un pool
+lleno que rechaza; la espera propia de un pool con sus estacionadas en su carril; el drenado con trabajos en dos
+pools; THREADS sin pools; health y ready con todos los hilos ocupados, HEAD, la query y los contadores; las
+métricas), el par de integración `web/pools` en los dos modelos, y el fuzzer `tree` con la setting. El servidor de
+los benchmarks toma `BENCH_POOL` (los hilos de un pool para `GET /slow`) y tiene `/health` y `/ready`.
+
+#### El diseño del plan
 
 **Los pools nombrados (decisión).**
 

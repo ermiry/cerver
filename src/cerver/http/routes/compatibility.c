@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "cerver/types/string.h"
@@ -36,6 +37,35 @@ static void http_compatibility_settings (
 
 }
 
+// the pool of a route is found like the one of an endpoint, the cerver must have it
+// returns 0 on success, 1 on error (the cerver does not start)
+static u8 http_compatibility_pool (
+	HttpTree *tree, HttpEndpoint *endpoint, const HttpRoute *route
+) {
+
+	u8 errors = 0;
+
+	if (route->pool_name) {
+		if (route->pool_name->len < HTTP_POOL_NAME_SIZE) {
+			(void) snprintf (endpoint->resolved.pool_name, HTTP_POOL_NAME_SIZE, "%s", route->pool_name->str);
+
+			errors = http_tree_resolve_pool (tree, endpoint);
+		}
+
+		else {
+			http_tree_error (
+				tree, "route %s \"%s\" - the name of its pool is too long",
+				http_request_method_str (endpoint->method), endpoint->path->str
+			);
+
+			errors = 1;
+		}
+	}
+
+	return errors;
+
+}
+
 // creates the endpoint of a method of the route and adds it to the tree
 // returns 1 if it was added
 static size_t http_compatibility_translate_method (
@@ -54,6 +84,7 @@ static size_t http_compatibility_translate_method (
 		endpoint->owns_stats = false;
 
 		http_compatibility_settings (endpoint, route);
+		(void) http_compatibility_pool (tree, endpoint, route);
 		(void) http_middlewares_append (&endpoint->resolved.middlewares, &tree->middlewares);
 
 		if (!http_tree_insert (tree, endpoint, true)) {

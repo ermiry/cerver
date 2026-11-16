@@ -2568,6 +2568,8 @@ static void cerver_receive_http_end (CerverReceive *cr, HttpReceive *http_receiv
 
 	if (!http_receive_is_between_requests (http_receive)) http_access_request (http_receive);
 
+	http_cerver_connection_ended (http_receive->http_cerver, http_receive->n_requests);
+
 	// the connection has ended, or it belongs to its WebSocket now
 	if (!http_web_socket_start (cr, http_receive)) {
 		connection_drop (cr->cerver, cr->connection);
@@ -2582,6 +2584,9 @@ static void cerver_receive_http_work (void *cerver_receive_ptr);
 static void cerver_receive_http_idle_reject (void *cerver_receive_ptr) {
 
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+	// it ends with the requests that it handled before it went back to the thpool
+	http_cerver_connection_ended ((HttpCerver *) cr->cerver->cerver_data, cr->n_requests);
 
 	connection_drop (cr->cerver, cr->connection);
 
@@ -2613,6 +2618,8 @@ static void cerver_receive_http_unavailable (CerverReceive *cr) {
 		"Failed to create the receive of the connection with sock fd <%d>!",
 		cr->connection->socket->sock_fd
 	);
+
+	http_cerver_connection_ended ((HttpCerver *) cr->cerver->cerver_data, cr->n_requests);
 
 	connection_drop (cr->cerver, cr->connection);
 

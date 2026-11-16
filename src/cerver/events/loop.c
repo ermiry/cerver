@@ -67,7 +67,9 @@ EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatche
 	EventLoop *loop = (cerver && dispatcher) ? (EventLoop *) calloc (1, sizeof (EventLoop)) : NULL;
 	if (loop) {
 		loop->cerver = cerver;
-		loop->dispatcher = dispatcher;
+
+		loop->lanes[EVENT_LOOP_LANE_DEFAULT].dispatcher = dispatcher;
+		loop->n_lanes = EVENT_LOOP_LANE_DEFAULT + 1;
 
 		loop->clock = event_clock_milliseconds;
 		loop->now = loop->clock ();
@@ -101,6 +103,24 @@ EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatche
 
 }
 
+unsigned int event_loop_lane_set (
+	EventLoop *loop, const unsigned int lane, EventDispatcher *dispatcher
+) {
+
+	unsigned int retval = 1;
+
+	if (loop && dispatcher && (lane < EVENT_LOOP_LANES_SIZE)) {
+		loop->lanes[lane].dispatcher = dispatcher;
+
+		if (lane >= loop->n_lanes) loop->n_lanes = lane + 1;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 void event_loop_set_clock (EventLoop *loop, u64 (*clock) (void)) {
 
 	if (loop && clock) {
@@ -131,6 +151,13 @@ unsigned int event_loop_connections (const EventLoop *loop) {
 unsigned int event_loop_parked (const EventLoop *loop) {
 
 	return loop ? __atomic_load_n (&loop->n_parked, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+unsigned int event_loop_lane_parked (const EventLoop *loop, const unsigned int lane) {
+
+	return (loop && (lane < EVENT_LOOP_LANES_SIZE)) ?
+		__atomic_load_n (&loop->lanes[lane].n_parked, __ATOMIC_ACQUIRE) : 0;
 
 }
 
@@ -186,17 +213,35 @@ static void event_loop_connections_remove (EventLoop *loop) {
 
 }
 
-static void event_loop_parked_add (EventLoop *loop) {
+static void event_loop_group_parked_add (EventLoopGroup *group, const unsigned int lane) {
 
-	(void) __atomic_add_fetch (&loop->n_parked, 1, __ATOMIC_RELEASE);
-	if (loop->group) (void) __atomic_add_fetch (&loop->group->n_parked, 1, __ATOMIC_RELEASE);
+	(void) __atomic_add_fetch (&group->n_parked, 1, __ATOMIC_RELEASE);
+	(void) __atomic_add_fetch (&group->lanes_parked[lane], 1, __ATOMIC_RELEASE);
 
 }
 
-static void event_loop_parked_remove (EventLoop *loop) {
+static void event_loop_group_parked_remove (EventLoopGroup *group, const unsigned int lane) {
+
+	(void) __atomic_sub_fetch (&group->n_parked, 1, __ATOMIC_RELEASE);
+	(void) __atomic_sub_fetch (&group->lanes_parked[lane], 1, __ATOMIC_RELEASE);
+
+}
+
+static void event_loop_parked_add (EventLoop *loop, const unsigned int lane) {
+
+	(void) __atomic_add_fetch (&loop->n_parked, 1, __ATOMIC_RELEASE);
+	(void) __atomic_add_fetch (&loop->lanes[lane].n_parked, 1, __ATOMIC_RELEASE);
+
+	if (loop->group) event_loop_group_parked_add (loop->group, lane);
+
+}
+
+static void event_loop_parked_remove (EventLoop *loop, const unsigned int lane) {
 
 	(void) __atomic_sub_fetch (&loop->n_parked, 1, __ATOMIC_RELEASE);
-	if (loop->group) (void) __atomic_sub_fetch (&loop->group->n_parked, 1, __ATOMIC_RELEASE);
+	(void) __atomic_sub_fetch (&loop->lanes[lane].n_parked, 1, __ATOMIC_RELEASE);
+
+	if (loop->group) event_loop_group_parked_remove (loop->group, lane);
 
 }
 
@@ -477,48 +522,61 @@ static void event_loop_idle_end (EventLoop *loop) {
 
 void event_loop_park (EventLoop *loop, struct HttpConnection *connection) {
 
+	EventLane *lane = &loop->lanes[connection->lane];
+
 	connection->parked = true;
 	connection->list_next = NULL;
 
-	if (loop->parked_tail) loop->parked_tail->list_next = connection;
-	else loop->parked_head = connection;
+	if (lane->parked_tail) lane->parked_tail->list_next = connection;
+	else lane->parked_head = connection;
 
-	loop->parked_tail = connection;
+	lane->parked_tail = connection;
 
-	event_loop_parked_add (loop);
+	event_loop_parked_add (loop, connection->lane);
 
 }
 
 // a connection that found no place when its turn came goes back to the front, it keeps its turn
 static void event_loop_park_front (EventLoop *loop, HttpConnection *connection) {
 
+	EventLane *lane = &loop->lanes[connection->lane];
+
 	connection->parked = true;
-	connection->list_next = loop->parked_head;
+	connection->list_next = lane->parked_head;
 
-	loop->parked_head = connection;
-	if (!loop->parked_tail) loop->parked_tail = connection;
+	lane->parked_head = connection;
+	if (!lane->parked_tail) lane->parked_tail = connection;
 
-	event_loop_parked_add (loop);
+	event_loop_parked_add (loop, connection->lane);
+
+}
+
+// takes the connection out of the parked ones of its lane, returns whether it was there
+static bool event_loop_lane_remove (EventLane *lane, const HttpConnection *connection) {
+
+	HttpConnection *previous = NULL;
+	HttpConnection *current = lane->parked_head;
+	while (current && (current != connection)) {
+		previous = current;
+		current = current->list_next;
+	}
+
+	if (current) {
+		if (previous) previous->list_next = connection->list_next;
+		else lane->parked_head = connection->list_next;
+
+		if (lane->parked_tail == connection) lane->parked_tail = previous;
+	}
+
+	return current != NULL;
 
 }
 
 void event_loop_unpark (EventLoop *loop, struct HttpConnection *connection) {
 
 	if (connection->parked) {
-		HttpConnection *previous = NULL;
-		HttpConnection *current = loop->parked_head;
-		while (current && (current != connection)) {
-			previous = current;
-			current = current->list_next;
-		}
-
-		if (current) {
-			if (previous) previous->list_next = connection->list_next;
-			else loop->parked_head = connection->list_next;
-
-			if (loop->parked_tail == connection) loop->parked_tail = previous;
-
-			event_loop_parked_remove (loop);
+		if (event_loop_lane_remove (&loop->lanes[connection->lane], connection)) {
+			event_loop_parked_remove (loop, connection->lane);
 		}
 
 		connection->list_next = NULL;
@@ -527,15 +585,21 @@ void event_loop_unpark (EventLoop *loop, struct HttpConnection *connection) {
 
 }
 
-// the parked connections take the places of the dispatcher in the order that they arrived
-static void event_loop_parked_retry (EventLoop *loop) {
+bool event_loop_lane_has_parked (const EventLoop *loop, const unsigned int lane) {
 
-	EventDispatcher *dispatcher = loop->dispatcher;
+	return loop->lanes[lane].parked_head != NULL;
+
+}
+
+// the parked connections of a lane take the places of its dispatcher in the order that they arrived
+static void event_loop_lane_retry (EventLoop *loop, EventLane *lane) {
+
+	EventDispatcher *dispatcher = lane->dispatcher;
 
 	bool has_place = true;
 
-	while (loop->parked_head && has_place && !dispatcher->is_full (dispatcher)) {
-		HttpConnection *connection = loop->parked_head;
+	while (lane->parked_head && has_place && !dispatcher->is_full (dispatcher)) {
+		HttpConnection *connection = lane->parked_head;
 
 		event_loop_unpark (loop, connection);
 
@@ -545,6 +609,15 @@ static void event_loop_parked_retry (EventLoop *loop) {
 
 			has_place = false;
 		}
+	}
+
+}
+
+// each lane has its own turn: a pool that is full does not hold the requests of the others
+static void event_loop_parked_retry (EventLoop *loop) {
+
+	for (unsigned int idx = 0; idx < loop->n_lanes; idx++) {
+		if (loop->lanes[idx].parked_head) event_loop_lane_retry (loop, &loop->lanes[idx]);
 	}
 
 }
@@ -565,18 +638,24 @@ static void event_loop_wake_waiting (EventLoop *loop) {
 
 }
 
-void event_loop_space (EventLoop *loop) {
+// only the loops with connections that wait for that pool: the place is of no use to the others
+static void event_loop_space_wake (EventLoop *loop, const unsigned int lane) {
+
+	if (__atomic_load_n (&loop->lanes[lane].n_parked, __ATOMIC_ACQUIRE)) event_loop_wake_waiting (loop);
+
+}
+
+void event_loop_space (EventLoop *loop, const unsigned int lane) {
 
 	const EventLoopGroup *group = loop->group;
 
 	if (!group) {
-		if (__atomic_load_n (&loop->n_parked, __ATOMIC_ACQUIRE)) event_loop_wake_waiting (loop);
+		event_loop_space_wake (loop, lane);
 	}
 
-	else if (__atomic_load_n (&group->n_parked, __ATOMIC_ACQUIRE)) {
+	else if (__atomic_load_n (&group->lanes_parked[lane], __ATOMIC_ACQUIRE)) {
 		for (unsigned int idx = 0; idx < group->n_loops; idx++) {
-			EventLoop *other = group->loops[idx];
-			if (__atomic_load_n (&other->n_parked, __ATOMIC_ACQUIRE)) event_loop_wake_waiting (other);
+			event_loop_space_wake (group->loops[idx], lane);
 		}
 	}
 
@@ -1003,9 +1082,21 @@ static void event_loop_ready_handle (EventLoop *loop, const int n_ready) {
 
 // a place of the dispatcher that was freed after the loop gave its parked connections their places:
 // the loop already told that it waits, so a place that is freed from now on wakes it up
+static bool event_loop_lane_has_place (const EventLane *lane) {
+
+	return lane->parked_head && !lane->dispatcher->is_full (lane->dispatcher);
+
+}
+
 static bool event_loop_parked_has_place (const EventLoop *loop) {
 
-	return loop->parked_head && !loop->dispatcher->is_full (loop->dispatcher);
+	bool has_place = false;
+
+	for (unsigned int idx = 0; (idx < loop->n_lanes) && !has_place; idx++) {
+		has_place = event_loop_lane_has_place (&loop->lanes[idx]);
+	}
+
+	return has_place;
 
 }
 

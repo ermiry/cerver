@@ -728,6 +728,9 @@ static void http_tests_main (void) {
 // the connections that are kept run alone to be repeated, they hand each connection between threads
 #define KEEPALIVE_ONLY_VARIABLE				"KEEPALIVE_ONLY"
 
+// the pools of threads run alone to be repeated, their requests wait and move between threads
+#define POOLS_ONLY_VARIABLE					"POOLS_ONLY"
+
 int main (void) {
 
 	test_output_init ();
@@ -739,6 +742,11 @@ int main (void) {
 
 	if (getenv (KEEPALIVE_ONLY_VARIABLE)) {
 		http_tests_keepalive ();
+		return 0;
+	}
+
+	if (getenv (POOLS_ONLY_VARIABLE)) {
+		http_tests_pools ();
 		return 0;
 	}
 
@@ -784,6 +792,9 @@ int main (void) {
 
 	// the connections that are kept between requests
 	http_tests_keepalive ();
+
+	// the pools of threads of the routes, and the health and ready routes
+	http_tests_pools ();
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();

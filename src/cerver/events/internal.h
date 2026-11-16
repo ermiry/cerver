@@ -23,6 +23,8 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/core/http.h"
+
 #include "cerver/threads/thpool.h"
 
 #ifdef __cplusplus
@@ -395,10 +397,45 @@ struct EventDispatcher {
 	/** @internal @brief Returns whether a submit would find no place, to not try it. */
 	bool (*is_full) (const EventDispatcher *dispatcher);
 
+	/**
+	 * @internal
+	 * @brief Returns whether a job that it took waits for a thread: a thread does not follow its connection then.
+	 * NULL for a dispatcher whose jobs never wait. Called from the threads that run the jobs.
+	 */
+	bool (*is_awaited) (const EventDispatcher *dispatcher);
+
 	/** @internal @brief The data of the dispatcher. */
 	void *data;
 
 };
+
+/** @internal @brief The lanes that a loop has at most: one for each pool of an HTTP cerver. */
+#define EVENT_LOOP_LANES_SIZE				HTTP_CERVER_POOLS_SIZE
+
+/** @internal @brief The lane of the default pool, the one that every loop has. */
+#define EVENT_LOOP_LANE_DEFAULT				0
+
+/**
+ * @internal
+ * @brief A lane of a loop: the dispatcher of a pool of its HTTP cerver (http/core/pool.h), and the connections of
+ * the loop that wait for a place in it. A lane has the position of its pool in its cerver.
+ *
+ * Each lane has its own wait: a pool that is full keeps its requests in its lane, and the requests of the other
+ * lanes are dispatched.
+ */
+typedef struct EventLane {
+
+	/** @internal @brief Who runs the jobs of its connections, NULL for a lane that the loop does not have. */
+	EventDispatcher *dispatcher;
+
+	/** @internal @brief The first connection that waits for a place in its dispatcher. */
+	struct HttpConnection *parked_head;
+	/** @internal @brief The last one. */
+	struct HttpConnection *parked_tail;
+	/** @internal @brief The connections that wait, atomic: the threads of its pool read it to wake the loop up. */
+	unsigned int n_parked;
+
+} EventLane;
 
 /**
  * @internal
@@ -430,8 +467,10 @@ typedef struct EventLoop {
 	/** @internal @brief The time of the current step. */
 	u64 now;
 
-	/** @internal @brief Who runs the jobs of the connections. */
-	EventDispatcher *dispatcher;
+	/** @internal @brief Its lanes: the first one is the one of the default pool, the others are set with event_loop_lane_set (). */
+	EventLane lanes[EVENT_LOOP_LANES_SIZE];
+	/** @internal @brief The lanes in use: one more than the last lane with a dispatcher. */
+	unsigned int n_lanes;
 
 	/** @internal @brief The socket that accepts connections. */
 	EventSource listen;
@@ -456,11 +495,7 @@ typedef struct EventLoop {
 	/** @internal @brief The loop is about to wait in its poller: a push, or a place for its parked connections, wakes it up. */
 	bool waiting;
 
-	/** @internal @brief The first connection that waits for a place in the pool. */
-	struct HttpConnection *parked_head;
-	/** @internal @brief The last one. */
-	struct HttpConnection *parked_tail;
-	/** @internal @brief The parked connections, atomic: the threads of the pool read it to wake the loop up. */
+	/** @internal @brief The parked connections of all its lanes, atomic. */
 	unsigned int n_parked;
 
 	/** @internal @brief The first connection that the loop can still end: the ones whose request is not being handled. */
@@ -536,10 +571,24 @@ typedef struct EventLoop {
  * @brief Creates a loop for the connections of a web cerver.
  *
  * @param[in] cerver the cerver, with its HttpCerver initialized
- * @param[in] dispatcher who runs the jobs of its connections, it must outlive the loop
+ * @param[in] dispatcher who runs the jobs of its connections, the one of its default lane; it must outlive the loop
  * @return the loop, NULL on error
  */
 CERVER_PRIVATE EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatcher);
+
+/**
+ * @internal
+ * @brief Sets the dispatcher of a lane of a loop that has no connections: the requests of the endpoints that chose
+ * the pool with that position are given to it.
+ *
+ * @param[in,out] loop the loop
+ * @param[in] lane the lane, the position of its pool in its HTTP cerver
+ * @param[in] dispatcher who runs the jobs of the lane, it must outlive the loop
+ * @return 0 on success, 1 for a NULL argument or a lane that is not less than #EVENT_LOOP_LANES_SIZE
+ */
+CERVER_PRIVATE unsigned int event_loop_lane_set (
+	EventLoop *loop, const unsigned int lane, EventDispatcher *dispatcher
+);
 
 /**
  * @internal
@@ -623,31 +672,42 @@ CERVER_PRIVATE void event_loop_wake (const EventLoop *loop);
 
 /**
  * @internal
- * @brief Tells the loops with parked connections that the dispatcher has a place: a job started to run. Only a
- * loop that waits in its poller is woken up, one that is running gives the place at the end of its step.
+ * @brief Tells the loops with connections parked in a lane that its dispatcher has a place: a job started to run.
+ * Only a loop that waits in its poller is woken up, one that is running gives the place at the end of its step.
  *
  * @param[in,out] loop the loop of the job that started
+ * @param[in] lane the lane of the job
  * @threadsafety Safe from any thread.
  */
-CERVER_HIDDEN void event_loop_space (EventLoop *loop);
+CERVER_HIDDEN void event_loop_space (EventLoop *loop, const unsigned int lane);
 
 /**
  * @internal
- * @brief Adds a connection at the end of the parked ones.
+ * @brief Adds a connection at the end of the parked ones of its lane.
  *
  * @param[in,out] loop the loop
- * @param[in,out] connection the connection
+ * @param[in,out] connection the connection, with its lane
  */
 CERVER_HIDDEN void event_loop_park (EventLoop *loop, struct HttpConnection *connection);
 
 /**
  * @internal
- * @brief Takes a connection out of the parked ones, nothing is done when it is not there.
+ * @brief Takes a connection out of the parked ones of its lane, nothing is done when it is not there.
  *
  * @param[in,out] loop the loop
  * @param[in,out] connection the connection
  */
 CERVER_HIDDEN void event_loop_unpark (EventLoop *loop, struct HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Returns whether a lane of the loop has connections that wait for a place in its dispatcher.
+ *
+ * @param[in] loop the loop, the caller is its thread
+ * @param[in] lane the lane
+ * @return true with parked connections
+ */
+CERVER_HIDDEN bool event_loop_lane_has_parked (const EventLoop *loop, const unsigned int lane);
 
 /**
  * @internal
@@ -775,13 +835,24 @@ CERVER_PRIVATE unsigned int event_loop_connections (const EventLoop *loop);
 
 /**
  * @internal
- * @brief The connections of the loop that wait for a place in the pool.
+ * @brief The connections of the loop that wait for a place in a pool, in all its lanes.
  *
  * @param[in] loop the loop
  * @return the count
  * @threadsafety Safe from any thread.
  */
 CERVER_PRIVATE unsigned int event_loop_parked (const EventLoop *loop);
+
+/**
+ * @internal
+ * @brief The connections of the loop that wait for a place in the dispatcher of a lane.
+ *
+ * @param[in] loop the loop
+ * @param[in] lane the lane
+ * @return the count, 0 for a lane that is not less than #EVENT_LOOP_LANES_SIZE
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_lane_parked (const EventLoop *loop, const unsigned int lane);
 
 /**
  * @internal
@@ -848,8 +919,14 @@ typedef struct EventLoopGroup {
 	/** @internal @brief The cerver. */
 	struct _Cerver *cerver;
 
-	/** @internal @brief Gives the jobs of every loop to the thpool of the cerver. */
-	EventDispatcher dispatcher;
+	/**
+	 * @internal
+	 * @brief Give the jobs of every loop to the pools of the cerver: the first one to its thpool, the others to
+	 * the thpools of the named pools of its HTTP cerver, each one in the position of its pool.
+	 */
+	EventDispatcher dispatchers[EVENT_LOOP_LANES_SIZE];
+	/** @internal @brief The dispatchers in use, the lanes of every loop. */
+	unsigned int n_dispatchers;
 
 	/** @internal @brief The loops. */
 	EventLoop **loops;
@@ -860,6 +937,8 @@ typedef struct EventLoopGroup {
 	unsigned int n_connections;
 	/** @internal @brief The parked connections of all the loops, atomic. */
 	unsigned int n_parked;
+	/** @internal @brief The parked connections of all the loops in each lane, atomic. */
+	unsigned int lanes_parked[EVENT_LOOP_LANES_SIZE];
 
 } EventLoopGroup;
 
@@ -927,13 +1006,36 @@ CERVER_PRIVATE unsigned int event_loop_group_connections (const struct _Cerver *
 
 /**
  * @internal
- * @brief The connections of all the loops of a cerver that wait for a place in the thpool.
+ * @brief The connections of all the loops of a cerver that wait for a place in a pool.
  *
  * @param[in] cerver the cerver
  * @return the count, 0 without loops
  * @threadsafety Safe from any thread.
  */
 CERVER_PRIVATE unsigned int event_loop_group_parked (const struct _Cerver *cerver);
+
+/**
+ * @internal
+ * @brief The connections of all the loops of a cerver that were kept and wait for their next request.
+ *
+ * @param[in] cerver the cerver
+ * @return the count, 0 without loops
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_group_idle (const struct _Cerver *cerver);
+
+/**
+ * @internal
+ * @brief The connections of all the loops of a cerver that wait for a place in the pool of a lane.
+ *
+ * @param[in] cerver the cerver
+ * @param[in] lane the lane, the position of the pool in its HTTP cerver
+ * @return the count, 0 without loops or for a lane that is not less than #EVENT_LOOP_LANES_SIZE
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_group_lane_parked (
+	const struct _Cerver *cerver, const unsigned int lane
+);
 
 /**
  * @internal

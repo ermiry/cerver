@@ -10,6 +10,7 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/pool.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
 #include "cerver/http/requests/request.h"
@@ -119,9 +120,35 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 
 	settings->compression = false;
 
+	(void) memset (settings->pool_name, 0, HTTP_POOL_NAME_SIZE);
+	settings->pool = NULL;
+
 	http_middlewares_init (&settings->middlewares);
 
 	http_web_socket_settings_init (&settings->web_socket);
+
+}
+
+// keeps the name of the pool, the pool is found when the tree is compiled
+// returns 0 on success, 1 for a name that no pool can have
+static unsigned int http_route_settings_set_pool (
+	HttpRouteSettings *settings, const char *name
+) {
+
+	unsigned int retval = 1;
+
+	const char *pool_name = name ? name : http_tree_empty_path;
+
+	if (strlen (pool_name) < HTTP_POOL_NAME_SIZE) {
+		(void) memset (settings->pool_name, 0, HTTP_POOL_NAME_SIZE);
+		(void) snprintf (settings->pool_name, HTTP_POOL_NAME_SIZE, "%s", pool_name);
+
+		settings->set |= HTTP_ROUTE_SETTING_POOL;
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
@@ -176,6 +203,10 @@ static void http_route_settings_inherit (
 	if (missing & HTTP_ROUTE_SETTING_ETAG) resolved->etag = source->etag;
 
 	if (missing & HTTP_ROUTE_SETTING_COMPRESSION) resolved->compression = source->compression;
+
+	if (missing & HTTP_ROUTE_SETTING_POOL) {
+		(void) memcpy (resolved->pool_name, source->pool_name, HTTP_POOL_NAME_SIZE);
+	}
 
 	resolved->set |= missing;
 
@@ -419,6 +450,21 @@ void http_endpoint_set_compression (
 	if (endpoint) {
 		endpoint->settings.compression = compression;
 		endpoint->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
+	}
+
+}
+
+void http_endpoint_set_pool (
+	HttpEndpoint *endpoint, const char *name
+) {
+
+	if (endpoint && http_route_settings_set_pool (&endpoint->settings, name)) {
+		http_tree_error (
+			endpoint->group ? endpoint->group->tree : NULL,
+			"route %s \"%s\" - the name of its pool is too long",
+			http_request_method_str (endpoint->method),
+			endpoint->path ? endpoint->path->str : http_tree_empty_path
+		);
 	}
 
 }
@@ -1045,6 +1091,19 @@ void http_group_set_compression (
 	if (group) {
 		group->settings.compression = compression;
 		group->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
+	}
+
+}
+
+void http_group_set_pool (
+	HttpGroup *group, const char *name
+) {
+
+	if (group && http_route_settings_set_pool (&group->settings, name)) {
+		http_tree_error (
+			group->tree, "group \"%s\" - the name of its pool is too long",
+			group->prefix ? group->prefix->str : http_tree_empty_path
+		);
 	}
 
 }
@@ -1678,6 +1737,33 @@ static u8 http_tree_resolve_web_socket (
 
 }
 
+// finds the pool that the endpoint or one of its groups chose, the cerver must have it
+u8 http_tree_resolve_pool (
+	HttpTree *tree, HttpEndpoint *endpoint
+) {
+
+	u8 errors = 0;
+
+	HttpRouteSettings *resolved = &endpoint->resolved;
+
+	resolved->pool = NULL;
+
+	if (resolved->pool_name[0]) {
+		resolved->pool = http_cerver_pool_get_with_name (tree->http_cerver, resolved->pool_name);
+		if (!resolved->pool) {
+			http_tree_error (
+				tree, "route %s \"%s\" - the cerver has no pool \"%s\" (http_cerver_pool_create ())",
+				http_request_method_str (endpoint->method), endpoint->path->str, resolved->pool_name
+			);
+
+			errors = 1;
+		}
+	}
+
+	return errors;
+
+}
+
 // resolves the settings that the endpoint inherits from its groups
 static u8 http_tree_resolve_endpoint (
 	HttpTree *tree, HttpEndpoint *endpoint
@@ -1697,6 +1783,8 @@ static u8 http_tree_resolve_endpoint (
 	}
 
 	u8 errors = http_tree_resolve_web_socket (tree, endpoint);
+
+	errors |= http_tree_resolve_pool (tree, endpoint);
 
 	errors |= http_middlewares_append (&endpoint->resolved.middlewares, &tree->middlewares);
 	errors |= http_tree_resolve_groups_middlewares (&endpoint->resolved.middlewares, endpoint->group);

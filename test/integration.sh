@@ -43,6 +43,7 @@ PAIRS=(
 	web/worker
 	web/admin
 	web/router
+	web/pools
 	web/features
 	web/websocket
 )

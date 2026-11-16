@@ -131,6 +131,46 @@
 #define HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS		(1 << 10)
 
 /**
+ * @brief The pools of threads that an HTTP cerver has at most (http/core/pool.h), with the default one.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_POOLS_SIZE						(1 << 4)
+
+/**
+ * @brief The default microseconds that the thread of a pool that answered a request looks for the next one of its
+ * connection, before it gives the connection back to its event loop: none, a cerver asks for it with
+ * http_cerver_set_keep_alive_follow ().
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW		0
+
+/**
+ * @brief The microseconds that a cerver that asks its threads to follow their connections can start with: the
+ * next request of a quick client arrives in less.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT			(1 << 6)
+
+/**
+ * @brief The exponent of the last bucket with a limit of the requests that a connection handled: 2^10 requests,
+ * the default of #HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_CONNECTION_REQUESTS_EXPONENT	10
+
+/**
+ * @brief The buckets of the requests that a connection handled: one for each power of two from 2^0 to
+ * 2^#HTTP_CERVER_CONNECTION_REQUESTS_EXPONENT, and one for the connections with more.
+ *
+ * @since 2.1b-17
+ */
+#define HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS		(HTTP_CERVER_CONNECTION_REQUESTS_EXPONENT + 2)
+
+/**
  * @brief A client that closed its side of the connection (EOF) is taken as gone by default, although a half-close
  * (shutdown (SHUT_WR)) client still waits for the response.
  */
@@ -679,6 +719,104 @@ struct _HttpCerver {
 	 * @since 2.1b-16
 	 */
 	size_t n_reused_connections;
+
+	/**
+	 * @brief The pools of threads that handle the requests (http/core/pool.h); the first one is the default one,
+	 * the thpool of the cerver.
+	 *
+	 * @since 2.1b-17
+	 */
+	struct HttpPool *pools[HTTP_CERVER_POOLS_SIZE];
+	/**
+	 * @brief The pools in #pools.
+	 *
+	 * @since 2.1b-17
+	 */
+	unsigned int n_pools;
+	/**
+	 * @brief The cerver started its pools: a pool can not be created anymore.
+	 *
+	 * @since 2.1b-17
+	 */
+	bool pools_started;
+
+	/**
+	 * @brief The path of the health route (http_cerver_set_health_route ()), NULL without one.
+	 *
+	 * @since 2.1b-17
+	 */
+	String *health_route;
+	/**
+	 * @brief The path of the ready route (http_cerver_set_ready_route ()), NULL without one.
+	 *
+	 * @since 2.1b-17
+	 */
+	String *ready_route;
+
+	/**
+	 * @brief The requests of the health route, updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_health_requests;
+	/**
+	 * @brief The requests of the ready route that were answered with 200, updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_ready_requests;
+	/**
+	 * @brief The requests of the ready route that were answered with 503: a pool had no place, or the cerver was
+	 * stopping; updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_not_ready_requests;
+
+	/**
+	 * @brief The connections that ended, by the requests that they handled: the bucket `i` has the ones with up to
+	 * 2^i requests (and more than 2^(i - 1)), the last one the ones with more; a connection that ended without a
+	 * request is not counted. Updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t connection_requests[HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS];
+	/**
+	 * @brief The requests that the connections of #connection_requests handled, updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_connection_requests;
+
+	/**
+	 * @brief The microseconds that the cerver spent writing the files of its uploads, updated with atomic
+	 * operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t uploads_write_microseconds;
+	/**
+	 * @brief The bytes of the files of the uploads that the cerver wrote, updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t uploads_write_bytes;
+
+	/**
+	 * @brief The microseconds that the thread of a pool that answered a request of a connection that is kept looks
+	 * for its next request, to handle it by itself; 0 disables it (http_cerver_set_keep_alive_follow ()). Only with
+	 * event loops.
+	 *
+	 * @since 2.1b-17
+	 */
+	unsigned int keep_alive_follow;
+	/**
+	 * @brief The requests that the thread that answered the one before them handled by itself, without their event
+	 * loop; updated with atomic operations.
+	 *
+	 * @since 2.1b-17
+	 */
+	size_t n_followed_requests;
 
 };
 

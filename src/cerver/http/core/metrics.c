@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,9 +10,12 @@
 #include "cerver/version.h"
 
 #include "cerver/core/cerver.h"
+#include "cerver/events/internal.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/core/metrics.h"
+#include "cerver/http/core/pool.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -31,6 +35,22 @@
 #define HTTP_METRICS_INFINITE_BUCKET_FORMAT		"cerver_http_request_duration_seconds_bucket{method=\"%s\",path=\"%s\",le=\"+Inf\"} %zu\n"
 #define HTTP_METRICS_SUM_FORMAT					"cerver_http_request_duration_seconds_sum{method=\"%s\",path=\"%s\"} %.6f\n"
 #define HTTP_METRICS_COUNT_FORMAT				"cerver_http_request_duration_seconds_count{method=\"%s\",path=\"%s\"} %zu\n"
+
+#define HTTP_METRICS_POOL_FORMAT				"%s{pool=\"%s\"} %zu\n"
+
+#define HTTP_METRICS_POOL_BUCKET_FORMAT				"%s_bucket{pool=\"%s\",le=\"%g\"} %zu\n"
+#define HTTP_METRICS_POOL_INFINITE_BUCKET_FORMAT	"%s_bucket{pool=\"%s\",le=\"+Inf\"} %zu\n"
+#define HTTP_METRICS_POOL_SUM_FORMAT				"%s_sum{pool=\"%s\"} %.6f\n"
+#define HTTP_METRICS_POOL_COUNT_FORMAT				"%s_count{pool=\"%s\"} %zu\n"
+
+#define HTTP_METRICS_CONNECTION_REQUESTS_NAME			"cerver_http_connection_requests"
+#define HTTP_METRICS_CONNECTION_REQUESTS_BUCKET_FORMAT	HTTP_METRICS_CONNECTION_REQUESTS_NAME "_bucket{le=\"%zu\"} %zu\n"
+#define HTTP_METRICS_CONNECTION_REQUESTS_INFINITE_FORMAT	HTTP_METRICS_CONNECTION_REQUESTS_NAME "_bucket{le=\"+Inf\"} %zu\n"
+#define HTTP_METRICS_CONNECTION_REQUESTS_SUM_FORMAT		HTTP_METRICS_CONNECTION_REQUESTS_NAME "_sum %zu\n"
+#define HTTP_METRICS_CONNECTION_REQUESTS_COUNT_FORMAT	HTTP_METRICS_CONNECTION_REQUESTS_NAME "_count %zu\n"
+
+#define HTTP_METRICS_UPLOADS_WRITE_SECONDS_NAME		"cerver_http_uploads_write_seconds_total"
+#define HTTP_METRICS_UPLOADS_WRITE_SECONDS_FORMAT	HTTP_METRICS_UPLOADS_WRITE_SECONDS_NAME " %.6f\n"
 
 #define HTTP_METRICS_THPOOL_BUCKET_FORMAT			"%s_bucket{le=\"%g\"} %zu\n"
 #define HTTP_METRICS_THPOOL_INFINITE_BUCKET_FORMAT	"%s_bucket{le=\"+Inf\"} %zu\n"
@@ -98,6 +118,26 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_reused_connections_total", "The requests that arrived in a connection that had already handled another one.",
 		offsetof (HttpCerver, n_reused_connections)
+	},
+	{
+		"cerver_http_health_requests_total", "The requests of the health route.",
+		offsetof (HttpCerver, n_health_requests)
+	},
+	{
+		"cerver_http_ready_requests_total", "The requests of the ready route that were answered with 200.",
+		offsetof (HttpCerver, n_ready_requests)
+	},
+	{
+		"cerver_http_not_ready_requests_total", "The requests of the ready route that were answered with 503.",
+		offsetof (HttpCerver, n_not_ready_requests)
+	},
+	{
+		"cerver_http_uploads_write_bytes_total", "The bytes of the files of the uploads that were written.",
+		offsetof (HttpCerver, uploads_write_bytes)
+	},
+	{
+		"cerver_http_followed_requests_total", "The requests that the thread that answered the one before them in their connection handled, without their event loop.",
+		offsetof (HttpCerver, n_followed_requests)
 	}
 };
 
@@ -405,6 +445,323 @@ static void http_metrics_thpool (String *metrics, const HttpCerver *http_cerver)
 
 }
 
+static size_t http_metrics_pool_threads (const HttpPool *pool) {
+
+	return thpool_get_num_threads_alive (pool->thpool);
+
+}
+
+static size_t http_metrics_pool_working (const HttpPool *pool) {
+
+	return thpool_get_num_threads_working (pool->thpool);
+
+}
+
+static size_t http_metrics_pool_queued (const HttpPool *pool) {
+
+	return thpool_get_queued (pool->thpool);
+
+}
+
+static size_t http_metrics_pool_parked (const HttpPool *pool) {
+
+	return event_loop_group_lane_parked (pool->http_cerver->cerver, pool->index);
+
+}
+
+static size_t http_metrics_pool_jobs (const HttpPool *pool) {
+
+	ThpoolStats stats;
+	thpool_get_stats (pool->thpool, &stats);
+
+	return (size_t) stats.total_jobs;
+
+}
+
+static size_t http_metrics_pool_parked_total (const HttpPool *pool) {
+
+	return (size_t) __atomic_load_n (&pool->n_parked, __ATOMIC_RELAXED);
+
+}
+
+static size_t http_metrics_pool_unavailable (const HttpPool *pool) {
+
+	return (size_t) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED);
+
+}
+
+// a metric of the pools of the cerver, with a value for each pool
+typedef struct HttpMetricsPool {
+
+	const char *name;
+	const char *help;
+	bool counter;
+	size_t (*value)(const HttpPool *pool);
+
+} HttpMetricsPool;
+
+static const HttpMetricsPool http_metrics_pools_values[] = {
+	{
+		"cerver_http_pool_threads", "The threads of each pool.",
+		false, http_metrics_pool_threads
+	},
+	{
+		"cerver_http_pool_threads_working", "The threads of each pool that are handling a request.",
+		false, http_metrics_pool_working
+	},
+	{
+		"cerver_http_pool_queued", "The requests that wait for a thread in the queue of each pool.",
+		false, http_metrics_pool_queued
+	},
+	{
+		"cerver_http_pool_parked", "The requests that wait in the event loops for a place in the queue of each pool.",
+		false, http_metrics_pool_parked
+	},
+	{
+		"cerver_http_pool_jobs_total", "The requests that entered the queue of each pool.",
+		true, http_metrics_pool_jobs
+	},
+	{
+		"cerver_http_pool_parked_total", "The requests that waited in the event loops for a place in each pool.",
+		true, http_metrics_pool_parked_total
+	},
+	{
+		"cerver_http_pool_unavailable_total", "The requests that were answered with 503 because their pool had no place for them.",
+		true, http_metrics_pool_unavailable
+	}
+};
+
+static const size_t http_metrics_n_pools_values = (
+	sizeof (http_metrics_pools_values) / sizeof (HttpMetricsPool)
+);
+
+// the value of a metric for each pool that has threads: the name of a pool is a token, it needs no escape
+static void http_metrics_pool_value (
+	String *metrics, const HttpCerver *http_cerver, const HttpMetricsPool *metric
+) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
+		const HttpPool *pool = http_cerver->pools[idx];
+
+		if (pool->thpool) {
+			http_metrics_append (
+				metrics, line,
+				snprintf (
+					line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_POOL_FORMAT,
+					metric->name, pool->name, metric->value (pool)
+				)
+			);
+		}
+	}
+
+}
+
+// a histogram of the stats of the thpool of each pool: where its buckets and its total are in ThpoolStats
+typedef struct HttpMetricsPoolHistogram {
+
+	const char *name;
+	const char *help;
+	size_t buckets;
+	size_t total;
+
+} HttpMetricsPoolHistogram;
+
+static const HttpMetricsPoolHistogram http_metrics_pools_histograms[] = {
+	{
+		"cerver_http_pool_wait_seconds", "The time that the requests waited for a thread in the queue of each pool.",
+		offsetof (ThpoolStats, wait_histogram), offsetof (ThpoolStats, wait_total_microseconds)
+	},
+	{
+		"cerver_http_pool_run_seconds", "The time that the threads of each pool handled each request.",
+		offsetof (ThpoolStats, run_histogram), offsetof (ThpoolStats, run_total_microseconds)
+	}
+};
+
+static const size_t http_metrics_n_pools_histograms = (
+	sizeof (http_metrics_pools_histograms) / sizeof (HttpMetricsPoolHistogram)
+);
+
+// the histogram of a pool, like the ones of the thpool of the cerver (buckets of 2^i ms) with its name as a label
+static void http_metrics_pool_histogram (
+	String *metrics, const char *name, const char *pool,
+	const u64 *histogram, const u64 total_microseconds
+) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	size_t cumulative = 0;
+	for (unsigned int i = 0; i < (THPOOL_HISTOGRAM_BUCKETS - 1); i++) {
+		cumulative += (size_t) histogram[i];
+
+		const double bucket = (double) (1UL << i) / HTTP_METRICS_MILLISECONDS_PER_SECOND;
+		http_metrics_append (
+			metrics, line,
+			snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_POOL_BUCKET_FORMAT, name, pool, bucket, cumulative)
+		);
+	}
+
+	cumulative += (size_t) histogram[THPOOL_HISTOGRAM_BUCKETS - 1];
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_POOL_INFINITE_BUCKET_FORMAT, name, pool, cumulative)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (
+			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_POOL_SUM_FORMAT,
+			name, pool, (double) total_microseconds / HTTP_METRICS_MICROSECONDS_PER_SECOND
+		)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_POOL_COUNT_FORMAT, name, pool, cumulative)
+	);
+
+}
+
+// a histogram for each pool that has threads
+static void http_metrics_pools_histogram (
+	String *metrics, const HttpCerver *http_cerver, const HttpMetricsPoolHistogram *metric
+) {
+
+	http_metrics_header (metrics, metric->name, metric->help, http_metrics_type_histogram);
+
+	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
+		const HttpPool *pool = http_cerver->pools[idx];
+
+		if (pool->thpool) {
+			ThpoolStats stats;
+			thpool_get_stats (pool->thpool, &stats);
+
+			http_metrics_pool_histogram (
+				metrics, metric->name, pool->name,
+				(const u64 *) ((const char *) &stats + metric->buckets),
+				*(const u64 *) ((const char *) &stats + metric->total)
+			);
+		}
+	}
+
+}
+
+// the pools of the cerver by their name, the default one is the thpool of the cerver
+static void http_metrics_pools (String *metrics, const HttpCerver *http_cerver) {
+
+	for (size_t i = 0; i < http_metrics_n_pools_values; i++) {
+		const HttpMetricsPool *metric = &http_metrics_pools_values[i];
+
+		http_metrics_header (
+			metrics, metric->name, metric->help,
+			metric->counter ? http_metrics_type_counter : http_metrics_type_gauge
+		);
+
+		http_metrics_pool_value (metrics, http_cerver, metric);
+	}
+
+	for (size_t i = 0; i < http_metrics_n_pools_histograms; i++) {
+		http_metrics_pools_histogram (metrics, http_cerver, &http_metrics_pools_histograms[i]);
+	}
+
+}
+
+// the connections that ended by the requests that they handled: the buckets are of 2^i requests
+// and the last one has the rest, the sum is the requests of all of them
+static void http_metrics_connection_requests (String *metrics, const HttpCerver *http_cerver) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_CONNECTION_REQUESTS_NAME,
+		"The requests that each connection that ended handled.", http_metrics_type_histogram
+	);
+
+	size_t cumulative = 0;
+	for (unsigned int i = 0; i < (HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1); i++) {
+		cumulative += CERVER_STATS_GET (http_cerver->connection_requests[i]);
+
+		http_metrics_append (
+			metrics, line,
+			snprintf (
+				line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_CONNECTION_REQUESTS_BUCKET_FORMAT,
+				(size_t) 1 << i, cumulative
+			)
+		);
+	}
+
+	cumulative += CERVER_STATS_GET (http_cerver->connection_requests[HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1]);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_CONNECTION_REQUESTS_INFINITE_FORMAT, cumulative)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (
+			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_CONNECTION_REQUESTS_SUM_FORMAT,
+			(size_t) CERVER_STATS_GET (http_cerver->n_connection_requests)
+		)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_CONNECTION_REQUESTS_COUNT_FORMAT, cumulative)
+	);
+
+}
+
+// the time that the cerver spent writing the files of its uploads, their bytes are with the counters
+static void http_metrics_uploads (String *metrics, const HttpCerver *http_cerver) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_UPLOADS_WRITE_SECONDS_NAME,
+		"The time that the cerver spent writing the files of the uploads.", http_metrics_type_counter
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (
+			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_UPLOADS_WRITE_SECONDS_FORMAT,
+			(double) CERVER_STATS_GET (http_cerver->uploads_write_microseconds) / HTTP_METRICS_MICROSECONDS_PER_SECOND
+		)
+	);
+
+}
+
+// the connections of the event loops of the cerver
+static void http_metrics_connections (String *metrics, const HttpCerver *http_cerver) {
+
+	const Cerver *cerver = http_cerver->cerver;
+
+	http_metrics_header (
+		metrics, "cerver_http_connections", "The connections of the event loops.", http_metrics_type_gauge
+	);
+
+	http_metrics_value (metrics, "cerver_http_connections", event_loop_group_connections (cerver));
+
+	http_metrics_header (
+		metrics, "cerver_http_connections_idle",
+		"The connections of the event loops that were kept and wait for their next request.",
+		http_metrics_type_gauge
+	);
+
+	http_metrics_value (metrics, "cerver_http_connections_idle", event_loop_group_idle (cerver));
+
+	http_metrics_header (
+		metrics, "cerver_http_connections_accepted_total", "The connections that the event loops accepted.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_http_connections_accepted_total", (size_t) event_loop_group_accepted (cerver));
+
+}
+
 // calls the method for every endpoint of the cerver,
 // the ones of the groups and the ones of the first routes API
 typedef void (*HttpMetricsEndpointMethod)(String *metrics, const HttpEndpoint *endpoint);
@@ -695,6 +1052,16 @@ String *http_cerver_metrics_generate (const HttpCerver *http_cerver) {
 			http_metrics_vanished (metrics, http_cerver);
 
 			http_metrics_thpool (metrics, http_cerver);
+
+			http_metrics_pools (metrics, http_cerver);
+
+			if (http_cerver->cerver && http_cerver->cerver->event_loops) {
+				http_metrics_connections (metrics, http_cerver);
+			}
+
+			http_metrics_connection_requests (metrics, http_cerver);
+
+			http_metrics_uploads (metrics, http_cerver);
 
 			if (http_cerver->web_sockets) http_metrics_web_sockets (metrics, http_cerver);
 

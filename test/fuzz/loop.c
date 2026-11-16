@@ -28,6 +28,10 @@
 // and one more for each byte: every pipelined request that is left takes a step
 #define LOOP_STEPS_MAX					64
 
+// the microseconds that the job of a request looks for the next one of its connection: the bytes that the
+// client already sent are found at once, and a run does not wait for the ones that it has not sent
+#define LOOP_FOLLOW_TIME				1
+
 static EventDispatcher loop_dispatcher;
 static EventLoop *loop_events = NULL;
 
@@ -45,6 +49,7 @@ static void loop_create (void) {
 	cerver_set_send_timeout (fuzz_cerver, FUZZ_SEND_TIMEOUT_SECONDS);
 
 	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
+	http_cerver_set_keep_alive_follow ((HttpCerver *) fuzz_cerver->cerver_data, LOOP_FOLLOW_TIME);
 
 	event_dispatcher_inline (&loop_dispatcher);
 

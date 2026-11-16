@@ -290,7 +290,57 @@ static int http_receive_mpart_file_open (
 
 }
 
-// writes a piece of a multi-part file, write () can save less bytes than requested
+static const size_t http_receive_mpart_microseconds_per_second = 1000000;
+static const size_t http_receive_mpart_nanoseconds_per_microsecond = 1000;
+
+// the monotonic clock in microseconds, to measure what a write to the disk takes
+static size_t http_receive_mpart_clock (void) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return ((size_t) now.tv_sec * http_receive_mpart_microseconds_per_second)
+		+ ((size_t) now.tv_nsec / http_receive_mpart_nanoseconds_per_microsecond);
+
+}
+
+// the time and the bytes of a piece of a file that was written, also of one that failed in its middle:
+// the write to the disk runs in the thread that receives the request (the event loop, with one)
+static void http_receive_mpart_file_wrote (
+	HttpCerver *http_cerver, const size_t start, const size_t wrote
+) {
+
+	CERVER_STATS_ADD (http_cerver->uploads_write_microseconds, http_receive_mpart_clock () - start);
+	CERVER_STATS_ADD (http_cerver->uploads_write_bytes, wrote);
+
+}
+
+// write () can save less bytes than requested
+// returns the bytes that were written, less than the requested ones when it failed (errno has why)
+static size_t http_receive_mpart_file_write_all (
+	MultiPart *multi_part, const char *at, const size_t length
+) {
+
+	const char *pending = at;
+	size_t pending_length = length;
+	while (pending_length > 0) {
+		const ssize_t wrote = write (multi_part->fd, pending, pending_length);
+		if (wrote < 0) {
+			if (errno == EINTR) continue;
+
+			break;
+		}
+
+		multi_part->total_wrote += (u32) wrote;
+		pending += wrote;
+		pending_length -= (size_t) wrote;
+	}
+
+	return length - pending_length;
+
+}
+
+// writes a piece of a multi-part file
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_mpart_file_write (
 	HttpReceive *http_receive, MultiPart *multi_part,
@@ -306,24 +356,14 @@ static int http_receive_mpart_file_write (
 		);
 	}
 
-	const char *pending = at;
-	size_t pending_length = length;
-	while (pending_length > 0) {
-		const ssize_t wrote = write (multi_part->fd, pending, pending_length);
-		if (wrote < 0) {
-			if (errno == EINTR) continue;
+	const size_t start = http_receive_mpart_clock ();
+	const size_t wrote = http_receive_mpart_file_write_all (multi_part, at, length);
+	const int error = errno;
 
-			return http_receive_mpart_file_failed (
-				http_receive, multi_part, "write", errno
-			);
-		}
+	http_receive_mpart_file_wrote (http_receive->http_cerver, start, wrote);
 
-		multi_part->total_wrote += (u32) wrote;
-		pending += wrote;
-		pending_length -= (size_t) wrote;
-	}
-
-	return 0;
+	return (wrote < length) ?
+		http_receive_mpart_file_failed (http_receive, multi_part, "write", error) : 0;
 
 }
 

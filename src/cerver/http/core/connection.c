@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -357,6 +358,8 @@ static void http_connection_request_release (HttpConnection *connection) {
 	const EventLoop *loop = connection->loop;
 	if (loop->observer) loop->observer (&connection->receive, loop->observer_args);
 
+	http_cerver_connection_ended (connection->receive.http_cerver, connection->receive.n_requests);
+
 	http_receive_delete (&connection->receive);
 
 	socket_delete (connection->cerver_receive.socket);
@@ -404,6 +407,9 @@ static void http_connection_recycle (HttpConnection *connection) {
 	event_source_forget (&connection->source);
 
 	connection->idle_deadline = 0;
+
+	connection->follow_misses = 0;
+	connection->follow_skip = 0;
 
 	connection->peer = NULL;
 
@@ -707,7 +713,7 @@ static void http_connection_flush (HttpConnection *connection) {
 static unsigned int http_connection_dispatch (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
-	EventDispatcher *dispatcher = loop->dispatcher;
+	EventDispatcher *dispatcher = loop->lanes[connection->lane].dispatcher;
 
 	const HttpConnectionState previous = connection->state;
 	const bool handled = (connection->job == HTTP_CONNECTION_JOB_DISPATCH);
@@ -758,7 +764,46 @@ static void http_connection_unavailable (HttpConnection *connection) {
 
 }
 
-// the job waits in the loop for a place in the pool, without a thread
+static bool http_connection_loop_has_lane (const EventLoop *loop, const unsigned int lane) {
+
+	return (lane < loop->n_lanes) && loop->lanes[lane].dispatcher;
+
+}
+
+static struct HttpPool *http_connection_pool_default (const HttpConnection *connection) {
+
+	const HttpCerver *http_cerver = connection->receive.http_cerver;
+
+	return (http_cerver && http_cerver->n_pools) ? http_cerver->pools[EVENT_LOOP_LANE_DEFAULT] : NULL;
+
+}
+
+// the job of a request runs in the pool that its endpoint or one of its groups chose;
+// the default one runs the ones without an endpoint, and the ones of a pool that the loop has no lane for
+static void http_connection_pool_select (HttpConnection *connection) {
+
+	const HttpEndpoint *endpoint = connection->receive.endpoint;
+
+	struct HttpPool *pool = endpoint ? endpoint->resolved.pool : NULL;
+
+	if (!pool || !http_connection_loop_has_lane (connection->loop, pool->index)) {
+		pool = http_connection_pool_default (connection);
+	}
+
+	connection->pool = pool;
+	connection->lane = pool ? pool->index : EVENT_LOOP_LANE_DEFAULT;
+
+}
+
+static bool http_connection_pool_is_full (const HttpConnection *connection) {
+
+	const EventDispatcher *dispatcher = connection->loop->lanes[connection->lane].dispatcher;
+
+	return dispatcher->is_full (dispatcher);
+
+}
+
+// the job waits in the loop for a place in its pool, without a thread
 static void http_connection_park (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
@@ -767,39 +812,68 @@ static void http_connection_park (HttpConnection *connection) {
 
 	event_loop_park (loop, connection);
 
+	if (connection->pool) (void) __atomic_add_fetch (&connection->pool->n_parked, 1, __ATOMIC_RELEASE);
+
 	http_connection_deadline_set (
 		connection,
-		loop->now + ((u64) loop->cerver->overload_wait_timeout * HTTP_CONNECTION_MILLISECONDS_PER_SECOND)
+		loop->now + (
+			(u64) http_pool_wait_timeout (loop->cerver, connection->pool)
+			* HTTP_CONNECTION_MILLISECONDS_PER_SECOND
+		)
 	);
 
 }
 
-static bool http_connection_can_wait (const EventLoop *loop) {
+// each pool has its own policy and its own wait, the ones of the cerver when they were not set
+static bool http_connection_can_wait (const HttpConnection *connection) {
 
-	const Cerver *cerver = loop->cerver;
+	const EventLoop *loop = connection->loop;
 
-	return (cerver->overload_policy == CERVER_OVERLOAD_POLICY_WAIT)
-		&& cerver->overload_wait_timeout
+	return (http_pool_overload_policy (loop->cerver, connection->pool) == CERVER_OVERLOAD_POLICY_WAIT)
+		&& http_pool_wait_timeout (loop->cerver, connection->pool)
 		&& !__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE);
+
+}
+
+// a request that its pool had no place for: at once, or when its wait ended
+static void http_connection_pool_refused (const HttpConnection *connection) {
+
+	if (connection->pool) (void) __atomic_add_fetch (&connection->pool->n_unavailable, 1, __ATOMIC_RELEASE);
 
 }
 
 bool http_connection_refuse (HttpConnection *connection) {
 
-	const EventLoop *loop = connection->loop;
+	http_connection_pool_select (connection);
 
-	const bool refused = __atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE) || (
-		!http_connection_can_wait (loop) && loop->dispatcher->is_full (loop->dispatcher)
-	);
+	const bool rejecting = __atomic_load_n (&connection->loop->rejecting, __ATOMIC_ACQUIRE);
 
-	if (refused) http_connection_answer_unavailable (connection);
+	const bool full = !rejecting
+		&& !http_connection_can_wait (connection) && http_connection_pool_is_full (connection);
 
-	return refused;
+	if (full) http_connection_pool_refused (connection);
+
+	if (rejecting || full) http_connection_answer_unavailable (connection);
+
+	return rejecting || full;
 
 }
 
-// leaves the poller and the wheel, the thread that runs the job owns the connection;
-// without a place in the pool the job waits for one, or the request is answered with 503
+// without a place in its pool the job waits for one in the loop, or the request is answered with 503
+static void http_connection_no_place (HttpConnection *connection) {
+
+	if (http_connection_can_wait (connection)) {
+		http_connection_park (connection);
+	}
+
+	else {
+		http_connection_pool_refused (connection);
+		http_connection_unavailable (connection);
+	}
+
+}
+
+// leaves the poller and the wheel, the thread that runs the job owns the connection
 static void http_connection_submit (
 	HttpConnection *connection, const HttpConnectionJob job
 ) {
@@ -812,19 +886,20 @@ static void http_connection_submit (
 	http_connection_unwatch (connection);
 	http_connection_deadline_clear (connection);
 
+	http_connection_pool_select (connection);
+
 	if (__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE)) {
 		http_connection_unavailable (connection);
 	}
 
-	// the requests that already wait for a place go first: a new one never takes the place
+	// the requests that already wait for a place in its pool go first: a new one never takes the place
 	// that the pool just freed for them
-	else if (loop->parked_head && http_connection_can_wait (loop)) {
+	else if (event_loop_lane_has_parked (loop, connection->lane) && http_connection_can_wait (connection)) {
 		http_connection_park (connection);
 	}
 
 	else if (http_connection_dispatch (connection)) {
-		if (http_connection_can_wait (loop)) http_connection_park (connection);
-		else http_connection_unavailable (connection);
+		http_connection_no_place (connection);
 	}
 
 }
@@ -899,6 +974,25 @@ static void http_connection_message (HttpConnection *connection) {
 
 }
 
+// the job that the parser stopped for: the authentication of the request before its body, or the complete request
+static void http_connection_pause (HttpConnection *connection) {
+
+	switch (connection->receive.pause) {
+		case HTTP_RECEIVE_PAUSE_HEADERS:
+			http_connection_submit (connection, HTTP_CONNECTION_JOB_AUTHORIZE);
+			break;
+
+		case HTTP_RECEIVE_PAUSE_MESSAGE:
+			http_connection_message (connection);
+			break;
+
+		default:
+			http_connection_close (connection);
+			break;
+	}
+
+}
+
 // the parser stopped for the pool
 static void http_connection_paused (
 	HttpConnection *connection, const char *tail, const size_t length
@@ -915,19 +1009,7 @@ static void http_connection_paused (
 	else {
 		receive->unparsed = connection->pending.length;
 
-		switch (receive->pause) {
-			case HTTP_RECEIVE_PAUSE_HEADERS:
-				http_connection_submit (connection, HTTP_CONNECTION_JOB_AUTHORIZE);
-				break;
-
-			case HTTP_RECEIVE_PAUSE_MESSAGE:
-				http_connection_message (connection);
-				break;
-
-			default:
-				http_connection_close (connection);
-				break;
-		}
+		http_connection_pause (connection);
 	}
 
 }
@@ -1382,13 +1464,278 @@ static void http_connection_work_idle (HttpConnection *connection) {
 
 }
 
+#pragma endregion
+
+#pragma region follow
+
+// the thread of a pool that answered a request of a connection that is kept looks for its next request for a
+// short time, and handles it by itself: a request that arrives then waits for no thread, when the loop that
+// reads it and the thread that it wakes up cost more than the request of a quick client
+// the thread owns the connection all that time: its loop does not know it until the thread gives it back
+
+// what a thread found when it followed its connection
+typedef enum HttpConnectionFollow {
+
+	// no request arrived in time: the connection waits idle in its loop
+	HTTP_CONNECTION_FOLLOW_NONE				= 0,
+	// its next request is complete and the thread handles it
+	HTTP_CONNECTION_FOLLOW_HANDLE			= 1,
+	// the connection went back to its loop with what the thread found, the thread does not use it anymore
+	HTTP_CONNECTION_FOLLOW_GIVEN			= 2
+
+} HttpConnectionFollow;
+
+static const u64 http_connection_microseconds_per_second = 1000000;
+static const u64 http_connection_nanoseconds_per_microsecond = 1000;
+
+// where a thread reads what it finds, its bytes are parsed before the thread uses it again:
+// a request that does not fit in it is not complete, and its loop reads the rest
+static __thread char http_connection_follow_buffer[HTTP_CONNECTION_FOLLOW_BUFFER_SIZE] = { 0 };
+
+// the monotonic clock in microseconds, the time of a thread that follows its connection
+static u64 http_connection_microseconds (void) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return ((u64) now.tv_sec * http_connection_microseconds_per_second)
+		+ ((u64) now.tv_nsec / http_connection_nanoseconds_per_microsecond);
+
+}
+
+// a job waits for a thread of the pool of the connection, its dispatcher knows
+static bool http_connection_work_is_awaited (const HttpConnection *connection) {
+
+	const EventDispatcher *dispatcher = connection->loop->lanes[connection->lane].dispatcher;
+
+	return dispatcher->is_awaited && dispatcher->is_awaited (dispatcher);
+
+}
+
+// a connection whose client did not send its next request in time is not followed for some requests
+// returns true when this request is one of them
+static bool http_connection_follow_skips (HttpConnection *connection) {
+
+	const bool skips = (connection->follow_skip > 0);
+	if (skips) connection->follow_skip -= 1;
+
+	return skips;
+
+}
+
+// the thread follows its connection when the cerver gives it a time for it, the connection is not waiting
+// out its misses, and no job waits for the thread: the time that the thread looks for a request
+// is time that it does not give to a request that is already there
+static bool http_connection_follow_is_allowed (HttpConnection *connection) {
+
+	return connection->receive.http_cerver->keep_alive_follow
+		&& !http_connection_follow_skips (connection)
+		&& !http_connection_work_is_awaited (connection);
+
+}
+
+// the client did not send its next request in the time of the cerver: each miss in a row doubles
+// the requests that are not followed, up to a limit
+// a thread that stopped looking because a job arrived for it did not give its client that time: it is not a miss
+static void http_connection_follow_missed (HttpConnection *connection) {
+
+	if (http_connection_work_is_awaited (connection)) return;
+
+	if (connection->follow_misses < HTTP_CONNECTION_FOLLOW_MISSES) connection->follow_misses += 1;
+
+	connection->follow_skip = ((unsigned int) 1 << connection->follow_misses) - 1;
+
+}
+
+// the thread keeps looking for the request while the time of the cerver has not ended, its loop does not stop
+// and no job arrived for the thread meanwhile
+static bool http_connection_follow_waits (const HttpConnection *connection, const u64 deadline) {
+
+	return (http_connection_microseconds () < deadline)
+		&& !http_connection_loop_is_stopping (connection)
+		&& !http_connection_work_is_awaited (connection);
+
+}
+
+// reads what the client sent, looking for it without sleeping until the time of the cerver ends
+// returns the bytes, 0 when its client left and less than 0 without them
+static ssize_t http_connection_follow_read (const HttpConnection *connection) {
+
+	const int sock_fd = http_connection_fd (connection);
+	const u64 deadline = http_connection_microseconds () + connection->receive.http_cerver->keep_alive_follow;
+
+	ssize_t received = 0;
+	do {
+		received = recv (sock_fd, http_connection_follow_buffer, HTTP_CONNECTION_FOLLOW_BUFFER_SIZE, MSG_DONTWAIT);
+	} while (
+		(received < 0) && ((errno == EAGAIN) || (errno == EINTR))
+		&& http_connection_follow_waits (connection, deadline)
+	);
+
+	return received;
+
+}
+
+// the connection goes back to its loop with what the thread found of its next request
+static HttpConnectionFollow http_connection_follow_give (
+	HttpConnection *connection, const HttpConnectionOutcome outcome
+) {
+
+	connection->outcome = outcome;
+
+	event_loop_complete (connection->loop, connection);
+
+	return HTTP_CONNECTION_FOLLOW_GIVEN;
+
+}
+
+// the thread handles the next request of its connection when it is complete, its loop takes requests,
+// it belongs to the pool of the thread and no request waits in its loop for a place in that pool:
+// the loop decides for the others, like for any request
+static bool http_connection_follow_handles (HttpConnection *connection, const unsigned int lane) {
+
+	const EventLoop *loop = connection->loop;
+
+	http_connection_pool_select (connection);
+
+	return (connection->receive.pause == HTTP_RECEIVE_PAUSE_MESSAGE)
+		&& (connection->lane == lane)
+		&& !__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE)
+		&& !event_loop_lane_parked (loop, lane);
+
+}
+
+// the parser stopped: the bytes behind the request are kept like the loop keeps them
+static HttpConnectionFollow http_connection_follow_paused (
+	HttpConnection *connection, const char *tail, const size_t length, const unsigned int lane
+) {
+
+	if (http_connection_pending_keep (connection, tail, length)) {
+		connection->job = HTTP_CONNECTION_JOB_AUTHORIZE;
+
+		return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_DROPPED);
+	}
+
+	connection->receive.unparsed = connection->pending.length;
+
+	return http_connection_follow_handles (connection, lane) ?
+		HTTP_CONNECTION_FOLLOW_HANDLE :
+		http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_PAUSED);
+
+}
+
+// parses what the thread read, like its loop does with what it reads
+static HttpConnectionFollow http_connection_follow_parse (
+	HttpConnection *connection, const char *buffer, const size_t length, const unsigned int lane
+) {
+
+	HttpReceive *receive = &connection->receive;
+
+	size_t n_parsed = 0;
+	const llhttp_errno_t result = http_receive_execute (receive, buffer, length, &n_parsed);
+
+	switch (result) {
+		case HPE_OK:
+			return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_READING);
+
+		case HPE_PAUSED:
+		case HPE_PAUSED_UPGRADE:
+			return http_connection_follow_paused (connection, buffer + n_parsed, length - n_parsed, lane);
+
+		default:
+			http_receive_parser_failed (receive, result, n_parsed, (ssize_t) length);
+
+			return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_FAILED);
+	}
+
+}
+
+// the first bytes of the next request arrived: they are counted like the ones that the loop reads,
+// and the clock of the request starts
+static HttpConnectionFollow http_connection_follow_received (
+	HttpConnection *connection, const char *buffer, const size_t length, const unsigned int lane
+) {
+
+	HttpReceive *receive = &connection->receive;
+	HttpCerver *http_cerver = receive->http_cerver;
+	const Cerver *cerver = connection->loop->cerver;
+
+	connection->follow_misses = 0;
+
+	receive->diagnostics.last_rc = (ssize_t) length;
+	receive->diagnostics.last_errno = 0;
+	receive->diagnostics.n_recvs += 1;
+
+	connection->peer->socket->packet_buffer_size = length;
+
+	CERVER_STATS_ADD (cerver->stats->total_n_receives_done, 1);
+	CERVER_STATS_ADD (cerver->stats->total_bytes_received, (u64) length);
+
+	http_receive_request_arrived (receive);
+
+	receive->received += length;
+
+	const HttpConnectionFollow follow = http_connection_follow_parse (connection, buffer, length, lane);
+	if (follow == HTTP_CONNECTION_FOLLOW_HANDLE) CERVER_STATS_ADD (http_cerver->n_followed_requests, 1);
+
+	return follow;
+
+}
+
+// looks for the next request of the connection, with the buffer of the thread
+static HttpConnectionFollow http_connection_follow_look (HttpConnection *connection) {
+
+	HttpConnectionFollow follow = HTTP_CONNECTION_FOLLOW_NONE;
+
+	// the pool of the thread, the next request can choose another one
+	const unsigned int lane = connection->lane;
+
+	const ssize_t received = http_connection_follow_read (connection);
+	if (received > 0) {
+		follow = http_connection_follow_received (connection, http_connection_follow_buffer, (size_t) received, lane);
+	}
+
+	else {
+		http_connection_follow_missed (connection);
+	}
+
+	return follow;
+
+}
+
+static HttpConnectionFollow http_connection_work_follow (HttpConnection *connection) {
+
+	return http_connection_follow_is_allowed (connection) ?
+		http_connection_follow_look (connection) : HTTP_CONNECTION_FOLLOW_NONE;
+
+}
+
+#pragma endregion
+
+#pragma region work
+
+// the next request of a connection that is kept: the thread looks for it, and without it
+// the connection waits idle in its loop (a loop that started to stop meanwhile closes its idle connections)
+// returns true when the thread has that request, complete, to handle it
+static bool http_connection_work_next (HttpConnection *connection) {
+
+	const HttpConnectionFollow follow = http_connection_work_follow (connection);
+	if (follow == HTTP_CONNECTION_FOLLOW_NONE) http_connection_work_idle (connection);
+
+	return (follow == HTTP_CONNECTION_FOLLOW_HANDLE);
+
+}
+
 // the end of a request that a thread of the pool handled and whose connection is kept:
 // the request is logged and counted and its data is released here, so the methods of the application
-// that delete it never run in the thread of the loop; then the connection goes back to its loop
-static void http_connection_work_keep (HttpConnection *connection) {
+// that delete it never run in the thread of the loop; then the thread follows the connection or gives it back
+// returns true when the thread has the next request of the connection to handle it
+static bool http_connection_work_keep (HttpConnection *connection) {
 
 	HttpReceive *receive = &connection->receive;
 	const EventLoop *loop = connection->loop;
+
+	bool handles = false;
 
 	http_access_request (receive);
 
@@ -1396,14 +1743,33 @@ static void http_connection_work_keep (HttpConnection *connection) {
 
 	if (http_receive_reset (receive)) http_connection_work_abandon (connection);
 	else if (connection->pending.length || http_connection_loop_is_stopping (connection)) http_connection_work_return (connection);
-	else http_connection_work_idle (connection);
+	else handles = http_connection_work_next (connection);
+
+	return handles;
 
 }
 
-static void http_connection_work_end (HttpConnection *connection) {
+// returns true when the thread has the next request of the connection to handle it
+static bool http_connection_work_end (HttpConnection *connection) {
 
-	if (http_receive_keeps_connection (&connection->receive)) http_connection_work_keep (connection);
+	bool handles = false;
+
+	if (http_receive_keeps_connection (&connection->receive)) handles = http_connection_work_keep (connection);
 	else http_connection_work_close (connection);
+
+	return handles;
+
+}
+
+// handles the request of the connection, and the ones that the thread finds while it follows it
+static void http_connection_work_dispatch (HttpConnection *connection) {
+
+	bool handles = true;
+	while (handles) {
+		http_receive_dispatch (&connection->receive);
+
+		handles = http_connection_work_end (connection);
+	}
 
 }
 
@@ -1421,14 +1787,12 @@ void http_connection_work (void *connection_ptr) {
 
 	HttpConnection *connection = (HttpConnection *) connection_ptr;
 
-	// the job left the queue of the pool: a parked connection can take its place
-	event_loop_space (connection->loop);
+	// the job left the queue of its pool: a connection that is parked for that pool can take its place
+	event_loop_space (connection->loop, connection->lane);
 
 	switch (connection->job) {
 		case HTTP_CONNECTION_JOB_DISPATCH:
-			http_receive_dispatch (&connection->receive);
-
-			http_connection_work_end (connection);
+			http_connection_work_dispatch (connection);
 			break;
 
 		default:
@@ -1468,9 +1832,42 @@ static void http_connection_resume (HttpConnection *connection) {
 
 }
 
+// a connection that a thread followed comes back in the middle of its next request, that started when
+// the thread read its first bytes: the loop can end it again, and it has the time of any request
+static void http_connection_followed (HttpConnection *connection) {
+
+	connection->job = HTTP_CONNECTION_JOB_NONE;
+	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
+
+	event_loop_connection_attach (connection->loop, connection);
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	http_connection_request_deadlines (connection);
+
+}
+
 void http_connection_completed (HttpConnection *connection) {
 
 	switch (connection->outcome) {
+		// the thread that followed it read a part of its next request: the loop reads the rest
+		case HTTP_CONNECTION_OUTCOME_READING:
+			http_connection_followed (connection);
+			http_connection_settle (connection, HTTP_CONNECTION_NEXT_READ);
+			break;
+
+		// its next request needs another job: the loop gives it to its pool, like one that it parsed
+		case HTTP_CONNECTION_OUTCOME_PAUSED:
+			http_connection_followed (connection);
+			http_connection_pause (connection);
+			break;
+
+		// its next request was rejected or could not be parsed, the thread that followed it answered it
+		case HTTP_CONNECTION_OUTCOME_FAILED:
+			http_connection_followed (connection);
+			http_connection_rejected (connection);
+			break;
+
 		case HTTP_CONNECTION_OUTCOME_RESUME:
 			http_connection_resume (connection);
 			break;
@@ -1568,9 +1965,10 @@ static void http_connection_expired (HttpConnection *connection) {
 			http_connection_read_timeout (connection);
 			break;
 
-		// no place in the pool in time
+		// no place in its pool in time
 		case HTTP_CONNECTION_STATE_PARKED:
 			event_loop_unpark (connection->loop, connection);
+			http_connection_pool_refused (connection);
 			http_connection_unavailable (connection);
 			break;
 
