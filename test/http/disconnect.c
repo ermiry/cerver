@@ -1546,13 +1546,58 @@ static void disconnect_case_send_model (DisconnectCase *dc) {
 
 }
 
+// the cases of the batch that is starting, and how many of them already started
+static DisconnectCase *disconnect_batch_cases = NULL;
+static size_t disconnect_batch_started = 0;
+
+static void disconnect_case_keep (DisconnectCase *dc, const char *buffer, const size_t length);
+
+static void disconnect_cases_drain (DisconnectCase *cases, const size_t n_started);
+
+// the milliseconds that a client waits for more of its cut before the other clients of its batch read again
+#define DISCONNECT_CUT_POLL					(1 << 4)
+
+// reads what is ready of the cut of a client, without waiting
+// returns true when its response ended before the cut
+static bool disconnect_case_read_cut_ready (DisconnectCase *dc) {
+
+	char buffer[DISCONNECT_READ_BUFFER];
+
+	const size_t left = dc->cut - dc->received;
+
+	const ssize_t rc = recv (
+		dc->fd, buffer, (left < DISCONNECT_READ_BUFFER) ? left : DISCONNECT_READ_BUFFER, MSG_DONTWAIT
+	);
+
+	if (rc > 0) disconnect_case_keep (dc, buffer, (size_t) rc);
+
+	return !rc || ((rc < 0) && (errno != EAGAIN) && (errno != EINTR));
+
+}
+
+// a client reads the cut of its response; while it waits for it (its handler has to start) and between
+// its reads, the half-close clients of its batch that already left keep reading theirs
+static void disconnect_case_read_cut (DisconnectCase *dc) {
+
+	const double deadline = test_wait_now () + (double) DISCONNECT_CLIENT_TIMEOUT;
+
+	bool ended = false;
+	while ((dc->received < dc->cut) && !ended && (test_wait_now () < deadline)) {
+		struct pollfd descriptor = { dc->fd, POLLIN, 0 };
+		if (poll (&descriptor, 1, DISCONNECT_CUT_POLL) > 0) ended = disconnect_case_read_cut_ready (dc);
+
+		disconnect_cases_drain (disconnect_batch_cases, disconnect_batch_started);
+	}
+
+}
+
 static void disconnect_case_send (DisconnectCase *dc) {
 
 	if (dc->model) disconnect_case_send_model (dc);
 	else if (dc->request) disconnect_send (dc->fd, dc->request, strlen (dc->request));
 
 	if (dc->cut) {
-		dc->received = disconnect_read (dc->fd, dc->cut, dc->response, DISCONNECT_RESPONSE_SIZE - 1);
+		disconnect_case_read_cut (dc);
 		if (dc->received != dc->cut) disconnect_case_describe (dc);
 		test_check (dc->received == dc->cut, "the response ended before the cut");
 	}
@@ -1588,6 +1633,33 @@ static void disconnect_case_keep (DisconnectCase *dc, const char *buffer, const 
 	}
 
 	dc->received += length;
+
+}
+
+// a half-close client that already left reads what it has received, without waiting
+static void disconnect_case_drain (DisconnectCase *dc) {
+
+	char buffer[DISCONNECT_READ_BUFFER];
+
+	ssize_t rc = 0;
+	while ((rc = recv (dc->fd, buffer, DISCONNECT_READ_BUFFER, MSG_DONTWAIT)) > 0) {
+		disconnect_case_keep (dc, buffer, (size_t) rc);
+	}
+
+}
+
+// the half-close clients that already left keep reading while the rest of their batch starts:
+// the response of the first one waited without a reader until every client had started (each one
+// waits for its handler and reads its cut), and with a slow handler or a slow machine it ran into
+// the send timeout of the cerver, so its client only got what fit in the buffers
+static void disconnect_cases_drain (DisconnectCase *cases, const size_t n_started) {
+
+	for (size_t i = 0; i < n_started; i++) {
+		DisconnectCase *dc = &cases[i];
+		if ((dc->form == DISCONNECT_FORM_HALF_CLOSE) && !dc->wait_handler && (dc->fd > -1)) {
+			disconnect_case_drain (dc);
+		}
+	}
 
 }
 
@@ -1769,11 +1841,19 @@ static void disconnect_batch_run (
 	for (size_t i = 0; i < n_cases; i++) {
 		if (cases[i].cut) cases[i].fd = disconnect_connect (server->port, cases[i].small_receive_buffer);
 
+		disconnect_batch_cases = cases;
+		disconnect_batch_started = i;
+
 		disconnect_case_send (&cases[i]);
 
 		if (cases[i].wait_handler) waiting += 1;
 		else disconnect_case_leave (&cases[i]);
+
+		disconnect_cases_drain (cases, i + 1);
 	}
+
+	disconnect_batch_cases = NULL;
+	disconnect_batch_started = 0;
 
 	if (waiting) {
 		disconnect_wait_value (&gone_waiting, gone_before + waiting);
