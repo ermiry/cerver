@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); sigue L2, el JWT propio (§4.2) |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); sigue L3, el parser HTTP/1.1 propio (§4.3) |
 
 **Las citas `archivo:línea`:**
 
@@ -467,6 +467,77 @@ cifras de la máquina oficial.
   - fuzz diferencial contra la libjwt del sistema.
 - **Contra quién:** l8w8jwt, libjwt y jwt-cpp, en firmar y en verificar.
 - **Al cerrar:** se quita libjwt (`jwt.c`, `jwt.h`, la tabla de algoritmos) y su fila de `thirdparty.md`.
+
+**La 3.0b-8:**
+
+- `cerver/crypto` con llaves y firmas (`key`, `signature`, y `jwk` y `openssl` adentro):
+  - una `CerverCryptoKey` sale de un secreto, de un PEM sin passphrase o de un JWK (RFC 7517: `oct`, `RSA`, `EC`,
+    `OKP`; uno con `use` o `key_ops` que no son de firmas se rechaza);
+  - `cerver_crypto_sign ()` y `cerver_crypto_verify ()` sobre búferes del caller: HMAC, RSA PKCS #1 y PSS, ECDSA
+    en R ‖ S con S baja, Ed25519 y Ed448;
+  - `openssl.c` es el único archivo que incluye OpenSSL;
+  - el proveedor revisa una llave hecha de sus números, limpia lo que un fallo deja en la cola de errores del hilo
+    y **verifica cada firma de RSA antes de darla**: con OpenSSL 3.5 una asignación que fallaba dentro de una firma
+    devolvía, como éxito, una firma que no verificaba (lo encontraron los fallos de memoria);
+- `cerver/jwt` (`jwt`, `key`, `sign`, `verify`, `claims`), fuera de `http/`:
+  - los 13 algoritmos; la llave lleva el suyo y un token nunca lo elige; `none` es el de ninguna llave;
+  - `cerver_jwt_sign ()` escribe el token en un búfer del caller, sin memoria propia;
+  - `cerver_jwt_verify ()`: el tamaño, las tres partes en base64url canónico, el header, la firma y solo después
+    los claims, leídos en la arena del caller; el header que cerver escribe se compara como bytes;
+  - la validación es un struct por llamada (`now`, la tolerancia, `exp` obligatorio, `iss`, `sub`, `aud`, el
+    tamaño): nada es estado del proceso;
+- HTTP sobre él: los tokens son los mismos bytes que los de la 2.x; `iat` y `sub` se revisan;
+  `http_request_claims ()`; el archivo de una llave puede ser un JWK;
+- libjwt y la copia de Jansson borrados, con sus dos filas de `thirdparty.md`: `libcerver.so` deja de exportar los
+  56 `jwt_*`;
+- las pruebas:
+  - los ejemplos de RFC 4231, 7515, 7517, 7520, 8032 y 8037 en `test/crypto/` y `test/jwt/`;
+  - Wycheproof a commit fijo por el proveedor y por el JWT (`test/conformance/jwt.c`): 25 archivos, 5 037 pruebas,
+    con cada decisión y su razón en `test/conformance/jwt.txt`;
+  - los fuzzers `jwt`, `jwk` y `differential` (contra la libjwt 1.17.2 del sistema); mientras las dos
+    implementaciones convivieron, 30 minutos y 24.7 millones de tokens contra el JWT que se borra, sin diferencias
+    (salvo un entero entre 2^63 y 2^64 en los claims, que el JSON nuevo lee y Jansson rechazaba);
+  - los fallos de memoria de cada llamada, uno por uno (`test/faults/{crypto,jwt}.c`);
+  - 133 mutantes de las reglas de seguridad: 128 muertos y 5 equivalentes;
+- **la barra:** un bearer HS256 cuesta 10 asignaciones por petición en los tres modos (eran 39), todas dentro del
+  `HMAC ()` de OpenSSL.
+
+**Lo que midió** (2026-11-16, en la Mac con la máquina sola: las cifras de la máquina oficial siguen pendientes;
+`benchmarks/competitors/results/aarch64.txt`, la mediana de 5 corridas, tokens por segundo y, entre paréntesis, las
+asignaciones de uno). `legacy` es el JWT de libjwt sobre la copia de Jansson que el módulo reemplaza, medido desde
+el árbol anterior al borrado:
+
+| Algoritmo | Operación | cerver | legacy | libjwt 1.17.2 | l8w8jwt 2.5.0 | jwt-cpp 0.7.2 |
+|---|---|---|---|---|---|---|
+| HS256 | firmar | 1 389 563 (10) | 421 486 (66) | 395 529 (70) | 296 913 (12) | 569 364 (59) |
+| HS256 | verificar | 1 083 364 (10) | 488 681 (53) | 433 513 (62) | 606 358 (20) | 553 022 (58) |
+| HS512 | firmar | 1 159 333 (10) | 397 681 (66) | 363 462 (70) | 281 894 (12) | 502 360 (60) |
+| HS512 | verificar | 890 798 (10) | 452 439 (53) | 403 972 (62) | 529 566 (20) | 495 291 (59) |
+| RS256 | firmar | 3 072 (51) | 3 131 (85) | 2 025 (337) | 711 (146) | 3 137 (78) |
+| RS256 | verificar | 101 554 (22) | 92 846 (65) | 40 532 (239) | 23 409 (36) | 93 867 (66) |
+| PS256 | firmar | 3 012 (68) | — | — | 725 (144) | 3 113 (90) |
+| PS256 | verificar | 95 949 (30) | — | — | 22 732 (36) | 88 557 (78) |
+| ES256 | firmar | 86 038 (58) | 74 916 (119) | 34 931 (458) | 7 213 (559) | 76 389 (113) |
+| ES256 | verificar | 31 000 (64) | 30 207 (105) | 21 596 (418) | 2 181 (1 577) | 30 078 (115) |
+| ES384 | firmar | 10 788 (73) | 10 541 (134) | 8 594 (516) | 4 622 (655) | 10 609 (129) |
+| ES384 | verificar | 4 995 (76) | 5 006 (117) | 4 571 (473) | 1 265 (2 032) | 5 029 (124) |
+| EdDSA | firmar | 64 342 (7) | — | — | — | 59 501 (57) |
+| EdDSA | verificar | 26 914 (7) | — | — | — | 26 304 (55) |
+
+- **Contra el que reemplaza:** el HMAC firma 3.3 veces más rápido y verifica 2.2 (2.9 y 2.0 con SHA-512); RS256
+  verifica 9 % más rápido, ES256 firma 15 % más rápido, y cada operación pide menos memoria (10 asignaciones
+  contra 66 y 53 en el HMAC; de un tercio a dos tercios en las demás).
+- **Una métrica pierde, por decisión: firmar con RSA es ~2 % más lento** (3 072 contra 3 131 con RS256; contra
+  jwt-cpp, 2 % en RS256 y 3 % en PS256). Es lo que cuesta verificar cada firma de RSA antes de darla (una operación
+  pública, ~3 % de la privada), la protección contra la firma inválida que OpenSSL 3.5 devolvió como éxito. Quitarla
+  recupera la cifra y deja pasar esa firma: se queda mientras el usuario no diga otra cosa.
+- **ES384 al verificar empata** (4 995 y 5 012 en dos corridas, contra 5 006 del que reemplaza): la curva es de
+  OpenSSL en los dos y la diferencia está dentro del ruido.
+- **Contra los competidores:** cerver le gana a libjwt y a l8w8jwt en todas las filas, y a jwt-cpp en todas menos
+  en firmar con RSA (lo de arriba) y en el empate de ES384 al verificar.
+- `test/performance.sh` con la máquina sola: el bearer en 10 asignaciones en los tres modos; **un check al margen
+  falla desde la 3.0b-6** (POST JSON con 64 conexiones, conservadas contra una conexión por petición, mínimo
+  150 %: 141 % en la 3.0b-6, 146 % y 152 % en la 3.0b-7, de 147 % a 149.7 % en la 3.0b-8); no lo tocan estas betas.
 
 ### 4.3 L3 — El parser HTTP/1.1 propio
 
