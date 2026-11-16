@@ -144,6 +144,8 @@ static Thpool *thpool_new (void) {
 		thpool->space_waiting = false;
 
 		(void) memset (&thpool->stats, 0, sizeof (ThpoolStats));
+
+		thpool->queue_awaited = 0;
 	}
 
 	return thpool;
@@ -268,6 +270,13 @@ static void thpool_stats_completed (Thpool *thpool, const struct timespec *start
 
 #pragma endregion
 
+// the jobs of the queue changed: the threads that ask whether a job waits read them without the mutex
+static void thpool_queue_changed (Thpool *thpool) {
+
+	__atomic_store_n (&thpool->queue_awaited, thpool->queue_count, __ATOMIC_RELEASE);
+
+}
+
 // the queue methods must be called with the mutex locked
 static void thpool_queue_push (
 	Thpool *thpool,
@@ -283,6 +292,7 @@ static void thpool_queue_push (
 	(void) clock_gettime (CLOCK_MONOTONIC, &thpool->jobs[idx].queued);
 
 	thpool->queue_count += 1;
+	thpool_queue_changed (thpool);
 
 	thpool_stats_queued (thpool);
 
@@ -300,6 +310,7 @@ static ThpoolJob thpool_queue_pop (Thpool *thpool) {
 
 	thpool->queue_start = (thpool->queue_start + 1) & (thpool->queue_size - 1);
 	thpool->queue_count -= 1;
+	thpool_queue_changed (thpool);
 
 	(void) pthread_cond_signal (thpool->has_space);
 	thpool_space_notify (thpool);
@@ -682,6 +693,13 @@ unsigned int thpool_get_queued (Thpool *thpool) {
 	}
 
 	return retval;
+
+}
+
+// whether a job waits in the queue, without the mutex
+bool thpool_has_queued (const Thpool *thpool) {
+
+	return thpool && (__atomic_load_n (&thpool->queue_awaited, __ATOMIC_ACQUIRE) > 0);
 
 }
 

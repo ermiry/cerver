@@ -161,6 +161,14 @@ typedef struct Thpool {
 	/** @brief The stats of the thpool. */
 	ThpoolStats stats;
 
+	/**
+	 * @brief The jobs in the queue, written with the mutex and with atomic operations each time that they change:
+	 * thpool_has_queued () reads it without the mutex.
+	 *
+	 * @since 1.9b-3
+	 */
+	unsigned int queue_awaited;
+
 } Thpool;
 
 /**
@@ -233,6 +241,17 @@ CERVER_EXPORT unsigned int thpool_get_num_threads_working (
  * @return the jobs, 0 for a NULL thpool
  */
 CERVER_EXPORT unsigned int thpool_get_queued (Thpool *thpool);
+
+/**
+ * @brief Returns whether a job waits in the queue, without taking the mutex of the thpool: for a thread that
+ * asks it often, like one that decides whether it keeps working on what it has.
+ *
+ * @param[in] thpool the thpool
+ * @return true when the queue had a job the last time that it changed; false for a NULL thpool
+ * @threadsafety Safe from any thread, it reads an atomic value.
+ * @since 1.9b-3
+ */
+CERVER_EXPORT bool thpool_has_queued (const Thpool *thpool);
 
 /**
  * @brief Returns how many jobs can wait in the queue.
