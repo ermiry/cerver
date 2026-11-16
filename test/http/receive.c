@@ -47,6 +47,9 @@
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
+
 #include "../test.h"
 #include "http.h"
 
@@ -2184,6 +2187,35 @@ static void test_receive_attribute_without_value (Cerver *cerver) {
 	"Content-Length: 0\r\n"							\
 	"\r\n"
 
+// what the decode data of the bearer route got and gave, and how many times its data was released
+static char test_receive_bearer_claim[TEST_RECEIVE_PATH_SIZE] = { 0 };
+static void *test_receive_bearer_data = NULL;
+static unsigned int test_receive_bearer_deleted = 0;
+
+// keeps the id of the claims of a bearer: its copy is the decoded data of the request
+static void *test_receive_bearer_decode (const CerverJsonValue *claims) {
+
+	const CerverJsonValue *id = cerver_json_object_get (claims, "id");
+
+	(void) snprintf (
+		test_receive_bearer_claim, TEST_RECEIVE_PATH_SIZE, "%s",
+		cerver_json_is_string (id) ? cerver_json_string_value (id) : ""
+	);
+
+	test_receive_bearer_data = strdup (test_receive_bearer_claim);
+
+	return test_receive_bearer_data;
+
+}
+
+static void test_receive_bearer_decode_delete (void *data) {
+
+	if (data == test_receive_bearer_data) test_receive_bearer_deleted += 1;
+
+	free (data);
+
+}
+
 static Cerver *test_receive_bearer_cerver_create (void) {
 
 	Cerver *cerver = cerver_create (
@@ -2196,6 +2228,7 @@ static Cerver *test_receive_bearer_cerver_create (void) {
 
 	HttpRoute *bearer_route = http_route_create (REQUEST_METHOD_POST, "bearer", test_receive_echo_handler);
 	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+	http_route_set_decode_data (bearer_route, test_receive_bearer_decode, test_receive_bearer_decode_delete);
 	http_cerver_route_register (http_cerver, bearer_route);
 
 	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
@@ -2239,9 +2272,32 @@ static void test_receive_bearer_case (
 	char request[TEST_RECEIVE_BEARER_REQUEST_SIZE];
 	(void) snprintf (request, TEST_RECEIVE_BEARER_REQUEST_SIZE, TEST_RECEIVE_BEARER_KEYS_REQUEST_FORMAT, header);
 
+	test_receive_bearer_claim[0] = '\0';
+	test_receive_bearer_data = NULL;
+	test_receive_bearer_deleted = 0;
+
 	test_receive_whole_case (cerver, name, request);
 
 	test_receive_expect (test_receive_status_is (status));
+
+}
+
+// the decode data of the route got the claims of the bearer, and what it gave was the data of the request,
+// released with it
+static void test_receive_bearer_expect_decoded (const char *claim) {
+
+	test_receive_expect (!strcmp (test_receive_bearer_claim, claim));
+	test_receive_expect (test_receive_bearer_data != NULL);
+	test_receive_expect (test_receive_bearer_deleted == 1);
+
+}
+
+// a bearer that is not valid never reaches the decode data of its route
+static void test_receive_bearer_expect_not_decoded (void) {
+
+	test_receive_expect (test_receive_bearer_claim[0] == '\0');
+	test_receive_expect (test_receive_bearer_data == NULL);
+	test_receive_expect (test_receive_bearer_deleted == 0);
 
 }
 
@@ -2266,10 +2322,19 @@ static void test_receive_bearer_keys (void) {
 	signature[0] = (signature[0] == 'A') ? 'B' : 'A';
 
 	test_receive_bearer_case (cerver, "a valid bearer", valid, "200");
+	test_receive_bearer_expect_decoded ("receive-test");
+
 	test_receive_bearer_case (cerver, "an expired bearer", expired, "401");
+	test_receive_bearer_expect_not_decoded ();
+
 	test_receive_bearer_case (cerver, "a bearer with a bad signature", tampered, "401");
+	test_receive_bearer_expect_not_decoded ();
+
 	test_receive_bearer_case (cerver, "a bearer that is not a jwt", "Bearer not-a-jwt", "401");
+	test_receive_bearer_expect_not_decoded ();
+
 	test_receive_bearer_case (cerver, "a request without a bearer", NULL, "401");
+	test_receive_bearer_expect_not_decoded ();
 
 	(void) cerver_teardown (cerver);
 
