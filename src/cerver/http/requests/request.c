@@ -27,7 +27,13 @@
 #include "cerver/http/requests/request.h"
 #include "cerver/http/requests/url.h"
 
+#include "cerver/json/document.h"
+#include "cerver/json/json.h"
+
 #include "cerver/utils/utils.h"
+
+// the text of the body of a request that has none
+static const char http_request_json_empty[] = { "" };
 
 static const char http_request_bytes_range[] = { "bytes=" };
 static const size_t http_request_bytes_range_len = 6;
@@ -107,6 +113,11 @@ static void http_request_init (HttpRequest *http_request) {
 		(void) memset (http_request->dirname, 0, REQUEST_DIRNAME_SIZE);
 
 		http_request->body_values = NULL;
+
+		http_request->json = NULL;
+		http_request->json_error.code = CERVER_JSON_ERROR_NONE;
+		http_request->json_error.offset = 0;
+		http_request->json_read = false;
 
 		http_request->keep_files = false;
 
@@ -746,6 +757,56 @@ const String *http_request_get_body (
 ) {
 
 	return http_request->body;
+
+}
+
+// reads the body once, into the arena of the request: a request without a body has an empty text
+static void http_request_json_read (HttpRequest *http_request) {
+
+	const String *body = http_request->body;
+
+	// without the arena of the request the document would have its own one, that nothing releases
+	Arena *arena = http_request_get_arena (http_request);
+	if (arena) {
+		http_request->json = cerver_json_parse (
+			arena,
+			body ? body->str : http_request_json_empty, body ? body->len : 0,
+			CERVER_JSON_FLAGS_NONE, NULL, &http_request->json_error
+		);
+	}
+
+	else {
+		http_request->json_error.code = CERVER_JSON_ERROR_MEMORY;
+		http_request->json_error.offset = 0;
+	}
+
+	http_request->json_read = true;
+
+}
+
+const CerverJsonValue *http_request_json (
+	const HttpRequest *http_request, CerverJsonError *error
+) {
+
+	const CerverJsonValue *value = NULL;
+
+	if (http_request) {
+		// the document is kept in the request, that its handler gets as a constant
+		HttpRequest *request = (HttpRequest *) http_request;
+
+		if (!request->json_read) http_request_json_read (request);
+
+		if (error) *error = request->json_error;
+
+		value = cerver_json_document_root (request->json);
+	}
+
+	else if (error) {
+		error->code = CERVER_JSON_ERROR_ARGUMENTS;
+		error->offset = 0;
+	}
+
+	return value;
 
 }
 
