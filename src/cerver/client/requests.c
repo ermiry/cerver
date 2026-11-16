@@ -59,12 +59,8 @@ unsigned int client_request_to_cerver (
 
 		size_t sent = 0;
 		if (!packet_send (request, 0, &sent, false)) {
-			// printf ("Request to cerver: %ld\n", sent);
-
-			// receive the data directly
-			client_connection_get_next_packet (client, connection);
-
-			retval = 0;
+			// receive the data directly, the request succeeds when its response was handled
+			retval = client_connection_get_next_packet (client, connection);
 		}
 
 		else {
@@ -311,9 +307,10 @@ u8 client_file_send (
 	u8 retval = 1;
 
 	if (client && connection && filename) {
-		char *last = strrchr ((char *) filename, '/');
-		const char *actual_filename = last ? last + 1 : NULL;
-		if (actual_filename) {
+		// a name without a '/' is the name that is sent, a name that ends with one has none
+		const char *last = strrchr (filename, '/');
+		const char *actual_filename = last ? last + 1 : filename;
+		if (*actual_filename) {
 			// try to open the file
 			struct stat filestatus = CERVER_ZERO_INITIALIZER;
 			int file_fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
