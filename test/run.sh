@@ -68,6 +68,8 @@ run ./test/bin/http
 
 run_models ./test/bin/websockets
 
+run ./test/bin/jansson
+
 run ./test/bin/json
 
 run ./test/bin/jwt

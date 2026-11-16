@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <cerver/types/string.h>
+
+#include <cerver/collections/arena.h>
+
 #include <cerver/version.h>
 
 #include <cerver/http/core/http.h>
@@ -9,8 +13,14 @@
 #include <cerver/http/requests/method.h>
 #include <cerver/http/requests/request.h>
 
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
+
 #include "../../test.h"
 #include "../data.h"
+
+// the allocations of an arena that the document of a body takes: itself, its text and its values
+#define REQUEST_TEST_JSON_ALLOCATIONS		3
 
 static const char *base_dir = { "/var/uploads" };
 static const char *basic_dir = { "hola" };
@@ -547,6 +557,146 @@ static void test_http_request_bytes_range (void) {
 
 }
 
+// the body of a request as a JSON value: read once, into the arena of the request
+static void test_http_request_json (void) {
+
+	static const char text[] = "{\"name\": \"cerver\", \"values\": [1, 2, 3], \"escaped\": \"a\\nb\"}";
+
+	CerverJsonError error = { CERVER_JSON_ERROR_STOPPED, 7 };
+
+	HttpRequest *request = http_request_new ();
+	test_check_ptr (request);
+
+	test_check_null_ptr (request->json);
+	test_check_false (request->json_read);
+	test_check_unsigned_eq (request->json_error.code, CERVER_JSON_ERROR_NONE, NULL);
+
+	String *body = str_new (text);
+	request->body = body;
+
+	const CerverJsonValue *json = http_request_json (request, &error);
+	test_check_ptr (json);
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_NONE, NULL);
+	test_check_unsigned_eq (error.offset, 0, NULL);
+
+	test_check_true (cerver_json_is_object (json));
+	test_check_str_eq (cerver_json_string_value (cerver_json_object_get (json, "name")), "cerver", NULL);
+	test_check_unsigned_eq (cerver_json_array_size (cerver_json_object_get (json, "values")), 3, NULL);
+	test_check_str_eq (cerver_json_string_value (cerver_json_object_get (json, "escaped")), "a\nb", NULL);
+
+	// the body is as it was
+	test_check_str_eq (body->str, text, NULL);
+	test_check_unsigned_eq (body->len, strlen (text), NULL);
+
+	// the document, its text and its values, in the arena that the request created
+	test_check_ptr (request->own_arena);
+	test_check_unsigned_eq (request->own_arena->n_allocations, REQUEST_TEST_JSON_ALLOCATIONS, NULL);
+	test_check_true (request->json_read);
+
+	// the next calls answer the same value, without reading the body again
+	test_check_ptr_eq (http_request_json (request, NULL), json);
+	test_check_ptr_eq (http_request_json (request, &error), json);
+	test_check_unsigned_eq (request->own_arena->n_allocations, REQUEST_TEST_JSON_ALLOCATIONS, NULL);
+
+	// the test owns the body
+	request->body = NULL;
+	str_delete (body);
+
+	http_request_delete (request);
+
+}
+
+// a body that is not JSON: the same error every time, and it is read once
+static void test_http_request_json_invalid (void) {
+
+	CerverJsonError error = { CERVER_JSON_ERROR_NONE, 0 };
+
+	HttpRequest *request = http_request_new ();
+	test_check_ptr (request);
+
+	String *body = str_new ("{\"name\": ");
+	request->body = body;
+
+	test_check_null_ptr (http_request_json (request, &error));
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_END, NULL);
+	test_check_unsigned_eq (error.offset, body->len, NULL);
+
+	const size_t allocations = request->own_arena->n_allocations;
+
+	error.code = CERVER_JSON_ERROR_NONE;
+	error.offset = 0;
+
+	test_check_null_ptr (http_request_json (request, &error));
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_END, NULL);
+	test_check_unsigned_eq (error.offset, body->len, NULL);
+	test_check_unsigned_eq (request->own_arena->n_allocations, allocations, NULL);
+
+	test_check_null_ptr (http_request_json (request, NULL));
+
+	request->body = NULL;
+	str_delete (body);
+
+	http_request_delete (request);
+
+}
+
+// a request without a body has an empty text, and a call without a request says so
+static void test_http_request_json_missing (void) {
+
+	CerverJsonError error = { CERVER_JSON_ERROR_NONE, 7 };
+
+	HttpRequest *request = http_request_new ();
+	test_check_ptr (request);
+
+	test_check_null_ptr (http_request_json (request, &error));
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_END, NULL);
+	test_check_unsigned_eq (error.offset, 0, NULL);
+
+	http_request_delete (request);
+
+	error.offset = 7;
+
+	test_check_null_ptr (http_request_json (NULL, &error));
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_ARGUMENTS, NULL);
+	test_check_unsigned_eq (error.offset, 0, NULL);
+
+	test_check_null_ptr (http_request_json (NULL, NULL));
+
+}
+
+// a request of an arena, like the ones of a thread that handles requests: its document goes there
+static void test_http_request_json_arena (void) {
+
+	CerverJsonError error = { CERVER_JSON_ERROR_NONE, 0 };
+
+	Arena *arena = arena_create (0);
+	test_check_ptr (arena);
+
+	HttpRequest *request = http_request_new_arena (arena);
+	test_check_ptr (request);
+
+	const size_t allocations = arena->n_allocations;
+
+	String *body = str_new ("[true, {\"a\": 1.5}]");
+	request->body = body;
+
+	const CerverJsonValue *json = http_request_json (request, &error);
+	test_check_ptr (json);
+	test_check_unsigned_eq (error.code, CERVER_JSON_ERROR_NONE, NULL);
+	test_check_true (cerver_json_boolean_value (cerver_json_array_get (json, 0)));
+
+	test_check_null_ptr (request->own_arena);
+	test_check_unsigned_eq (arena->n_allocations, allocations + REQUEST_TEST_JSON_ALLOCATIONS, NULL);
+
+	request->body = NULL;
+	str_delete (body);
+
+	http_request_delete (request);
+
+	arena_delete (arena);
+
+}
+
 void http_tests_requests (void) {
 
 	(void) printf ("Testing HTTP requests...\n");
@@ -575,6 +725,12 @@ void http_tests_requests (void) {
 	test_http_request_set_basic_dirname ();
 	test_http_request_set_full_dirname ();
 	test_http_request_set_dirname_limits ();
+
+	// json
+	test_http_request_json ();
+	test_http_request_json_invalid ();
+	test_http_request_json_missing ();
+	test_http_request_json_arena ();
 
 	(void) printf ("Done!\n");
 

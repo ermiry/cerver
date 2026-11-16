@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 publicada (3.0b-1, PR #418); L0.1, la estructura (3.0b-2, §4.0.1), en implementación |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, en dos betas: la 3.0b-6 (el módulo, hecho y medido, §4.1) y la 3.0b-7 (la migración) |
 
 **Las citas `archivo:línea`:**
 
@@ -155,15 +155,16 @@ puede ocupar varias.
 | **L0.2** | 3.0b-3 | La documentación de los headers: Doxygen con sintaxis Javadoc y su gate | L0.1 |
 | **L0.3** | 3.0b-4 | El backlog de la revisión: los fixes de la 1.9b-2 y de la 2.0b-75, lo sin uso quitado, el dueño del stream de WebSocket, los analizadores estáticos | L0.2 |
 | **L0.4** | 3.0b-5 | El event loop, keep-alive y los pools de `nightly` (sus F3, F4 y F5) | L0.3 |
-| **L1** | 3.0b-6 | El JSON propio | L0.4 |
-| **L2** | 3.0b-7 | El JWT propio | L1 |
-| **L3** | 3.0b-8 | El parser HTTP/1.1 propio | L0.2 |
-| **L4** | 3.0b-9 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
-| **L5** | 3.0b-10 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-11 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-12 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-13 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-14 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **L1** | 3.0b-6 | El JSON propio: el módulo `cerver/json`, medido y con su suite, junto al de Jansson | L0.4 |
+| **L1** | 3.0b-7 | El JSON propio: la migración de HTTP y Jansson fuera de la API pública | 3.0b-6 |
+| **L2** | 3.0b-8 | El JWT propio | L1 |
+| **L3** | 3.0b-9 | El parser HTTP/1.1 propio | L0.2 |
+| **L4** | 3.0b-10 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
+| **L5** | 3.0b-11 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-12 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-13 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-14 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-15 | WebSocket sobre el I/O nuevo | L4, L5 |
 | **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
@@ -334,29 +335,102 @@ para que los ports entre líneas sigan siendo directos.
 
 ### 4.1 L1 — El JSON propio
 
+L1 son dos betas (decisión del 2026-11-15): la 3.0b-6 entrega el módulo completo junto al de Jansson, sin romper
+nada, y la 3.0b-7 migra HTTP y saca a Jansson de la API pública.
+
+**Las decisiones** (2026-11-15):
+
+- **Dónde vive:** `cerver/json/`, un paquete fuera de `http/` (el JSON no es solo de HTTP): `include/cerver/json/`,
+  `src/cerver/json/`, `test/json/`. Tipos `CerverJson*` y funciones `cerver_json_*`.
 - **El modelo:**
-  - un DOM inmutable construido en una arena por documento, con el presupuesto de memoria de la 2.0b-67 por hilo;
-  - un lector por streaming (eventos) para los bodies grandes;
-  - un escritor que serializa a un búfer del caller o a la respuesta, sin un `malloc ()` por valor.
-- **La lectura:**
-  - escaneo de estructura con SIMD (SSE4.2 / AVX2, AVX-512 opcional, NEON) y una versión escalar con el mismo
-    resultado;
-  - UTF-8 validado;
-  - números exactos sin locale: enteros de 64 bits y dobles con la conversión correcta de ida y vuelta;
-  - profundidad, tamaño y cantidad de claves con límites.
-- **La API:**
-  - con prefijo de cerver (los `json_*` de Jansson chocan con la libjansson del sistema);
-  - las consultas por puntero (RFC 6901);
-  - el JSON entra al core (#207) solo si la 1.9 lo pide, desde aquí por port.
-- **Quién cambia:** `http/auth.c`, `http/admin.c`, `http/http.c`, `http/response.c`, `http/tree.c`, los handlers de
-  los examples y de los tests, y pycerver.
-- **Las pruebas:**
-  - JSONTestSuite (los `y_`, `n_` e `i_` con su decisión documentada);
-  - fuzz diferencial contra la libjansson del sistema en `Dockerfile.fuzz` (el mismo árbol o el mismo error);
-  - la ida y vuelta de los números.
-- **La meta medible:** POST JSON con 0 asignaciones de `malloc ()` por petición, y le gana a yyjson y a simdjson en
-  lectura y escritura.
-- **Al cerrar:** se borran `include/cerver/http/json/` y `src/cerver/http/json/`, y su fila de `thirdparty.md`.
+  - un DOM inmutable, con valores de 16 bytes contiguos en la arena del caller (o en una propia del documento): un
+    texto que cabe en un chunk se lee sin un `malloc ()`, y la memoria es lineal y acotada por el texto;
+  - un lector por eventos sobre un texto completo, que da los mismos errores en las mismas posiciones; el modo
+    incremental se diseña con L4;
+  - un escritor que serializa a un búfer del caller o a una arena, sin un `malloc ()` por valor;
+  - los límites (profundidad, tamaño, valores) y los flags van por llamada: nada global ni por hilo.
+- **RFC 8259 por default:** cualquier valor en el tope; las claves repetidas se aceptan y en la búsqueda gana la
+  última (como Jansson, Python y JavaScript); un NUL escapado se acepta con su largo. Un flag rechaza las repetidas
+  y otro el NUL. Sin modos lenient.
+- **Los números:** `int64` y `uint64` exactos y real; un entero que no cabe es un error (un flag lo lee como doble) y
+  un real que desborda siempre lo es. Los algoritmos, escritos de cero: Clinger, Eisel-Lemire y un respaldo exacto
+  por dígitos para leer; el doble más corto que regresa igual (Schubfach) para escribir. La tabla de potencias de
+  cinco la genera `benchmarks/tables.py`.
+- **La salida:** el escritor escribe por default como Jansson (`", "` y `": "`), para que los cuerpos de hoy no
+  cambien; compacto e indentado son flags.
+- **El SIMD:** primero la versión escalar con SWAR; un kernel SIMD se queda solo si le gana en el arnés.
+- **El JWT** sigue con la copia de Jansson, interna, hasta L2, que borra a los dos: la fila del JSON de
+  `thirdparty.md` muere en L2.
+- **La API vieja:** ruptura limpia en la 3.0b-7, sin capa de compatibilidad.
+- **El JSON en el core (#207):** el módulo ya vive fuera de `http/`; a `core` llega por port si la 1.x lo pide.
+
+**La 3.0b-6:**
+
+- el módulo: `json`, `document`, `value`, `pointer` (RFC 6901), `events` y `writer`, con sus internos (`scan`,
+  `text`, `number`, `tables`);
+- `http_request_json ()`: el body de una petición como un valor, leído una vez en la arena de la petición;
+- las pruebas:
+  - las unidades de `test/json/`, con libc de oráculo para los números y la salida comparada byte a byte con la de
+    Jansson;
+  - JSONTestSuite a commit fijo (`test/conformance/`, `Dockerfile.conformance`): los `y_`, los `n_` y cada `i_` con
+    su veredicto en `test/conformance/json.txt`;
+  - los fuzzers `json` (los lectores entre sí y la ida y vuelta), `compare` (contra la copia de Jansson, con las
+    diferencias decididas), `number` (contra libc), `writer` y `scan`;
+  - los fallos de memoria en `test/faults/json.c`;
+- los tests y el fuzzer de Jansson pasan a `test/jansson/` y al target `jansson`;
+- **la barra:** no pierde en ninguna métrica contra Jansson, y el POST JSON cuesta 0 asignaciones; la brecha contra
+  yyjson, simdjson y RapidJSON queda medida en `benchmarks/competitors/results/`.
+
+**Lo que la 3.0b-6 decidió al medir** (2026-11-15, en la Mac: las cifras de la máquina oficial siguen pendientes):
+
+- **La búsqueda por clave:** recorrer los miembros de un objeto perdía contra la tabla hash de Jansson (gana la
+  última clave, así que se comparaban todos). Cada objeto lleva ahora, después de su último miembro, un
+  **directorio** (la firma de cada clave, sus primeros 4 bytes, y dónde está) que se compara de 4 en 4 desde el
+  último miembro, y con más de 32 miembros una **tabla** por el hash de sus claves, con una semilla del proceso; una
+  tabla que claves elegidas llenan no se usa, y su objeto se busca en el directorio. Las distancias entre los
+  valores son de 32 bits: ningún límite toma un texto de más de `CERVER_JSON_SIZE_MAX` (2^30 bytes).
+- **El SIMD:** un kernel NEON para el scan de los strings se escribió y se midió contra el de 8 bytes por palabra
+  (SWAR), y no leyó más rápido ningún caso, tampoco los strings largos (el caso `texts` del arnés): no se quedó.
+  Los de x86_64 (SSE2, AVX2 con despacho) esperan a la máquina oficial, donde se pueden medir.
+- **El escritor** escribe sin una llamada los bytes que caben y busca de 8 en 8 la parte de un string que sale
+  como está.
+
+**Lo que midió** (`benchmarks/competitors/results/aarch64.txt`, la mediana de 5 corridas; MB/s, y millones por
+segundo en la búsqueda de 4 claves del documento chico). `legacy` es la copia de Jansson que el módulo reemplaza:
+
+| Caso | Operación | cerver | legacy | Jansson 2.15.1 | yyjson | simdjson | RapidJSON |
+|---|---|---|---|---|---|---|---|
+| `small` | leer | 1 063.7 | 96.2 | 108.4 | 2 974.5 | 2 498.6 | 478.0 |
+| `small` | escribir | 827.0 | 186.9 | 201.0 | 2 992.1 | 947.3 | 691.2 |
+| `small` | buscar | 58.0 | 45.4 | 40.6 | 40.1 | 41.6 | 43.4 |
+| `records` | leer | 1 061.1 | 83.9 | 105.3 | 2 671.2 | 2 673.5 | 549.7 |
+| `records` | escribir | 860.2 | 203.7 | 240.8 | 3 053.6 | 972.3 | 770.0 |
+| `numbers` | leer | 1 287.4 | 125.1 | 126.1 | 2 134.1 | 1 681.9 | 1 239.6 |
+| `numbers` | escribir | 1 279.6 | 132.1 | 371.6 | 2 673.6 | 1 297.8 | 876.3 |
+| `strings` | leer | 1 706.7 | 139.1 | 157.2 | 3 813.2 | 2 284.7 | 336.3 |
+| `strings` | escribir | 1 595.2 | 545.2 | 394.1 | 3 967.0 | 3 651.6 | 1 283.8 |
+| `texts` | leer | 9 737.0 | 182.9 | 207.7 | 4 988.9 | 8 606.4 | 366.2 |
+| `texts` | escribir | 8 704.7 | 727.0 | 479.8 | 38 395.6 | 13 538.6 | 1 524.1 |
+
+- **La barra se cumple:** ninguna métrica pierde contra Jansson (la copia y la 2.15.1), y la corrida más lenta de
+  cerver queda sobre la más rápida de las dos en cada fila. Un documento chico se lee con 0 asignaciones (54 con
+  Jansson) y uno grande con 2 (13 321). El POST JSON de `test/performance.sh` cuesta 0 asignaciones por petición
+  con hilos, con eventos y con conexiones que se conservan (eran 14).
+- **La brecha contra yyjson:** de 1.7 a 2.8 veces en la lectura (salvo los strings largos, que cerver lee al doble)
+  y de 2.1 a 4.4 en la escritura; contra simdjson, de 1.3 a 2.5 en la lectura. cerver le gana a todos en la
+  búsqueda por clave. La meta de L1 sigue después de la 3.0b-7.
+
+**La 3.0b-7:**
+
+- `http/core/admin.c`, `http/routes/tree.c`, `http/security/auth.c` y `http/responses/response.c` sobre el escritor
+  nuevo, con los mismos bytes;
+- los `decode_data` reciben los claims como un valor del JSON nuevo;
+- Jansson interno: sus headers a `src/`, sus símbolos ocultos, fuera de `include/` y del paraguas `http/http.h`;
+- los tests, los examples y los benchmarks sin `json_*`; `incompatibilities.md` con la tabla de equivalencias;
+- la rama `labs` de pycerver.
+
+**La meta de L1,** que sigue después de las dos betas: le gana a yyjson y a simdjson en lectura y escritura, con las
+cifras de la máquina oficial.
 
 ### 4.2 L2 — El JWT propio
 

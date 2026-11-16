@@ -53,6 +53,18 @@ jobs:
           path: ./autobahn-reports/
           retention-days: 7
 
+  conformance-sanitizers:
+    name: Cerver JSON conformance with the sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: JSON
+        env:
+          SANITIZER: address,undefined
+        run: bash test/conformance/json.sh
+
   units-thread:
     name: Cerver in process tests with thread sanitizer
     runs-on: ubuntu-latest
@@ -192,7 +204,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [request, lenient, pipeline, loop, multipart, url, json, jwt, tree, receive, packet, client, file, datagram, address, serializer, game, frame, handshake]
+        target: [request, lenient, pipeline, loop, multipart, url, jansson, json, compare, number, writer, scan, jwt, tree, receive, packet, client, file, datagram, address, serializer, game, frame, handshake]
     steps:
       - name: Checkout
         uses: actions/checkout@v6

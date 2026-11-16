@@ -435,7 +435,8 @@ endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/http/*/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files/*.o -o ./$(TESTTARGET)/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/handler/*.o -o ./$(TESTTARGET)/handler $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/jansson/*.o -o ./$(TESTTARGET)/jansson $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS) $(MATH)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/packets/*.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/system/*.o -o ./$(TESTTARGET)/system $(TESTLIBS)
@@ -556,6 +557,11 @@ test: testout
 	$(MAKE) testapp
 	$(MAKE) units
 	$(MAKE) integration
+
+conformance:
+	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT)
+	@mkdir -p ./$(TESTTARGET)/conformance
+	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/json.$(OBJEXT) -o ./$(TESTTARGET)/conformance/json $(TESTLIBS)
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)

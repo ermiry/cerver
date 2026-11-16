@@ -1,0 +1,1 @@
+a plain string of more than one word and "the quote" \ a backslash, é and 日本語 after them

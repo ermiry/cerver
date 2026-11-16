@@ -1,7 +1,7 @@
 /**
  * @file cerver/cerver.h
  * @brief The umbrella header of the core of cerver: it includes every part of the core, collections, crypto, game,
- * threads, types and utils, and declares nothing; HTTP has its own umbrella, cerver/http/http.h.
+ * json, threads, types and utils, and declares nothing; HTTP has its own umbrella, cerver/http/http.h.
  */
 
 #ifndef _CERVER_H_
@@ -87,6 +87,13 @@
 #include "cerver/game/player.h"
 #include "cerver/game/score.h"
 #include "cerver/game/types.h"
+
+#include "cerver/json/document.h"
+#include "cerver/json/events.h"
+#include "cerver/json/json.h"
+#include "cerver/json/pointer.h"
+#include "cerver/json/value.h"
+#include "cerver/json/writer.h"
 
 #include "cerver/threads/bsem.h"
 #include "cerver/threads/jobs.h"

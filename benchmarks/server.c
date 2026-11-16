@@ -16,14 +16,15 @@
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
-#include <cerver/http/json/internal.h>
-#include <cerver/http/json/json.h>
-#include <cerver/http/json/value.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/websocket.h>
+
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
+#include <cerver/json/writer.h>
 
 #include <cerver/utils/log.h>
 
@@ -93,26 +94,28 @@ static void bench_json_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
-	const String *body = http_request_get_body (request);
+	char response[BENCH_SERVER_JSON_SIZE];
+	CerverJsonWriter writer;
 
-	json_error_t error;
-	json_t *json = body ? json_loads (body->str, 0, &error) : NULL;
-	const char *name = json ? json_string_value (json_object_get (json, bench_json_key)) : NULL;
+	// the body is read in the arena of the request and the response is written in the stack: no allocations
+	const CerverJsonValue *name = cerver_json_object_get (http_request_json (request, NULL), bench_json_key);
 
-	if (name) {
-		char response[BENCH_SERVER_JSON_SIZE];
-		const int length = snprintf (response, BENCH_SERVER_JSON_SIZE, "{\"name\": \"%s\"}", name);
+	cerver_json_writer_init (&writer, response, BENCH_SERVER_JSON_SIZE, CERVER_JSON_FLAGS_NONE);
+	cerver_json_writer_object_begin (&writer);
+	cerver_json_writer_key (&writer, bench_json_key);
+	cerver_json_writer_string (&writer, cerver_json_string_value (name), cerver_json_string_length (name));
+	cerver_json_writer_object_end (&writer);
 
+	// a body without the name as a string leaves the writer with its error
+	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE) {
 		(void) http_response_json_custom_reference_send (
-			http_receive, HTTP_STATUS_OK, response, (size_t) length
+			http_receive, HTTP_STATUS_OK, response, cerver_json_writer_length (&writer)
 		);
 	}
 
 	else {
 		(void) http_response_send (bad_request_error, http_receive);
 	}
-
-	if (json) json_decref (json);
 
 }
 

@@ -3,6 +3,61 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-6 (from 3.0b-5)
+
+The JSON of cerver (the first beta of L1 of `roadmap.md`): `cerver/json`, a new module written from scratch, next to
+the copy of Jansson of `cerver/http/json`, that nothing loses yet. The beta adds and breaks little: one struct is
+bigger and some files of the tests have other names. The JSON of Jansson leaves the API in the 3.0b-7.
+
+**The structs and the API**
+
+- **`HttpRequest` is bigger:** it has `json`, `json_error` and `json_read` before `keep_files`, so `keep_files`,
+  `id`, `client_ip`, `arena` and `own_arena` moved; a binary built with the 3.0b-5 that reads them is built again.
+  `cerver/http/requests/request.h` includes `cerver/json/json.h`
+- **New:** `cerver/json/{json,document,value,pointer,events,writer}.h`, in the umbrella `cerver/cerver.h`: the types
+  `CerverJsonDocument`, `CerverJsonValue`, `CerverJsonError`, `CerverJsonLimits`, `CerverJsonEvents` and
+  `CerverJsonWriter`, and the methods `cerver_json_*`; `http_request_json ()`. The names do not collide with the
+  ones of Jansson (`json_*`, `JSON_*`), so a file can include both
+- **`libcerver.so` exports three methods for the tests of the JSON,** `cerver_json_scan_string_stop ()`,
+  `cerver_json_number_power ()` and `cerver_json_object_table_probes_set ()` (`CERVER_PRIVATE`, declared in
+  `src/cerver/json/internal.h`): they are not part of the API
+
+**What the JSON of cerver does that the one of Jansson does not** (for the code that moves to it, the 3.0b-7 moves
+the one of cerver)
+
+- **A text is any value,** not only an array or an object (`JSON_DECODE_ANY` is the default)
+- **An object keeps every member,** also the ones with a key that is more than once: a search answers the last one,
+  as Jansson does, and `cerver_json_object_size ()` and the iterators count all of them.
+  `CERVER_JSON_PARSE_REJECT_DUPLICATES` is the `JSON_REJECT_DUPLICATES` of Jansson
+- **A string and a key can have an escaped NUL** (the `JSON_ALLOW_NUL` of Jansson is the default, and it also takes
+  it in a key): a string has its length. `CERVER_JSON_PARSE_REJECT_NUL` rejects it
+- **An integer from 2^63 to 2^64 - 1 is a value,** `CERVER_JSON_TYPE_UNSIGNED`; one that does not fit in 64 bits is
+  an error, or a real with `CERVER_JSON_PARSE_BIG_AS_REAL` (the `JSON_DECODE_INT_AS_REAL` of Jansson makes every
+  integer a real: it has no equivalent)
+- **A NUL byte outside a string is always an error:** `json_loadb ()` skips the one that follows a number or a
+  literal (`[1\0, 2]` is `[1, 2]` for it)
+- **A real is written with the least digits that read it back:** `0.1` and `1.5e-7`, where Jansson writes
+  `0.10000000000000001` and `1.4999999999999999e-7`; everything else is written with the same bytes, with the same
+  flags (`CERVER_JSON_WRITE_COMPACT`, `_ESCAPE_SLASH`, `_ENSURE_ASCII`, and `cerver_json_writer_set_indent ()` for
+  `JSON_INDENT ()`). The keys are written in the order of their text; there is no `JSON_SORT_KEYS`
+- **A document is not changed and has no references:** it lives in its arena, and there is no `json_pack ()`,
+  `json_unpack ()`, `json_object_set ()` nor `json_decref ()`; a text is written value by value with a
+  `CerverJsonWriter`
+- **The limits are arguments of each call** (`CerverJsonLimits`: levels, bytes and values), not a state of the
+  process like `json_set_parser_memory_factor ()`. No limit takes a text over `CERVER_JSON_SIZE_MAX` (`1 << 30`
+  bytes): the values of a document know each other by distances of 32 bits
+- **The hash of the keys is only of the objects with more than 32 members,** with a seed that the process takes by
+  itself the first time (the random bytes of the kernel), not in `http_cerver_global_init ()`; a table that chosen
+  keys fill is not used, and its object is searched member by member
+
+**Tests and scripts:** the tests of the copy of Jansson are `test/jansson/` (`test/bin/jansson`) and its fuzzer is
+the target `jansson`; `test/json/`, `test/bin/json` and the target `json` are the ones of `cerver/json`, with the new
+targets `compare`, `number`, `writer` and `scan`. `make conformance` builds `test/bin/conformance/json`, that
+`bash test/conformance/json.sh` runs over JSONTestSuite in the image of `Dockerfile.conformance`.
+`test/performance.sh` expects 0 allocations for a POST JSON (they were 14). `benchmarks/competitors/` measures
+`cerver` (the new JSON) and `legacy` (the copy of Jansson), with the slowest and the fastest run of each measure, a
+`search` operation and the case `texts` (long strings without escapes).
+
 ## 3.0b-5 (from 3.0b-4)
 
 The event loop, keep-alive and the named pools of `nightly` (its F3, F4 and F5, the 2.1b-15 to the 2.1b-17), ported

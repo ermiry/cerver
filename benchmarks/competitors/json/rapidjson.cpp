@@ -37,6 +37,12 @@ size_t json_backend_serialize (void *document, char **text) {
 
 }
 
+bool json_backend_search (void *document, const char *key) {
+
+	return static_cast <rapidjson::Document *> (document)->HasMember (key);
+
+}
+
 void json_backend_text_free (char *text) {
 
 	(void) text;

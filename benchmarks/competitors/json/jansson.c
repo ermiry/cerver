@@ -24,6 +24,12 @@ size_t json_backend_serialize (void *document, char **text) {
 
 }
 
+bool json_backend_search (void *document, const char *key) {
+
+	return json_object_get ((const json_t *) document, key) != NULL;
+
+}
+
 void json_backend_text_free (char *text) {
 
 	free (text);

@@ -40,6 +40,10 @@
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
+#include <cerver/json/writer.h>
+
 #include <cerver/threads/thpool.h>
 
 #include "../test.h"
@@ -65,6 +69,10 @@
 // - a file or a video opened as fd 0 was not sent
 // coverage holes:
 // - a drain that times out keeps the cerver memory on purpose (see thpool.c)
+
+// the response of POST /json and the requests that are sent to it one after the other
+#define SERVER_TEST_JSON_SIZE				(1 << 8)
+#define SERVER_TEST_JSON_REQUESTS			(1 << 4)
 
 #define SERVER_TEST_PORT_BASE				(1 << 13)
 #define SERVER_TEST_ADDRESS					"127.0.0.1"
@@ -316,11 +324,50 @@ static const char *zero_video_request = {
 	"\r\n"
 };
 
+// a body that is JSON, with an escape in its name and a member that is not read
+static const char *json_request = {
+	"POST /json HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: application/json\r\n"
+	"Content-Length: 59\r\n"
+	"\r\n"
+	"{\"name\": \"cer\\u0076er\", \"values\": [1, 2, 3], \"other\": null}"
+};
+
+static const char *json_response = { "{\"name\": \"cerver\", \"count\": 3}" };
+
+// a body that is cut, and one whose name is not a string
+static const char *json_invalid_request = {
+	"POST /json HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: application/json\r\n"
+	"Content-Length: 18\r\n"
+	"\r\n"
+	"{\"name\": \"cerver\","
+};
+
+static const char *json_other_request = {
+	"POST /json HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: application/json\r\n"
+	"Content-Length: 11\r\n"
+	"\r\n"
+	"{\"name\": 7}"
+};
+
+static const char *json_empty_request = {
+	"POST /json HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Length: 0\r\n"
+	"\r\n"
+};
+
 static const char *null_device = { "/dev/null" };
 
 static const char *unanswered_metric = { "cerver_http_requests_unanswered_total 1\n" };
 
 static const char *status_ok = { "HTTP/1.1 200" };
+static const char *status_bad_request = { "HTTP/1.1 400" };
 static const char *status_partial_content = { "HTTP/1.1 206" };
 static const char *status_range_not_satisfiable = { "HTTP/1.1 416" };
 static const char *status_server_error = { "HTTP/1.1 500" };
@@ -451,6 +498,42 @@ static void server_test_echo_handler (
 
 	if (body && (body->len == SERVER_TEST_SLOW_BODY_SIZE)) {
 		(void) http_response_send (oki_doki, http_receive);
+	}
+
+	else {
+		(void) http_response_send (bad_request_error, http_receive);
+	}
+
+}
+
+// POST /json
+// reads its body with the JSON of cerver and answers with what it has: the name and how many values
+static void server_test_json_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	char response[SERVER_TEST_JSON_SIZE];
+	CerverJsonWriter writer;
+	CerverJsonError error = { CERVER_JSON_ERROR_NONE, 0 };
+
+	const CerverJsonValue *json = http_request_json (request, &error);
+	const CerverJsonValue *name = cerver_json_object_get (json, "name");
+
+	// the second call answers the same value: the body is read once
+	const bool same = (http_request_json (request, NULL) == json);
+
+	cerver_json_writer_init (&writer, response, sizeof (response), CERVER_JSON_FLAGS_NONE);
+	cerver_json_writer_object_begin (&writer);
+	cerver_json_writer_key (&writer, "name");
+	cerver_json_writer_string (&writer, cerver_json_string_value (name), cerver_json_string_length (name));
+	cerver_json_writer_key (&writer, "count");
+	cerver_json_writer_unsigned (&writer, cerver_json_array_size (cerver_json_object_get (json, "values")));
+	cerver_json_writer_object_end (&writer);
+
+	if (same && (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE)) {
+		(void) http_response_json_custom_reference_send (
+			http_receive, HTTP_STATUS_OK, response, cerver_json_writer_length (&writer)
+		);
 	}
 
 	else {
@@ -903,6 +986,9 @@ static void server_test_routes (HttpCerver *http_cerver) {
 	HttpRoute *echo_route = http_route_create (REQUEST_METHOD_POST, "echo", server_test_echo_handler);
 	http_cerver_route_register (http_cerver, echo_route);
 
+	HttpRoute *json_route = http_route_create (REQUEST_METHOD_POST, "json", server_test_json_handler);
+	http_cerver_route_register (http_cerver, json_route);
+
 	HttpRoute *huge_route = http_route_create (REQUEST_METHOD_POST, "huge", server_test_huge_handler);
 	http_cerver_route_register (http_cerver, huge_route);
 
@@ -1172,6 +1258,36 @@ static void test_server_ok (void) {
 	ServerTest *server = server_test_start (&options);
 
 	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+// a handler reads the body of its request as JSON, in the arena of the request, and writes its answer
+static void test_server_json (void) {
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	int fd = server_test_connect (server->port);
+	server_test_send (fd, json_request);
+	(void) server_test_read (fd, response);
+	(void) close (fd);
+
+	test_check (server_test_starts_with (response, status_ok), "the JSON body was not answered with 200");
+	test_check_ptr (strstr (response, json_response));
+
+	// a body that is not JSON, one without what the handler asks for and a request without a body
+	server_test_request (server->port, json_invalid_request, status_bad_request);
+	server_test_request (server->port, json_other_request, status_bad_request);
+	server_test_request (server->port, json_empty_request, status_bad_request);
+
+	// and the next request of the thread is read in the same arena
+	for (unsigned int i = 0; i < SERVER_TEST_JSON_REQUESTS; i++) {
+		server_test_request (server->port, json_request, status_ok);
+	}
 
 	server_test_stop (server);
 
@@ -3161,6 +3277,7 @@ static void server_tests_model (const CerverHandlerType handler_type) {
 	(void) alarm (SERVER_TEST_ALARM);
 
 	test_run (test_server_ok);
+	test_run (test_server_json);
 	test_run (test_server_routes_error);
 	test_run (test_server_large_response);
 	test_run (test_server_reset_during_response);

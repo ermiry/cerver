@@ -36,6 +36,12 @@ size_t json_backend_serialize (void *document, char **text) {
 
 }
 
+bool json_backend_search (void *document, const char *key) {
+
+	return static_cast <simdjson::dom::element *> (document)->at_key (key).error () == simdjson::SUCCESS;
+
+}
+
 void json_backend_text_free (char *text) {
 
 	(void) text;

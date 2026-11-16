@@ -23,6 +23,8 @@
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 
+#include "cerver/json/json.h"
+
 /**
  * @defgroup http_request Request
  * @ingroup http_requests
@@ -139,6 +141,13 @@ struct _HttpRequest {
 
 	/** @brief The values of a x-www-form-urlencoded body, as key value pairs. */
 	DoubleList *body_values;
+
+	/** @brief The document of its body, in the arena of the request; NULL until http_request_json () reads it. */
+	CerverJsonDocument *json;
+	/** @brief How http_request_json () read its body, with CERVER_JSON_ERROR_NONE for a body that is a document. */
+	CerverJsonError json_error;
+	/** @brief Its body was already read by http_request_json (). */
+	bool json_read;
 
 	/** @brief Its uploaded files are kept when it ends. */
 	bool keep_files;
@@ -548,6 +557,27 @@ CERVER_EXPORT void http_request_set_default_delete_custom_data (
  */
 CERVER_EXPORT const String *http_request_get_body (
 	const HttpRequest *http_request
+);
+
+/**
+ * @brief Returns the body of a request as a JSON value, read with the JSON of cerver.
+ *
+ * The body is read once, with the defaults of cerver_json_parse (): the next calls answer what the first one
+ * did. Its document lives in the arena of the request, so a body that fits in a chunk of that arena is read
+ * without a call to malloc (), and it is released with the request. The body itself is not changed.
+ *
+ * @param[in] http_request the request
+ * @param[out] error why the body is not a value and where, with CERVER_JSON_ERROR_NONE when it is; it can be
+ * NULL
+ * @return the value of the body, read with the methods of cerver/json/value.h; NULL when the body is not valid
+ * JSON, for a request without a body (CERVER_JSON_ERROR_END, an empty text) and for a NULL request
+ * (CERVER_JSON_ERROR_ARGUMENTS)
+ * @warning The value is released when the handler of the request returns, like its url and its headers.
+ * @threadsafety Only from the thread that handles the request.
+ * @since 3.0b-6
+ */
+CERVER_EXPORT const CerverJsonValue *http_request_json (
+	const HttpRequest *http_request, CerverJsonError *error
 );
 
 /**
