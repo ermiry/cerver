@@ -1,31 +1,27 @@
 ## General
-- Updated roadmap & CLAUDE.md with L1: the cerver JSON
-- Added the changes of the 3.0b-6 to the incompatibility file
-
-## JSON
-- Added the types, the errors & the flags of the cerver JSON
-- Added the scan of the JSON strings, the escapes & UTF-8
-- Added the numbers of the JSON with their table of powers
-- Added the JSON document with its values inside an arena
-- Added the getters of the JSON values & the search by key
-- Added the JSON pointer of RFC 6901 over the documents
-- Added the JSON writer into a buffer or an arena with flags
-- Added the JSON reader by events & json into the umbrella
+- Updated roadmap & CLAUDE.md with HTTP over its JSON
+- Added the changes of the 3.0b-7 to the incompatibility file
 
 ## HTTP
-- Added http_request_json () to read the body into its arena
+- Added the members & the generator for the jsons of HTTP
+- Writing the json bodies of responses with the cerver JSON
+- Writing the json of the routes tree with the JSON of cerver
+- Writing the admin jsons into the arena of their own request
+- Reading the claims of a bearer token with the cerver JSON
+- Moved the Jansson headers to src & hid every symbol of it
+
+## Examples
+- Using the cerver JSON in the examples of the users & json
 
 ## Tests
-- Moved the Jansson tests & its fuzzer to the jansson target
-- Added the tests of the JSON document: the errors & limits
-- Added the tests of the JSON values & of the search by key
-- Added the tests of the JSON strings: the escapes & UTF-8
-- Added the tests of the JSON numbers against the C library
-- Added the tests of the JSON pointers & of the JSON writer
-- Added the tests of the JSON events & the json test binary
-- Added the JSON conformance runner over JSONTestSuite
-- Added the json, compare, number, writer and scan fuzzers
-- Testing the allocations of the JSON that fail with the faults
-- Testing http_request_json () in units & inside a real cerver
-- Reading the POST JSON of benchmarks with 0 allocations
-- Measuring the cerver JSON against Jansson & in a search
+- Added the tests of the exact bytes of the four admin jsons
+- Testing the exact bytes of all the json bodies of responses
+- Testing the exact bytes of the routes json with WebSocket
+- Testing the claims of a bearer & the exact bytes of its json
+- Testing the admin routes with real requests in the features
+- Using the cerver JSON in the test app and in the web pairs
+- Including the Jansson headers of src in the tests & fuzzers
+- Testing the allocations of the jsons of HTTP when they fail
+- Counting the allocations of a request with its bearer token
+- Linking the objects of Jansson to the legacy json backend
+- Draining the socket of the answers in the client fuzz target
