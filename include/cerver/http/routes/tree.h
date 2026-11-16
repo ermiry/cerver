@@ -159,6 +159,21 @@ CERVER_PUBLIC const char *http_trailing_slash_description (
 #define HTTP_ROUTE_SETTING_ETAG						(1 << 8)
 /** @brief The compression was set. */
 #define HTTP_ROUTE_SETTING_COMPRESSION				(1 << 9)
+/**
+ * @brief The pool of threads was set.
+ *
+ * @since 3.0b-5
+ */
+#define HTTP_ROUTE_SETTING_POOL						(1 << 10)
+
+/**
+ * @brief The size of the name of a pool of threads (http/core/pool.h), with its end.
+ *
+ * @since 3.0b-5
+ */
+#define HTTP_POOL_NAME_SIZE							32
+
+struct HttpPool;
 
 /**
  * @brief The settings of a group or an endpoint.
@@ -207,6 +222,20 @@ struct _HttpRouteSettings {
 
 	/** @brief The responses are compressed with gzip when the request accepts it (only when cerver was compiled with zlib). */
 	bool compression;
+
+	/**
+	 * @brief The name of the pool of threads that handles the requests (http/core/pool.h).
+	 *
+	 * @since 3.0b-5
+	 */
+	char pool_name[HTTP_POOL_NAME_SIZE];
+	/**
+	 * @brief The pool with that name, found when the cerver starts; NULL without a name: the default pool, the
+	 * thpool of the cerver.
+	 *
+	 * @since 3.0b-5
+	 */
+	struct HttpPool *pool;
 
 	/** @brief The middlewares. */
 	HttpMiddlewares middlewares;
@@ -340,6 +369,8 @@ CERVER_EXPORT void http_endpoint_set_auth (
  * @param[in,out] endpoint the endpoint
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_endpoint_set_decode_data (
 	HttpEndpoint *endpoint,
@@ -438,6 +469,23 @@ CERVER_EXPORT void http_endpoint_set_etag (
  */
 CERVER_EXPORT void http_endpoint_set_compression (
 	HttpEndpoint *endpoint, const bool compression
+);
+
+/**
+ * @brief Sets the pool of threads that handles the requests of an endpoint (http/core/pool.h), with
+ * CERVER_HANDLER_TYPE_EVENTS: its handler, its middlewares and its custom authentication run in the threads of
+ * that pool.
+ *
+ * The pool is found when the cerver starts: a name that no pool of the cerver has is an error of the routes and
+ * the cerver does not start.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver. A name of more than
+ * #HTTP_POOL_NAME_SIZE - 1 bytes is an error of the routes
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void http_endpoint_set_pool (
+	HttpEndpoint *endpoint, const char *name
 );
 
 /**
@@ -768,6 +816,8 @@ CERVER_EXPORT void http_group_set_auth (
  * @param[in,out] group the group
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_group_set_decode_data (
 	HttpGroup *group,
@@ -853,6 +903,17 @@ CERVER_EXPORT void http_group_set_etag (
  */
 CERVER_EXPORT void http_group_set_compression (
 	HttpGroup *group, const bool compression
+);
+
+/**
+ * @brief Sets the pool of threads that the endpoints of a group inherit, like http_endpoint_set_pool ().
+ *
+ * @param[in,out] group the group
+ * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void http_group_set_pool (
+	HttpGroup *group, const char *name
 );
 
 /**
@@ -1189,6 +1250,21 @@ CERVER_PRIVATE String *http_tree_path_join (
  */
 CERVER_PRIVATE u8 http_tree_insert (
 	HttpTree *tree, HttpEndpoint *endpoint, const bool compatibility
+);
+
+/**
+ * @brief Finds the pool of threads of an endpoint with the name of its resolved settings: the cerver of the tree
+ * must have it, an unknown name is an error of the tree.
+ *
+ * @param[in,out] tree the tree
+ * @param[in,out] endpoint the endpoint, with its resolved settings
+ * @retval 0 the pool was found, or the endpoint did not choose one
+ * @retval 1 no pool has the name (the cerver does not start)
+ * @note For the internal methods of cerver.
+ * @since 3.0b-5
+ */
+CERVER_PRIVATE u8 http_tree_resolve_pool (
+	HttpTree *tree, HttpEndpoint *endpoint
 );
 
 /**

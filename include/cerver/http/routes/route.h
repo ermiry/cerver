@@ -398,6 +398,14 @@ struct _HttpRoute {
 	/** @brief The authentication handler needs the body of the request. */
 	bool authentication_with_body;
 
+	/**
+	 * @brief The name of the pool of threads that handles its requests (http_route_set_pool ()), NULL for the
+	 * default one.
+	 *
+	 * @since 3.0b-5
+	 */
+	String *pool_name;
+
 };
 
 /** @brief A route of the first routes API, see struct _HttpRoute. */
@@ -485,6 +493,8 @@ CERVER_EXPORT void http_route_set_auth (
  * @param[in,out] route the route
  * @param[in] decode_data the method that decodes the data
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
+ * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
+ * until it returns: it must not wait.
  */
 CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route,
@@ -528,6 +538,21 @@ CERVER_EXPORT void http_route_set_authentication_handler (
  */
 CERVER_EXPORT void http_route_set_authentication_with_body (
 	HttpRoute *route, const bool authentication_with_body
+);
+
+/**
+ * @brief Sets the pool of threads that handles the requests of a route (cerver/http/core/pool.h), with
+ * CERVER_HANDLER_TYPE_EVENTS; its children do not inherit it.
+ *
+ * The pool is found when the cerver starts: a name that no pool of the cerver has is an error of the routes and
+ * the cerver does not start.
+ *
+ * @param[in,out] route the route
+ * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver
+ * @since 3.0b-5
+ */
+CERVER_EXPORT void http_route_set_pool (
+	HttpRoute *route, const char *name
 );
 
 /**

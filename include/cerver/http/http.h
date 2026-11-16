@@ -15,6 +15,7 @@
 #include "cerver/http/core/limits.h"
 #include "cerver/http/core/metrics.h"
 #include "cerver/http/core/pairs.h"
+#include "cerver/http/core/pool.h"
 #include "cerver/http/core/public.h"
 #include "cerver/http/core/routes.h"
 #include "cerver/http/core/settings.h"
