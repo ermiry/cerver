@@ -363,6 +363,23 @@ CERVER_PUBLIC u8 socket_send_file (
 	size_t *sent, int *error
 );
 
+/**
+ * @brief Shuts down both ways of the socket of a send that failed because its deadline expired.
+ *
+ * A send that waited for space until its deadline (EAGAIN) leaves the peer with a part of what was sent, and a peer
+ * that did not read in all that time is taken as gone: the thread that receives the socket ends its connection, and
+ * every send after it fails at once (EPIPE) instead of waiting for its own deadline. The sends of packets, files and
+ * the balancer call it after a failure.
+ *
+ * @param[in,out] socket the socket, it can be NULL
+ * @param[in] error the errno of the send that failed
+ * @return true if the send timed out and the socket was shut down
+ * @threadsafety Safe with the write mutex of the socket held: it only takes its close mutex (socket_shutdown ()).
+ * @note For the internal methods of cerver.
+ * @since 1.9
+ */
+CERVER_PRIVATE bool socket_end_on_send_timeout (Socket *socket, const int error);
+
 /** @} */
 
 #ifdef __cplusplus
