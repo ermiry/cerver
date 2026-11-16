@@ -30,8 +30,7 @@ extern "C" {
  * SA_RESTART) also stops the cerver. The connections in progress are drained by cerver_teardown ().
  *
  * @param[in,out] cerver the cerver, it can be NULL
- * @warning It locks the mutex of the sleeping threads, which is not async-signal-safe: called from a signal
- * handler that interrupts a thread of the cerver while it holds that mutex, it can block.
+ * @note It is async-signal-safe: it only uses atomics, shutdown () and a write () in the stop pipe of the cerver.
  * @note For the internal methods of cerver: an application calls cerver_shutdown ().
  */
 CERVER_PRIVATE void cerver_stop_request (Cerver *cerver);
@@ -45,7 +44,8 @@ CERVER_PRIVATE void cerver_stop_request (Cerver *cerver);
  * @param[in,out] cerver the cerver
  * @retval 0 the cerver was stopped
  * @retval 1 the cerver is NULL
- * @warning Like cerver_stop_request (), it is not async-signal-safe.
+ * @warning With CERVER_DEBUG it logs the stop, which is not async-signal-safe; without it the stop is, like
+ * cerver_stop_request ().
  */
 CERVER_EXPORT u8 cerver_shutdown (Cerver *cerver);
 

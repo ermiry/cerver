@@ -8,7 +8,6 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include <sys/eventfd.h>
 #include <sys/socket.h>
 
 #include "cerver/types/types.h"
@@ -32,7 +31,7 @@
 
 #include "cerver/utils/log.h"
 
-// the poll () of the thread that started the cerver has no timeout: the eventfd of the stop or a signal end it
+// the poll () of the thread that started the cerver has no timeout: the stop pipe of the cerver or a signal end it
 #define EVENT_LOOP_GROUP_WAIT_FOREVER			(-1)
 
 #define EVENT_LOOP_GROUP_MILLISECONDS_PER_SECOND		1000
@@ -208,9 +207,6 @@ void event_loop_group_delete (struct _Cerver *cerver) {
 		EventLoopGroup *group = cerver->event_loops;
 		cerver->event_loops = NULL;
 
-		const i32 stop_fd = __atomic_exchange_n (&cerver->stop_fd, -1, __ATOMIC_SEQ_CST);
-		if (stop_fd >= 0) (void) close (stop_fd);
-
 		event_loop_group_free (group);
 	}
 
@@ -322,15 +318,18 @@ static bool event_loop_group_can_run (const Cerver *cerver) {
 
 }
 
-// the eventfd that cerver_stop_request () writes, published with __atomic for it
-// returns 0 on success, 1 on error
-static unsigned int event_loop_group_stop_fd_open (Cerver *cerver) {
+// the wait of the thread that started the cerver ends with the stop pipe that cerver_stop_request () writes,
+// a cerver whose pipe could not be created would never end it
+// returns 0 when the cerver has its pipe, 1 when it does not
+static unsigned int event_loop_group_stop_pipe_check (const Cerver *cerver) {
 
-	const i32 stop_fd = eventfd (0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (cerver->stop_pipe[CERVER_STOP_PIPE_READ] < 0) {
+		cerver_log_error (
+			"Cerver %s has no stop pipe to wait for its stop!", cerver->info->name
+		);
+	}
 
-	if (stop_fd >= 0) __atomic_store_n (&cerver->stop_fd, stop_fd, __ATOMIC_SEQ_CST);
-
-	return (stop_fd >= 0) ? 0 : 1;
+	return (cerver->stop_pipe[CERVER_STOP_PIPE_READ] >= 0) ? 0 : 1;
 
 }
 
@@ -373,13 +372,13 @@ static void event_loop_group_wait_failed (Cerver *cerver, const int error) {
 
 // the thread that started the cerver does not run a loop: it waits until the cerver is stopped
 // with its signals unblocked (the threads of the loops block them)
-// cerver_stop_request () clears the running flag before it writes the eventfd,
+// cerver_stop_request () clears the running flag before it writes the stop pipe, that stays readable,
 // so a stop that was requested before this wait is seen by its first check
 static void event_loop_group_wait (Cerver *cerver) {
 
 	struct pollfd descriptor;
 	(void) memset (&descriptor, 0, sizeof (struct pollfd));
-	descriptor.fd = __atomic_load_n (&cerver->stop_fd, __ATOMIC_SEQ_CST);
+	descriptor.fd = cerver->stop_pipe[CERVER_STOP_PIPE_READ];
 	descriptor.events = POLLIN;
 
 	while (cerver_is_running (cerver)) {
@@ -432,7 +431,7 @@ u8 event_loop_group_run (struct _Cerver *cerver) {
 		if (!listen (cerver->sock, cerver->connection_queue)) {
 			EventLoopGroup *group = event_loop_group_create (cerver);
 
-			if (group && !event_loop_group_stop_fd_open (cerver)) {
+			if (group && !event_loop_group_stop_pipe_check (cerver)) {
 				retval = event_loop_group_start (cerver, group);
 			}
 

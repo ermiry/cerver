@@ -3007,6 +3007,46 @@ static void test_server_events_drain_parked_reject (void) {
 
 }
 
+static Cerver *server_test_events_stop_cerver = NULL;
+
+static void server_test_events_stop_signal_handler (int signal_number) {
+
+	(void) signal_number;
+
+	cerver_stop_request (server_test_events_stop_cerver);
+
+}
+
+// the handler of a signal that arrives at another thread stops the cerver: the thread that waits in
+// cerver_start () is not interrupted, it wakes up with the stop pipe, the only thing that the handler writes
+static void test_server_events_stop_from_signal (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+	server_test_events_stop_cerver = server->cerver;
+
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (struct sigaction));
+	action.sa_handler = server_test_events_stop_signal_handler;
+	(void) sigemptyset (&action.sa_mask);
+	(void) sigaction (SIGUSR1, &action, NULL);
+
+	// a signal sent to the thread that calls pthread_kill () runs its handler before it returns
+	test_check_int_eq (pthread_kill (pthread_self (), SIGUSR1), 0, NULL);
+
+	server_test_join (server);
+	test_check_false (cerver_is_running (server->cerver));
+	test_check_unsigned_eq (server->start_result, 0, NULL);
+
+	test_check_unsigned_eq (cerver_teardown (server->cerver), 0, NULL);
+
+	free (server);
+
+	(void) signal (SIGUSR1, SIG_DFL);
+	server_test_events_stop_cerver = NULL;
+
+}
+
 // what only a cerver with event loops does
 static void server_tests_events (void) {
 
@@ -3029,6 +3069,7 @@ static void server_tests_events (void) {
 	test_run (test_server_events_loops);
 	test_run (test_server_events_drain_parked);
 	test_run (test_server_events_drain_parked_reject);
+	test_run (test_server_events_stop_from_signal);
 
 	(void) alarm (0);
 
