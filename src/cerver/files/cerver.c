@@ -20,6 +20,7 @@
 #include "cerver/config.h"
 
 #include "cerver/client/client.h"
+#include "cerver/connection/end.h"
 #include "cerver/core/cerver.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
@@ -252,6 +253,28 @@ ssize_t file_cerver_send_file (
 
 }
 
+// the bytes of the file follow its packet and nothing reads them,
+// so the connection is ended: they can not be read as packets
+static u8 file_cerver_receive_reject (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	cerver_log_warning (
+		"Cerver %s has no uploads path - rejecting an upload",
+		cerver->info->name
+	);
+
+	(void) error_packet_generate_and_send (
+		CERVER_ERROR_SEND_FILE, "Unable to process request",
+		cerver, client, connection
+	);
+
+	if (connection) (void) connection_drop_request (connection);
+
+	return 1;
+
+}
+
 u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header,
@@ -262,6 +285,9 @@ u8 file_cerver_receive (
 	u8 retval = 1;
 
 	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
+	if (!file_cerver->uploads_path) {
+		return file_cerver_receive_reject (cerver, client, connection);
+	}
 
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
