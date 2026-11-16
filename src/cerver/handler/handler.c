@@ -31,6 +31,7 @@
 #include "cerver/connection/registry.h"
 #include "cerver/core/cerver.h"
 #include "cerver/core/end.h"
+#include "cerver/core/internal.h"
 #include "cerver/core/start.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
@@ -38,6 +39,7 @@
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/handler/handler.h"
+#include "cerver/handler/internal.h"
 #include "cerver/handler/receive.h"
 #include "cerver/load/balancer.h"
 #include "cerver/load/route.h"
@@ -52,6 +54,7 @@
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/websocket.h"
@@ -1549,6 +1552,9 @@ CerverReceive *cerver_receive_new (void) {
 
 		cr->lobby = NULL;
 
+		cr->n_requests = 0;
+		cr->idle_deadline = 0;
+
 		cr->recycle_next = NULL;
 	}
 
@@ -2129,6 +2135,27 @@ typedef struct HttpConnectionTimeouts {
 #define HANDLER_MILLISECONDS_PER_SECOND				1000
 #define HANDLER_MICROSECONDS_PER_MILLISECOND		1000
 
+// the most milliseconds that a thread waits for the next request of its connection
+// before it checks again whether its cerver stops or another connection waits for a thread
+#define HANDLER_KEEP_ALIVE_POLL						(1 << 6)
+
+// the milliseconds that a thread waits for the next request of its connection while another one waits for a thread:
+// then it gives its idle connection back to the thpool and takes the next one, so the threads take turns
+// with the connections that wait for a request without spinning
+#define HANDLER_KEEP_ALIVE_YIELD_POLL				(1 << 2)
+
+// what the wait for the next request of a connection that is kept ended with
+typedef enum HandlerIdle {
+
+	// the first bytes of its next request arrived
+	HANDLER_IDLE_ARRIVED		= 0,
+	// the connection was closed: its client left, its time ended or the cerver stops
+	HANDLER_IDLE_CLOSED			= 1,
+	// another connection waits for a thread: the idle one goes back to the thpool as it is
+	HANDLER_IDLE_YIELDED		= 2
+
+} HandlerIdle;
+
 // sets the socket's recv timeout in milliseconds
 static void cerver_receive_http_set_timeout (const int sock_fd, const unsigned int timeout) {
 
@@ -2226,6 +2253,159 @@ static void cerver_receive_http_failed (
 
 }
 
+// the request of a connection that is kept ended: it is logged and counted, its data is released
+// and the next request of the connection starts; a connection whose next request can not be created is closed
+// returns true when the connection takes its next request, false when it was not kept
+static bool cerver_receive_http_next (HttpReceive *http_receive) {
+
+	bool next = false;
+
+	if (http_receive->keep_alive) {
+		http_access_request (http_receive);
+
+		next = !http_receive_reset (http_receive);
+
+		if (!next) http_receive_close (http_receive, false);
+	}
+
+	return next;
+
+}
+
+// handles what the connection received: a request that keeps its connection is followed by the next one,
+// that starts with the bytes that arrived behind it (a pipelined request)
+static void cerver_receive_http_handle (
+	HttpReceive *http_receive, char *buffer, const size_t length
+) {
+
+	char *data = buffer;
+	size_t remaining = length;
+
+	while (remaining) {
+		http_receive->received += remaining;
+
+		http_receive->handler (http_receive, (ssize_t) remaining, data);
+
+		// what the request that ended did not use, read before its receive starts again
+		const size_t unparsed = http_receive->unparsed;
+
+		data += (remaining - unparsed);
+		remaining = cerver_receive_http_next (http_receive) ? unparsed : 0;
+	}
+
+}
+
+// waits for the socket of an idle connection until its deadline, a part of the time at most
+// returns what poll () found: 0 when nothing arrived, a negative value on error
+static int cerver_receive_http_idle_poll (
+	const int sock_fd, const double deadline, const int part
+) {
+
+	const double remaining = (deadline - cerver_receive_monotonic_time ()) * (double) HANDLER_MILLISECONDS_PER_SECOND;
+
+	// rounded up, so the last wait ends after the deadline
+	const int timeout = (remaining < (double) part) ? (int) remaining + 1 : part;
+
+	struct pollfd descriptor;
+	(void) memset (&descriptor, 0, sizeof (struct pollfd));
+	descriptor.fd = sock_fd;
+	descriptor.events = POLLIN;
+
+	const int ready = poll (&descriptor, 1, timeout);
+
+	// a signal interrupted the wait, the client is still there
+	return ((ready < 0) && (errno == EINTR)) ? 0 : ready;
+
+}
+
+// the client of an idle connection sent the first bytes of its next request, or it left
+static bool cerver_receive_http_idle_arrived (const int sock_fd) {
+
+	char byte = 0;
+
+	return recv (sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT) > 0;
+
+}
+
+// another connection waits in the queue of the pool for a thread: the ones that keep an idle connection are needed
+static bool cerver_receive_http_thread_is_needed (const CerverReceive *cr) {
+
+	return thpool_get_queued (cr->cerver->thpool) > 0;
+
+}
+
+// an idle connection can go back to the thpool when another one waits for a thread and the queue has a place for it
+static bool cerver_receive_http_can_yield (const CerverReceive *cr) {
+
+	return cerver_receive_http_thread_is_needed (cr) && !thpool_is_full (cr->cerver->thpool);
+
+}
+
+// a thread that is needed only waits a moment for its idle connection
+static int cerver_receive_http_idle_part (const CerverReceive *cr) {
+
+	return cerver_receive_http_thread_is_needed (cr) ? HANDLER_KEEP_ALIVE_YIELD_POLL : HANDLER_KEEP_ALIVE_POLL;
+
+}
+
+// the wait of a connection for its next request ends once, also when it moves between threads
+static double cerver_receive_http_idle_deadline (CerverReceive *cr, const HttpReceive *http_receive) {
+
+	if (cr->idle_deadline <= 0) {
+		cr->idle_deadline = cerver_receive_monotonic_time () + (
+			(double) http_receive->http_cerver->keep_alive_timeout / (double) HANDLER_MILLISECONDS_PER_SECOND
+		);
+	}
+
+	return cr->idle_deadline;
+
+}
+
+// waits for the next request of a connection that is kept, up to the keep alive timeout of its cerver:
+// the thread stays with the connection, and it checks every few milliseconds whether the cerver stops
+// or whether another connection waits for a thread
+// an idle connection is never closed for the one that waits: its client can be sending its next request,
+// and a proxy that reuses a connection that was closed answers 502. The idle one goes back to the queue
+// of the thpool instead, after one short wait (so the threads never spin), and its thread takes the next one
+// a client that left is only closed; one that is still there when its time ends or when the cerver stops
+// can be sending its next request, so its end is waited for a moment and the close does not answer it with a reset
+static HandlerIdle cerver_receive_http_idle (CerverReceive *cr, HttpReceive *http_receive) {
+
+	const int sock_fd = cr->socket->sock_fd;
+
+	const double deadline = cerver_receive_http_idle_deadline (cr, http_receive);
+
+	int ready = 0;
+	bool yield = false;
+	while (
+		!ready && !yield && !cerver_is_stopping (cr->cerver)
+		&& (cerver_receive_monotonic_time () < deadline)
+	) {
+		ready = cerver_receive_http_idle_poll (sock_fd, deadline, cerver_receive_http_idle_part (cr));
+
+		yield = !ready && cerver_receive_http_can_yield (cr);
+	}
+
+	HandlerIdle idle = HANDLER_IDLE_YIELDED;
+
+	if ((ready > 0) && cerver_receive_http_idle_arrived (sock_fd)) {
+		cr->idle_deadline = 0;
+
+		http_receive_request_arrived (http_receive);
+
+		idle = HANDLER_IDLE_ARRIVED;
+	}
+
+	else if (ready || !yield) {
+		http_receive_close (http_receive, !ready);
+
+		idle = HANDLER_IDLE_CLOSED;
+	}
+
+	return idle;
+
+}
+
 static inline u8 cerver_receive_http_actual (
 	CerverReceive *cr, HttpReceive *http_receive,
 	char *buffer, const size_t buffer_size
@@ -2251,8 +2431,7 @@ static inline u8 cerver_receive_http_actual (
 				);
 				#endif
 
-				if (http_receive->keep_alive) retval = 0;
-				else diagnostics->timed_out = true;
+				diagnostics->timed_out = true;
 			}
 
 			// a signal interrupted the recv (), the client is still there
@@ -2303,9 +2482,7 @@ static inline u8 cerver_receive_http_actual (
 			CERVER_STATS_ADD (cr->cerver->stats->total_n_receives_done, 1);
 			CERVER_STATS_ADD (cr->cerver->stats->total_bytes_received, (u64) rc);
 
-			http_receive->received += (size_t) rc;
-
-			http_receive->handler (http_receive, rc, buffer);
+			cerver_receive_http_handle (http_receive, buffer, (size_t) rc);
 
 			// an upgraded connection is read by its WebSocket from now on
 			retval = http_receive->upgraded ? 1 : 0;
@@ -2344,8 +2521,19 @@ static HttpReceive *cerver_receive_http_create (
 
 }
 
-// receives the data of the connection until its request ends
-static void cerver_receive_http_requests (
+// a connection that was kept waits for its next request
+// returns how its wait ended, HANDLER_IDLE_ARRIVED for a connection that does not wait
+static HandlerIdle cerver_receive_http_wait (CerverReceive *cr, HttpReceive *http_receive) {
+
+	return http_receive_is_between_requests (http_receive) ?
+		cerver_receive_http_idle (cr, http_receive) : HANDLER_IDLE_ARRIVED;
+
+}
+
+// receives the data of the connection until its request ends,
+// and the requests that follow it in a connection that is kept
+// returns true when the connection goes back to the thpool between two requests: it is not ended
+static bool cerver_receive_http_requests (
 	CerverReceive *cr, HttpReceive *http_receive,
 	char *buffer, const size_t buffer_size
 ) {
@@ -2355,8 +2543,13 @@ static void cerver_receive_http_requests (
 	HttpConnectionTimeouts timeouts = { 0, 0 };
 	cerver_receive_http_timeouts_init (http_receive->http_cerver, &timeouts);
 
+	HandlerIdle idle = HANDLER_IDLE_ARRIVED;
+
 	// a request in progress is completed even if the cerver is being drained
 	while (cr->socket->sock_fd > -1) {
+		idle = cerver_receive_http_wait (cr, http_receive);
+		if (idle != HANDLER_IDLE_ARRIVED) break;
+
 		if (!cerver_receive_http_deadline_check (cr, http_receive, &timeouts)) {
 			http_receive->diagnostics.timed_out = true;
 			break;
@@ -2368,6 +2561,55 @@ static void cerver_receive_http_requests (
 	// an idle connection or an expired deadline
 	if (http_receive->diagnostics.timed_out && (cr->socket->sock_fd > -1)) {
 		http_receive_handle_timeout (http_receive, (http_receive->received > 0));
+	}
+
+	return idle == HANDLER_IDLE_YIELDED;
+
+}
+
+// the connection of a thread ended: its request is logged and counted before its data is released
+// (a connection that ended between two requests has none), and it is dropped or handed to its WebSocket
+static void cerver_receive_http_end (CerverReceive *cr, HttpReceive *http_receive) {
+
+	if (!http_receive_is_between_requests (http_receive)) http_access_request (http_receive);
+
+	http_cerver_connection_ended (http_receive->http_cerver, http_receive->n_requests);
+
+	// the connection has ended, or it belongs to its WebSocket now
+	if (!http_web_socket_start (cr, http_receive)) {
+		connection_drop (cr->cerver, cr->connection);
+	}
+
+}
+
+static void cerver_receive_http_work (void *cerver_receive_ptr);
+
+// an idle connection that waited in the queue of the thpool while the cerver was drained
+// with the reject policy or its timeout expired: it has no request to be answered, it is only closed
+static void cerver_receive_http_idle_reject (void *cerver_receive_ptr) {
+
+	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+	// it ends with the requests that it handled before it went back to the thpool
+	http_cerver_connection_ended ((HttpCerver *) cr->cerver->cerver_data, cr->n_requests);
+
+	connection_drop (cr->cerver, cr->connection);
+
+	cerver_receive_delete (cr);
+
+}
+
+// gives an idle connection back to the thpool, where a thread takes it again to wait for its next request;
+// its thread does not use it anymore, so this is the last thing that it does with it
+// a queue that got full before that has no place for it: the connection is closed
+static void cerver_receive_http_yield (CerverReceive *cr) {
+
+	if (thpool_add_work_with_reject (
+		cr->cerver->thpool,
+		cerver_receive_http_work, cerver_receive_http_idle_reject,
+		cr
+	)) {
+		cerver_receive_http_idle_reject (cr);
 	}
 
 }
@@ -2382,6 +2624,8 @@ static void cerver_receive_http_unavailable (CerverReceive *cr) {
 		cr->connection->socket->sock_fd
 	);
 
+	http_cerver_connection_ended ((HttpCerver *) cr->cerver->cerver_data, cr->n_requests);
+
 	connection_drop (cr->cerver, cr->connection);
 
 	cerver_receive_delete (cr);
@@ -2391,6 +2635,7 @@ static void cerver_receive_http_unavailable (CerverReceive *cr) {
 // a cerver closes the connection after its request, so one request is expected:
 // the socket is read until the request ends, then the request is logged and counted,
 // and the connection is dropped or handed to its WebSocket
+// a connection that is kept handles more requests, and it can come back here after it waited in the thpool
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
@@ -2402,6 +2647,9 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		cerver_receive_http_unavailable (cr);
 		return NULL;
 	}
+
+	// the requests that the connection handled with another thread
+	http_receive->n_requests = cr->n_requests;
 
 	#ifdef HANDLER_DEBUG
 	const i32 sock_fd = cr->socket->sock_fd;
@@ -2433,10 +2681,12 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	}
 	#endif
 
+	bool yielded = false;
+
 	const size_t buffer_size = cr->cerver->receive_buffer_size;
 	char *buffer = context ? context->buffer : (char *) calloc (buffer_size, sizeof (char));
 	if (buffer) {
-		cerver_receive_http_requests (cr, http_receive, buffer, buffer_size);
+		yielded = cerver_receive_http_requests (cr, http_receive, buffer, buffer_size);
 
 		if (!context) free (buffer);
 	}
@@ -2459,13 +2709,9 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	);
 	#endif
 
-	// the request is logged and counted before its data is released
-	http_access_request (http_receive);
-
-	// the connection has ended, or it belongs to its WebSocket now
-	if (!http_web_socket_start (cr, http_receive)) {
-		connection_drop (cr->cerver, cr->connection);
-	}
+	// a connection that goes back to the thpool keeps its requests for the thread that takes it
+	if (yielded) cr->n_requests = http_receive->n_requests;
+	else cerver_receive_http_end (cr, http_receive);
 
 	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
 	cerver_log_debug (
@@ -2479,7 +2725,8 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	// the request data is released all at once
 	if (context) arena_reset (context->arena);
 
-	cerver_receive_delete (cr);
+	if (yielded) cerver_receive_http_yield (cr);
+	else cerver_receive_delete (cr);
 
 	return NULL;
 
@@ -3090,7 +3337,7 @@ static int handler_reserve_fd = -1;
 
 // keeps a fd open, so a connection can still be accepted and closed
 // when the process runs out of fds, instead of leaving it in the backlog
-static void cerver_accept_reserve_fd_open (void) {
+void cerver_accept_reserve_fd_open (void) {
 
 	(void) pthread_mutex_lock (&handler_reserve_fd_mutex);
 
@@ -3102,10 +3349,11 @@ static void cerver_accept_reserve_fd_open (void) {
 
 }
 
-// without fds, the pending connection is accepted with the reserve fd and closed,
-// then the cerver waits a bit, otherwise the listening socket is always readable
-// and accept () fails in a busy loop
-static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
+// the pending connection of a listening socket is accepted with the reserve fd and closed
+// returns true when a connection waited: a process without fds gets EMFILE from accept () also when none does
+static bool cerver_accept_reserve_fd_use (const int listen_fd) {
+
+	bool rejected = false;
 
 	(void) pthread_mutex_lock (&handler_reserve_fd_mutex);
 
@@ -3113,11 +3361,35 @@ static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
 		(void) close (handler_reserve_fd);
 		handler_reserve_fd = -1;
 
-		int fd = accept (cerver->sock, NULL, NULL);
-		if (fd > -1) (void) close (fd);
+		int fd = accept (listen_fd, NULL, NULL);
+		if (fd > -1) {
+			(void) close (fd);
+			rejected = true;
+		}
 	}
 
 	(void) pthread_mutex_unlock (&handler_reserve_fd_mutex);
+
+	return rejected;
+
+}
+
+bool cerver_accept_reserve_fd_reject (const int listen_fd) {
+
+	const bool rejected = cerver_accept_reserve_fd_use (listen_fd);
+
+	cerver_accept_reserve_fd_open ();
+
+	return rejected;
+
+}
+
+// without fds, the pending connection is accepted with the reserve fd and closed,
+// then the cerver waits a bit, otherwise the listening socket is always readable
+// and accept () fails in a busy loop
+static void cerver_accept_out_of_fds (Cerver *cerver, const int error) {
+
+	(void) cerver_accept_reserve_fd_use (cerver->sock);
 
 	CERVER_STATS_ADD (cerver->stats->total_rejected_connections, 1);
 
