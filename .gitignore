@@ -19,7 +19,7 @@ reference
 
 uploads
 
+!test/crypto/keys
 !test/data
 !test/http/keys
-!test/jwt/keys
 !test/web/keys

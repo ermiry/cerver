@@ -7,8 +7,9 @@
 #include <cerver/core/end.h>
 
 #include <cerver/http/core/http.h>
-#include <cerver/http/jwt/alg.h>
 #include <cerver/http/security/auth.h>
+
+#include <cerver/jwt/jwt.h>
 
 #include "../../test.h"
 #include "../http.h"
@@ -35,8 +36,8 @@ void http_tests_jwt_encode (void) {
 	test_check_ptr (test_cerver->cerver_data);
 	HttpCerver *http_cerver = (HttpCerver *) test_cerver->cerver_data;
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
-	test_check_int_eq (http_cerver->jwt_alg, JWT_ALG_RS256, NULL);
+	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+	test_check_int_eq (http_cerver->jwt_alg, CERVER_JWT_ALGORITHM_RS256, NULL);
 
 	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
 	test_check_ptr (http_cerver->jwt_opt_key_name);

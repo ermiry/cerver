@@ -27,8 +27,6 @@ INPUT                  = include/cerver
 FILE_PATTERNS          = *.h
 RECURSIVE              = YES
 EXCLUDE                = include/cerver/http/parser
-EXCLUDE_PATTERNS       = */http/jwt/jwt.h \
-                         */http/jwt/alg.h
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = YES

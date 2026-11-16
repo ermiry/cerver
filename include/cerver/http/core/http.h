@@ -19,7 +19,6 @@
 #include "cerver/handler/handler.h"
 
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/jwt/alg.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 #include "cerver/http/requests/multipart.h"
@@ -32,6 +31,8 @@
 #include "cerver/http/routes/validator.h"
 #include "cerver/http/security/origin.h"
 #include "cerver/http/security/proxy.h"
+
+#include "cerver/jwt/jwt.h"
 
 /**
  * @defgroup http_core Core
@@ -219,13 +220,20 @@
 /** @brief The responses are counted by their status code, from 100 to 599. */
 #define HTTP_CERVER_RESPONSES_STATUS_SIZE			600
 
-/** @brief The default longest bearer token that is decoded; 0 has no limit. */
+/**
+ * @brief The default algorithm of the tokens of a cerver.
+ *
+ * @since 3.0b-8
+ */
+#define HTTP_CERVER_DEFAULT_JWT_ALGORITHM			CERVER_JWT_ALGORITHM_HS256
+
+/** @brief The default longest bearer token that is decoded; 0 is the limit of every token (#CERVER_JWT_SIZE_MAX). */
 #define HTTP_CERVER_DEFAULT_JWT_MAX_SIZE			(1 << 13)
 
 /** @brief A token without "exp" is accepted by default, unless the cerver requires it. */
 #define HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION	false
 
-/** @brief The default seconds of clock skew accepted in "exp" and "nbf". */
+/** @brief The default seconds of clock skew accepted in "exp", "nbf" and "iat". */
 #define HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS		0
 
 /** @} */
@@ -245,9 +253,6 @@ struct _HttpResponse;
 
 struct _HttpWebSocketRegistry;
 struct HttpWebSocketHandshake;
-
-struct jwt;
-struct JwtKey;
 
 /**
  * @defgroup http_parser Parser
@@ -514,26 +519,28 @@ struct _HttpCerver {
 	size_t uploads_sequence;
 
 	/** @brief The algorithm of the tokens. */
-	jwt_alg_t jwt_alg;
+	CerverJwtAlgorithm jwt_alg;
 
 	/** @brief The filename of the private key of the tokens. */
 	String *jwt_opt_key_name;
 	/** @brief Signs the tokens, loaded when the cerver starts. */
-	struct JwtKey *jwt_private_key;
+	CerverJwtKey *jwt_private_key;
 
 	/** @brief The filename of the public key of the tokens. */
 	String *jwt_opt_pub_key_name;
 	/** @brief Verifies the tokens, loaded when the cerver starts. */
-	struct JwtKey *jwt_public_key;
+	CerverJwtKey *jwt_public_key;
 
-	/** @brief The longest token that is decoded, 0 has no limit. */
+	/** @brief The longest token that is decoded, 0 is the limit of every token (#CERVER_JWT_SIZE_MAX). */
 	size_t jwt_max_size;
 	/** @brief A token without "exp" is rejected. */
 	bool jwt_require_expiration;
-	/** @brief The seconds of clock skew accepted in "exp" and "nbf". */
+	/** @brief The seconds of clock skew accepted in "exp", "nbf" and "iat". */
 	unsigned int jwt_leeway_seconds;
 	/** @brief The "iss" that a token must have, if it is set. */
 	String *jwt_issuer;
+	/** @brief The "sub" that a token must have, if it is set. */
+	String *jwt_subject;
 	/** @brief The "aud" that a token must have, if it is set. */
 	String *jwt_audience;
 

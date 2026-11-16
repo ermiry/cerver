@@ -1,6 +1,6 @@
 FROM gcc:16.2
 
-RUN apt-get update && apt-get install -y --no-install-recommends cmake libssl-dev zlib1g-dev && apt-get clean
+RUN apt-get update && apt-get install -y --no-install-recommends cmake libssl-dev pkg-config zlib1g-dev && apt-get clean
 
 ENV YYJSON_VERSION=0.13.0
 ENV SIMDJSON_VERSION=5.1.1
@@ -8,6 +8,9 @@ ENV JANSSON_VERSION=2.15.1
 ENV RAPIDJSON_COMMIT=297637bc0a0f00dc504dbc1a47ebdaa577f8ae19
 ENV LLHTTP_VERSION=9.4.4
 ENV PICOHTTPPARSER_COMMIT=dd573d8fa9264c646a400e96ce9f07dea6f156e4
+ENV LIBJWT_VERSION=1.17.2
+ENV L8W8JWT_VERSION=2.5.0
+ENV JWT_CPP_VERSION=0.7.2
 
 ENV COMPETITORS=/opt/competitors
 
@@ -27,6 +30,18 @@ RUN curl -fsSL https://github.com/nodejs/llhttp/archive/refs/tags/release/v${LLH
 	&& mv llhttp-release-v${LLHTTP_VERSION} llhttp
 RUN curl -fsSL https://github.com/h2o/picohttpparser/archive/${PICOHTTPPARSER_COMMIT}.tar.gz | tar xz \
 	&& mv picohttpparser-${PICOHTTPPARSER_COMMIT} picohttpparser
+RUN curl -fsSL https://github.com/benmcollins/libjwt/archive/refs/tags/v${LIBJWT_VERSION}.tar.gz | tar xz \
+	&& PKG_CONFIG_PATH=${COMPETITORS}/jansson/lib/pkgconfig cmake -S libjwt-${LIBJWT_VERSION} -B libjwt-build \
+		-D CMAKE_BUILD_TYPE=Release -D BUILD_SHARED_LIBS=OFF -D BUILD_EXAMPLES=OFF \
+		-D CMAKE_C_FLAGS="-O3 -march=native -I ${COMPETITORS}/jansson/include" \
+	&& cmake --build libjwt-build -j 4 && cmake --install libjwt-build --prefix ${COMPETITORS}/libjwt
+RUN git clone --depth 1 --branch ${L8W8JWT_VERSION} --recurse-submodules --shallow-submodules \
+		https://github.com/GlitchedPolygons/l8w8jwt.git l8w8jwt \
+	&& cmake -S l8w8jwt -B l8w8jwt-build -D CMAKE_BUILD_TYPE=Release -D BUILD_SHARED_LIBS=OFF \
+		-D MBEDTLS_FATAL_WARNINGS=OFF -D ENABLE_PROGRAMS=OFF -D ENABLE_TESTING=OFF -D CMAKE_C_FLAGS="-O3 -march=native" \
+	&& cmake --build l8w8jwt-build -j 4
+RUN curl -fsSL https://github.com/Thalhammer/jwt-cpp/archive/refs/tags/v${JWT_CPP_VERSION}.tar.gz | tar xz \
+	&& mv jwt-cpp-${JWT_CPP_VERSION} jwt-cpp
 
 WORKDIR /opt/cerver
 

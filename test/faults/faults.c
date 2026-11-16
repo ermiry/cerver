@@ -46,12 +46,15 @@ typedef struct FaultsArm {
 	pthread_t thread;
 	size_t size;
 
+	// the calls that match and are left to pass before the one that fails
+	unsigned int passed;
+
 } FaultsArm;
 
 static FaultsArm faults_arms[FAULTS_FUNCTION_COUNT];
 
-void faults_arm (
-	const FaultsFunction function, const bool this_thread, const size_t size
+void faults_arm_after (
+	const FaultsFunction function, const bool this_thread, const size_t size, const unsigned int passed
 ) {
 
 	FaultsArm *arm = &faults_arms[function];
@@ -60,7 +63,16 @@ void faults_arm (
 	arm->thread = pthread_self ();
 	arm->size = size;
 
+	__atomic_store_n (&arm->passed, passed, __ATOMIC_RELEASE);
 	__atomic_store_n (&arm->armed, true, __ATOMIC_RELEASE);
+
+}
+
+void faults_arm (
+	const FaultsFunction function, const bool this_thread, const size_t size
+) {
+
+	faults_arm_after (function, this_thread, size, 0);
 
 }
 
@@ -86,18 +98,55 @@ static bool faults_matches (const FaultsArm *arm, const size_t size) {
 
 }
 
-// the call fails when its function is armed and it matches: the first one that takes the arm
+// a call that matches its arm is left to pass while the arm still has calls to pass
+static bool faults_passes (FaultsArm *arm) {
+
+	unsigned int passed = __atomic_load_n (&arm->passed, __ATOMIC_ACQUIRE);
+
+	bool passes = false;
+	while (passed && !passes) {
+		passes = __atomic_compare_exchange_n (
+			&arm->passed, &passed, passed - 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE
+		);
+	}
+
+	return passes;
+
+}
+
+// the call fails when its function is armed and it matches: the first one that takes the arm,
+// after the calls that the arm leaves to pass
 static bool faults_fails (const FaultsFunction function, const size_t size) {
 
 	FaultsArm *arm = &faults_arms[function];
 
 	bool armed = __atomic_load_n (&arm->armed, __ATOMIC_ACQUIRE);
-	const bool fails = armed && faults_matches (arm, size)
+	const bool fails = armed && faults_matches (arm, size) && !faults_passes (arm)
 		&& __atomic_compare_exchange_n (&arm->armed, &armed, false, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 
 	if (fails) (void) __atomic_add_fetch (&arm->triggered, 1, __ATOMIC_ACQ_REL);
 
 	return fails;
+
+}
+
+unsigned int faults_sweep (FaultsSweepWork work, void *data) {
+
+	unsigned int runs = 0;
+
+	bool failed = true;
+	while (failed) {
+		const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_MALLOC);
+
+		faults_arm_after (FAULTS_FUNCTION_MALLOC, true, FAULTS_ANY_SIZE, runs);
+		work (data);
+		faults_disarm (FAULTS_FUNCTION_MALLOC);
+
+		failed = faults_triggered (FAULTS_FUNCTION_MALLOC) != triggered;
+		if (failed) runs += 1;
+	}
+
+	return runs;
 
 }
 

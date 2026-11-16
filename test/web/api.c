@@ -19,11 +19,12 @@
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
-#include <cerver/http/jwt/alg.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/security/auth.h>
+
+#include <cerver/jwt/jwt.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -124,7 +125,7 @@ int main (void) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
 
-		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
 		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.pub");
 

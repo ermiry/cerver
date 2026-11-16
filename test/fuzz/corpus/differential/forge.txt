@@ -1,0 +1,2 @@
+1{"alg":"HS256","typ":"JWT"}
+{"exp":4102444800,"nbf":1600000000,"iat":1600000000,"iss":"cerver","sub":"user","aud":["one","two"],"id":"forge"}

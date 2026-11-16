@@ -1,0 +1,2 @@
+4{"typ":"JWT","alg":"HS256","kid":"key","iss":"cerver","aud":"one"}
+{"iss":"cerver","aud":"one","values":[1,2.5,null,true,{"a":"b"}]}

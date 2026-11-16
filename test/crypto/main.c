@@ -16,6 +16,12 @@ int main (void) {
 
 	crypto_tests_memory ();
 
+	crypto_tests_keys ();
+
+	crypto_tests_jwk ();
+
+	crypto_tests_signatures ();
+
 	(void) printf ("\nDone with CRYPTO tests!\n\n");
 
 	return 0;

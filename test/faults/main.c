@@ -4,8 +4,10 @@
 
 #include "../test.h"
 #include "core.h"
+#include "crypto.h"
 #include "http.h"
 #include "json.h"
+#include "jwt.h"
 #include "websockets.h"
 
 int main (void) {
@@ -18,8 +20,10 @@ int main (void) {
 	(void) printf ("Testing FAULTS...\n");
 
 	faults_tests_core ();
+	faults_tests_crypto ();
 	faults_tests_http ();
 	faults_tests_json ();
+	faults_tests_jwt ();
 	faults_tests_websockets ();
 
 	(void) printf ("\nDone with FAULTS tests!\n\n");

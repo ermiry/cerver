@@ -12,7 +12,6 @@
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/pairs.h>
-#include <cerver/http/jwt/alg.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/security/auth.h>

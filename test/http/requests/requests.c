@@ -663,6 +663,20 @@ static void test_http_request_json_missing (void) {
 
 }
 
+// a request whose route verified no bearer has no claims, like a call without a request
+static void test_http_request_claims_missing (void) {
+
+	HttpRequest *request = http_request_new ();
+	test_check_ptr (request);
+
+	test_check_null_ptr (http_request_claims (request));
+
+	http_request_delete (request);
+
+	test_check_null_ptr (http_request_claims (NULL));
+
+}
+
 // a request of an arena, like the ones of a thread that handles requests: its document goes there
 static void test_http_request_json_arena (void) {
 
@@ -730,6 +744,8 @@ void http_tests_requests (void) {
 	test_http_request_json_invalid ();
 	test_http_request_json_missing ();
 	test_http_request_json_arena ();
+
+	test_http_request_claims_missing ();
 
 	(void) printf ("Done!\n");
 

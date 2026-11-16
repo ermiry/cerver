@@ -1,0 +1,2 @@
+1{"typ":"JWT","alg":"HS256","iss":"cerver","sub":"user","aud":"one","crit":["exp"]}
+{"exp":1.5e9,"iss":"cerver","sub":"user","aud":"one","values":[1,2.5,null,true,{"a":"b"}]}

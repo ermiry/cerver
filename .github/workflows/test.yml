@@ -93,7 +93,7 @@ jobs:
           retention-days: 7
 
   conformance:
-    name: Cerver JSON conformance (JSONTestSuite)
+    name: Cerver JSON & JWT conformance (JSONTestSuite, Wycheproof)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -101,6 +101,11 @@ jobs:
 
       - name: JSON
         run: bash test/conformance/json.sh
+
+      - name: JWT
+        env:
+          BUILD: 0
+        run: bash test/conformance/jwt.sh
 
   fuzz:
     name: Cerver fuzzing

@@ -7,7 +7,7 @@ SECONDS_PER_TARGET=${SECONDS_PER_TARGET:-30}
 MAX_LENGTH=${MAX_LENGTH:-16384}
 ARTIFACTS=${ARTIFACTS:-fuzz-artifacts}
 
-TARGETS=(request lenient pipeline loop multipart url jansson json compare number writer scan jwt tree receive packet client file datagram address serializer game frame handshake)
+TARGETS=(request lenient pipeline loop multipart url json number writer scan jwt jwk differential tree receive packet client file datagram address serializer game frame handshake)
 
 if [ $# -gt 0 ]; then
 	TARGETS=("$@")

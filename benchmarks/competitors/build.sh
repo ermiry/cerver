@@ -13,12 +13,10 @@ mkdir -p "$OUTPUT"
 
 gcc $FLAGS -c $SOURCE/measure.c -o $OUTPUT/measure.o
 gcc $FLAGS -c $SOURCE/json/driver.c -o $OUTPUT/json.o
+gcc $FLAGS -c $SOURCE/jwt/driver.c -o $OUTPUT/jwt.o
 gcc $FLAGS -c $SOURCE/parser/driver.c -o $OUTPUT/parser.o
 
 gcc $FLAGS $SOURCE/json/cerver.c $OUTPUT/json.o $OUTPUT/measure.o -o $OUTPUT/json-cerver $CERVER
-
-gcc $FLAGS -I ./src $SOURCE/json/legacy.c objs/cerver/http/json/*.o $OUTPUT/json.o $OUTPUT/measure.o \
-	-o $OUTPUT/json-legacy $CERVER
 
 gcc $FLAGS -I "$COMPETITORS/jansson/include" $SOURCE/json/jansson.c $OUTPUT/json.o $OUTPUT/measure.o \
 	-o $OUTPUT/json-jansson -L "$COMPETITORS/jansson/lib" -l:libjansson.a
@@ -31,6 +29,18 @@ g++ $FLAGS -std=c++17 -I "$COMPETITORS/simdjson/singleheader" $SOURCE/json/simdj
 
 g++ $FLAGS -std=c++17 -I "$COMPETITORS/rapidjson/include" $SOURCE/json/rapidjson.cpp \
 	$OUTPUT/json.o $OUTPUT/measure.o -o $OUTPUT/json-rapidjson
+
+gcc $FLAGS $SOURCE/jwt/cerver.c $OUTPUT/jwt.o $OUTPUT/measure.o -o $OUTPUT/jwt-cerver $CERVER
+
+gcc $FLAGS -I "$COMPETITORS/libjwt/include" $SOURCE/jwt/libjwt.c $OUTPUT/jwt.o $OUTPUT/measure.o \
+	-o $OUTPUT/jwt-libjwt -L "$COMPETITORS/libjwt/lib" -l:libjwt.a -L "$COMPETITORS/jansson/lib" -l:libjansson.a -l crypto
+
+gcc $FLAGS -I "$COMPETITORS/l8w8jwt/include" $SOURCE/jwt/l8w8jwt.c $OUTPUT/jwt.o $OUTPUT/measure.o \
+	-o $OUTPUT/jwt-l8w8jwt "$COMPETITORS/l8w8jwt-build/libl8w8jwt.a" \
+	"$COMPETITORS/l8w8jwt-build/mbedtls/library/libmbedx509.a" "$COMPETITORS/l8w8jwt-build/mbedtls/library/libmbedcrypto.a"
+
+g++ $FLAGS -std=c++17 -I "$COMPETITORS/jwt-cpp/include" $SOURCE/jwt/jwtcpp.cpp $OUTPUT/jwt.o $OUTPUT/measure.o \
+	-o $OUTPUT/jwt-jwtcpp -l crypto
 
 gcc $FLAGS $SOURCE/parser/cerver.c objs/cerver/http/parser/*.o $OUTPUT/parser.o $OUTPUT/measure.o \
 	-o $OUTPUT/parser-cerver $CERVER
