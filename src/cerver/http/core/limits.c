@@ -282,6 +282,14 @@ void http_cerver_set_keep_alive_follow (
 
 }
 
+void http_cerver_set_keep_alive_pool_read (
+	HttpCerver *http_cerver, const bool pool_read
+) {
+
+	if (http_cerver) http_cerver->keep_alive_pool_read = pool_read;
+
+}
+
 void http_cerver_set_half_close_is_gone (
 	HttpCerver *http_cerver, const bool half_close_is_gone
 ) {

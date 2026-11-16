@@ -67,7 +67,11 @@ typedef enum HttpConnectionState {
 	HTTP_CONNECTION_STATE_AUTH				= 2,
 	/** @internal @brief Its job waits in the loop for a place in the pool. */
 	HTTP_CONNECTION_STATE_PARKED			= 3,
-	/** @internal @brief A thread of the pool handles its request, and ends it or gives it back to be kept; the pool owns it. */
+	/**
+	 * @internal
+	 * @brief A thread of the pool handles its request (or reads the next one of an idle connection), and ends it or
+	 * gives it back to be kept; the pool owns it.
+	 */
 	HTTP_CONNECTION_STATE_DISPATCHED		= 4,
 	/** @internal @brief The loop writes what is left of a short response of cerver. */
 	HTTP_CONNECTION_STATE_WRITE				= 5,
@@ -86,7 +90,13 @@ typedef enum HttpConnectionJob {
 	/** @internal @brief The second part of its headers, before its body is read. */
 	HTTP_CONNECTION_JOB_AUTHORIZE			= 1,
 	/** @internal @brief Its complete request, and the end of its connection when it is not kept. */
-	HTTP_CONNECTION_JOB_DISPATCH			= 2
+	HTTP_CONNECTION_JOB_DISPATCH			= 2,
+	/**
+	 * @internal
+	 * @brief The next request of a connection that waited idle and whose socket was reported: the thread reads,
+	 * parses and handles it, or gives the connection back with what it read.
+	 */
+	HTTP_CONNECTION_JOB_READ				= 3
 
 } HttpConnectionJob;
 
@@ -103,16 +113,22 @@ typedef enum HttpConnectionOutcome {
 	HTTP_CONNECTION_OUTCOME_DROPPED			= 3,
 	/** @internal @brief Its request was handled and its connection is kept: the loop starts its next request. */
 	HTTP_CONNECTION_OUTCOME_KEPT			= 4,
-	/** @internal @brief The thread that followed it read a part of its next request: the loop reads the rest. */
+	/** @internal @brief The thread that followed it (or read it) read a part of its next request: the loop reads the rest. */
 	HTTP_CONNECTION_OUTCOME_READING			= 5,
 	/**
 	 * @internal
-	 * @brief The thread that followed it parsed its next request up to where it needs another job: its
+	 * @brief The thread that followed it (or read it) parsed its next request up to where it needs another job: its
 	 * authentication before its body, or a complete request that the thread does not handle. The loop submits it.
 	 */
 	HTTP_CONNECTION_OUTCOME_PAUSED			= 6,
-	/** @internal @brief The thread that followed it could not parse its next request, or it was rejected and answered: the loop closes it. */
-	HTTP_CONNECTION_OUTCOME_FAILED			= 7
+	/** @internal @brief The thread that followed it (or read it) could not parse its next request, or it was rejected and answered: the loop closes it. */
+	HTTP_CONNECTION_OUTCOME_FAILED			= 7,
+	/**
+	 * @internal
+	 * @brief Its socket was reported while it waited idle to a thread of its pool (or to another loop) that does
+	 * not read it: its loop reads its next request, or closes it when it stops.
+	 */
+	HTTP_CONNECTION_OUTCOME_REPORTED		= 8
 
 } HttpConnectionOutcome;
 
@@ -233,6 +249,8 @@ struct HttpConnection {
 
 	/** @internal @brief The connection is in the parked ones of its lane. */
 	bool parked;
+	/** @internal @brief When its job started to wait for a place in its pool, in the milliseconds of its loop. */
+	u64 parked_since;
 
 	/** @internal @brief The next connection of the list where it is: the completed ones, the parked ones or the recycled ones. */
 	struct HttpConnection *list_next;
@@ -282,6 +300,26 @@ CERVER_HIDDEN HttpConnection *http_connection_new (void);
  * @param[in] connection the connection, it can be NULL
  */
 CERVER_HIDDEN void http_connection_delete (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Releases the arena and the buffers of a connection that is not in use, its memory is kept: a thread that
+ * still has it reads that it is not idle.
+ *
+ * @param[in,out] connection the connection
+ * @since 2.1b-19
+ */
+CERVER_HIDDEN void http_connection_strip (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Creates again the arena and the buffers of a connection that was stripped (http_connection_strip ()).
+ *
+ * @param[in,out] connection the connection
+ * @return 0 on success, 1 on error (it stays stripped)
+ * @since 2.1b-19
+ */
+CERVER_HIDDEN unsigned int http_connection_restore (HttpConnection *connection);
 
 /**
  * @internal
@@ -411,6 +449,39 @@ CERVER_PRIVATE void http_connection_work (void *connection_ptr);
  * @param[in] connection_ptr the connection
  */
 CERVER_PRIVATE void http_connection_work_dropped (void *connection_ptr);
+
+/**
+ * @internal
+ * @brief A thread of a pool got the socket of an idle connection from the poller where it waits (events/idle.c):
+ * it takes the connection out of the idle ones of its loop, and it reads its next request when the loop does not
+ * have to decide; otherwise the connection goes back to its loop (#HTTP_CONNECTION_OUTCOME_REPORTED).
+ *
+ * @param[in] connection the connection of the socket; its loop can have ended it, then nothing is done
+ * @return true when the thread owns the connection and runs http_connection_work_reported () for it
+ * @since 2.1b-19
+ */
+CERVER_HIDDEN bool http_connection_reported (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief The job of an idle connection that a thread took with http_connection_reported (): it reads, parses and
+ * handles its next request.
+ *
+ * @param[in] connection_ptr the connection
+ * @since 2.1b-19
+ */
+CERVER_PRIVATE void http_connection_work_reported (void *connection_ptr);
+
+/**
+ * @internal
+ * @brief A loop took the socket of an idle connection from the poller of its pool while no thread of the pool waited
+ * on it: a connection of the loop is read by it, the one of another loop goes to its loop.
+ *
+ * @param[in,out] loop the loop, the caller is its thread
+ * @param[in] connection the connection of the socket; its loop can have ended it, then nothing is done
+ * @since 2.1b-19
+ */
+CERVER_HIDDEN void http_connection_rescued (struct EventLoop *loop, HttpConnection *connection);
 
 /**
  * @internal
