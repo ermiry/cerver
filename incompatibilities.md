@@ -3,6 +3,68 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-17 (from 2.1b-16)
+
+Named pools, and the health and ready routes (F5 of `roadmap.md` §4.5). Nothing changes for a cerver that does not
+create a pool nor sets one of the routes: every request runs in its thpool like before.
+
+- **The structs are bigger, and some fields moved:** `HttpRouteSettings` has `pool_name` and `pool` before its
+  middlewares, so `middlewares` and `web_socket` moved in it, and with them the fields of `HttpEndpoint` after its
+  `settings` and the ones of `HttpGroup` after its own. `HttpCerver` ends with `pools`, `n_pools`, `pools_started`,
+  `health_route`, `ready_route`, `n_health_requests`, `n_ready_requests`, `n_not_ready_requests`,
+  `connection_requests`, `n_connection_requests`, `uploads_write_microseconds`, `uploads_write_bytes`,
+  `keep_alive_follow` and `n_followed_requests`, `Thpool` with `queue_awaited`, and
+  `HttpRoute` with `pool_name`. Everything that includes these headers has to be built again
+- **`HttpReceiveDispatch` has two more values,** `HTTP_RECEIVE_DISPATCH_HEALTH` (6) and
+  `HTTP_RECEIVE_DISPATCH_READY` (7), and `HTTP_RECEIVE_DISPATCH_MAX` is 8: a `switch` over it has two more cases,
+  both without an endpoint (`HttpReceive::endpoint` is NULL)
+- **The API:** `cerver/http/core/pool.h` (in the umbrella `cerver/http/http.h`) with `HttpPool`,
+  `HTTP_POOL_DEFAULT_NAME`, `http_cerver_pool_create ()`, `http_cerver_pool_get_with_name ()`,
+  `http_pool_get_name ()`, `http_pool_set_queue_size ()`, `http_pool_set_overload_policy ()`,
+  `http_pool_set_wait_timeout ()`, `http_cerver_set_health_route ()`, `http_cerver_set_ready_route ()` and
+  `http_cerver_is_ready ()`; `HTTP_ROUTE_SETTING_POOL`, `HTTP_POOL_NAME_SIZE`, `HTTP_CERVER_POOLS_SIZE`,
+  `http_group_set_pool ()`, `http_endpoint_set_pool ()` and `http_route_set_pool ()`;
+  `http_cerver_set_keep_alive_follow ()` with `HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW` (0) and
+  `HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT`, `HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS`, and `thpool_has_queued ()`
+- **A thread that follows its connection is off by default,** nothing changes without
+  `http_cerver_set_keep_alive_follow ()`. With it, a thread of a pool reads and parses the next request of the
+  connection whose request it just answered: a handler can run for several requests of a connection in a row in
+  the same thread, without its event loop between them; and that thread uses its processor while it looks for
+  the request (at most the time that was set, and never while another request waits for a thread of its pool)
+- **A route with a pool that the cerver does not have stops the cerver when it starts,** like any other error of
+  its routes: the pools are created before the routes are compiled, and before `cerver_start ()`
+- **The pools only start with `CERVER_HANDLER_TYPE_EVENTS`.** With `THREADS` or `POLL` a cerver logs a warning,
+  starts no named pool and handles every request with the thread of its connection, like before: a route keeps the
+  name of its pool, and it only isolates its handlers when the cerver has event loops
+- **A path that is set as the health or the ready route is answered by cerver** for GET and HEAD, before the routes
+  tree: an endpoint with the same path and method is not reached, its middlewares and its authentication do not
+  run, and the request is not counted in the stats of any route. The other methods of that path are requests like
+  any other
+- **The ready route answers 503 without closing the connection:** its response has `Retry-After` and no
+  `Connection: close` (unlike the 503 of a request that was rejected), so a client can ask again in the same
+  connection
+- **The metrics have new series,** none changed: `cerver_http_pool_threads`, `cerver_http_pool_threads_working`,
+  `cerver_http_pool_queued`, `cerver_http_pool_parked`, `cerver_http_pool_jobs_total`,
+  `cerver_http_pool_parked_total` and `cerver_http_pool_unavailable_total` with the label `pool` (the default pool
+  is `pool="default"`, also reported without a label by the `cerver_thpool_*` series of before);
+  `cerver_http_connections`, `cerver_http_connections_idle` and `cerver_http_connections_accepted_total` with event
+  loops; `cerver_http_health_requests_total`, `cerver_http_ready_requests_total` and
+  `cerver_http_not_ready_requests_total`; the histograms `cerver_http_pool_wait_seconds` and
+  `cerver_http_pool_run_seconds` with the label `pool`, and `cerver_http_connection_requests`;
+  `cerver_http_uploads_write_seconds_total` and `cerver_http_uploads_write_bytes_total`;
+  `cerver_http_followed_requests_total`
+- **The stats of the admin routes have new keys,** none changed: `pools`, `connections`, `n_health_requests`,
+  `n_ready_requests`, `n_not_ready_requests`, `uploads_write_microseconds` and `uploads_write_bytes`. A client that
+  rejects a key that it does not know has to accept them
+- **A write of a file of an upload reads the monotonic clock twice,** to count its time: nothing else changes in
+  the uploads
+- **Inside cerver** (`src/cerver/events/internal.h`, for the tests that include it): a loop has lanes instead of
+  one dispatcher (`EventLoop::lanes`, `event_loop_lane_set ()`; `EventLoop::dispatcher`, `parked_head` and
+  `parked_tail` are in its first lane), `event_loop_space ()` takes the lane of the job, and `EventLoopGroup` has
+  a dispatcher for each pool. `EventDispatcher` has `is_awaited` (NULL when its jobs never wait): a dispatcher
+  that is filled by hand sets it or leaves it NULL, and its struct has to be zeroed. `HttpConnectionOutcome` has
+  `READING` (5), `PAUSED` (6) and `FAILED` (7), and `HttpConnection` ends with `follow_misses` and `follow_skip`
+
 ## 2.1b-16 (from 2.1b-15)
 
 Keep-alive (F4 of `roadmap.md` §4.4): a connection handles more than one request. A cerver with
