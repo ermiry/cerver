@@ -121,7 +121,8 @@ void http_cerver_auth_jwt_delete (HttpJwt *http_jwt) {
 
 		http_jwt->jwt = NULL;
 
-		(void) pool_push (http_jwt_pool, http_jwt);
+		// an HttpJwt that the pool does not take is released (it was lost)
+		if (pool_push (http_jwt_pool, http_jwt)) http_jwt_delete (http_jwt);
 	}
 
 }
