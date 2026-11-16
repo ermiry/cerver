@@ -371,8 +371,8 @@ struct _HttpRoute {
 	/** @brief The authentication type of the route. */
 	HttpRouteAuthType auth_type;
 
-	/** @brief Decodes the data of the JWT of a bearer authentication. */
-	void *(*decode_data)(void *);
+	/** @brief Decodes the data of the JWT of a bearer authentication, from its claims. */
+	HttpDecodeData decode_data;
 	/** @brief Releases the decoded data, NULL to keep it. */
 	void (*delete_decoded_data)(void *);
 
@@ -491,14 +491,15 @@ CERVER_EXPORT void http_route_set_auth (
  * @brief Sets the method that decodes the data of the JWT of a request, and the one that releases it.
  *
  * @param[in,out] route the route
- * @param[in] decode_data the method that decodes the data
+ * @param[in] decode_data the method that decodes the data, from the claims of the token
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
  * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
  * until it returns: it must not wait.
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route,
-	void *(*decode_data)(void *),
+	HttpDecodeData decode_data,
 	void (*delete_decoded_data)(void *)
 );
 

@@ -390,9 +390,9 @@ static void test_http_cerver_enable_admin_options_handlers (void) {
 
 }
 
-static void *user_parse_from_json (void *user_json_ptr) {
+static void *user_parse_from_json (const CerverJsonValue *claims) {
 
-	if (user_json_ptr) (void) printf ("user_json_ptr!");
+	if (claims) (void) printf ("claims!");
 
 	return NULL;
 

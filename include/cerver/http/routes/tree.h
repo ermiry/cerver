@@ -189,8 +189,8 @@ struct _HttpRouteSettings {
 	/** @brief The authentication type. */
 	HttpRouteAuthType auth_type;
 
-	/** @brief Decodes the data of the JWT of a bearer authentication. */
-	void *(*decode_data)(void *);
+	/** @brief Decodes the data of the JWT of a bearer authentication, from its claims. */
+	HttpDecodeData decode_data;
 	/** @brief Releases the decoded data, NULL to keep it. */
 	void (*delete_decoded_data)(void *);
 
@@ -367,14 +367,15 @@ CERVER_EXPORT void http_endpoint_set_auth (
  * @brief Sets the methods that decode the data of the JWT of a request and release it.
  *
  * @param[in,out] endpoint the endpoint
- * @param[in] decode_data the method that decodes the data
+ * @param[in] decode_data the method that decodes the data, from the claims of the token
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
  * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
  * until it returns: it must not wait.
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT void http_endpoint_set_decode_data (
 	HttpEndpoint *endpoint,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 );
 
 /**
@@ -814,14 +815,15 @@ CERVER_EXPORT void http_group_set_auth (
  * @brief Sets the methods that decode and release the data of the JWT, inherited by the endpoints of a group.
  *
  * @param[in,out] group the group
- * @param[in] decode_data the method that decodes the data
+ * @param[in] decode_data the method that decodes the data, from the claims of the token
  * @param[in] delete_decoded_data the method that releases it, NULL so it is not freed
  * @warning With CERVER_HANDLER_TYPE_EVENTS decode_data runs in an I/O thread, that reads no other connection
  * until it returns: it must not wait.
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT void http_group_set_decode_data (
 	HttpGroup *group,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 );
 
 /**

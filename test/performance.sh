@@ -42,6 +42,11 @@ GET_PATH=/bench
 POST_PATH=/bench/json
 JSON_BODY='{"name": "cerver", "values": [1, 2, 3]}'
 
+AUTH_PATH=/bench/auth
+AUTH_SECRET=0123456789abcdef0123456789abcdef
+AUTH_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImJlbmNoIn0.3TAmk5kUhCB7ekKomaB0Lj3TleEkd8jvyTzPU72RMT8
+AUTH_MAX_ALLOCATIONS=39
+
 WEB_SOCKET_PATH=/ws/echo
 WEB_SOCKET_SIZE=64
 WEB_SOCKET_ALLOCATION_CONNECTIONS=8
@@ -57,6 +62,9 @@ ARCHITECTURE=$(uname -m)
 FAILED=()
 
 mkdir -p "$LOGS"
+
+printf '%s' "$AUTH_SECRET" > "$LOGS/secret"
+export BENCH_AUTH="$LOGS/secret"
 
 if [ "$BUILD" -ne 0 ]; then
 	make clean > /dev/null
@@ -342,6 +350,7 @@ for HANDLER in "${HANDLERS[@]}"; do
 	echo "Allocations with $HANDLER..."
 	check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
 	check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+	LOAD_AUTHORIZATION="Bearer $AUTH_TOKEN" check_allocations GET $AUTH_PATH "" $AUTH_MAX_ALLOCATIONS
 	check_web_socket_allocations
 done
 
@@ -351,6 +360,7 @@ KEEP_ALIVE=1
 echo "Allocations with $HANDLER and $(connections_name)..."
 check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
 check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+LOAD_AUTHORIZATION="Bearer $AUTH_TOKEN" check_allocations GET $AUTH_PATH "" $AUTH_MAX_ALLOCATIONS
 
 KEEP_ALIVE=0
 

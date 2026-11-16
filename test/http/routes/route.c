@@ -4,9 +4,9 @@
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
-#include <cerver/http/json/json.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
+#include <cerver/http/security/auth.h>
 
 #include "../../test.h"
 
@@ -63,9 +63,9 @@ static unsigned int custom_authentication_handler (
 
 }
 
-static void *test_http_decode_data_into_json (void *json_ptr) {
+static void *test_http_decode_data_into_json (const CerverJsonValue *claims) {
 
-	return json_dumps ((json_t *) json_ptr, 0);
+	return http_decode_data_into_json (claims);
 
 }
 

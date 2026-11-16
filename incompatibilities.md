@@ -3,6 +3,99 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-7 (from 3.0b-6)
+
+HTTP over the JSON of cerver (the second beta of L1 of `roadmap.md`): the stats of the admin routes, the routes
+json, the json bodies of the responses and the claims of a token are written and read with `cerver/json`, and the
+copy of Jansson is not part of the API anymore. A program that used the `json_*` of cerver moves to the
+`cerver_json_*` (the table below); there is no layer of compatibility. The copy of Jansson stays inside the library,
+without its headers and without its symbols, only for the JWT, until the JWT of cerver (L2) removes both.
+
+**The JSON of Jansson left the API**
+
+- **`cerver/http/json/*.h` are not installed** (`json.h`, `value.h`, `config.h`, `types.h`, `internal.h`,
+  `private.h`, `hashtable.h`, `utf.h`: they are in `src/cerver/http/json/`), and the umbrella `cerver/http/http.h`
+  does not include `cerver/http/json/json.h`. `cerver/json/json.h` and its parts are in `cerver/cerver.h`
+- **`libcerver.so` does not export the 87 `json_*` methods** (`json_loads ()`, `json_dumps ()`, `json_object_get ()`,
+  `json_pack ()`, `json_unpack ()`, `json_decref ()`, …): a binary that calls one does not link. The names are free
+  again for the Jansson of the system
+- **The grants and the headers of a `jwt_t`** (`jwt_t::grants`, `jwt_t::headers`, `jwt_valid_t::required_grants`)
+  are still a `struct json_t *` of the copy, that a program can not read anymore: `jwt_get_grant ()`,
+  `jwt_get_grant_int ()`, `jwt_get_grant_bool ()` and `jwt_get_grants_json ()` give them
+
+| Jansson | The JSON of cerver |
+|---|---|
+| `json_t *` | `const CerverJsonValue *`, a value of a `CerverJsonDocument` |
+| `json_error_t` | `CerverJsonError` (its code and the byte of the error), `cerver_json_error_to_string ()`, `cerver_json_error_position ()` |
+| `json_loads ()`, `json_loadb ()` | `cerver_json_parse ()` and `cerver_json_document_root ()`; `http_request_json ()` for the body of a request |
+| `json_loadf ()`, `json_loadfd ()`, `json_load_file ()`, `json_load_callback ()` | None: the text is read first; `cerver_json_read ()` gives a text as events |
+| `json_decref ()`, `json_incref ()` | None: a value lives as long as its document, `cerver_json_document_delete ()` or the arena of the document |
+| `json_typeof ()`, `json_is_object ()`, `json_is_array ()`, `json_is_string ()`, `json_is_boolean ()`, `json_is_null ()`, `json_is_number ()` | `cerver_json_type ()`, `cerver_json_is_object ()`, `cerver_json_is_array ()`, `cerver_json_is_string ()`, `cerver_json_is_boolean ()`, `cerver_json_is_null ()`, `cerver_json_is_number ()` |
+| `json_is_integer ()`, `json_is_real ()` | `cerver_json_type ()` is `CERVER_JSON_TYPE_INTEGER` (or `CERVER_JSON_TYPE_UNSIGNED`, over 2^63 - 1), `CERVER_JSON_TYPE_REAL` |
+| `json_is_true ()`, `json_is_false ()` | `cerver_json_is_boolean ()` with `cerver_json_boolean_value ()` |
+| `json_object_get ()` | `cerver_json_object_get ()`, `cerver_json_object_find ()` with the length of the key, `cerver_json_pointer_get ()` |
+| `json_object_size ()` | `cerver_json_object_size ()` |
+| `json_object_foreach ()`, `json_object_iter ()` and the rest of the iterators | `cerver_json_object_iterator ()` and `cerver_json_object_iterator_next ()` |
+| `json_array_size ()`, `json_array_get ()`, `json_array_foreach ()` | `cerver_json_array_size ()`, `cerver_json_array_get ()`, `cerver_json_array_iterator ()` and `cerver_json_array_iterator_next ()` |
+| `json_string_value ()`, `json_string_length ()` | `cerver_json_string_value ()`, `cerver_json_string_length ()` |
+| `json_integer_value ()` | `cerver_json_integer_value ()`, `cerver_json_unsigned_value ()` |
+| `json_real_value ()`, `json_number_value ()` | `cerver_json_real_value ()`, `cerver_json_number_value ()` |
+| `json_boolean_value ()` | `cerver_json_boolean_value ()` |
+| `json_equal ()` | `cerver_json_equal ()` |
+| `json_unpack ()`, `json_unpack_ex ()`, `json_vunpack_ex ()` | None: each value with its getter, that takes a NULL value and one of another type |
+| `json_object ()`, `json_array ()`, `json_string ()`, `json_integer ()`, `json_real ()`, `json_true ()`, `json_false ()`, `json_boolean ()`, `json_null ()`, `json_pack ()`, `json_object_set_new ()`, `json_array_append_new ()` | A `CerverJsonWriter`: `cerver_json_writer_object_begin ()`, `_key ()`, `_string ()`, `_integer ()`, `_unsigned ()`, `_real ()`, `_boolean ()`, `_null ()`, `_array_begin ()`, `_array_end ()`, `_object_end ()` and `cerver_json_writer_end ()` |
+| `json_dumps ()`, `json_dumpb ()`, `json_dumpf ()`, `json_dump_callback ()` | `cerver_json_writer_init ()` or `cerver_json_writer_init_arena ()`, `cerver_json_writer_text ()` and `cerver_json_writer_length ()`; `cerver_json_write ()` and `cerver_json_writer_value ()` for a value of a document |
+| `JSON_COMPACT`, `JSON_INDENT ()`, `JSON_ESCAPE_SLASH`, `JSON_ENSURE_ASCII` | `CERVER_JSON_WRITE_COMPACT`, `cerver_json_writer_set_indent ()`, `CERVER_JSON_WRITE_ESCAPE_SLASH`, `CERVER_JSON_WRITE_ENSURE_ASCII` |
+| `JSON_SORT_KEYS`, `JSON_PRESERVE_ORDER`, `JSON_REAL_PRECISION ()` | None: the members are written in the order of the calls, and a real with the least digits that read it back |
+| `JSON_REJECT_DUPLICATES`, `JSON_ALLOW_NUL`, `JSON_DECODE_ANY` | `CERVER_JSON_PARSE_REJECT_DUPLICATES`; the default (`CERVER_JSON_PARSE_REJECT_NUL` rejects it); the default |
+| `JSON_DISABLE_EOF_CHECK`, `JSON_DECODE_INT_AS_REAL` | None (`CERVER_JSON_PARSE_BIG_AS_REAL` only for an integer that does not fit in 64 bits) |
+| `json_object_seed ()`, `json_set_parser_memory_factor ()` | None: nothing is a state of the process; the `CerverJsonLimits` and the arena of each call |
+| `json_object_set ()`, `json_object_del ()`, `json_object_update ()`, `json_object_clear ()`, `json_array_append ()`, `json_array_insert ()`, `json_array_remove ()`, `json_copy ()`, `json_deep_copy ()`, `json_string_set ()`, `json_integer_set ()`, … | None: a document is not changed; another text is written with a writer |
+
+**`decode_data` takes the claims of a token as a value of the JSON of cerver**
+
+- **`HttpDecodeData`** (`cerver/http/requests/request.h`) is `void *(*) (const CerverJsonValue *claims)`: the method
+  that a bearer authentication calls with the claims of its token got them as a `json_t *` behind a `void *`. It is
+  the type of `HttpRoute::decode_data`, `HttpRouteSettings::decode_data`, `HttpStaticPath::decode_data` and
+  `HttpCerver::admin_decode_data` (the structs keep their size), and of the argument of `http_route_set_decode_data ()`,
+  `http_endpoint_set_decode_data ()`, `http_group_set_decode_data ()`, `http_static_path_set_decode_data ()`,
+  `http_cerver_admin_routes_auth_set_decode_data ()` and `http_cerver_auth_validate_jwt ()`. A method with the old
+  type is an incompatible pointer for them (an error since gcc 14 and in C++), and one that is forced with a cast
+  reads a value of cerver as a `json_t`
+- **The claims are valid only during the call** (they are read in the arena of the request, or in one of the call
+  of `http_cerver_auth_validate_jwt ()`): a `decode_data` copies what it keeps, as before. A method that used
+  `json_unpack (claims, "{s:i, s:s}", "iat", &iat, "id", &id)` reads each claim with `cerver_json_object_get ()`
+  and its getter
+- **`http_route_set_decode_data_into_json ()`, `http_endpoint_set_decode_data_into_json ()`,
+  `http_group_set_decode_data_into_json ()` and `http_cerver_admin_routes_auth_decode_to_json ()`** keep their names
+  and what they give: the claims as a json string, released with `free ()`, with the same bytes (the members in the
+  order of the token, `", "` and `": "`) but for a claim that is a real (below)
+- **The claims of a bearer have at most `HTTP_JWT_CLAIMS_DEPTH` (2^5) levels** of nested arrays and objects: a token
+  with more is not valid (the limit was the 2^11 of the parser of Jansson)
+- **`http_cerver_auth_jwt_verify ()`** (`CERVER_PRIVATE`) takes the arena where the claims are read and returns
+  them, it returned the `jwt_t`; **`http_decode_data_into_json ()`** (`CERVER_PRIVATE`) takes a
+  `const CerverJsonValue *`
+
+**What is written with other bytes**
+
+- **A real has the least digits that read it back:** `{"value": 18.123}` where `http_response_json_real_value ()`
+  wrote `{"value": 18.123000000000001}`; the same in the reals of the stats of the admin routes
+  (`min_process_time`, `max_process_time`, `mean_process_time`, `mean_n_files`, `mean_file_size`, and the `total`,
+  `available`, `used` and `used_percentage` of a file system) and in a real claim of
+  `http_decode_data_into_json ()`. A real that has few digits (`1.5`, `0.25`, `1e100`) is written as it was
+- **Everything else has the same bytes:** the stats, the info, the file systems and the workers of the admin routes,
+  the routes json of `http_cerver_routes_generate_json ()`, the bodies of `http_response_json_*` and the json of
+  `http_cerver_auth_generate_bearer_jwt_json ()`. A member whose string is not UTF-8 or whose real is not a number
+  is still left out of the stats, and a body or a token json with a value that is not UTF-8 is still an error
+
+**Tests and scripts:** `make install` and the `Dockerfile` do not install `cerver/http/json/`. `test/bin/jansson`,
+`test/bin/json` (the bytes of the writer against the ones of Jansson), the fuzzers `jansson`, `compare` and `jwt`,
+and the backend `legacy` of `benchmarks/competitors/` use the copy of Jansson from its objects and its headers in
+`src/`. `benchmarks/server` has `GET /bench/auth`, a route with a bearer, when `BENCH_AUTH` names the file of its
+HS256 secret, and `benchmarks/load` sends the value of `LOAD_AUTHORIZATION` in its `Authorization` header;
+`test/performance.sh` counts the allocations of a request with a bearer (`AUTH_MAX_ALLOCATIONS`, 39 with the JWT of
+this beta).
+
 ## 3.0b-6 (from 3.0b-5)
 
 The JSON of cerver (the first beta of L1 of `roadmap.md`): `cerver/json`, a new module written from scratch, next to

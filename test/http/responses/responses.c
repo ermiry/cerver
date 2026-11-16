@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -8,8 +9,6 @@
 
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/settings.h>
-#include <cerver/http/json/json.h>
-#include <cerver/http/json/value.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/security/origin.h>
 
@@ -19,6 +18,10 @@
 #define TEST_COMPILED_LEN	2048
 #define TEST_LONG_VALUE_LEN	700
 #define TEST_FORMAT_LEN		(HTTP_RESPONSE_HEADER_FORMAT_SIZE + 16)
+
+// the values of the json bodies of every length up to this one
+#define TEST_JSON_LONG_VALUE_SIZE	1024
+#define TEST_JSON_LONG_BODY_SIZE	(TEST_JSON_LONG_VALUE_SIZE + 64)
 
 static char json_header[TEST_HEADER_LEN] = { 0 };
 static char header_content_len[TEST_HEADER_LEN] = { 0 };
@@ -930,26 +933,66 @@ static void test_http_response_json_escaped (void) {
 	const char *message = "near '\"admin\": true' \\ \n";
 
 	HttpResponse *response = http_response_json_error (HTTP_STATUS_BAD_REQUEST, message);
-	const char *body = test_http_response_json_body (response);
-
-	json_error_t error;
-	json_t *json = json_loads (body, 0, &error);
-	test_check_ptr (json);
-	test_check_unsigned_eq (json_object_size (json), 1, "the message added keys to the json");
-	test_check_str_eq (json_string_value (json_object_get (json, "error")), message, NULL);
-	json_decref (json);
-
+	test_check_str_eq (
+		test_http_response_json_body (response),
+		"{\"error\": \"near '\\\"admin\\\": true' \\\\ \\n\"}", "the message added keys to the json"
+	);
 	http_response_delete (response);
 
 	response = http_response_create_json_key_value (HTTP_STATUS_OK, "key\"", "value\"");
-	json = json_loads (test_http_response_json_body (response), 0, &error);
-	test_check_ptr (json);
-	test_check_str_eq (json_string_value (json_object_get (json, "key\"")), "value\"", NULL);
-	json_decref (json);
+	test_check_str_eq (test_http_response_json_body (response), "{\"key\\\"\": \"value\\\"\"}", NULL);
 	http_response_delete (response);
 
-	// a message that is not UTF-8 can not be json
+	response = http_response_json_key_value (HTTP_STATUS_OK, "key", "the \tvalue / \x01");
+	test_check_str_eq (test_http_response_json_body (response), "{\"key\": \"the \\tvalue / \\u0001\"}", NULL);
+	http_response_delete (response);
+
+	// the characters that are not ASCII are written as they are
+	response = http_response_json_msg (HTTP_STATUS_OK, "caf\xc3\xa9 \xe2\x82\xac \xf0\x9f\x98\x80");
+	test_check_str_eq (
+		test_http_response_json_body (response), "{\"msg\": \"caf\xc3\xa9 \xe2\x82\xac \xf0\x9f\x98\x80\"}", NULL
+	);
+	http_response_delete (response);
+
+	response = http_response_json_error (HTTP_STATUS_BAD_REQUEST, "");
+	test_check_str_eq (test_http_response_json_body (response), "{\"error\": \"\"}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_key_value (HTTP_STATUS_OK, "", "value");
+	test_check_str_eq (test_http_response_json_body (response), "{\"\": \"value\"}", NULL);
+	http_response_delete (response);
+
+	// a message that is not UTF-8 can not be json, and a key neither
 	test_check_null_ptr (http_response_json_msg (HTTP_STATUS_OK, "\xff"));
+	test_check_null_ptr (http_response_json_error (HTTP_STATUS_OK, "cut \xe2\x82"));
+	test_check_null_ptr (http_response_json_key_value (HTTP_STATUS_OK, "\xc0\x80", "value"));
+	test_check_null_ptr (http_response_create_json_key_value (HTTP_STATUS_OK, "key", "\xed\xa0\x80"));
+	test_check_null_ptr (http_response_json_int_value (HTTP_STATUS_OK, "\xff", 1));
+
+}
+
+// a body of any length is written whole
+static void test_http_response_json_long (void) {
+
+	char value[TEST_JSON_LONG_VALUE_SIZE] = { 0 };
+	char expected[TEST_JSON_LONG_BODY_SIZE] = { 0 };
+
+	for (size_t length = 0; length < (TEST_JSON_LONG_VALUE_SIZE - 1); length++) {
+		(void) memset (value, 'a', length);
+		value[length] = '\0';
+
+		(void) snprintf (expected, TEST_JSON_LONG_BODY_SIZE, "{\"msg\": \"%s\"}", value);
+
+		HttpResponse *response = http_response_json_msg (HTTP_STATUS_OK, value);
+		test_check_str_eq (test_http_response_json_body (response), expected, NULL);
+		http_response_delete (response);
+
+		(void) snprintf (expected, TEST_JSON_LONG_BODY_SIZE, "{\"%s\": true}", value);
+
+		response = http_response_json_bool_value (HTTP_STATUS_OK, value, true);
+		test_check_str_eq (test_http_response_json_body (response), expected, NULL);
+		http_response_delete (response);
+	}
 
 }
 
@@ -977,8 +1020,56 @@ static void test_http_response_json_values (void) {
 	test_check_str_eq (test_http_response_json_body (response), "{\"msg\": \"oki doki\"}", NULL);
 	http_response_delete (response);
 
-	// NaN is not json
+	response = http_response_json_int_value (HTTP_STATUS_OK, "value", INT_MIN);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": -2147483648}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_large_int_value (HTTP_STATUS_OK, "value", LONG_MIN);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": -9223372036854775808}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_bool_value (HTTP_STATUS_OK, "value", false);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": false}", NULL);
+	http_response_delete (response);
+
+	// a real always has a point or an exponent
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", 7.0);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 7.0}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", -0.25);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": -0.25}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", 1e100);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 1e100}", NULL);
+	http_response_delete (response);
+
+	// a real is written with the least digits that read it back
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", 18.123);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 18.123}", NULL);
+	http_response_delete (response);
+
+	response = http_response_json_real_value (HTTP_STATUS_OK, "value", 0.1);
+	test_check_str_eq (test_http_response_json_body (response), "{\"value\": 0.1}", NULL);
+	http_response_delete (response);
+
+	// NaN and the infinites are not json
 	test_check_null_ptr (http_response_json_real_value (HTTP_STATUS_OK, "value", (double) NAN));
+	test_check_null_ptr (http_response_json_real_value (HTTP_STATUS_OK, "value", (double) INFINITY));
+	test_check_null_ptr (http_response_json_real_value (HTTP_STATUS_OK, "value", (double) -INFINITY));
+
+	// nothing is created without a key or without a value
+	test_check_null_ptr (http_response_json_int_value (HTTP_STATUS_OK, NULL, 1));
+	test_check_null_ptr (http_response_json_large_int_value (HTTP_STATUS_OK, NULL, 1));
+	test_check_null_ptr (http_response_json_real_value (HTTP_STATUS_OK, NULL, 1.5));
+	test_check_null_ptr (http_response_json_bool_value (HTTP_STATUS_OK, NULL, true));
+	test_check_null_ptr (http_response_json_msg (HTTP_STATUS_OK, NULL));
+	test_check_null_ptr (http_response_json_error (HTTP_STATUS_OK, NULL));
+	test_check_null_ptr (http_response_json_key_value (HTTP_STATUS_OK, NULL, "value"));
+	test_check_null_ptr (http_response_json_key_value (HTTP_STATUS_OK, "key", NULL));
+	test_check_null_ptr (http_response_create_json_key_value (HTTP_STATUS_OK, NULL, "value"));
+	test_check_null_ptr (http_response_create_json_key_value (HTTP_STATUS_OK, "key", NULL));
 
 }
 
@@ -1052,6 +1143,7 @@ void http_tests_responses (void) {
 
 	// json
 	test_http_response_json_escaped ();
+	test_http_response_json_long ();
 	test_http_response_json_values ();
 	test_http_response_json_owned ();
 

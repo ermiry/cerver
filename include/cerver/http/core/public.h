@@ -32,8 +32,8 @@ typedef struct HttpStaticPath {
 	/** @brief How the requests of its files authenticate. */
 	HttpRouteAuthType auth_type;
 
-	/** @brief Decodes the data of a bearer JWT, for the request of a file. */
-	void *(*decode_data)(void *);
+	/** @brief Decodes the data of a bearer JWT from its claims, for the request of a file. */
+	HttpDecodeData decode_data;
 	/** @brief Releases the decoded data after the request. */
 	void (*delete_decoded_data)(void *);
 
@@ -61,12 +61,13 @@ CERVER_EXPORT void http_static_path_set_auth (
  * is released after the request.
  *
  * @param[in,out] static_path the static path, NULL is ignored
- * @param[in] decode_data decodes the payload of the token
+ * @param[in] decode_data decodes the claims of the token
  * @param[in] delete_decoded_data releases the decoded data
+ * @since 3.0b-7 decode_data is a HttpDecodeData: it takes the claims as a value of the JSON of cerver.
  */
 CERVER_EXPORT void http_static_path_set_decode_data (
 	HttpStaticPath *static_path,
-	void *(*decode_data)(void *),
+	HttpDecodeData decode_data,
 	void (*delete_decoded_data)(void *)
 );
 

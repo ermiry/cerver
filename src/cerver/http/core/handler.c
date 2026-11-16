@@ -46,7 +46,6 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/json/json.h"
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/key.h"
@@ -1097,17 +1096,17 @@ static bool http_receive_handle_select_auth_bearer (
 	const char *token = authorization ?
 		http_cerver_auth_bearer_token (authorization->str, authorization->len) : NULL;
 
-	jwt_t *jwt = token ? http_cerver_auth_jwt_verify (
-		http_cerver, token, authorization->len - HTTP_JWT_BEARER_PREFIX_LENGTH
+	// the claims are read in the arena of the request
+	const CerverJsonValue *claims = token ? http_cerver_auth_jwt_verify (
+		http_cerver, http_request_get_arena (request),
+		token, authorization->len - HTTP_JWT_BEARER_PREFIX_LENGTH
 	) : NULL;
 
-	if (jwt) {
+	if (claims) {
 		if (found->decode_data) {
-			request->decoded_data = found->decode_data (jwt->grants);
+			request->decoded_data = found->decode_data (claims);
 			request->delete_decoded_data = found->delete_decoded_data;
 		}
-
-		jwt_free (jwt);
 
 		authenticated = true;
 	}

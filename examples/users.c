@@ -7,7 +7,8 @@
 
 #include <cerver/collections/dlist.h>
 
-#include <cerver/http/json/json.h>
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -95,41 +96,35 @@ void user_add (User *user) {
 //   "role": "common",
 //   "username": "erick"
 // }
-void *user_parse_from_json (void *user_json_ptr) {
-
-	json_t *user_json = (json_t *) user_json_ptr;
+void *user_parse_from_json (const CerverJsonValue *claims) {
 
 	User *user = user_new ();
 	if (user) {
-		const char *id = NULL;
-		const char *name = NULL;
-		const char *role = NULL;
-		const char *username = NULL;
+		const CerverJsonValue *iat = cerver_json_object_get (claims, "iat");
+		const CerverJsonValue *id = cerver_json_object_get (claims, "id");
+		const CerverJsonValue *name = cerver_json_object_get (claims, "name");
+		const CerverJsonValue *role = cerver_json_object_get (claims, "role");
+		const CerverJsonValue *username = cerver_json_object_get (claims, "username");
 
-		json_error_t error = CERVER_ZERO_INITIALIZER;
-		if (!json_unpack_ex (
-			user_json, &error, 0,
-			"{s:i, s:s, s:s, s:s, s:s}",
-			"iat", &user->iat,
-			"id", &id,
-			"name", &name,
-			"role", &role,
-			"username", &username
-		)) {
-			user->id = str_new (id);
-			user->name = str_new (name);
-			user->username = str_new (username);
-			user->role = str_new (role);
+		// the claims are valid only during the call, the user keeps copies of their values
+		if (
+			(cerver_json_type (iat) == CERVER_JSON_TYPE_INTEGER)
+			&& cerver_json_is_string (id) && cerver_json_is_string (name)
+			&& cerver_json_is_string (role) && cerver_json_is_string (username)
+		) {
+			user->iat = (time_t) cerver_json_integer_value (iat);
+			user->id = str_new (cerver_json_string_value (id));
+			user->name = str_new (cerver_json_string_value (name));
+			user->username = str_new (cerver_json_string_value (username));
+			user->role = str_new (cerver_json_string_value (role));
 
 			user_print (user);
 		}
 
 		else {
 			cerver_log_error (
-				"user_parse_from_json () - json_unpack () has failed!"
+				"user_parse_from_json () - the claims do not have the values of a user!"
 			);
-
-			cerver_log_error ("%s", error.text);
 
 			user_delete (user);
 			user = NULL;

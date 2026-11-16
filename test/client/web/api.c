@@ -3,9 +3,12 @@
 #include <string.h>
 
 #include <cerver/http/core/http.h>
-#include <cerver/http/json/json.h>
 #include <cerver/http/requests/url.h>
 #include <cerver/http/responses/status.h>
+
+#include <cerver/json/document.h>
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -85,6 +88,30 @@ static unsigned int api_request_register (
 
 }
 
+// keeps a copy of the token of the json of a login
+static void api_request_login_token (const char *data) {
+
+	CerverJsonError json_error = CERVER_ZERO_INITIALIZER;
+	CerverJsonDocument *document = cerver_json_parse (
+		NULL, data, strlen (data), CERVER_JSON_FLAGS_NONE, NULL, &json_error
+	);
+
+	const CerverJsonValue *value = cerver_json_object_get (cerver_json_document_root (document), "token");
+	if (cerver_json_is_string (value)) {
+		token = strdup (cerver_json_string_value (value));
+	}
+
+	else {
+		cerver_log_error (
+			"api_request_login () - failed to get the token of the json: %s",
+			cerver_json_error_to_string (json_error.code)
+		);
+	}
+
+	cerver_json_document_delete (document);
+
+}
+
 // POST api/users/login
 static unsigned int api_request_login (
 	CURL *curl, const char *actual_address, char *data_buffer
@@ -101,28 +128,7 @@ static unsigned int api_request_login (
 			data, strlen (data),
 			api_request_all_data_handler, data_buffer
 		)) {
-			// get token
-			json_error_t json_error = CERVER_ZERO_INITIALIZER;
-			json_t *json = json_loads (data_buffer, 0, &json_error);
-			if (json) {
-				const char *key = NULL;
-				json_t *value = NULL;
-				json_object_foreach (json, key, value) {
-					if (!strcmp (key, "token")) {
-						token = strdup (json_string_value (value));
-						// (void) printf ("token: \"%s\"\n", *title);
-					}
-				}
-
-				json_decref (json);
-			}
-
-			else {
-				cerver_log_error (
-					"api_request_login () - failed to load json: %s",
-					json_error.text
-				);
-			}
+			api_request_login_token (data_buffer);
 		}
 	}
 

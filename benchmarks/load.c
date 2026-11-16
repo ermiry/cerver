@@ -16,14 +16,20 @@
 // with LOAD_KEEP_ALIVE in the environment each thread keeps its connection for its requests,
 // like a proxy that keeps them: the latency is the one of each request, and a connection
 // that the server closes (its response says it) is opened again
+// with LOAD_AUTHORIZATION in the environment every request has that value in its Authorization header
 // usage: load <port> <concurrency> <requests> <GET path | POST path body>
 // prints the requests per second, the latency percentiles, the status codes and the connections that were opened
 
 #define LOAD_KEEP_ALIVE_VARIABLE		"LOAD_KEEP_ALIVE"
+#define LOAD_AUTHORIZATION_VARIABLE		"LOAD_AUTHORIZATION"
 
 #define LOAD_HEADER_END					"\r\n\r\n"
 #define LOAD_CONTENT_LENGTH				"Content-Length:"
 #define LOAD_CONNECTION_CLOSE			"Connection: close"
+#define LOAD_AUTHORIZATION				"Authorization:"
+
+// the headers of a request after its host, with the longest authorization that is sent
+#define LOAD_HEADERS_SIZE				(1 << 11)
 #define LOAD_DECIMAL_BASE				10
 
 // a request through a connection that the server closed while it was idle is sent again in a new one
@@ -297,10 +303,27 @@ static double load_percentile (const double *sorted, const unsigned int count, c
 
 }
 
-// a request that uses its own connection asks the server to close it, like a proxy that does not keep them
+// the headers that every request has after its host:
+// a request that uses its own connection asks the server to close it, like a proxy that does not keep them,
+// and the environment can give the value of its authorization
+static void load_request_headers (char *headers, const bool keep_alive) {
+
+	const char *authorization = getenv (LOAD_AUTHORIZATION_VARIABLE);
+
+	(void) snprintf (
+		headers, LOAD_HEADERS_SIZE, "%s%s%s%s",
+		keep_alive ? "" : LOAD_CONNECTION_CLOSE "\r\n",
+		authorization ? LOAD_AUTHORIZATION " " : "",
+		authorization ? authorization : "",
+		authorization ? "\r\n" : ""
+	);
+
+}
+
 static size_t load_request_create (char *request, int argc, char **argv, const bool keep_alive) {
 
-	const char *connection = keep_alive ? "" : LOAD_CONNECTION_CLOSE "\r\n";
+	char headers[LOAD_HEADERS_SIZE];
+	load_request_headers (headers, keep_alive);
 
 	int length = 0;
 
@@ -309,7 +332,7 @@ static size_t load_request_create (char *request, int argc, char **argv, const b
 		length = snprintf (
 			request, LOAD_REQUEST_SIZE,
 			"POST %s HTTP/1.1\r\nHost: localhost\r\n%sContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n%s",
-			argv[LOAD_ARGUMENT_PATH], connection, strlen (body), body
+			argv[LOAD_ARGUMENT_PATH], headers, strlen (body), body
 		);
 	}
 
@@ -317,7 +340,7 @@ static size_t load_request_create (char *request, int argc, char **argv, const b
 		length = snprintf (
 			request, LOAD_REQUEST_SIZE,
 			"GET %s HTTP/1.1\r\nHost: localhost\r\n%s\r\n",
-			argv[LOAD_ARGUMENT_PATH], connection
+			argv[LOAD_ARGUMENT_PATH], headers
 		);
 	}
 

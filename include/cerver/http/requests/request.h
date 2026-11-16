@@ -58,6 +58,19 @@ extern "C" {
 struct Arena;
 
 /**
+ * @brief Creates the data of an application from the claims of the token of a request.
+ *
+ * A route, an endpoint, a group or a static path with a bearer authentication calls it once its token was
+ * verified; what it returns is HttpRequest::decoded_data.
+ *
+ * @param[in] claims the claims of the token, an object of the JSON of cerver; it is valid only during the call, so
+ * what is needed of it is copied
+ * @return the data of the application, NULL for none
+ * @since 3.0b-7
+ */
+typedef void *(*HttpDecodeData) (const CerverJsonValue *claims);
+
+/**
  * @brief A route param: a slice of the url of the request.
  *
  * Its percent-decoded value is created in the arena of the request when it is requested.

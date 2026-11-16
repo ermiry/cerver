@@ -555,7 +555,7 @@ void http_route_set_auth (
 // if no delete method is set, data won't be freed
 void http_route_set_decode_data (
 	HttpRoute *route,
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
 
 	if (route) {
