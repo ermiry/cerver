@@ -192,10 +192,6 @@ PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS))
 
 $(PARSEROBJS): CFLAGS += -fvisibility=hidden
 
-JANSSONOBJS	:= $(filter $(BUILDDIR)/cerver/http/json/%,$(OBJECTS))
-
-$(JANSSONOBJS): CFLAGS += -fvisibility=hidden
-
 $(SLIB):
 	$(MAKE) $(OBJECTS)
 	$(CC) $(OBJECTS) $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
@@ -439,8 +435,7 @@ endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/http/*/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files/*.o -o ./$(TESTTARGET)/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/handler/*.o -o ./$(TESTTARGET)/handler $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/jansson/*.o $(JANSSONOBJS) -o ./$(TESTTARGET)/jansson $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o $(JANSSONOBJS) -o ./$(TESTTARGET)/json $(TESTLIBS) $(MATH)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS) $(MATH)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/packets/*.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/system/*.o -o ./$(TESTTARGET)/system $(TESTLIBS)
@@ -563,9 +558,10 @@ test: testout
 	$(MAKE) integration
 
 conformance:
-	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT)
+	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT)
 	@mkdir -p ./$(TESTTARGET)/conformance
 	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/json.$(OBJEXT) -o ./$(TESTTARGET)/conformance/json $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT) -o ./$(TESTTARGET)/conformance/jwt $(TESTLIBS)
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
@@ -676,6 +672,15 @@ fuzz: $(FUZZLIBOBJS)
 	@mkdir -p ./$(FUZZTARGET)
 	$(foreach fuzzer,$(FUZZERS),$(CC) $(FUZZFLAGS) $(FUZZINC) $(fuzzer) $(FUZZLIBOBJS) -o ./$(FUZZTARGET)/$(basename $(notdir $(fuzzer))) $(FUZZLIBS) || exit 1;)
 
+# the target that gives every token to the JWT of cerver and to the libjwt of the system,
+# built only where it is installed: make TYPE=test CC=clang differential
+DIFFERENTIALDIR	:= $(FUZZDIR)/differential
+DIFFERENTIALLIBS	:= -l jwt
+
+differential: $(FUZZLIBOBJS)
+	@mkdir -p ./$(FUZZTARGET)
+	$(CC) $(FUZZFLAGS) $(FUZZINC) $(DIFFERENTIALDIR)/jwt.$(SRCEXT) $(FUZZLIBOBJS) -o ./$(FUZZTARGET)/differential $(FUZZLIBS) $(DIFFERENTIALLIBS)
+
 $(FUZZBUILD)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
 	$(CC) $(FUZZLIBFLAGS) $(INC) -c -o $@ $<
@@ -713,4 +718,4 @@ clean-bench:
 	@$(RM) -rf $(BENCHBUILD)
 	@$(RM) -rf $(BENCHTARGET)
 
-.PHONY: all clean clear examples test coverage bench fuzz docs
+.PHONY: all clean clear examples test coverage bench fuzz differential docs
