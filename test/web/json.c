@@ -16,10 +16,12 @@
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
-#include <cerver/http/json/json.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
+
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -71,24 +73,23 @@ static void json_fetch_handler (
 
 }
 
+// the body of the request is an array or an object: it is read once, in the arena of the request
 static unsigned int json_load_from_body (
-	const String *request_body
+	const HttpRequest *request
 ) {
 
 	unsigned int retval = 1;
 
-	json_error_t json_error = CERVER_ZERO_INITIALIZER;
-	json_t *json_body = json_loads (request_body->str, 0, &json_error);
-	if (json_body) {
-		json_decref (json_body);
-
+	CerverJsonError json_error = CERVER_ZERO_INITIALIZER;
+	const CerverJsonValue *json_body = http_request_json (request, &json_error);
+	if (cerver_json_is_array (json_body) || cerver_json_is_object (json_body)) {
 		retval = 0;
 	}
 
 	else {
 		cerver_log_error (
-			"json_loads () - json error on line %d: %s\n",
-			json_error.line, json_error.text
+			"http_request_json () - json error at byte %zu: %s\n",
+			json_error.offset, cerver_json_error_to_string (json_error.code)
 		);
 	}
 
@@ -102,7 +103,7 @@ static void json_upload_handler (
 	const HttpRequest *request
 ) {
 
-	if (!json_load_from_body (request->body)) {
+	if (!json_load_from_body (request)) {
 		cerver_log_success ("JSON is valid!");
 
 		http_response_send (oki_doki, http_receive);
@@ -120,7 +121,7 @@ static void json_upload_big_handler (
 	const HttpRequest *request
 ) {
 
-	if (!json_load_from_body (request->body)) {
+	if (!json_load_from_body (request)) {
 		cerver_log_success ("Big JSON is valid!");
 
 		http_response_send (oki_doki, http_receive);

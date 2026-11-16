@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include <cerver/http/core/http.h>
-#include <cerver/http/json/json.h>
 #include <cerver/http/responses/status.h>
 
 #include <cerver/utils/log.h>

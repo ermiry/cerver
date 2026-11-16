@@ -1,9 +1,13 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/json/json.h>
 #include <cerver/http/responses/status.h>
+
+#include <cerver/json/document.h>
+#include <cerver/json/json.h>
+#include <cerver/json/value.h>
 
 #include <cerver/utils/log.h>
 
@@ -47,31 +51,39 @@ static size_t admin_stats_data_handler (
 
 }
 
+static bool admin_stats_is_integer (const CerverJsonValue *json, const char *key) {
+
+	return cerver_json_type (cerver_json_object_get (json, key)) == CERVER_JSON_TYPE_INTEGER;
+
+}
+
 static unsigned int admin_stats_check (const char *data, const size_t len) {
 
 	unsigned int errors = 0;
 
-	json_error_t error;
-	json_t *json = json_loadb (data, len, 0, &error);
-	if (!json) {
-		cerver_log_error ("/cerver/stats is not a JSON: %s", error.text);
+	CerverJsonError error = CERVER_ZERO_INITIALIZER;
+	CerverJsonDocument *document = cerver_json_parse (NULL, data, len, CERVER_JSON_FLAGS_NONE, NULL, &error);
+	if (!document) {
+		cerver_log_error ("/cerver/stats is not a JSON: %s", cerver_json_error_to_string (error.code));
 		return 1;
 	}
 
-	errors |= !json_is_integer (json_object_get (json, "main_routes"));
+	const CerverJsonValue *json = cerver_json_document_root (document);
+
+	errors |= !admin_stats_is_integer (json, "main_routes");
 
 	// the routes of the first API are listed in routes, the endpoints of the groups in endpoints
-	const json_t *routes = json_object_get (json, "routes");
-	errors |= !json_is_array (routes) || !json_array_size (routes);
-	errors |= !json_is_array (json_object_get (json, "endpoints"));
+	const CerverJsonValue *routes = cerver_json_object_get (json, "routes");
+	errors |= !cerver_json_is_array (routes) || !cerver_json_array_size (routes);
+	errors |= !cerver_json_is_array (cerver_json_object_get (json, "endpoints"));
 
 	for (size_t i = 0; i < STATS_COUNTERS; i++) {
-		errors |= !json_is_integer (json_object_get (json, stats_counters[i]));
+		errors |= !admin_stats_is_integer (json, stats_counters[i]);
 	}
 
 	if (errors) cerver_log_error ("/cerver/stats does not have the expected values: %s", data);
 
-	json_decref (json);
+	cerver_json_document_delete (document);
 
 	return errors;
 

@@ -5,6 +5,8 @@
 
 #include <cerver/types/string.h>
 
+#include <cerver/json/json.h>
+
 typedef struct User {
 
 	String *id;
@@ -35,7 +37,7 @@ extern void user_add (User *user);
 //   "role": "common",
 //   "username": "erick"
 // }
-extern void *user_parse_from_json (void *user_json_ptr);
+extern void *user_parse_from_json (const CerverJsonValue *claims);
 
 extern void users_init (void);
 
