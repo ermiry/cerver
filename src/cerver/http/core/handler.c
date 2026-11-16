@@ -968,17 +968,18 @@ static void http_query_piece_decode (String *piece) {
 // the pairs of a query are split by the separators of the original text
 // and then each key and each value is decoded, so an escaped separator is part of its value:
 // decoding the whole text first made a new pair out of "%26" and "%3D"
-static DoubleList *http_query_pairs_decoded (const char *query) {
+// they live in the arena of the request, its lists are only created when they are asked for
+static KeyValuePair *http_query_pairs_decoded (
+	HttpRequest *request, const String *query, size_t *n_pairs
+) {
 
-	DoubleList *pairs = query ? http_parse_query_into_pairs (query, query + strlen (query)) : NULL;
-	if (pairs) {
-		KeyValuePair *pair = NULL;
-		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
-			pair = (KeyValuePair *) le->data;
+	KeyValuePair *pairs = http_query_pairs_arena (
+		http_request_get_arena (request), query->str, query->str + query->len, n_pairs
+	);
 
-			http_query_piece_decode (pair->key);
-			http_query_piece_decode (pair->value);
-		}
+	for (size_t idx = 0; idx < *n_pairs; idx++) {
+		http_query_piece_decode (pairs[idx].key);
+		http_query_piece_decode (pairs[idx].value);
 	}
 
 	return pairs;
@@ -988,7 +989,7 @@ static DoubleList *http_query_pairs_decoded (const char *query) {
 // parses the query of the request into its query params
 static void http_receive_parse_query (HttpRequest *request) {
 
-	request->query_params = http_query_pairs_decoded (request->query->str);
+	request->query_pairs = http_query_pairs_decoded (request, request->query, &request->n_query_pairs);
 
 }
 
@@ -1000,7 +1001,7 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 		content_type
 		&& !strncmp (form_urlencoded_value, content_type->str, form_urlencoded_value_len)
 	) {
-		request->body_values = http_query_pairs_decoded (request->body->str);
+		request->body_pairs = http_query_pairs_decoded (request, request->body, &request->n_body_pairs);
 	}
 
 }
