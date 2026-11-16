@@ -63,8 +63,8 @@ Enums and their string conversions are generated with X-macro `*_MAP(XX)` tables
 - No literal values inside functions (named constants), short `if` / `case` bodies (a `static` function for a branch), full words in the names, every `.c` / `.h` that is touched ends with a newline.
 - `CHANGELOG.md` holds only the current version's changes, one line per commit message; `incompatibilities.md` has an entry for each version, the newest first.
 - Version bumps are a dedicated commit ("Updated version to Beta 1.9b-N") that updates `version.txt`, `include/cerver/version.h`, `ARG CERVER_VERSION` in `Dockerfile` and `cerver-install.sh`.
-- `docs/` is a git submodule (`ermiry/cerver-docs`), the wiki of the 1.x, with the paths of the 1.9b-1.
+- `docs/` is a git submodule (`ermiry/cerver-docs`), the wiki of the 1.x, with the paths and the API of the 1.9.
 
 ## Branches
 
-- `core` / `beta` is the 1.x line (the 1.9 plan: 1.9b-1 the structure, the documentation and the license; 1.9b-2 the audit; 1.9b-3 the port of `thpool_has_queued ()` of the 2.1b-17, the last beta; then Release 1.9 to `master`; 1.9.1 macOS; a 1.9.x for the ports between `core` and `http` before the 2.0; anything else of the 1.x is a 1.9.x), `http` / `http-beta` the 2.0 line, `nightly` / `nightly-beta` the 2.1 line and `labs` / `labs-beta` the 3.0 line. The fixes of the core land in `core` first and are seeded by hand in the other lines.
+- `core` / `beta` is the 1.x line (the 1.9: 1.9b-1 the structure, the documentation and the license; 1.9b-2 the audit; 1.9b-3 the port of `thpool_has_queued ()` of the 2.1b-17, the last beta; Release 1.9 to `master` with the backlog of the core and the ports of the other lines to the files of the core; then 1.9.1 macOS and a 1.9.x for the ports between `core` and `http` before the 2.0; anything else of the 1.x is a 1.9.x, each one a release straight to `master`), `http` / `http-beta` the 2.0 line, `nightly` / `nightly-beta` the 2.1 line and `labs` / `labs-beta` the 3.0 line. The fixes of the core land in `core` first and are seeded by hand in the other lines.

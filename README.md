@@ -31,15 +31,17 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 - **Events and errors** to run your actions when something happens in a cerver or a client
 - **Stats** of every cerver, client, connection, handler and request type, with histograms of their timings
 - **Graceful shutdowns** that drain the work in progress before releasing anything
-- **Quality**: zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IPv6, AddressSanitizer, UndefinedBehaviorSanitizer, ThreadSanitizer, valgrind and fuzzing in every change
+- **Quality**: zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IPv6, AddressSanitizer, UndefinedBehaviorSanitizer, ThreadSanitizer, valgrind, fuzzing, failures of memory and threads injected in the tests, and the static analyzers gcc `-fanalyzer`, scan-build, clang-tidy and cppcheck in every change
+- **Documentation**: every public header with Doxygen (`make docs`) and the wiki in [docs](./docs)
 
 ## Versions
 
 | Line | Branch | What it is |
 |---|---|---|
-| **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver: everything above, without HTTP |
+| **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver: everything above, without HTTP. The 1.9 is its last line, its fixes are 1.9.N releases (macOS in the 1.9.1) |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus an HTTP server: routes, JWT authentication, uploads, JSON. It reaches `master` with the release 2.0 |
-| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive and WebSocket |
+| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, pools and WebSocket |
+| **3.0** | `labs` (development), `labs-beta` | Experimental: cerver with its own code only (its own JSON, JWT and HTTP parser), and an I/O over io_uring as its goal |
 
 The changes between versions are in [CHANGELOG.md](./CHANGELOG.md) and [incompatibilities.md](./incompatibilities.md).
 
