@@ -34,8 +34,6 @@
 #include "cerver/http/core/utils.h"
 #include "cerver/http/headers/buffer.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/value.h"
 #include "cerver/http/requests/content.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/compression.h"
@@ -49,10 +47,14 @@
 #include "cerver/http/security/origin.h"
 #include "cerver/http/websockets/handshake.h"
 
+#include "cerver/json/json.h"
+#include "cerver/json/writer.h"
+
 #include "cerver/utils/utils.h"
 
-// the separators ", " and ": " of the json bodies, as they were written before
-#define HTTP_RESPONSE_JSON_DUMP_FLAGS		0
+// the json bodies that are written in the stack before they are copied,
+// a longer one is written again in memory of its size
+#define HTTP_RESPONSE_JSON_BODY_SIZE		256
 
 // the version of the clients that close their connection unless its response says "keep-alive": HTTP/1.0
 #define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR		1
@@ -3041,30 +3043,150 @@ HttpResponse *http_response_create_json (
 
 }
 
+// the type of the value of a json body
+typedef enum HttpResponseJsonType {
+
+	HTTP_RESPONSE_JSON_TYPE_STRING,
+	HTTP_RESPONSE_JSON_TYPE_INTEGER,
+	HTTP_RESPONSE_JSON_TYPE_REAL,
+	HTTP_RESPONSE_JSON_TYPE_BOOLEAN
+
+} HttpResponseJsonType;
+
+// the only member of a json body, with the value of its type
+typedef struct HttpResponseJsonMember {
+
+	const char *key;
+	HttpResponseJsonType type;
+
+	const char *string;
+	i64 integer;
+	double real;
+	bool boolean;
+
+} HttpResponseJsonMember;
+
+// writes { "key": value } with the separators ", " and ": " that the json bodies always had
+static void http_response_json_body_write (
+	CerverJsonWriter *writer, const HttpResponseJsonMember *member
+) {
+
+	cerver_json_writer_object_begin (writer);
+	cerver_json_writer_key (writer, member->key);
+
+	switch (member->type) {
+		case HTTP_RESPONSE_JSON_TYPE_STRING:
+			cerver_json_writer_string (writer, member->string, strlen (member->string));
+			break;
+
+		case HTTP_RESPONSE_JSON_TYPE_INTEGER: cerver_json_writer_integer (writer, member->integer); break;
+		case HTTP_RESPONSE_JSON_TYPE_REAL: cerver_json_writer_real (writer, member->real); break;
+		case HTTP_RESPONSE_JSON_TYPE_BOOLEAN: cerver_json_writer_boolean (writer, member->boolean); break;
+	}
+
+	cerver_json_writer_object_end (writer);
+
+}
+
+// a body that fit in the stack, in memory of its own
+static char *http_response_json_body_copy (const char *text, const size_t length) {
+
+	char *body = (char *) malloc (length + 1);
+	if (body) (void) memcpy (body, text, length + 1);
+
+	return body;
+
+}
+
+// a body that did not fit in the stack, written again in memory of its size:
+// the same member was already written without an error, so only its bytes were missing
+static char *http_response_json_body_long (
+	const HttpResponseJsonMember *member, const size_t length
+) {
+
+	char *body = (char *) malloc (length + 1);
+	if (body) {
+		CerverJsonWriter writer;
+		cerver_json_writer_init (&writer, body, length + 1, CERVER_JSON_FLAGS_NONE);
+		http_response_json_body_write (&writer, member);
+		(void) cerver_json_writer_end (&writer);
+	}
+
+	return body;
+
+}
+
 // the body { "key": value } of the json responses,
-// the key and a string value are escaped by the json library,
+// the key and a string value are escaped by the json writer and must be UTF-8,
 // a real is written without the locale, and a NaN or an infinite value is an error
-// it takes the value, as json_object_set_new () does
 // returns the body allocated with malloc (), or NULL on error
-static char *http_response_json_body (const char *key, json_t *value) {
+static char *http_response_json_body (const HttpResponseJsonMember *member) {
 
 	char *body = NULL;
 
-	json_t *json = json_object ();
-	if (json && value) {
-		// the value is released by the object, also when it fails to set it
-		if (!json_object_set_new (json, key, value)) {
-			body = json_dumps (json, HTTP_RESPONSE_JSON_DUMP_FLAGS);
-		}
-	}
+	char buffer[HTTP_RESPONSE_JSON_BODY_SIZE];
+	CerverJsonWriter writer;
 
-	else {
-		json_decref (value);
-	}
+	cerver_json_writer_init (&writer, buffer, HTTP_RESPONSE_JSON_BODY_SIZE, CERVER_JSON_FLAGS_NONE);
+	http_response_json_body_write (&writer, member);
 
-	json_decref (json);
+	switch (cerver_json_writer_end (&writer)) {
+		case CERVER_JSON_ERROR_NONE:
+			body = http_response_json_body_copy (buffer, cerver_json_writer_length (&writer));
+			break;
+
+		case CERVER_JSON_ERROR_TRUNCATED:
+			body = http_response_json_body_long (member, cerver_json_writer_length (&writer));
+			break;
+
+		default: break;
+	}
 
 	return body;
+
+}
+
+static char *http_response_json_body_string (const char *key, const char *value) {
+
+	HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+	member.key = key;
+	member.type = HTTP_RESPONSE_JSON_TYPE_STRING;
+	member.string = value;
+
+	return http_response_json_body (&member);
+
+}
+
+static char *http_response_json_body_integer (const char *key, const i64 value) {
+
+	HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+	member.key = key;
+	member.type = HTTP_RESPONSE_JSON_TYPE_INTEGER;
+	member.integer = value;
+
+	return http_response_json_body (&member);
+
+}
+
+static char *http_response_json_body_real (const char *key, const double value) {
+
+	HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+	member.key = key;
+	member.type = HTTP_RESPONSE_JSON_TYPE_REAL;
+	member.real = value;
+
+	return http_response_json_body (&member);
+
+}
+
+static char *http_response_json_body_boolean (const char *key, const bool value) {
+
+	HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+	member.key = key;
+	member.type = HTTP_RESPONSE_JSON_TYPE_BOOLEAN;
+	member.boolean = value;
+
+	return http_response_json_body (&member);
 
 }
 
@@ -3094,7 +3216,7 @@ HttpResponse *http_response_create_json_key_value (
 ) {
 
 	return (key && value) ? http_response_create_json_owned (
-		status, http_response_json_body (key, json_string (value))
+		status, http_response_json_body_string (key, value)
 	) : NULL;
 
 }
@@ -3107,7 +3229,7 @@ HttpResponse *http_response_json_int_value (
 ) {
 
 	return key ? http_response_create_json_owned (
-		status, http_response_json_body (key, json_integer ((json_int_t) value))
+		status, http_response_json_body_integer (key, (i64) value)
 	) : NULL;
 
 }
@@ -3146,7 +3268,7 @@ HttpResponse *http_response_json_large_int_value (
 ) {
 
 	return key ? http_response_create_json_owned (
-		status, http_response_json_body (key, json_integer ((json_int_t) value))
+		status, http_response_json_body_integer (key, (i64) value)
 	) : NULL;
 
 }
@@ -3185,7 +3307,7 @@ HttpResponse *http_response_json_real_value (
 ) {
 
 	return key ? http_response_create_json_owned (
-		status, http_response_json_body (key, json_real (value))
+		status, http_response_json_body_real (key, value)
 	) : NULL;
 
 }
@@ -3224,7 +3346,7 @@ HttpResponse *http_response_json_bool_value (
 ) {
 
 	return key ? http_response_create_json_owned (
-		status, http_response_json_body (key, json_boolean (value))
+		status, http_response_json_body_boolean (key, value)
 	) : NULL;
 
 }
@@ -3260,7 +3382,7 @@ static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
-	char *json = http_response_json_body (key, json_string (value));
+	char *json = http_response_json_body_string (key, value);
 	if (!json) return NULL;
 
 	HttpResponse *response = (HttpResponse *) http_response_new ();
