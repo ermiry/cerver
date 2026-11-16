@@ -16,14 +16,15 @@
 #include "cerver/http/core/pool.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/core/stats.h"
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/value.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
 #include "cerver/http/security/auth.h"
 #include "cerver/http/websockets/registry.h"
+
+#include "cerver/json/json.h"
+#include "cerver/json/writer.h"
 
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/worker.h"
@@ -67,51 +68,42 @@ HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 
 }
 
-static void http_cerver_admin_generate_info_json_internal (
-	const Cerver *cerver, json_t *json
-) {
+#pragma region json
 
-	(void) json_object_set_new (
-		json, "name", json_string (cerver->info->name)
-	);
+static void http_cerver_admin_write_version (CerverJsonWriter *writer) {
 
-	(void) json_object_set_new (
-		json, "alias", json_string (cerver->info->alias)
-	);
+	cerver_json_writer_key (writer, "version");
+	cerver_json_writer_object_begin (writer);
 
-	(void) json_object_set_new (
-		json, "time_started", json_integer ((json_int_t) cerver->info->time_started)
-	);
+	http_json_member_string (writer, "name", CERVER_VERSION_NAME);
+	http_json_member_string (writer, "date", CERVER_VERSION_DATE);
+	http_json_member_string (writer, "time", CERVER_VERSION_TIME);
+	http_json_member_string (writer, "author", CERVER_VERSION_AUTHOR);
 
-	cerver_update_uptime ((Cerver *) cerver);
-
-	(void) json_object_set_new (
-		json, "uptime", json_integer ((json_int_t) cerver->info->uptime)
-	);
+	cerver_json_writer_object_end (writer);
 
 }
 
-static json_t *http_cerver_admin_generate_version_json (void) {
+// the info of the cerver: its name, its alias, when it started, its uptime and its version
+static void http_cerver_admin_write_info (
+	CerverJsonWriter *writer, const void *http_cerver_ptr
+) {
 
-	json_t *version_object = json_object ();
+	const Cerver *cerver = ((const HttpCerver *) http_cerver_ptr)->cerver;
 
-	(void) json_object_set_new (
-		version_object, "name", json_string (CERVER_VERSION_NAME)
-	);
+	cerver_json_writer_object_begin (writer);
 
-	(void) json_object_set_new (
-		version_object, "date", json_string (CERVER_VERSION_DATE)
-	);
+	http_json_member_string (writer, "name", cerver->info->name);
+	http_json_member_string (writer, "alias", cerver->info->alias);
+	http_json_member_integer (writer, "time_started", (i64) cerver->info->time_started);
 
-	(void) json_object_set_new (
-		version_object, "time", json_string (CERVER_VERSION_TIME)
-	);
+	cerver_update_uptime ((Cerver *) cerver);
 
-	(void) json_object_set_new (
-		version_object, "author", json_string (CERVER_VERSION_AUTHOR)
-	);
+	http_json_member_integer (writer, "uptime", (i64) cerver->info->uptime);
 
-	return version_object;
+	http_cerver_admin_write_version (writer);
+
+	cerver_json_writer_object_end (writer);
 
 }
 
@@ -119,53 +111,29 @@ char *http_cerver_admin_generate_info_json (
 	const HttpCerver *http_cerver
 ) {
 
-	char *json_string = NULL;
-
-	json_t *json = json_object ();
-	if (json) {
-		http_cerver_admin_generate_info_json_internal (
-			http_cerver->cerver, json
-		);
-
-		(void) json_object_set_new (
-			json,
-			"version",
-			http_cerver_admin_generate_version_json ()
-		);
-
-		json_string = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	return json_string;
+	return http_json_generate (http_cerver_admin_write_info, http_cerver);
 
 }
 
 static void http_cerver_admin_handler_general_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	(void) json_object_set_new (
-		json, "main_routes", json_integer ((json_int_t) http_cerver->routes->size)
-	);
+	http_json_member_integer (writer, "main_routes", (i64) http_cerver->routes->size);
 
 	size_t total_handlers = 0;
 	size_t children_routes = http_cerver_stats_get_children_routes (
 		http_cerver, &total_handlers
 	);
 
-	(void) json_object_set_new (
-		json, "children_routes", json_integer ((json_int_t) children_routes)
-	);
-
-	(void) json_object_set_new (
-		json, "total_handlers", json_integer ((json_int_t) total_handlers)
-	);
+	http_json_member_integer (writer, "children_routes", (i64) children_routes);
+	http_json_member_integer (writer, "total_handlers", (i64) total_handlers);
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_handler_stats (
+// the stats of a handler, the members of the object of its route or of its endpoint
+static void http_cerver_admin_handler_single_route_handler_stats (
+	CerverJsonWriter *writer,
 	const RequestMethod method, const HttpRouteStats *route_stats
 ) {
 
@@ -175,58 +143,25 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 	http_route_stats_snapshot (route_stats, &snapshot);
 	const HttpRouteStats *stats = &snapshot;
 
-	json_t *handler_object = json_object ();
+	http_json_member_string (writer, "method", http_request_method_str (method));
+	http_json_member_integer (writer, "requests", (i64) stats->n_requests);
 
-	(void) json_object_set_new (
-		handler_object, "method", json_string (http_request_method_str (method))
-	);
+	http_json_member_real (writer, "min_process_time", stats->first ? 0 : stats->min_process_time);
+	http_json_member_real (writer, "max_process_time", stats->max_process_time);
+	http_json_member_real (writer, "mean_process_time", stats->mean_process_time);
 
-	(void) json_object_set_new (
-		handler_object, "requests", json_integer ((json_int_t) stats->n_requests)
-	);
+	http_json_member_integer (writer, "min_request_size", (i64) (stats->first ? 0 : stats->min_request_size));
+	http_json_member_integer (writer, "max_request_size", (i64) stats->max_request_size);
+	http_json_member_integer (writer, "mean_request_size", (i64) stats->mean_request_size);
 
-	(void) json_object_set_new (
-		handler_object, "min_process_time", json_real (stats->first ? 0 : stats->min_process_time)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "max_process_time", json_real (stats->max_process_time)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "mean_process_time", json_real (stats->mean_process_time)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "min_request_size", json_integer ((json_int_t) (stats->first ? 0 : stats->min_request_size))
-	);
-
-	(void) json_object_set_new (
-		handler_object, "max_request_size", json_integer ((json_int_t) stats->max_request_size)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "mean_request_size", json_integer ((json_int_t) stats->mean_request_size)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "min_response_size", json_integer ((json_int_t) (stats->first ? 0 : stats->min_response_size))
-	);
-
-	(void) json_object_set_new (
-		handler_object, "max_response_size", json_integer ((json_int_t) stats->max_response_size)
-	);
-
-	(void) json_object_set_new (
-		handler_object, "mean_response_size", json_integer ((json_int_t) stats->mean_response_size)
-	);
-
-	return handler_object;
+	http_json_member_integer (writer, "min_response_size", (i64) (stats->first ? 0 : stats->min_response_size));
+	http_json_member_integer (writer, "max_response_size", (i64) stats->max_response_size);
+	http_json_member_integer (writer, "mean_response_size", (i64) stats->mean_response_size);
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
-	const HttpRouteFileStats *route_file_stats
+static void http_cerver_admin_handler_single_route_handler_files_stats (
+	CerverJsonWriter *writer, const HttpRouteFileStats *route_file_stats
 ) {
 
 	HttpRouteFileStats snapshot;
@@ -234,462 +169,469 @@ static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
 	http_route_file_stats_snapshot (route_file_stats, &snapshot);
 	const HttpRouteFileStats *file_stats = &snapshot;
 
-	json_t *files_object = json_object ();
+	cerver_json_writer_key (writer, "files");
+	cerver_json_writer_object_begin (writer);
 
-	(void) json_object_set_new (
-		files_object, "n_uploaded_files", json_integer ((json_int_t) file_stats->n_uploaded_files)
-	);
+	http_json_member_integer (writer, "n_uploaded_files", (i64) file_stats->n_uploaded_files);
+	http_json_member_integer (writer, "min_n_files", (i64) file_stats->min_n_files);
+	http_json_member_integer (writer, "max_n_files", (i64) file_stats->max_n_files);
+	http_json_member_real (writer, "mean_n_files", file_stats->mean_n_files);
 
-	(void) json_object_set_new (
-		files_object, "min_n_files", json_integer ((json_int_t) file_stats->min_n_files)
-	);
+	http_json_member_integer (writer, "min_file_size", (i64) file_stats->min_file_size);
+	http_json_member_integer (writer, "max_file_size", (i64) file_stats->max_file_size);
+	http_json_member_real (writer, "mean_file_size", file_stats->mean_file_size);
 
-	(void) json_object_set_new (
-		files_object, "max_n_files", json_integer ((json_int_t) file_stats->max_n_files)
-	);
-
-	(void) json_object_set_new (
-		files_object, "mean_n_files", json_real (file_stats->mean_n_files)
-	);
-
-	(void) json_object_set_new (
-		files_object, "min_file_size", json_integer ((json_int_t) file_stats->min_file_size)
-	);
-
-	(void) json_object_set_new (
-		files_object, "max_file_size", json_integer ((json_int_t) file_stats->max_file_size)
-	);
-
-	(void) json_object_set_new (
-		files_object, "mean_file_size", json_real (file_stats->mean_file_size)
-	);
-
-	return files_object;
+	cerver_json_writer_object_end (writer);
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_handlers_stats (
-	const HttpRoute *route
+// a handler of a route with its stats, and the ones of its files when it takes uploads
+static void http_cerver_admin_handler_single_route_handler (
+	CerverJsonWriter *writer,
+	const HttpRoute *route, const RequestMethod method
 ) {
 
-	json_t *handlers_array = json_array ();
+	cerver_json_writer_object_begin (writer);
 
-	json_t *handler_object = NULL;
-	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	http_cerver_admin_handler_single_route_handler_stats (
+		writer, method, route->stats[method]
+	);
+
+	if (
+		(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+		&& (method == REQUEST_METHOD_POST)
+	) {
+		http_cerver_admin_handler_single_route_handler_files_stats (writer, route->file_stats);
+	}
+
+	cerver_json_writer_object_end (writer);
+
+}
+
+static void http_cerver_admin_handler_single_route_handlers_stats (
+	CerverJsonWriter *writer, const HttpRoute *route
+) {
+
+	cerver_json_writer_key (writer, "handlers");
+	cerver_json_writer_array_begin (writer);
+
 	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 		if (route->handlers[i] && route->stats[i]) {
-			method = (RequestMethod) i;
-			handler_object = http_cerver_admin_handler_single_route_handler_stats (
-				method, route->stats[i]
-			);
-
-			if (
-				(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
-				&& (method == REQUEST_METHOD_POST)
-			) {
-				json_t *files_object = http_cerver_admin_handler_single_route_handler_files_stats (
-					route->file_stats
-				);
-
-				(void) json_object_set_new (handler_object, "files", files_object);
-			}
-
-			(void) json_array_append_new (handlers_array, handler_object);
+			http_cerver_admin_handler_single_route_handler (writer, route, (RequestMethod) i);
 		}
 	}
 
-	return handlers_array;
+	cerver_json_writer_array_end (writer);
 
 }
 
-static json_t *http_cerver_admin_handler_single_child_stats (
-	const HttpRoute *child
+static void http_cerver_admin_handler_single_child_stats (
+	CerverJsonWriter *writer, const HttpRoute *child
 ) {
 
-	json_t *child_object = json_object ();
+	cerver_json_writer_object_begin (writer);
 
-	(void) json_object_set_new (
-		child_object, "route", json_string (child->route->str)
-	);
+	http_json_member_string (writer, "route", child->route->str);
 
 	if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		(void) json_object_set_new (
-			child_object, "modifier",
-			json_string (http_route_modifier_to_string (child->modifier))
-		);
+		http_json_member_string (writer, "modifier", http_route_modifier_to_string (child->modifier));
 	}
 
-	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (child);
-	(void) json_object_set_new (
-		child_object, "handlers", handlers_array
-	);
+	http_cerver_admin_handler_single_route_handlers_stats (writer, child);
 
-	return child_object;
+	cerver_json_writer_object_end (writer);
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_children_stats (
-	const HttpRoute *route
+static void http_cerver_admin_handler_single_route_children_stats (
+	CerverJsonWriter *writer, const HttpRoute *route
 ) {
 
-	json_t *children_array = json_array ();
+	cerver_json_writer_key (writer, "children");
+	cerver_json_writer_array_begin (writer);
 
-	json_t *child_object = NULL;
 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-		child_object = http_cerver_admin_handler_single_child_stats ((HttpRoute *) le->data);
-
-		(void) json_array_append_new (children_array, child_object);
+		http_cerver_admin_handler_single_child_stats (writer, (const HttpRoute *) le->data);
 	}
 
-	return children_array;
+	cerver_json_writer_array_end (writer);
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_stats (
-	const HttpRoute *route
+static void http_cerver_admin_handler_single_route_stats (
+	CerverJsonWriter *writer, const HttpRoute *route
 ) {
 
-	json_t *route_object = json_object ();
+	cerver_json_writer_object_begin (writer);
 
-	(void) json_object_set_new (
-		route_object, "route", json_string (route->route->str)
-	);
+	http_json_member_string (writer, "route", route->route->str);
 
 	if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		(void) json_object_set_new (
-			route_object, "modifier",
-			json_string (http_route_modifier_to_string (route->modifier))
-		);
+		http_json_member_string (writer, "modifier", http_route_modifier_to_string (route->modifier));
 	}
 
-	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (route);
-	(void) json_object_set_new (
-		route_object, "handlers", handlers_array
-	);
+	http_cerver_admin_handler_single_route_handlers_stats (writer, route);
+	http_cerver_admin_handler_single_route_children_stats (writer, route);
 
-	json_t *children_array = http_cerver_admin_handler_single_route_children_stats (route);
-	(void) json_object_set_new (
-		route_object, "children", children_array
-	);
-
-	return route_object;
+	cerver_json_writer_object_end (writer);
 
 }
 
 static void http_cerver_admin_handler_routes_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	json_t *routes_array = json_array ();
+	cerver_json_writer_key (writer, "routes");
+	cerver_json_writer_array_begin (writer);
 
-	json_t *route_object = NULL;
 	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
-		route_object = http_cerver_admin_handler_single_route_stats (
-			(const HttpRoute *) le->data
-		);
-
-		(void) json_array_append_new (routes_array, route_object);
+		http_cerver_admin_handler_single_route_stats (writer, (const HttpRoute *) le->data);
 	}
 
-	(void) json_object_set_new (
-		json, "routes", routes_array
-	);
+	cerver_json_writer_array_end (writer);
 
 }
 
-static json_t *http_cerver_admin_handler_endpoint_stats (
-	const HttpEndpoint *endpoint
+static void http_cerver_admin_handler_endpoint_stats (
+	CerverJsonWriter *writer, const HttpEndpoint *endpoint
 ) {
 
-	json_t *endpoint_object = http_cerver_admin_handler_single_route_handler_stats (
-		endpoint->method, endpoint->stats
+	cerver_json_writer_object_begin (writer);
+
+	http_cerver_admin_handler_single_route_handler_stats (
+		writer, endpoint->method, endpoint->stats
 	);
 
-	(void) json_object_set_new (
-		endpoint_object, "route", json_string (endpoint->path->str)
-	);
+	http_json_member_string (writer, "route", endpoint->path->str);
 
 	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		(void) json_object_set_new (
-			endpoint_object, "files",
-			http_cerver_admin_handler_single_route_handler_files_stats (endpoint->file_stats)
-		);
+		http_cerver_admin_handler_single_route_handler_files_stats (writer, endpoint->file_stats);
 	}
 
-	return endpoint_object;
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the endpoints of a group and of its subgroups
 static void http_cerver_admin_handler_group_stats (
-	const HttpGroup *group, json_t *endpoints_array
+	CerverJsonWriter *writer, const HttpGroup *group
 ) {
 
 	for (ListElement *le = dlist_start (group->endpoints); le; le = le->next) {
-		(void) json_array_append_new (
-			endpoints_array,
-			http_cerver_admin_handler_endpoint_stats ((const HttpEndpoint *) le->data)
-		);
+		http_cerver_admin_handler_endpoint_stats (writer, (const HttpEndpoint *) le->data);
 	}
 
 	for (ListElement *le = dlist_start (group->groups); le; le = le->next) {
-		http_cerver_admin_handler_group_stats ((const HttpGroup *) le->data, endpoints_array);
+		http_cerver_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
 	}
 
 }
 
 // the endpoints that were registered with groups
 static void http_cerver_admin_handler_endpoints_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	json_t *endpoints_array = json_array ();
+	cerver_json_writer_key (writer, "endpoints");
+	cerver_json_writer_array_begin (writer);
 
 	for (ListElement *le = dlist_start (http_cerver->tree->groups); le; le = le->next) {
-		http_cerver_admin_handler_group_stats ((const HttpGroup *) le->data, endpoints_array);
+		http_cerver_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
 	}
 
-	(void) json_object_set_new (
-		json, "endpoints", endpoints_array
-	);
+	cerver_json_writer_array_end (writer);
 
 }
 
 static void http_cerver_admin_handler_requests_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	(void) json_object_set_new (
-		json, "n_incompleted_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_incompleted_requests))
+	http_json_member_integer (
+		writer, "n_incompleted_requests", (i64) CERVER_STATS_GET (http_cerver->n_incompleted_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_unhandled_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_unhandled_requests))
+	http_json_member_integer (
+		writer, "n_unhandled_requests", (i64) CERVER_STATS_GET (http_cerver->n_unhandled_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_catch_all_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_catch_all_requests))
+	http_json_member_integer (
+		writer, "n_catch_all_requests", (i64) CERVER_STATS_GET (http_cerver->n_catch_all_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_failed_auth_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_failed_auth_requests))
+	http_json_member_integer (
+		writer, "n_failed_auth_requests", (i64) CERVER_STATS_GET (http_cerver->n_failed_auth_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_limited_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_limited_requests))
+	http_json_member_integer (
+		writer, "n_limited_requests", (i64) CERVER_STATS_GET (http_cerver->n_limited_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_timeout_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_timeout_requests))
+	http_json_member_integer (
+		writer, "n_timeout_requests", (i64) CERVER_STATS_GET (http_cerver->n_timeout_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_unanswered_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_unanswered_requests))
+	http_json_member_integer (
+		writer, "n_unanswered_requests", (i64) CERVER_STATS_GET (http_cerver->n_unanswered_requests)
 	);
 
-	(void) json_object_set_new (
-		json, "n_failed_responses", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_failed_responses))
+	http_json_member_integer (
+		writer, "n_failed_responses", (i64) CERVER_STATS_GET (http_cerver->n_failed_responses)
 	);
 
 }
 
 // the responses sent by their status code, only the codes that were sent
 static void http_cerver_admin_handler_responses_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	json_t *responses = json_object ();
+	cerver_json_writer_key (writer, "n_responses_by_status");
+	cerver_json_writer_object_begin (writer);
 
 	char code[HTTP_ADMIN_STATUS_CODE_SIZE] = { 0 };
 	for (size_t status = 0; status < HTTP_CERVER_RESPONSES_STATUS_SIZE; status++) {
 		const size_t count = CERVER_STATS_GET (http_cerver->n_responses_by_status[status]);
 		if (count) {
 			(void) snprintf (code, HTTP_ADMIN_STATUS_CODE_SIZE, "%zu", status);
-			(void) json_object_set_new (responses, code, json_integer ((json_int_t) count));
+			http_json_member_integer (writer, code, (i64) count);
 		}
 	}
 
-	(void) json_object_set_new (json, "n_responses_by_status", responses);
+	cerver_json_writer_object_end (writer);
+
+}
+
+// the requests whose client left in a stage, by the reason
+static void http_cerver_admin_handler_aborted_stats (
+	CerverJsonWriter *writer, const HttpCerver *http_cerver, const unsigned int stage
+) {
+
+	cerver_json_writer_key (writer, http_stage_label ((HttpStage) stage));
+	cerver_json_writer_object_begin (writer);
+
+	for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
+		http_json_member_integer (
+			writer, http_abort_reason_label ((HttpAbortReason) reason),
+			(i64) CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason])
+		);
+	}
+
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the requests whose client left, by stage and reason, and the ones that vanished, by stage
 static void http_cerver_admin_handler_gone_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	json_t *aborted = json_object ();
-	json_t *vanished = json_object ();
+	cerver_json_writer_key (writer, "n_aborted_requests");
+	cerver_json_writer_object_begin (writer);
 
 	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
-		json_t *reasons = json_object ();
-		for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
-			(void) json_object_set_new (
-				reasons, http_abort_reason_label ((HttpAbortReason) reason),
-				json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason]))
-			);
-		}
+		http_cerver_admin_handler_aborted_stats (writer, http_cerver, stage);
+	}
 
-		(void) json_object_set_new (aborted, http_stage_label ((HttpStage) stage), reasons);
+	cerver_json_writer_object_end (writer);
 
-		(void) json_object_set_new (
-			vanished, http_stage_label ((HttpStage) stage),
-			json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_vanished_requests[stage]))
+	cerver_json_writer_key (writer, "n_vanished_requests");
+	cerver_json_writer_object_begin (writer);
+
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		http_json_member_integer (
+			writer, http_stage_label ((HttpStage) stage),
+			(i64) CERVER_STATS_GET (http_cerver->n_vanished_requests[stage])
 		);
 	}
 
-	(void) json_object_set_new (json, "n_aborted_requests", aborted);
-	(void) json_object_set_new (json, "n_vanished_requests", vanished);
-
-}
-
-static void http_cerver_admin_web_socket_value (
-	json_t *web_sockets, const char *name, const u64 value
-) {
-
-	(void) json_object_set_new (web_sockets, name, json_integer ((json_int_t) value));
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the WebSocket connections that are open, what they did and how they ended
+static void http_cerver_admin_handler_web_socket_values (
+	CerverJsonWriter *writer, const HttpWebSocketStats *stats
+) {
+
+	cerver_json_writer_key (writer, "websockets");
+	cerver_json_writer_object_begin (writer);
+
+	http_json_member_integer (writer, "connections", (i64) stats->n_connections);
+	http_json_member_integer (writer, "n_opened", (i64) stats->n_opened);
+	http_json_member_integer (writer, "n_closed", (i64) stats->n_closed);
+	http_json_member_integer (writer, "n_messages_received", (i64) stats->n_messages_received);
+	http_json_member_integer (writer, "n_messages_sent", (i64) stats->n_messages_sent);
+	http_json_member_integer (writer, "n_bytes_received", (i64) stats->n_bytes_received);
+	http_json_member_integer (writer, "n_bytes_sent", (i64) stats->n_bytes_sent);
+	http_json_member_integer (writer, "n_failed_sends", (i64) stats->n_slow);
+	http_json_member_integer (writer, "n_errors", (i64) stats->n_errors);
+
+	cerver_json_writer_key (writer, "n_rejected");
+	cerver_json_writer_object_begin (writer);
+
+	for (unsigned int rejection = 0; rejection < HTTP_WEB_SOCKET_REJECTIONS; rejection++) {
+		http_json_member_integer (
+			writer, http_web_socket_rejection_to_string ((HttpWebSocketRejection) rejection),
+			(i64) stats->n_rejected[rejection]
+		);
+	}
+
+	cerver_json_writer_object_end (writer);
+
+	cerver_json_writer_object_end (writer);
+
+}
+
+// a cerver without a registry of WebSocket connections has no stats of them
 static void http_cerver_admin_handler_web_socket_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
 	HttpWebSocketStats stats;
 	if (!http_cerver_web_socket_get_stats (http_cerver, &stats)) {
-		json_t *web_sockets = json_object ();
-
-		http_cerver_admin_web_socket_value (web_sockets, "connections", stats.n_connections);
-		http_cerver_admin_web_socket_value (web_sockets, "n_opened", stats.n_opened);
-		http_cerver_admin_web_socket_value (web_sockets, "n_closed", stats.n_closed);
-		http_cerver_admin_web_socket_value (web_sockets, "n_messages_received", stats.n_messages_received);
-		http_cerver_admin_web_socket_value (web_sockets, "n_messages_sent", stats.n_messages_sent);
-		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_received", stats.n_bytes_received);
-		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_sent", stats.n_bytes_sent);
-		http_cerver_admin_web_socket_value (web_sockets, "n_failed_sends", stats.n_slow);
-		http_cerver_admin_web_socket_value (web_sockets, "n_errors", stats.n_errors);
-
-		json_t *rejected = json_object ();
-		for (unsigned int rejection = 0; rejection < HTTP_WEB_SOCKET_REJECTIONS; rejection++) {
-			http_cerver_admin_web_socket_value (
-				rejected, http_web_socket_rejection_to_string ((HttpWebSocketRejection) rejection),
-				stats.n_rejected[rejection]
-			);
-		}
-
-		(void) json_object_set_new (web_sockets, "n_rejected", rejected);
-		(void) json_object_set_new (json, "websockets", web_sockets);
+		http_cerver_admin_handler_web_socket_values (writer, &stats);
 	}
 
 }
 
-static void http_cerver_admin_value (
-	json_t *json, const char *name, const size_t value
-) {
-
-	(void) json_object_set_new (json, name, json_integer ((json_int_t) value));
-
-}
-
 // a pool that has threads: what it has now and what it did
-static json_t *http_cerver_admin_handler_pool_stats (const HttpPool *pool) {
-
-	json_t *json = json_object ();
+static void http_cerver_admin_handler_pool_stats (
+	CerverJsonWriter *writer, const HttpPool *pool
+) {
 
 	ThpoolStats stats;
 	thpool_get_stats (pool->thpool, &stats);
 
-	(void) json_object_set_new (json, "name", json_string (pool->name));
+	cerver_json_writer_object_begin (writer);
 
-	http_cerver_admin_value (json, "threads", thpool_get_num_threads_alive (pool->thpool));
-	http_cerver_admin_value (json, "working", thpool_get_num_threads_working (pool->thpool));
-	http_cerver_admin_value (json, "queued", thpool_get_queued (pool->thpool));
-	http_cerver_admin_value (
-		json, "parked", event_loop_group_lane_parked (pool->http_cerver->cerver, pool->index)
+	http_json_member_string (writer, "name", pool->name);
+
+	http_json_member_integer (writer, "threads", (i64) thpool_get_num_threads_alive (pool->thpool));
+	http_json_member_integer (writer, "working", (i64) thpool_get_num_threads_working (pool->thpool));
+	http_json_member_integer (writer, "queued", (i64) thpool_get_queued (pool->thpool));
+	http_json_member_integer (
+		writer, "parked", (i64) event_loop_group_lane_parked (pool->http_cerver->cerver, pool->index)
 	);
 
-	http_cerver_admin_value (json, "n_jobs", (size_t) stats.total_jobs);
-	http_cerver_admin_value (json, "n_parked", (size_t) __atomic_load_n (&pool->n_parked, __ATOMIC_RELAXED));
-	http_cerver_admin_value (
-		json, "n_unavailable", (size_t) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED)
+	http_json_member_integer (writer, "n_jobs", (i64) stats.total_jobs);
+	http_json_member_integer (writer, "n_parked", (i64) __atomic_load_n (&pool->n_parked, __ATOMIC_RELAXED));
+	http_json_member_integer (
+		writer, "n_unavailable", (i64) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED)
 	);
 
-	return json;
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the pools of the cerver that have threads, the first one is the thpool of the cerver;
 // a cerver that has not started has none
 static void http_cerver_admin_handler_pools_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	json_t *pools = json_array ();
+	cerver_json_writer_key (writer, "pools");
+	cerver_json_writer_array_begin (writer);
 
 	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
 		const HttpPool *pool = http_cerver->pools[idx];
 
-		if (pool->thpool) {
-			(void) json_array_append_new (pools, http_cerver_admin_handler_pool_stats (pool));
-		}
+		if (pool->thpool) http_cerver_admin_handler_pool_stats (writer, pool);
 	}
 
-	(void) json_object_set_new (json, "pools", pools);
+	cerver_json_writer_array_end (writer);
 
 }
 
 // the connections of the event loops: the ones that are open, the ones that wait for their next request
 // and every one that was accepted
 static void http_cerver_admin_handler_loops_stats (
-	const Cerver *cerver, json_t *connections
+	CerverJsonWriter *writer, const Cerver *cerver
 ) {
 
-	http_cerver_admin_value (connections, "open", event_loop_group_connections (cerver));
-	http_cerver_admin_value (connections, "idle", event_loop_group_idle (cerver));
-	http_cerver_admin_value (connections, "n_accepted", (size_t) event_loop_group_accepted (cerver));
+	http_json_member_integer (writer, "open", (i64) event_loop_group_connections (cerver));
+	http_json_member_integer (writer, "idle", (i64) event_loop_group_idle (cerver));
+	http_json_member_integer (writer, "n_accepted", (i64) event_loop_group_accepted (cerver));
 
 }
 
 // the connections that were reused, and the ones that ended with their requests
 static void http_cerver_admin_handler_connections_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
-
-	json_t *connections = json_object ();
 
 	size_t ended = 0;
 	for (unsigned int i = 0; i < HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS; i++) {
 		ended += CERVER_STATS_GET (http_cerver->connection_requests[i]);
 	}
 
-	http_cerver_admin_value (connections, "n_reused", CERVER_STATS_GET (http_cerver->n_reused_connections));
-	http_cerver_admin_value (connections, "n_followed", CERVER_STATS_GET (http_cerver->n_followed_requests));
-	http_cerver_admin_value (connections, "n_ended", ended);
-	http_cerver_admin_value (connections, "n_requests", CERVER_STATS_GET (http_cerver->n_connection_requests));
+	cerver_json_writer_key (writer, "connections");
+	cerver_json_writer_object_begin (writer);
+
+	http_json_member_integer (writer, "n_reused", (i64) CERVER_STATS_GET (http_cerver->n_reused_connections));
+	http_json_member_integer (writer, "n_followed", (i64) CERVER_STATS_GET (http_cerver->n_followed_requests));
+	http_json_member_integer (writer, "n_ended", (i64) ended);
+	http_json_member_integer (writer, "n_requests", (i64) CERVER_STATS_GET (http_cerver->n_connection_requests));
 
 	if (http_cerver->cerver && http_cerver->cerver->event_loops) {
-		http_cerver_admin_handler_loops_stats (http_cerver->cerver, connections);
+		http_cerver_admin_handler_loops_stats (writer, http_cerver->cerver);
 	}
 
-	(void) json_object_set_new (json, "connections", connections);
+	cerver_json_writer_object_end (writer);
 
 }
 
 // the requests of the health and the ready routes, and what the uploads wrote
 static void http_cerver_admin_handler_health_stats (
-	const HttpCerver *http_cerver, json_t *json
+	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	http_cerver_admin_value (json, "n_health_requests", CERVER_STATS_GET (http_cerver->n_health_requests));
-	http_cerver_admin_value (json, "n_ready_requests", CERVER_STATS_GET (http_cerver->n_ready_requests));
-	http_cerver_admin_value (json, "n_not_ready_requests", CERVER_STATS_GET (http_cerver->n_not_ready_requests));
-
-	http_cerver_admin_value (
-		json, "uploads_write_microseconds", CERVER_STATS_GET (http_cerver->uploads_write_microseconds)
+	http_json_member_integer (writer, "n_health_requests", (i64) CERVER_STATS_GET (http_cerver->n_health_requests));
+	http_json_member_integer (writer, "n_ready_requests", (i64) CERVER_STATS_GET (http_cerver->n_ready_requests));
+	http_json_member_integer (
+		writer, "n_not_ready_requests", (i64) CERVER_STATS_GET (http_cerver->n_not_ready_requests)
 	);
 
-	http_cerver_admin_value (json, "uploads_write_bytes", CERVER_STATS_GET (http_cerver->uploads_write_bytes));
+	http_json_member_integer (
+		writer, "uploads_write_microseconds", (i64) CERVER_STATS_GET (http_cerver->uploads_write_microseconds)
+	);
+
+	http_json_member_integer (
+		writer, "uploads_write_bytes", (i64) CERVER_STATS_GET (http_cerver->uploads_write_bytes)
+	);
+
+}
+
+// the stats of the routes of the first API, of the endpoints of the groups and of the cerver
+static void http_cerver_admin_write_routes_stats (
+	CerverJsonWriter *writer, const void *http_cerver_ptr
+) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+
+	cerver_json_writer_object_begin (writer);
+
+	http_cerver_admin_handler_general_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_routes_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_endpoints_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_requests_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_responses_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_gone_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_web_socket_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_pools_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_connections_stats (writer, http_cerver);
+
+	http_cerver_admin_handler_health_stats (writer, http_cerver);
+
+	cerver_json_writer_object_end (writer);
 
 }
 
@@ -697,41 +639,12 @@ char *http_cerver_admin_generate_routes_stats_json (
 	const HttpCerver *http_cerver
 ) {
 
-	char *json_string = NULL;
-
-	json_t *json = json_object ();
-	if (json) {
-		http_cerver_admin_handler_general_stats (http_cerver, json);
-
-		http_cerver_admin_handler_routes_stats (http_cerver, json);
-
-		http_cerver_admin_handler_endpoints_stats (http_cerver, json);
-
-		http_cerver_admin_handler_requests_stats (http_cerver, json);
-
-		http_cerver_admin_handler_responses_stats (http_cerver, json);
-
-		http_cerver_admin_handler_gone_stats (http_cerver, json);
-
-		http_cerver_admin_handler_web_socket_stats (http_cerver, json);
-
-		http_cerver_admin_handler_pools_stats (http_cerver, json);
-
-		http_cerver_admin_handler_connections_stats (http_cerver, json);
-
-		http_cerver_admin_handler_health_stats (http_cerver, json);
-
-		json_string = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	return json_string;
+	return http_json_generate (http_cerver_admin_write_routes_stats, http_cerver);
 
 }
 
-static json_t *http_cerver_admin_handler_single_file_systems_stats (
-	const HttpAdminFileSystemStats *admin_file_system
+static void http_cerver_admin_handler_single_file_systems_stats (
+	CerverJsonWriter *writer, const HttpAdminFileSystemStats *admin_file_system
 ) {
 
 	(void) system_get_stats (
@@ -742,31 +655,45 @@ static json_t *http_cerver_admin_handler_single_file_systems_stats (
 	system_print_stats (&admin_file_system->stats);
 	#endif
 
-	json_t *file_system_object = json_object ();
+	cerver_json_writer_object_begin (writer);
 
-	if (file_system_object) {
-		(void) json_object_set_new (
-			file_system_object, "path", json_string (admin_file_system->path)
-		);
+	http_json_member_string (writer, "path", admin_file_system->path);
 
-		(void) json_object_set_new (
-			file_system_object, "total", json_real (admin_file_system->stats.total)
-		);
+	// the percentage of a file system without blocks is not a number, and it is left out
+	http_json_member_real (writer, "total", admin_file_system->stats.total);
+	http_json_member_real (writer, "available", admin_file_system->stats.available);
+	http_json_member_real (writer, "used", admin_file_system->stats.used);
+	http_json_member_real (writer, "used_percentage", admin_file_system->stats.used_percentage);
 
-		(void) json_object_set_new (
-			file_system_object, "available", json_real (admin_file_system->stats.available)
-		);
+	cerver_json_writer_object_end (writer);
 
-		(void) json_object_set_new (
-			file_system_object, "used", json_real (admin_file_system->stats.used)
-		);
+}
 
-		(void) json_object_set_new (
-			file_system_object, "used_percentage", json_real (admin_file_system->stats.used_percentage)
+// the stats of the registered file systems, read when they are written
+static void http_cerver_admin_write_file_systems_stats (
+	CerverJsonWriter *writer, const void *http_cerver_ptr
+) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+
+	(void) pthread_mutex_lock ((pthread_mutex_t *) http_cerver->admin_mutex);
+
+	cerver_json_writer_object_begin (writer);
+
+	cerver_json_writer_key (writer, "filesystems");
+	cerver_json_writer_array_begin (writer);
+
+	for (ListElement *le = dlist_start (http_cerver->admin_file_systems_stats); le; le = le->next) {
+		http_cerver_admin_handler_single_file_systems_stats (
+			writer, (const HttpAdminFileSystemStats *) le->data
 		);
 	}
 
-	return file_system_object;
+	cerver_json_writer_array_end (writer);
+
+	cerver_json_writer_object_end (writer);
+
+	(void) pthread_mutex_unlock ((pthread_mutex_t *) http_cerver->admin_mutex);
 
 }
 
@@ -774,62 +701,43 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 	const HttpCerver *http_cerver
 ) {
 
-	char *json_string = NULL;
-
-	(void) pthread_mutex_lock ((pthread_mutex_t *) http_cerver->admin_mutex);
-
-	json_t *json = json_object ();
-	if (json) {
-		json_t *file_systems_array = json_array ();
-
-		json_t *file_system_object = NULL;
-		for (ListElement *le = dlist_start (http_cerver->admin_file_systems_stats); le; le = le->next) {
-			file_system_object = http_cerver_admin_handler_single_file_systems_stats (
-				(const HttpAdminFileSystemStats *) le->data
-			);
-
-			if (file_system_object) {
-				(void) json_array_append_new (file_systems_array, file_system_object);
-			}
-		}
-
-		(void) json_object_set_new (
-			json, "filesystems", file_systems_array
-		);
-
-		json_string = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	(void) pthread_mutex_unlock ((pthread_mutex_t *) http_cerver->admin_mutex);
-
-	return json_string;
+	return http_json_generate (http_cerver_admin_write_file_systems_stats, http_cerver);
 
 }
 
-static json_t *worker_state_to_json (Worker *worker) {
+static void http_cerver_admin_handler_worker_state (
+	CerverJsonWriter *writer, Worker *worker
+) {
 
-	json_t *worker_object = json_object ();
+	cerver_json_writer_object_begin (writer);
 
-	if (worker_object) {
-		(void) json_object_set_new (
-			worker_object, "id", json_integer ((json_int_t) worker->id)
-		);
+	http_json_member_integer (writer, "id", (i64) worker->id);
+	http_json_member_string (writer, "name", worker->name);
+	http_json_member_string (writer, "state", worker_state_to_string (worker_get_state (worker)));
 
-		(void) json_object_set_new (
-			worker_object, "name", json_string (worker->name)
-		);
+	cerver_json_writer_object_end (writer);
 
-		(void) json_object_set_new (
-			worker_object, "state",
-			json_string (
-				worker_state_to_string (worker_get_state (worker))
-			)
-		);
+}
+
+// the states of the registered workers, in the order that they were registered
+static void http_cerver_admin_write_workers (
+	CerverJsonWriter *writer, const void *http_cerver_ptr
+) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+
+	cerver_json_writer_object_begin (writer);
+
+	cerver_json_writer_key (writer, "workers");
+	cerver_json_writer_array_begin (writer);
+
+	for (ListElement *le = dlist_start (http_cerver->admin_workers); le; le = le->next) {
+		http_cerver_admin_handler_worker_state (writer, (Worker *) le->data);
 	}
 
-	return worker_object;
+	cerver_json_writer_array_end (writer);
+
+	cerver_json_writer_object_end (writer);
 
 }
 
@@ -837,31 +745,11 @@ char *http_cerver_admin_generate_workers_json (
 	const HttpCerver *http_cerver
 ) {
 
-	char *json_string = NULL;
-
-	json_t *json = json_object ();
-	if (json) {
-		json_t *workers_array = json_array ();
-
-		json_t *worker_object = NULL;
-		for (ListElement *le = dlist_start (http_cerver->admin_workers); le; le = le->next) {
-			worker_object = worker_state_to_json ((Worker *) le->data);
-
-			if (worker_object) {
-				(void) json_array_append_new (workers_array, worker_object);
-			}
-		}
-
-		(void) json_object_set_new (json, "workers", workers_array);
-
-		json_string = json_dumps (json, 0);
-
-		json_decref (json);
-	}
-
-	return json_string;
+	return http_json_generate (http_cerver_admin_write_workers, http_cerver);
 
 }
+
+#pragma endregion
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -1029,6 +917,60 @@ static inline void http_cerver_admin_send_response (
 
 }
 
+// answers a GET with the json that a method writes in the arena of the request:
+// nothing is allocated for its values, and the text lives until the request ends
+static void http_cerver_admin_send_json (
+	const HttpReceive *http_receive,
+	const HttpRequest *request,
+	const HttpJsonWrite write
+) {
+
+	CerverJsonWriter writer;
+
+	// a writer without an arena has an error from its start
+	cerver_json_writer_init_arena (
+		&writer, http_request_get_arena ((HttpRequest *) request), CERVER_JSON_FLAGS_NONE
+	);
+
+	write (&writer, http_receive->http_cerver);
+
+	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE) {
+		http_cerver_admin_send_response (
+			http_receive, request,
+			cerver_json_writer_text (&writer), cerver_json_writer_length (&writer)
+		);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
+// answers a HEAD with the length of the json that a method writes: its bytes are only counted
+static void http_cerver_admin_send_json_head (
+	const HttpReceive *http_receive,
+	const HttpJsonWrite write
+) {
+
+	CerverJsonWriter writer;
+	cerver_json_writer_init (&writer, NULL, 0, CERVER_JSON_FLAGS_NONE);
+
+	write (&writer, http_receive->http_cerver);
+
+	// a writer without a buffer ends as a text that did not fit
+	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_TRUNCATED) {
+		http_cerver_admin_send_head (
+			http_receive, cerver_json_writer_length (&writer)
+		);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 // OPTIONS [top level]/cerver/info
 // OPTIONS [top level]/cerver/stats
 // OPTIONS [top level]/cerver/stats/filesystems
@@ -1048,23 +990,7 @@ static void http_cerver_admin_info_head_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *info_json = http_cerver_admin_generate_info_json (
-		http_cerver
-	);
-
-	if (info_json) {
-		http_cerver_admin_send_head (
-			http_receive, strlen (info_json)
-		);
-
-		free (info_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_info);
 
 }
 
@@ -1074,24 +1000,7 @@ static void http_cerver_admin_info_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *info_json = http_cerver_admin_generate_info_json (
-		http_cerver
-	);
-
-	if (info_json) {
-		http_cerver_admin_send_response (
-			http_receive, request,
-			info_json, strlen (info_json)
-		);
-
-		free (info_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_info);
 
 }
 
@@ -1101,23 +1010,7 @@ static void http_cerver_admin_stats_head_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *routes_json = http_cerver_admin_generate_routes_stats_json (
-		http_cerver
-	);
-
-	if (routes_json) {
-		http_cerver_admin_send_head (
-			http_receive, strlen (routes_json)
-		);
-
-		free (routes_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_routes_stats);
 
 }
 
@@ -1127,24 +1020,7 @@ static void http_cerver_admin_stats_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *routes_json = http_cerver_admin_generate_routes_stats_json (
-		http_cerver
-	);
-
-	if (routes_json) {
-		http_cerver_admin_send_response (
-			http_receive, request,
-			routes_json, strlen (routes_json)
-		);
-
-		free (routes_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_routes_stats);
 
 }
 
@@ -1154,23 +1030,7 @@ static void http_cerver_admin_file_systems_head_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *file_systems_json = http_cerver_admin_generate_file_systems_stats_json (
-		http_cerver
-	);
-
-	if (file_systems_json) {
-		http_cerver_admin_send_head (
-			http_receive, strlen (file_systems_json)
-		);
-
-		free (file_systems_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_file_systems_stats);
 
 }
 
@@ -1180,24 +1040,7 @@ static void http_cerver_admin_file_systems_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *file_systems_json = http_cerver_admin_generate_file_systems_stats_json (
-		http_cerver
-	);
-
-	if (file_systems_json) {
-		http_cerver_admin_send_response (
-			http_receive, request,
-			file_systems_json, strlen (file_systems_json)
-		);
-
-		free (file_systems_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_file_systems_stats);
 
 }
 
@@ -1207,23 +1050,7 @@ static void http_cerver_admin_workers_head_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *workers_json = http_cerver_admin_generate_workers_json (
-		http_cerver
-	);
-
-	if (workers_json) {
-		http_cerver_admin_send_head (
-			http_receive, strlen (workers_json)
-		);
-
-		free (workers_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_workers);
 
 }
 
@@ -1233,24 +1060,7 @@ static void http_cerver_admin_workers_handler (
 	const HttpRequest *request
 ) {
 
-	const HttpCerver *http_cerver = http_receive->http_cerver;
-
-	char *workers_json = http_cerver_admin_generate_workers_json (
-		http_cerver
-	);
-
-	if (workers_json) {
-		http_cerver_admin_send_response (
-			http_receive, request,
-			workers_json, strlen (workers_json)
-		);
-
-		free (workers_json);
-	}
-
-	else {
-		(void) http_response_send (server_error, http_receive);
-	}
+	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_workers);
 
 }
 
