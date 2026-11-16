@@ -604,6 +604,72 @@ static void test_cerver_events_replaced (void) {
 
 }
 
+static void *test_client_replaced_action (void *data) {
+
+	client_event_data_delete ((ClientEventData *) data);
+
+	return NULL;
+
+}
+
+static int replaced_response = 0;
+
+// the arguments and the response of a client event, and the arguments of a client error,
+// live until the action in its thread releases its data, also when they are replaced or unregistered before
+static void test_client_events_replaced (void) {
+
+	Client *client = client_create ();
+	test_check_ptr (client);
+
+	test_cerver_dropped_reset ();
+	test_check_unsigned_eq (
+		client_event_register (
+			client, CLIENT_EVENT_CONNECTED, test_client_dropped_event,
+			&dropped_args, test_cerver_dropped_args_delete, true, false
+		), 0, NULL
+	);
+
+	client_event_trigger (CLIENT_EVENT_CONNECTED, client, NULL);
+	test_check_unsigned_eq (
+		client_event_register (client, CLIENT_EVENT_CONNECTED, test_client_replaced_action, NULL, NULL, false, false),
+		0, NULL
+	);
+
+	test_cerver_dropped_check ("the arguments of a replaced client event were released before its action");
+
+	test_cerver_dropped_reset ();
+	test_check_unsigned_eq (
+		client_event_register (
+			client, CLIENT_EVENT_CONNECTION_CLOSE, test_client_dropped_event, NULL, NULL, true, false
+		), 0, NULL
+	);
+
+	client_event_set_response (
+		client, CLIENT_EVENT_CONNECTION_CLOSE, &replaced_response, test_cerver_dropped_args_delete
+	);
+
+	client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, NULL);
+	test_check_unsigned_eq (client_event_unregister (client, CLIENT_EVENT_CONNECTION_CLOSE), 0, NULL);
+
+	test_cerver_dropped_check ("the response of an unregistered client event was released before its action");
+
+	test_cerver_dropped_reset ();
+	test_check_unsigned_eq (
+		client_error_register (
+			client, CLIENT_ERROR_PACKET_ERROR, test_client_dropped_error,
+			&dropped_args, test_cerver_dropped_args_delete, true, false
+		), 0, NULL
+	);
+
+	(void) client_error_trigger (CLIENT_ERROR_PACKET_ERROR, client, NULL, NULL);
+	test_check_unsigned_eq (client_error_unregister (client, CLIENT_ERROR_PACKET_ERROR), 0, NULL);
+
+	test_cerver_dropped_check ("the arguments of an unregistered client error were released before its action");
+
+	(void) client_teardown (client);
+
+}
+
 #define CERVER_SESSION_IDS				1024
 #define CERVER_SESSION_ID_LENGTH		64
 
@@ -726,6 +792,7 @@ int main (void) {
 	test_cerver_events_out_of_range ();
 	test_cerver_events_dropped ();
 	test_cerver_events_replaced ();
+	test_client_events_replaced ();
 	test_cerver_deserialize ();
 
 	(void) printf ("\nDone with CERVER tests!\n\n");

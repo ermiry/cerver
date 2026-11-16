@@ -23,6 +23,7 @@
 #include "cerver/handler/errors.h"
 #include "cerver/handler/events.h"
 #include "cerver/handler/handler.h"
+#include "cerver/handler/internal.h"
 #include "cerver/handler/receive.h"
 #include "cerver/network/network.h"
 #include "cerver/network/udp.h"
@@ -74,12 +75,17 @@ static ClientEventData *client_event_data_new (void) {
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
 		event_data->owns_action_args = false;
+
+		event_data->shared_args = NULL;
+		event_data->shared_response = NULL;
 	}
 
 	return event_data;
 
 }
 
+// the response that only this trigger owns is released here,
+// the arguments and the response of the event when its last reference is released
 void client_event_data_delete (ClientEventData *event_data) {
 
 	if (event_data) {
@@ -88,25 +94,10 @@ void client_event_data_delete (ClientEventData *event_data) {
 			else free (event_data->response_data);
 		}
 
-		if (event_data->owns_action_args && event_data->action_args && event_data->delete_action_args) {
-			event_data->delete_action_args (event_data->action_args);
-		}
+		cerver_action_args_release (event_data->shared_args);
+		cerver_action_args_release (event_data->shared_response);
 
 		free (event_data);
-	}
-
-}
-
-// the event is dropped while its action can still run in its thread,
-// so the arguments and the response that the event releases go with the data of this trigger
-static void client_event_data_take (ClientEventData *event_data, ClientEvent *event) {
-
-	event_data->owns_action_args = true;
-	event->work_args = NULL;
-
-	if (!event_data->owns_response_data && event->response_data && event->delete_response_data) {
-		event_data->owns_response_data = true;
-		event->response_data = NULL;
 	}
 
 }
@@ -123,12 +114,47 @@ static ClientEventData *client_event_data_create (
 
 		event_data->response_data = event->response_data;
 		event_data->delete_response_data = event->delete_response_data;
+		event_data->shared_response = cerver_action_args_reference (event->shared_response);
 
 		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
+		event_data->shared_args = cerver_action_args_reference (event->shared_args);
+
+		// the event is dropped while its action can still run in its thread:
+		// the reference of this trigger is the last one to the arguments
+		event_data->owns_action_args = event->drop_after_trigger;
 	}
 
 	return event_data;
+
+}
+
+// runs the action in the thread of the trigger or in its own one,
+// a thread that could not be created leaves its data to be released here
+// returns 0 when the action ran or its thread was created
+static u8 client_event_data_run (
+	const Client *client, Work work, bool create_thread, void *data, Action delete_data
+) {
+
+	u8 retval = 0;
+
+	if (create_thread) {
+		// the thread is counted, so client_teardown () waits for it
+		retval = thread_group_create ((ThreadGroup *) &client->event_threads, work, data) ? 1 : 0;
+		if (retval) delete_data (data);
+	}
+
+	else {
+		(void) work (data);
+	}
+
+	return retval;
+
+}
+
+static void client_event_data_release (void *event_data) {
+
+	client_event_data_delete ((ClientEventData *) event_data);
 
 }
 
@@ -148,26 +174,23 @@ static ClientEvent *client_event_new (void) {
 		event->work = NULL;
 		event->work_args = NULL;
 		event->delete_action_args = NULL;
+
+		event->shared_args = NULL;
+		event->shared_response = NULL;
 	}
 
 	return event;
 
 }
 
+// the arguments and the response are deleted when the last trigger that still runs is done with them
 void client_event_delete (void *ptr) {
 
 	if (ptr) {
 		ClientEvent *event = (ClientEvent *) ptr;
 
-		if (event->response_data) {
-			if (event->delete_response_data)
-				event->delete_response_data (event->response_data);
-		}
-
-		if (event->work_args) {
-			if (event->delete_action_args)
-				event->delete_action_args (event->work_args);
-		}
+		cerver_action_args_release (event->shared_args);
+		cerver_action_args_release (event->shared_response);
 
 		free (event);
 	}
@@ -199,6 +222,12 @@ u8 client_event_register (
 			event->work = work;
 			event->work_args = work_args;
 			event->delete_action_args = delete_action_args;
+			event->shared_args = cerver_action_args_create (work_args, delete_action_args);
+
+			if (work_args && !event->shared_args) {
+				free (event);
+				return retval;
+			}
 
 			// search if there is an action already registred for that event and remove it
 			(void) client_event_unregister (client, event_type);
@@ -235,6 +264,16 @@ u8 client_event_unregister (
 
 }
 
+// a response that could not be shared is released at once, the event keeps none
+static void client_event_response_drop (ClientEvent *event) {
+
+	if (event->delete_response_data) event->delete_response_data (event->response_data);
+
+	event->response_data = NULL;
+	event->delete_response_data = NULL;
+
+}
+
 void client_event_set_response (
 	Client *client,
 	const ClientEventType event_type,
@@ -244,8 +283,14 @@ void client_event_set_response (
 	if (client && client_event_type_is_valid (event_type)) {
 		ClientEvent *event = client->events[event_type];
 		if (event) {
+			// a trigger that still runs keeps its reference to the response that is replaced
+			cerver_action_args_release (event->shared_response);
+
 			event->response_data = response_data;
 			event->delete_response_data = delete_response_data;
+			event->shared_response = cerver_action_args_create (response_data, delete_response_data);
+
+			if (response_data && !event->shared_response) client_event_response_drop (event);
 		}
 	}
 
@@ -263,21 +308,10 @@ void client_event_trigger (
 			// trigger the action
 			if (event->work) {
 				ClientEventData *event_data = client_event_data_create (client, connection, event);
-				if (event_data && event->drop_after_trigger) {
-					client_event_data_take (event_data, event);
-				}
 
-				// the thread is counted, so client_teardown () waits for it
-				if (event->create_thread) {
-					(void) thread_group_create (
-						(ThreadGroup *) &client->event_threads,
-						event->work, event_data
-					);
-				}
-
-				else {
-					(void) event->work (event_data);
-				}
+				(void) client_event_data_run (
+					client, event->work, event->create_thread, event_data, client_event_data_release
+				);
 
 				if (event->drop_after_trigger) {
 					(void) client_event_unregister ((Client *) client, event_type);
@@ -311,24 +345,17 @@ void client_event_trigger_with_response (
 		client_event_data_create (client, connection, event) : NULL;
 
 	if (event_data) {
+		// this trigger owns its response, not the one of the event
+		cerver_action_args_release (event_data->shared_response);
+		event_data->shared_response = NULL;
+
 		event_data->response_data = response;
 		event_data->delete_response_data = delete_response;
 		event_data->owns_response_data = true;
 
-		if (event->drop_after_trigger) {
-			client_event_data_take (event_data, event);
-		}
-
-		if (event->create_thread) {
-			(void) thread_group_create (
-				(ThreadGroup *) &client->event_threads,
-				event->work, event_data
-			);
-		}
-
-		else {
-			(void) event->work (event_data);
-		}
+		(void) client_event_data_run (
+			client, event->work, event->create_thread, event_data, client_event_data_release
+		);
 
 		if (event->drop_after_trigger) {
 			(void) client_event_unregister ((Client *) client, event_type);
@@ -379,20 +406,21 @@ static ClientErrorData *client_error_data_new (void) {
 		error_data->owns_action_args = false;
 
 		error_data->error_message = NULL;
+
+		error_data->shared_args = NULL;
 	}
 
 	return error_data;
 
 }
 
+// the arguments of the error are deleted when their last reference is released
 void client_error_data_delete (ClientErrorData *error_data) {
 
 	if (error_data) {
 		str_delete (error_data->error_message);
 
-		if (error_data->owns_action_args && error_data->action_args && error_data->delete_action_args) {
-			error_data->delete_action_args (error_data->action_args);
-		}
+		cerver_action_args_release (error_data->shared_args);
 
 		free (error_data);
 	}
@@ -401,7 +429,7 @@ void client_error_data_delete (ClientErrorData *error_data) {
 
 static ClientErrorData *client_error_data_create (
 	const Client *client, const Connection *connection,
-	void *args,
+	ClientError *error,
 	const char *error_message
 ) {
 
@@ -410,12 +438,24 @@ static ClientErrorData *client_error_data_create (
 		error_data->client = client;
 		error_data->connection = connection;
 
-		error_data->action_args = args;
+		error_data->action_args = error->work_args;
+		error_data->delete_action_args = error->delete_action_args;
+		error_data->shared_args = cerver_action_args_reference (error->shared_args);
+
+		// the error is dropped while its action can still run in its thread:
+		// the reference of this trigger is the last one to the arguments
+		error_data->owns_action_args = error->drop_after_trigger;
 
 		error_data->error_message = error_message ? str_new (error_message) : NULL;
 	}
 
 	return error_data;
+
+}
+
+static void client_error_data_release (void *error_data) {
+
+	client_error_data_delete ((ClientErrorData *) error_data);
 
 }
 
@@ -431,21 +471,21 @@ static ClientError *client_error_new (void) {
 		client_error->work = NULL;
 		client_error->work_args = NULL;
 		client_error->delete_action_args = NULL;
+
+		client_error->shared_args = NULL;
 	}
 
 	return client_error;
 
 }
 
+// the arguments are deleted when the last trigger that still runs is done with them
 void client_error_delete (void *client_error_ptr) {
 
 	if (client_error_ptr) {
 		ClientError *client_error = (ClientError *) client_error_ptr;
 
-		if (client_error->work_args) {
-			if (client_error->delete_action_args)
-				client_error->delete_action_args (client_error->work_args);
-		}
+		cerver_action_args_release (client_error->shared_args);
 
 		free (client_error_ptr);
 	}
@@ -477,6 +517,12 @@ u8 client_error_register (
 			error->work = work;
 			error->work_args = work_args;
 			error->delete_action_args = delete_action_args;
+			error->shared_args = cerver_action_args_create (work_args, delete_action_args);
+
+			if (work_args && !error->shared_args) {
+				free (error);
+				return retval;
+			}
 
 			// search if there is an action already registred for that error and remove it
 			(void) client_error_unregister (client, error_type);
@@ -527,30 +573,12 @@ u8 client_error_trigger (
 			// trigger the action
 			if (error->work) {
 				ClientErrorData *error_data = client_error_data_create (
-					client, connection, error->work_args, error_message
+					client, connection, error, error_message
 				);
 
-				// the error is dropped while its action can still run in its thread,
-				// so the arguments go with the data of this trigger
-				if (error_data && error->drop_after_trigger) {
-					error_data->delete_action_args = error->delete_action_args;
-					error_data->owns_action_args = true;
-					error->work_args = NULL;
-				}
-
-				// the thread is counted, so client_teardown () waits for it
-				if (error->create_thread) {
-					retval = thread_group_create (
-						(ThreadGroup *) &client->event_threads,
-						error->work, error_data
-					);
-				}
-
-				else {
-					(void) error->work (error_data);
-
-					retval = 0;
-				}
+				retval = client_event_data_run (
+					client, error->work, error->create_thread, error_data, client_error_data_release
+				);
 
 				if (error->drop_after_trigger) {
 					(void) client_error_unregister ((Client *) client, error_type);
