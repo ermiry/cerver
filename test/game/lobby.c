@@ -1,25 +1,24 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
-
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/events.h>
 
 #include <cerver/collections/dlist.h>
 
+#include <cerver/client/client.h>
+#include <cerver/connection/connection.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/handler/events.h>
+
 #include <cerver/game/game.h>
-#include <cerver/game/gametype.h>
 #include <cerver/game/lobby.h>
 #include <cerver/game/player.h>
 #include <cerver/game/score.h>
+#include <cerver/game/types.h>
 
 #include "../test.h"
-
 #include "game.h"
 
 // the lobbies of a game cerver that is not started, with clients that are not connected:
@@ -397,6 +396,9 @@ static void test_lobbies_summary (void) {
 	free (decoded);
 	packet_delete (packet);
 	free (summary);
+
+	// a NULL lobby has no summary
+	test_check_null_ptr (lobby_summary_packet_create (NULL, GAME_PACKET_TYPE_LOBBY_UPDATE, false));
 
 	// the players with an id are added to a scoreboard
 	ScoreBoard *scores = game_score_create (LOBBIES_CLIENTS, 1, LOBBIES_SCORE);

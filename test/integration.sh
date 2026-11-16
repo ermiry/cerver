@@ -23,7 +23,7 @@ PAIRS=(
 	cerver/queue
 	cerver/udp
 	cerver/game
-	handler
+	cerver/handler
 	balancer/round_robin
 	balancer/handler_id
 	balancer/custom

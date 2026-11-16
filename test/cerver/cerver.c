@@ -1,9 +1,9 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
-#include <cerver/cerver.h>
-#include <cerver/events.h>
+#include <cerver/core/cerver.h>
+#include <cerver/handler/events.h>
 
 #include "../test.h"
 

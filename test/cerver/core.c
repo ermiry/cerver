@@ -1,27 +1,35 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <signal.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
 #include <dirent.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <unistd.h>
 #include <pthread.h>
+#include <unistd.h>
 
-#include <cerver/admin.h>
-#include <cerver/auth.h>
-#include <cerver/cerver.h>
-#include <cerver/client.h>
-#include <cerver/connection.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
-
-#include <app/auth.h>
+#include <cerver/admin/admin.h>
+#include <cerver/admin/cerver.h>
+#include <cerver/auth/auth.h>
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/connection.h>
+#include <cerver/connection/data.h>
+#include <cerver/connection/end.h>
+#include <cerver/connection/lifecycle.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/handler.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/auth.h>
 
 // a TCP cerver in the same process, with cerver clients:
 // - the app, app error and custom packets reach their handlers, with POLL and THREADS
@@ -1552,6 +1560,86 @@ static void test_core_admin (void) {
 
 }
 
+#define CORE_ADMIN_MAX_ADMINS			1
+#define CORE_ADMIN_SECOND_WAIT_SECONDS	1
+
+// an admin cerver with its max admins rejects the next one that authenticates (the limit was only stored)
+static void test_core_admin_max_admins (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, app_auth_method), 0, NULL);
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	admin_cerver_set_authenticate (cerver->admin, app_auth_method);
+	admin_cerver_set_max_admins (cerver->admin, CORE_ADMIN_MAX_ADMINS);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient first = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the first admin did not connect"
+	);
+
+	CoreClient second = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], 2, CORE_ADMIN_SECOND_WAIT_SECONDS),
+		1, "an admin beyond the max admins was registered"
+	);
+
+	test_check_unsigned_eq (admin_cerver_get_current_admins (cerver->admin), CORE_ADMIN_MAX_ADMINS, NULL);
+
+	core_client_end (&second);
+	core_client_end (&first);
+
+	core_cerver_stop (&core);
+
+}
+
+#define CORE_ADMIN_MANY_MAX_ADMINS		4
+#define CORE_ADMIN_MANY_ADMINS			2
+
+// an admin cerver below its max admins registers every admin that authenticates, not only the first one
+static void test_core_admin_many (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, app_auth_method), 0, NULL);
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	admin_cerver_set_authenticate (cerver->admin, app_auth_method);
+	admin_cerver_set_max_admins (cerver->admin, CORE_ADMIN_MANY_MAX_ADMINS);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient first = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the first admin did not connect"
+	);
+
+	CoreClient second = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], CORE_ADMIN_MANY_ADMINS, TEST_WAIT_SECONDS),
+		CORE_ADMIN_MANY_ADMINS, "the second admin was not registered"
+	);
+
+	test_check_unsigned_eq (admin_cerver_get_current_admins (cerver->admin), CORE_ADMIN_MANY_ADMINS, NULL);
+
+	core_client_end (&second);
+	core_client_end (&first);
+
+	core_cerver_stop (&core);
+
+}
+
 // the bad packets of an admin get errors, and the admin is dropped at the admin cerver limit
 static void test_core_admin_bad_packets (void) {
 
@@ -1587,6 +1675,55 @@ static void test_core_admin_bad_packets (void) {
 		test_wait_counter (&packet_errors, CORE_ADMIN_MAX_BAD_PACKETS, TEST_WAIT_SECONDS),
 		CORE_ADMIN_MAX_BAD_PACKETS, NULL
 	);
+
+	core_client_end (&admin);
+
+	core_cerver_stop (&core);
+
+}
+
+#define CORE_ADMIN_OTHER_PROTOCOL_ID	0x7E57
+
+// the admin cerver checks the packets of its admins with its own flag (it read the one of the cerver)
+static void test_core_admin_check_packets (void) {
+
+	core_counters_reset ();
+	__atomic_store_n (&admin_packets, 0, __ATOMIC_SEQ_CST);
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, app_auth_method), 0, NULL);
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	admin_cerver_set_authenticate (cerver->admin, app_auth_method);
+	admin_cerver_set_check_packets (cerver->admin, true);
+
+	Handler *admin_handler = handler_create (core_admin_handler);
+	handler_set_direct_handle (admin_handler, true);
+	admin_cerver_set_app_handlers (cerver->admin, admin_handler, NULL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient admin = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the admin did not connect"
+	);
+
+	Packet *packet = packet_create_request (PACKET_TYPE_APP, CORE_REQUEST_ECHO);
+	test_check_ptr (packet);
+	packet->header.version.protocol_id = CORE_ADMIN_OTHER_PROTOCOL_ID;
+	packet_set_network_values (packet, NULL, admin.client, admin.connection, NULL);
+	test_check_unsigned_eq (packet_send (packet, 0, NULL, false), 0, NULL);
+	packet_delete (packet);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&packet_errors, 1, TEST_WAIT_SECONDS),
+		1, "the packet of another protocol did not get its error"
+	);
+
+	test_check_unsigned_eq (admin_packets, 0, "the packet of another protocol reached the admin handler");
 
 	core_client_end (&admin);
 
@@ -1696,6 +1833,13 @@ static void test_core_event_thread_teardown (void) {
 	core_cerver_start (&core, cerver, port);
 
 	CoreClient client = core_client_connect (port, NULL);
+
+	// the event is triggered when the cerver registers the client, a stop before it has no event to wait for
+	test_check_unsigned_eq (
+		(unsigned int) test_wait_counter_64 (&cerver->stats->total_n_clients, 1, TEST_WAIT_SECONDS),
+		1, "the cerver did not register the client"
+	);
+
 	core_client_end (&client);
 
 	core_cerver_stop (&core);
@@ -2929,7 +3073,10 @@ int main (int argc, char **argv) {
 	test_core_receive_interrupted ();
 	test_core_thpool_handler_types ();
 	test_core_admin ();
+	test_core_admin_max_admins ();
+	test_core_admin_many ();
 	test_core_admin_bad_packets ();
+	test_core_admin_check_packets ();
 	test_core_check_packets ();
 	test_core_bad_packets_poll ();
 	test_core_bad_packets_threads ();

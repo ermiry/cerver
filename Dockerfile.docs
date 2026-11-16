@@ -1,0 +1,7 @@
+FROM gcc:16.2
+
+RUN apt-get update && apt-get install -y doxygen=1.9.8+ds-2.1 && apt-get clean
+
+WORKDIR /cerver
+
+CMD ["make", "docs"]

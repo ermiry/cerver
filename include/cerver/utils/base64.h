@@ -1,3 +1,8 @@
+/**
+ * @file cerver/utils/base64.h
+ * @brief The standard base64 with padding (fastbase64, thirdparty.md) and the canonical base64url of cerver.
+ */
+
 #ifndef _CERVER_UTILS_BASE64_H_
 #define _CERVER_UTILS_BASE64_H_
 
@@ -10,103 +15,57 @@ extern "C" {
 #endif
 
 /**
- * Given a source string of length len, this returns the amount of
- * memory the destination string should have.
+ * @defgroup utils_base64 Base64
+ * @ingroup utils
+ * @brief Encoding and decoding base64 and base64url.
+ * @{
+ */
+
+/**
+ * @brief The bytes that the encoded string of an input of A bytes needs, with its ending null byte:
+ * `ceil (A / 3) * 4 + 1`.
  *
- * remember, this is integer math
- * 3 bytes turn into 4 chars
- * ceiling[len / 3] * 4 + 1
- *
- * +1 is for any extra null.
+ * @param A the bytes of the input
  */
 #define base64_encode_len(A) (((A) + 2) / 3 * 4 + 1)
 
 /**
- * Given a base64 string of length len,
- *   this returns the amount of memory required for output string
- *  It maybe be more than the actual number of bytes written.
- * NOTE: remember this is integer math
- * this allocates a bit more memory than traditional versions of b64
- * decode  4 chars turn into 3 bytes
- * floor[len * 3/4] + 2
+ * @brief The bytes that the output of decoding a string of A characters needs: `floor (A * 3 / 4) + 2`, a bit more
+ * than the bytes that are written.
+ *
+ * @param A the characters of the encoded string
  */
 #define base64_decode_len(A) ((A) / 4 * 3 + 2)
 
 /**
- * Will return the strlen of the output from encoding.
- * This may be less than the required number of bytes allocated.
+ * @brief The length of the encoded string of an input of A bytes, without the ending null byte.
  *
- * This allows you to 'deserialized' a struct
- * \code
- * char* b64encoded = "...";
- * int len = strlen(b64encoded);
- *
- * struct datastuff foo;
- * if (chromium_base64_encode_strlen(sizeof(struct datastuff)) != len) {
- *    // wrong size
- *    return false;
- * } else {
- *    // safe to do;
- *    if (chromium_base64_encode((char*) &foo, b64encoded, len) == MODP_B64_ERROR) {
- *      // bad characters
- *      return false;
- *    }
- * }
- * // foo is filled out now
- * \endcode
+ * @param A the bytes of the input
  */
 #define base64_encode_strlen(A) (((A) + 2) / 3 * 4)
 
 /**
- * Encode a raw binary string into base 64.
- * src contains the bytes
- * len contains the number of bytes in the src
- * dest should be allocated by the caller to contain
- *   at least chromium_base64_encode_len(len) bytes (see below)
- *   This will contain the null-terminated b64 encoded result
- * returns length of the destination string plus the ending null byte
- *    i.e.  the result will be equal to strlen(dest) + 1
+ * @brief Encodes some bytes as base64 with padding, with the scalar code.
  *
- * Example
- *
- * \code
- * char* src = ...;
- * int srclen = ...; //the length of number of bytes in src
- * char* dest = (char*) malloc(chromium_base64_encode_len(srclen));
- * int len = chromium_base64_encode(dest, src, sourcelen);
- * if (len == MODP_B64_ERROR) {
- *   printf("Error\n");
- * } else {
- *   printf("b64 = %s\n", dest);
- * }
- * \endcode
- *
+ * @param[out] dest the encoded string, with room for base64_encode_len (len) bytes; it ends with a null byte
+ * @param[in] str the bytes
+ * @param[in] len the number of bytes
+ * @return the length of the encoded string, without the null byte
+ * @note For the internal methods of cerver: an application uses base64_encode ().
  */
 CERVER_PRIVATE size_t chromium_base64_encode (
 	char *dest, const char *str, size_t len
 );
 
 /**
- * Decode a base64 encoded string
+ * @brief Decodes a base64 string with padding, with the scalar code.
  *
- *
- * src should contain exactly len bytes of b64 characters.
- *     if src contains -any- non-base characters (such as white
- *     space, MODP_B64_ERROR is returned.
- *
- * dest should be allocated by the caller to contain at least
- *    len * 3 / 4 bytes.
- *
- * Returns the length (strlen) of the output, or MODP_B64_ERROR if unable to
- * decode
- *
- * \code
- * char* src = ...;
- * int srclen = ...; // or if you don't know use strlen(src)
- * char* dest = (char*) malloc(chromium_base64_decode_len(srclen));
- * int len = chromium_base64_decode(dest, src, sourcelen);
- * if (len == MODP_B64_ERROR) { error }
- * \endcode
+ * @param[out] dest the bytes, with room for base64_decode_len (len) bytes
+ * @param[in] src exactly len characters of base64, without any other character (like a white space)
+ * @param[in] len the length of the string: 0, or a multiple of 4
+ * @return the number of bytes written, or (size_t) -1 for a length that is not a multiple of 4 or a character that
+ * is not base64
+ * @note For the internal methods of cerver: an application uses base64_decode ().
  */
 CERVER_PRIVATE size_t chromium_base64_decode (
 	char *dest, const char *src, size_t len
@@ -114,48 +73,107 @@ CERVER_PRIVATE size_t chromium_base64_decode (
 
 #if defined (__AVX__) || defined (__AVX2__)
 
+/**
+ * @brief Encodes some bytes as base64 with the AVX2 code, like chromium_base64_encode ().
+ *
+ * @param[out] dest the encoded string, with room for base64_encode_len (len) bytes
+ * @param[in] str the bytes
+ * @param[in] len the number of bytes
+ * @return the length of the encoded string, without the null byte
+ * @note Only defined when cerver is compiled with `__AVX2__`.
+ */
 CERVER_PRIVATE size_t fast_avx2_base64_encode (
 	char *dest, const char *str, size_t len
 );
 
+/**
+ * @brief Decodes a base64 string with the AVX2 code, like chromium_base64_decode ().
+ *
+ * @param[out] out the bytes, with room for base64_decode_len (srclen) bytes
+ * @param[in] src the string
+ * @param[in] srclen the length of the string
+ * @return the number of bytes written, or (size_t) -1 for a string that is not valid base64
+ * @note Only defined when cerver is compiled with `__AVX2__`.
+ */
 CERVER_PRIVATE size_t fast_avx2_base64_decode (
 	char *out, const char *src, size_t srclen
 );
 
 #endif
 
+/**
+ * @brief Encodes some bytes as base64 with padding (`+`, `/` and `=`), with the AVX2 code when cerver is compiled
+ * with it.
+ *
+ * @param[out] encoded the encoded string, with room for base64_encode_len (inlen) bytes; it ends with a null byte
+ * @param[in] input the bytes
+ * @param[in] inlen the number of bytes
+ * @return the length of the encoded string, without the null byte
+ */
 CERVER_PUBLIC size_t base64_encode (
 	char *encoded, const char *input, size_t inlen
 );
 
+/**
+ * @brief Decodes a base64 string with padding.
+ *
+ * @param[out] output the bytes, with room for base64_decode_len (codedlen) bytes
+ * @param[in] bufcoded exactly codedlen characters of base64
+ * @param[in] codedlen the length of the string: 0, or a multiple of 4
+ * @return the number of bytes written, or (size_t) -1 for a string that is not valid base64
+ */
 CERVER_PUBLIC size_t base64_decode (
 	char *output, const char *bufcoded, size_t codedlen
 );
 
-// the characters of base64url (RFC 4648 §5) for an input of length bytes,
-// without padding and without the ending null byte
+/**
+ * @brief The characters of the base64url (RFC 4648 §5) string of an input of length bytes, without padding and
+ * without the ending null byte.
+ *
+ * @param length the bytes of the input
+ */
 #define base64url_encode_length(length) ((((length) / 3) * 4) + ((((length) % 3) * 4 + 2) / 3))
 
-// the bytes that an encoded string of length characters can produce
+/**
+ * @brief The bytes that a base64url string of length characters can produce.
+ *
+ * @param length the characters of the string
+ */
 #define base64url_decode_length(length) ((((length) / 4) * 3) + ((((length) % 4) * 3) / 4))
 
-// encodes the input as base64url (RFC 4648 §5): '-' and '_', without padding,
-// encoded must have room for base64url_encode_length (input_length) + 1 bytes,
-// the result ends with a null byte
-// returns the length of the encoded string
+/**
+ * @brief Encodes some bytes as base64url (RFC 4648 §5): `-` and `_`, without padding.
+ *
+ * @param[out] encoded the encoded string, with room for base64url_encode_length (input_length) + 1 bytes; it ends
+ * with a null byte
+ * @param[in] input the bytes
+ * @param[in] input_length the number of bytes
+ * @return the length of the encoded string, without the null byte
+ */
 CERVER_PUBLIC size_t base64url_encode (
 	char *encoded, const unsigned char *input, size_t input_length
 );
 
-// decodes a canonical base64url string: only the characters of the alphabet,
-// without padding and with the unused bits of the last character set to zero,
-// so every token has a single valid form,
-// output must have room for base64url_decode_length (encoded_length) bytes
-// returns 0 on success, 1 on error
+/**
+ * @brief Decodes a canonical base64url string.
+ *
+ * Only the characters of the alphabet are taken, without padding and with the unused bits of the last character
+ * set to zero, so every token has a single valid form.
+ *
+ * @param[out] output the bytes, with room for base64url_decode_length (encoded_length) bytes
+ * @param[out] output_length the number of bytes written, 0 on error
+ * @param[in] encoded the string, NULL only when encoded_length is 0
+ * @param[in] encoded_length the length of the string
+ * @retval 0 the string was decoded
+ * @retval 1 a NULL argument, a length that leaves a single character in its last group, a character out of the
+ * alphabet, or unused bits that are not zero
+ */
 CERVER_PUBLIC unsigned int base64url_decode (
 	unsigned char *output, size_t *output_length,
 	const char *encoded, size_t encoded_length
 );
+
+/** @} */
 
 #ifdef __cplusplus
 }

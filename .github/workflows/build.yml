@@ -101,6 +101,47 @@ jobs:
       - name: clang run tests
         run: bash test/run.sh
 
+  docs:
+    name: Cerver reference
+    runs-on: ubuntu-latest
+    container: gcc:16.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y doxygen=1.9.8+ds-2.1
+
+      - name: System Information
+        run: doxygen --version
+
+      - name: doxygen
+        run: make docs
+
+      - name: Upload reference
+        uses: actions/upload-artifact@v7
+        with:
+          name: cerver-reference
+          path: ./reference
+          retention-days: 7
+
+  analyzers:
+    name: Cerver static analyzers
+    runs-on: ubuntu-latest
+    container: gcc:16.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y clang=1:19.0-63 clang-tidy=1:19.0-63 clang-tools=1:19.0-63 cppcheck=2.17.1-2
+
+      - name: System Information
+        run: gcc --version && clang-tidy --version && cppcheck --version && scan-build --help | head -1
+
+      - name: analyzers
+        run: bash test/analyze.sh
+
   valgrind:
     name: Cerver tests with valgrind
     needs: build

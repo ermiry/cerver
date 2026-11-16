@@ -1,14 +1,14 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <cerver/auth.h>
-#include <cerver/connection.h>
-#include <cerver/packets.h>
-#include <cerver/sessions.h>
-#include <cerver/udp.h>
+#include <cerver/auth/auth.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/connection/connection.h>
+#include <cerver/network/udp.h>
+#include <cerver/packets/packets.h>
 
 // the datagrams of an UDP cerver or client: the check of their single packet and their token,
 // the packet that is created from them, and the auth data of an auth packet

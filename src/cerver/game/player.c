@@ -1,23 +1,22 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-
 #include <time.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/packets.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/packets/packets.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 #include "cerver/game/player.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 #define PLAYER_MILLISECONDS_PER_SECOND			1000
 #define PLAYER_NANOSECONDS_PER_MILLISECOND		1000000
@@ -89,7 +88,7 @@ void player_set_data (Player *player, void *data, Action data_delete) {
 
 }
 
-int player_comparator_by_id (const void *a, const void *b) {
+int player_comparator_with_id (const void *a, const void *b) {
 
 	return str_compare (((Player *) a)->id, ((Player *) b)->id);
 
@@ -254,7 +253,7 @@ ListElement *player_get_le_from_lobby (Lobby *lobby, Player *player) {
 }
 
 // gets a player from the lobby player's list suing the sock fd
-Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
+Player *player_get_with_sock_fd_list (Lobby *lobby, i32 sock_fd) {
 
 	if (lobby) {
 		Player *player = NULL;

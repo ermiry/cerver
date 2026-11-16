@@ -40,17 +40,33 @@ void bsem_delete (void *bsem_ptr) {
 
 }
 
+// a semaphore without memory for its mutex or its condition keeps both NULL
+static void bsem_init_internal (bsem *bsem_p, const int value) {
+
+	bsem_p->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+	bsem_p->cond = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
+
+	if (bsem_p->mutex && bsem_p->cond) {
+		(void) pthread_mutex_init (bsem_p->mutex, NULL);
+		(void) pthread_cond_init (bsem_p->cond, NULL);
+		bsem_p->v = value;
+	}
+
+	else {
+		free (bsem_p->mutex);
+		free (bsem_p->cond);
+		bsem_p->mutex = NULL;
+		bsem_p->cond = NULL;
+	}
+
+}
+
 // inits semaphore to 1 or 0
 void bsem_init (bsem *bsem_p, int value) {
 
 	if (bsem_p) {
 		if (value == 0 || value == 1) {
-			bsem_p->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			(void) pthread_mutex_init (bsem_p->mutex, NULL);
-
-			bsem_p->cond = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
-			(void) pthread_cond_init (bsem_p->cond, NULL);
-			bsem_p->v = value;
+			bsem_init_internal (bsem_p, value);
 		}
 
 		else {
@@ -78,7 +94,7 @@ void bsem_reset (bsem *bsem_p) {
 // posts to at least one thread
 void bsem_post (bsem *bsem_p) {
 
-	if (bsem_p) {
+	if (bsem_p && bsem_p->mutex) {
 		(void) pthread_mutex_lock (bsem_p->mutex);
 		bsem_p->v = 1;
 		(void) pthread_cond_signal (bsem_p->cond);
@@ -90,7 +106,7 @@ void bsem_post (bsem *bsem_p) {
 // posts to all threads
 void bsem_post_all (bsem *bsem_p) {
 
-	if (bsem_p) {
+	if (bsem_p && bsem_p->mutex) {
 		(void) pthread_mutex_lock (bsem_p->mutex);
 		bsem_p->v = 1;
 		(void) pthread_cond_broadcast (bsem_p->cond);
@@ -99,10 +115,10 @@ void bsem_post_all (bsem *bsem_p) {
 
 }
 
-// waits on semaphore until semaphore has value 0
+// waits on semaphore until semaphore has value 1, and takes it back to 0
 void bsem_wait (bsem *bsem_p) {
 
-	if (bsem_p) {
+	if (bsem_p && bsem_p->mutex) {
 		(void) pthread_mutex_lock (bsem_p->mutex);
 		while (bsem_p->v != 1) {
 			(void) pthread_cond_wait (bsem_p->cond, bsem_p->mutex);

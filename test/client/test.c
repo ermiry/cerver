@@ -1,12 +1,15 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
 #include <pthread.h>
 
-#include <cerver/client.h>
+#include <cerver/client/client.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/handler/handler.h>
 
 #include "../test.h"
 
@@ -35,6 +38,77 @@ static void test_client_base_configuration (void) {
 	client_set_name (client,client_name);
 	test_check_str_eq (client->name, client_name, NULL);
 	test_check_str_len (client->name, strlen (client_name), NULL);
+
+	client_delete (client);
+
+}
+
+// a NULL name keeps the name of the client, and a NULL cerver has no clients
+static void test_client_null_arguments (void) {
+
+	Client *client = test_client_create ();
+
+	client_set_name (client, client_name);
+	client_set_name (client, NULL);
+	test_check_str_eq (client->name, client_name, "a NULL name changed the name");
+
+	client_delete (client);
+
+	test_check_null_ptr (client_get_with_session_id (NULL, "session"));
+
+}
+
+#define CLIENT_UNREGISTER_NAME				"client-unregister"
+#define CLIENT_UNREGISTER_PORT				7700
+
+// a client whose connections are not in the poll of the cerver is not dropped:
+// it is still valid after the unregister, and its caller deletes it
+static void test_client_unregister_connections_from_poll (void) {
+
+	Cerver *cerver = cerver_create (
+		CERVER_TYPE_CUSTOM, CLIENT_UNREGISTER_NAME,
+		CLIENT_UNREGISTER_PORT, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE
+	);
+
+	test_check_ptr (cerver);
+
+	Client *client = test_client_create ();
+
+	test_check_unsigned_eq (client_unregister_connections_from_cerver_poll (cerver, client), 1, NULL);
+	test_check_ptr (client->connections);
+
+	client_delete (client);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+static void test_client_handler_method (void *data) {
+
+	(void) data;
+
+}
+
+// a different handler deletes the one it replaces (a leak before), the same one again is kept
+static void test_client_handlers_replaced (void) {
+
+	Client *client = test_client_create ();
+
+	client_set_app_handlers (
+		client,
+		handler_create (test_client_handler_method), handler_create (test_client_handler_method)
+	);
+
+	client_set_app_handlers (
+		client,
+		handler_create (test_client_handler_method), handler_create (test_client_handler_method)
+	);
+
+	Handler *custom = handler_create (test_client_handler_method);
+	client_set_custom_handler (client, custom);
+	client_set_custom_handler (client, custom);
+	test_check (client->custom_packet_handler == custom, "the same handler was not kept");
+	client_set_custom_handler (client, handler_create (test_client_handler_method));
 
 	client_delete (client);
 
@@ -169,6 +243,9 @@ int main (void) {
 	(void) printf ("Testing CLIENT...\n");
 
 	test_client_base_configuration ();
+	test_client_null_arguments ();
+	test_client_unregister_connections_from_poll ();
+	test_client_handlers_replaced ();
 	test_client_session_id ();
 	test_client_session_id_threads ();
 	test_client_recycled ();

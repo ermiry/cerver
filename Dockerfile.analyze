@@ -1,0 +1,7 @@
+FROM gcc:16.2
+
+RUN apt-get update && apt-get install -y clang=1:19.0-63 clang-tidy=1:19.0-63 clang-tools=1:19.0-63 cppcheck=2.17.1-2 && apt-get clean
+
+WORKDIR /cerver
+
+CMD ["bash", "test/analyze.sh"]

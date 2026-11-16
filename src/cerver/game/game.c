@@ -1,30 +1,32 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 
 #include <pthread.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/errors.h"
-#include "cerver/events.h"
-#include "cerver/packets.h"
-#include "cerver/serializer.h"
+#include "cerver/client/client.h"
+#include "cerver/client/events.h"
+#include "cerver/connection/connection.h"
+#include "cerver/core/cerver.h"
+#include "cerver/core/data.h"
+#include "cerver/handler/errors.h"
+#include "cerver/handler/events.h"
+#include "cerver/packets/packets.h"
+#include "cerver/packets/serializer.h"
 
 #include "cerver/game/game.h"
-#include "cerver/game/gametype.h"
-#include "cerver/game/player.h"
 #include "cerver/game/lobby.h"
+#include "cerver/game/player.h"
+#include "cerver/game/types.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 #define GAME_ERROR_BAD_REQUEST			"Bad game request!"
 #define GAME_ERROR_NOT_GAME_CERVER		"The cerver does not handle game packets!"
@@ -64,7 +66,7 @@ void game_cerver_stats_print (Cerver *cerver) {
 			GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
 			(void) printf ("Current active lobbys:         %u\n", game_cerver->stats->current_active_lobbys);
-			(void) printf ("Total lobbys created:          %u\n", game_cerver->stats->lobbys_created);
+			(void) printf ("Total lobbys created:          %u\n", CERVER_STATS_GET (game_cerver->stats->lobbys_created));
 		}
 
 		else {
@@ -407,7 +409,7 @@ static Lobby *game_lobby_create_of_type (GameCerver *game, const Packet *packet,
 		lobby->game_type = game_type;
 
 		game_cerver_register_lobby (game, lobby);
-		game->stats->lobbys_created += 1;
+		CERVER_STATS_ADD (game->stats->lobbys_created, 1);
 
 		game_lobby_on_join (lobby, lobby->owner);
 	}
@@ -444,7 +446,7 @@ static void game_lobby_create (const Packet *packet) {
 	if (game_request_decode (packet, &lobby_create_request_schema, &request)) {
 		(void) pthread_mutex_lock (&game->lock);
 
-		GameType *game_type = game_type_get_by_name (game->game_types, request.game_type);
+		GameType *game_type = game_type_get_with_name (game->game_types, request.game_type);
 		const bool player = lobby_client_is_player (packet->client);
 		Lobby *lobby = (game_type && !player) ?
 			lobby_reference (game_lobby_create_of_type (game, packet, game_type)) : NULL;
@@ -536,7 +538,7 @@ static void game_lobby_join_search (const Packet *packet, const LobbyJoin *reque
 
 	(void) pthread_mutex_lock (&game->lock);
 
-	GameType *game_type = game_type_get_by_name (game->game_types, request->game_type);
+	GameType *game_type = game_type_get_with_name (game->game_types, request->game_type);
 
 	Lobby *lobby = game_type ? game_lobby_search (game, packet, request->game_type) : NULL;
 	bool created = false;

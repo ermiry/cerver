@@ -1,8 +1,7 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <cerver/threads/jobs.h>
@@ -368,6 +367,21 @@ static void test_worker_shared_queue (void) {
 
 }
 
+// a NULL worker is ignored by its setters and its pushes (they wrote in NULL)
+static void test_worker_null (void) {
+
+	test_check_int_eq ((int) worker_get_state (NULL), (int) WORKER_STATE_NONE, NULL);
+
+	worker_set_work (NULL, work_method);
+	worker_set_delete_data (NULL, free);
+	worker_set_reference (NULL, NULL);
+	worker_set_remove_reference (NULL, worker_remove_reference);
+
+	test_check_unsigned_eq (worker_push_job (NULL, NULL), 1, "a job was pushed to a NULL worker");
+	test_check_unsigned_eq (worker_push_job_with_work (NULL, work_method, NULL), 1, NULL);
+
+}
+
 void threads_tests_worker (void) {
 
 	(void) printf ("Testing THREADS worker...\n");
@@ -391,6 +405,7 @@ void threads_tests_worker (void) {
 	test_worker_control_wait ();
 	test_worker_jobs ();
 	test_worker_shared_queue ();
+	test_worker_null ();
 
 	(void) printf ("Done!\n");
 

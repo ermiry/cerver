@@ -1,40 +1,40 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-
 #include <time.h>
 
-#include <poll.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <poll.h>
 #include <pthread.h>
+#include <unistd.h>
 
-#include "cerver/types/types.h"
 #include "cerver/types/string.h"
+#include "cerver/types/types.h"
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/socket.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
-#include "cerver/connection.h"
-#include "cerver/events.h"
-#include "cerver/handler.h"
-#include "cerver/packets.h"
-#include "cerver/serializer.h"
+#include "cerver/client/client.h"
+#include "cerver/connection/connection.h"
+#include "cerver/connection/registry.h"
+#include "cerver/core/cerver.h"
+#include "cerver/handler/events.h"
+#include "cerver/handler/handler.h"
+#include "cerver/network/socket.h"
+#include "cerver/packets/packets.h"
+#include "cerver/packets/serializer.h"
+
+#include "cerver/game/game.h"
+#include "cerver/game/lobby.h"
+#include "cerver/game/player.h"
+#include "cerver/game/types.h"
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/game/game.h"
-#include "cerver/game/gametype.h"
-#include "cerver/game/player.h"
-#include "cerver/game/lobby.h"
-
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 #include "cerver/utils/sha256.h"
+#include "cerver/utils/utils.h"
 
 #define LOBBY_ID_SOURCE_SIZE				64
 #define LOBBY_ID_HASH_SIZE					32
@@ -388,7 +388,8 @@ bool lobby_is_running (const Lobby *lobby) {
 }
 
 // searches a lobby in the game cerver and returns a reference to it
-Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
+// the reference is taken with the lock, so the lobby can not be released before its caller has it
+static Lobby *lobby_get_internal (GameCerver *game_cerver, Lobby *query, const bool reference) {
 
 	Lobby *found = NULL;
 
@@ -399,6 +400,8 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 			if (!lobby_comparator (le->data, query)) found = (Lobby *) le->data;
 		}
 
+		if (found && reference) (void) lobby_reference (found);
+
 		(void) pthread_mutex_unlock (&game_cerver->lock);
 	}
 
@@ -406,8 +409,19 @@ Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
 
 }
 
-// seraches for a lobby with matching id
-Lobby *lobby_search_by_id (Cerver *cerver, const char *id) {
+Lobby *lobby_get (GameCerver *game_cerver, Lobby *query) {
+
+	return lobby_get_internal (game_cerver, query, false);
+
+}
+
+Lobby *lobby_get_reference (GameCerver *game_cerver, Lobby *query) {
+
+	return lobby_get_internal (game_cerver, query, true);
+
+}
+
+static Lobby *lobby_search_with_id_internal (Cerver *cerver, const char *id, const bool reference) {
 
 	Lobby *found = NULL;
 
@@ -421,10 +435,25 @@ Lobby *lobby_search_by_id (Cerver *cerver, const char *id) {
 			if (!strcmp (lobby->id->str, id)) found = lobby;
 		}
 
+		if (found && reference) (void) lobby_reference (found);
+
 		game_cerver_unlock (cerver);
 	}
 
 	return found;
+
+}
+
+// seraches for a lobby with matching id
+Lobby *lobby_search_with_id (Cerver *cerver, const char *id) {
+
+	return lobby_search_with_id_internal (cerver, id, false);
+
+}
+
+Lobby *lobby_search_with_id_reference (Cerver *cerver, const char *id) {
+
+	return lobby_search_with_id_internal (cerver, id, true);
 
 }
 
@@ -661,7 +690,7 @@ static i32 lobby_poll_get_free_idx (const Lobby *lobby) {
 }
 
 // gets the idx of the connection fd in the poll fds
-static i32 lobby_poll_get_idx_by_sock_fd (const Lobby *lobby, const i32 sock_fd) {
+static i32 lobby_poll_get_idx_with_sock_fd (const Lobby *lobby, const i32 sock_fd) {
 
 	for (u32 i = 0; i < lobby->max_players_fds; i++)
 		if (lobby->players_fds[i].fd == sock_fd) return (i32) i;
@@ -710,7 +739,7 @@ u8 lobby_poll_unregister_connection (Lobby *lobby, Player *player, Connection *c
 	u8 retval = 1;
 
 	if (lobby && player && connection && lobby->players_fds) {
-		const i32 idx = lobby_poll_get_idx_by_sock_fd (lobby, connection->socket->sock_fd);
+		const i32 idx = lobby_poll_get_idx_with_sock_fd (lobby, connection->socket->sock_fd);
 		if (idx >= 0) {
 			lobby->players_fds[idx].fd = -1;
 			lobby->players_fds[idx].events = 0;
@@ -1405,7 +1434,7 @@ Packet *lobby_summary_packet_create (const Lobby *lobby, const u32 request_type,
 
 	Packet *packet = NULL;
 
-	LobbySummary *summary = (LobbySummary *) malloc (sizeof (LobbySummary));
+	LobbySummary *summary = lobby ? (LobbySummary *) malloc (sizeof (LobbySummary)) : NULL;
 	if (summary) {
 		game_cerver_lock (lobby->cerver);
 		lobby_summary_set (summary, lobby, created);

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CERVER_VERSION=1.8.2
+CERVER_VERSION=1.9
 
 # sudo apt-get update && sudo apt-get install -y make wget
 

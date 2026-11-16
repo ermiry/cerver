@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include <pthread.h>
 
@@ -228,19 +229,40 @@ void pool_clear (Pool *pool) {
 
 }
 
+static void pool_destroy_elements (Pool *pool, void **elements, const size_t count) {
+
+	for (size_t index = 0; index < count; index++) {
+		pool_destroy_element (pool, elements[index]);
+	}
+
+}
+
 // destroys all of the pool's elements and their data but keeps the pool
+// the elements are taken out with the mutex and destroyed after it, so a destroy method can use the pool;
+// without memory for that copy they are destroyed with the mutex, as before
 void pool_reset (Pool *pool) {
 
 	if (pool) {
 		(void) pthread_mutex_lock (&pool->mutex);
 
-		for (size_t index = 0; index < pool->count; index++) {
-			pool_destroy_element (pool, pool->elements[index]);
+		const size_t count = pool->count;
+		void **taken = count ? (void **) malloc (count * sizeof (void *)) : NULL;
+		if (taken) {
+			(void) memcpy (taken, pool->elements, count * sizeof (void *));
+		}
+
+		else {
+			pool_destroy_elements (pool, pool->elements, count);
 		}
 
 		pool->count = 0;
 
 		(void) pthread_mutex_unlock (&pool->mutex);
+
+		if (taken) {
+			pool_destroy_elements (pool, taken, count);
+			free (taken);
+		}
 	}
 
 }

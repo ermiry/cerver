@@ -1,7 +1,7 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
@@ -568,6 +568,37 @@ void *htab_get (
 
 }
 
+// runs the method with the data associated with the key while the htab is locked,
+// so another thread can not remove it in between
+// returns 0 when the key was found, 1 when it was not or on error
+unsigned int htab_get_apply (
+	Htab *ht, const void *key, size_t key_size,
+	void (*method)(void *data, void *method_args), void *method_args
+) {
+
+	unsigned int retval = 1;
+
+	if (ht && key && key_size && method) {
+		(void) pthread_mutex_lock (ht->mutex);
+
+		size_t index = ht->hash (key, key_size, ht->size);
+
+		HtabNode *node = htab_internal_find (
+			ht, ht->table[index], key, key_size, NULL
+		);
+
+		if (node) {
+			method (node->val, method_args);
+			retval = 0;
+		}
+
+		(void) pthread_mutex_unlock (ht->mutex);
+	}
+
+	return retval;
+
+}
+
 // removes and returns the data associated with the key from the htab
 // the data should be deleted by the user
 // returns NULL if no data was found with the provided key
@@ -639,7 +670,7 @@ static void htab_bucket_print (
 ) {
 
 	if (bucket) {
-		(void) printf ("Bucket <%lu> count: %lu\n", idx, bucket->count);
+		(void) printf ("Bucket <%zu> count: %zu\n", idx, bucket->count);
 		HtabNode *n = bucket->start;
 		while (n) {
 			htab_node_print (n);
@@ -654,8 +685,8 @@ void htab_print (Htab *htab) {
 
 	if (htab) {
 		(void) printf ("\n\n");
-		(void) printf ("Htab's size: %lu\n", htab->size);
-		(void) printf ("Htab's count: %lu\n", htab->count);
+		(void) printf ("Htab's size: %zu\n", htab->size);
+		(void) printf ("Htab's count: %zu\n", htab->count);
 
 		for (size_t idx = 0; idx < htab->size; idx++) {
 			htab_bucket_print (htab->table[idx], idx);

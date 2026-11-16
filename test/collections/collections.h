@@ -21,4 +21,6 @@ extern void collections_tests_pool (void);
 
 extern void collections_tests_queue (void);
 
+extern void collections_tests_safe (void);
+
 #endif

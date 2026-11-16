@@ -1,13 +1,12 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #include <pthread.h>
 
 #include <cerver/collections/queue.h>
 
 #include "../test.h"
-
 #include "check.h"
 #include "data.h"
 

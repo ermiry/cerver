@@ -1,5 +1,5 @@
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
@@ -505,6 +505,17 @@ int dlist_delete_if_not_empty (void *dlist_ptr) {
 
 }
 
+// a recursive mutex, so the method of dlist_traverse () or of dlist_get_apply () can use the same list
+static void dlist_mutex_init (pthread_mutex_t *mutex) {
+
+	pthread_mutexattr_t attributes;
+	(void) pthread_mutexattr_init (&attributes);
+	(void) pthread_mutexattr_settype (&attributes, PTHREAD_MUTEX_RECURSIVE);
+	(void) pthread_mutex_init (mutex, &attributes);
+	(void) pthread_mutexattr_destroy (&attributes);
+
+}
+
 DoubleList *dlist_init (
 	void (*destroy)(void *data),
 	int (*compare)(const void *one, const void *two)
@@ -517,7 +528,14 @@ DoubleList *dlist_init (
 		dlist->compare = compare;
 
 		dlist->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		pthread_mutex_init (dlist->mutex, NULL);
+		if (dlist->mutex) {
+			dlist_mutex_init (dlist->mutex);
+		}
+
+		else {
+			free (dlist);
+			dlist = NULL;
+		}
 	}
 
 	return dlist;
@@ -580,8 +598,14 @@ void dlist_clear_and_delete (void *dlist_ptr) {
 void dlist_clear_or_delete (void *dlist_ptr) {
 
 	if (dlist_ptr) {
-		if (((DoubleList *) dlist_ptr)->size > 0) dlist_clear (dlist_ptr);
-		else dlist_delete (dlist_ptr);
+		DoubleList *dlist = (DoubleList *) dlist_ptr;
+
+		(void) pthread_mutex_lock (dlist->mutex);
+		const bool empty = !dlist->size;
+		(void) pthread_mutex_unlock (dlist->mutex);
+
+		if (empty) dlist_delete (dlist);
+		else dlist_clear (dlist);
 	}
 
 }
@@ -986,7 +1010,7 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 // comparator must return TRUE on match (item will be removed from the dlist)
 // this methods is thread safe
 // returns the number of elements that we removed from the dlist
-unsigned int dlist_remove_by_condition (
+unsigned int dlist_remove_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match,
@@ -1007,11 +1031,11 @@ unsigned int dlist_remove_by_condition (
 
 			if (compare (le->data, match)) {
 				// remove element from the dlist
+				// without a destroy method nothing points to the data anymore, so it is released with free ()
 				void *removed_data = dlist_internal_remove_element (dlist, le);
 				if (delete_data) {
-					if (dlist->destroy) {
-						dlist->destroy (removed_data);
-					}
+					if (dlist->destroy) dlist->destroy (removed_data);
+					else free (removed_data);
 				}
 
 				matches += 1;
@@ -1100,6 +1124,37 @@ ListElement *dlist_get_element (
 			(void) pthread_mutex_lock (dlist->mutex);
 
 			retval = dlist_internal_get_element (dlist, data, comp);
+
+			(void) pthread_mutex_unlock (dlist->mutex);
+		}
+	}
+
+	return retval;
+
+}
+
+// searches the data like dlist_search () and runs the method with it while the list is locked,
+// so another thread can not remove it in between
+// returns 0 when the data was found, 1 when it was not or on error
+int dlist_get_apply (
+	const DoubleList *dlist, const void *data,
+	int (*compare)(const void *one, const void *two),
+	void (*method)(void *list_element_data, void *method_args), void *method_args
+) {
+
+	int retval = 1;
+
+	if (dlist && data && method) {
+		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
+
+		if (comp) {
+			(void) pthread_mutex_lock (dlist->mutex);
+
+			ListElement *element = dlist_internal_get_element (dlist, data, comp);
+			if (element) {
+				method (element->data, method_args);
+				retval = 0;
+			}
 
 			(void) pthread_mutex_unlock (dlist->mutex);
 		}
@@ -1390,7 +1445,7 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 // comparator must return TRUE on match (item will be moved to new dlist)
 // this methods is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
-DoubleList *dlist_split_by_condition (
+DoubleList *dlist_split_with_condition (
 	DoubleList *dlist,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
@@ -1439,7 +1494,7 @@ void dlist_merge_two (DoubleList *one, DoubleList *two) {
 // that match the specified confition
 // elements from original dlists are moved directly to the new list
 // returns a newly allocated dlist with all the matches
-DoubleList *dlist_merge_two_by_condition (
+DoubleList *dlist_merge_two_with_condition (
 	DoubleList *one, DoubleList *two,
 	bool (*compare)(const void *one, const void *two),
 	const void *match

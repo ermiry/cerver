@@ -3,6 +3,161 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9 (from 1.9b-3)
+
+The release of the 1.9: the backlog of the core and the ports of the other lines to the files of the core, so they
+are the same in the four lines. The wire does not change, a 1.9 talks with a 1.9b-3, but some structs grow (a binary
+that allocates them itself is built again) and some functions change what they do.
+
+- **A send that times out ends its connection:** a send to a peer that does not read in all its send timeout leaves
+  it with a part of the packet, so its socket is shut down: the thread that receives the connection ends it, and the
+  next sends fail at once (EPIPE) instead of waiting each one for its own timeout (a peer that never reads held a
+  thread N × the timeout). It applies to the packets, the files and the balancer. **New:**
+  `socket_end_on_send_timeout ()` (`CERVER_PRIVATE`)
+- **`Thpool` grows** at its end with `waiter`, `num_threads_waiting` and `waiter_wakes`, the waiter of the 2.1b-19:
+  without one, the thpool works as before. **New:** `ThpoolWaiter`, `ThpoolWaited`, `thpool_set_waiter ()` and
+  `thpool_get_num_threads_waiting ()` (`CERVER_PRIVATE`)
+- **The events and errors of a client share their arguments** like the ones of the cerver since the 1.9b-2:
+  `ClientEvent` and `ClientEventData` have `shared_args` and `shared_response` at their end, `ClientError` and
+  `ClientErrorData` have `shared_args`. An event or an error that is replaced or unregistered while the thread of a
+  trigger still runs keeps its arguments (and its response) until that trigger releases its data (they were
+  released at once); a thread that can not be created releases its data
+- **`files_create_dir ()` of a directory that exists returns 0** (it returned 1 with a warning); a path that exists
+  and is not a directory returns 1
+- **`file_n_read ()` sets `n_read`** to the bytes that were read (it added them to its value), and it can be NULL
+- **`file_receive_actual ()` removes a file that fails** after it was opened (it was left partially written)
+- `files_image_get_type ()` and `files_image_get_type_from_file ()` find a BMP by its bytes (it was never found)
+
+## 1.9b-3 (from 1.9b-2)
+
+The port of `thpool_has_queued ()` of the 2.1b-17 (`nightly`), so `threads/thpool.c` is the same in the four lines:
+`Thpool` has a new field at its end (a binary that allocates a `Thpool` itself is built again), the rest keeps its
+ABI and the wire does not change.
+
+- **`Thpool` has `queue_awaited`** at its end, the count of the jobs in its queue that `thpool_has_queued ()` reads
+  without the mutex of the queue. **New:** `thpool_has_queued ()`
+- The docs of `cerver_stop_request ()` and `cerver_shutdown ()` say what they do since the 1.9b-2 (its stop pipe):
+  the request is async-signal-safe, and the shutdown too without `CERVER_DEBUG`
+
+## 1.9b-2 (from 1.9b-1)
+
+The fixes of the audit of the code: the wire does not change, a 1.9b-2 talks with a 1.9b-1, but some structs change
+their fields (a binary built with the 1.9b-1 is built again) and some functions change what they do.
+
+- **The structs change:** `Cerver` has `stop_pipe[2]` instead of `stop_mutex` / `stop_cond` (the stop wakes the
+  sleeps with a pipe, so `cerver_shutdown ()` can be called from a signal handler) and no `auth_packet` (it was not
+  used); `CerverStats` has `threshold_start`; `JobQueue` has `requests` instead of `waiting`, `requested_id` and
+  `requested_job` (each thread in `job_queue_request ()` has its own request); `CerverEvent`, `CerverEventData`,
+  `CerverErrorEvent` and `CerverErrorEventData` have `shared_args` at their end
+- **The admins have their limits:** `admin_cerver_register_admin ()` rejects an admin beyond `max_admins` or a client
+  with more than `max_admin_connections`, and **the default `ADMIN_CERVER_DEFAULT_MAX_ADMINS` is 1**: a second admin
+  is rejected unless `admin_cerver_set_max_admins ()` raises the limit (0 is no limit). The admin cerver checks the
+  packets of its admins with its own `admin_cerver_set_check_packets ()`, not with the one of the cerver
+- **Replacing frees:** `cerver_set_app_handlers ()`, `cerver_set_custom_handler ()`, the ones of the admin and of the
+  client and `connection_set_received_data ()` delete the handler (or the data) that they replace, when it is another
+  pointer; a program that kept the old one to delete it later deletes it twice
+- **The upload without an uploads path is rejected:** a files cerver without `file_cerver_set_uploads_path ()` sends
+  `CERVER_ERROR_SEND_FILE` and ends the connection (it read the bytes of the file as packets)
+- `client_unregister_connections_from_cerver_poll ()` does not drop the client, the caller does; `client_request_to_cerver ()`
+  returns the result of the response (it always returned 0 after the send); `file_send ()` and `client_file_send ()`
+  take a name without a `/` (they rejected it)
+- **`str_set ()` grows** a string of `str_new ()` / `str_create ()` (it did nothing without a max len); `str_split ()`
+  of a string without the delimiter gives 1 token, the whole string (it gave none)
+- **`config.h` needs `_GNU_SOURCE`:** it does not define the `__USE_*` of glibc; a program built without
+  `-D _GNU_SOURCE` stops with an `#error` that says so, even when it includes cerver first (48 of the 85 headers
+  include their system headers before `config.h`); g++ defines it, gcc and clang do not
+- The text of `RECEIVE_ERROR_TIMEOUT` is `"Timeout"` (it was `"Timeoout"`)
+- **What fails without memory returns NULL:** `handler_create ()` without its job queue, `game_score_create ()` without
+  its table or its types, `dlist_init ()` and `avl_init ()` without their mutex, `packet_create ()` without the copy
+  of its data (it returned the packet empty); `bsem_init ()` leaves the semaphore without its mutex and its
+  condition, and its post and its wait do nothing; a cerver, an admin cerver or a client without the lock of its
+  handlers does not start them
+- **What fails without memory keeps what it had:** `str_copy ()`, `str_n_copy ()`, `str_replace_with ()` (it left
+  the String empty) and `str_n_replace_with ()` keep their characters, `packet_append_data ()` keeps the data of the
+  packet (it lost it)
+- `str_compare ()`, `str_comparator ()`, `str_copy ()` and `str_remove_char ()` take a String with NULL characters;
+  `worker_get_state ()`, the setters of a worker and `worker_push_job*` () take a NULL worker
+- `abs_int (INT_MIN)` is `INT_MAX`, `itoa ()` writes the digits of `INT_MIN`, `random_int_in_range ()` takes any two
+  limits; `c_string_split ()` of a string of only delimiters returns NULL with 0 tokens (it returned an array with a
+  NULL token)
+- `admin_remove_connection_with_sock_fd ()` only removes the only connection of an admin when it has the socket (it
+  removed it with any socket)
+- `CerverStats::threshold_time` and `unique_clients` work: every `threshold_time` seconds the counters that grow are
+  reset; `GameCerverStats::lobbys_created` and the stats of the admin cerver are written with `__atomic`
+- **New:** `c_string_copy_bounded ()`, `dlist_get_apply ()`, `htab_get_apply ()`, `avl_get_node_data_apply ()`,
+  `lobby_get_reference ()`, `lobby_search_with_id_reference ()`, `timer_get_gmt_time_r ()` and
+  `timer_get_local_time_r ()`
+- **Deprecated** (with `DEPRECATED ()`, they go away in the 3.0): `cerver_set_sockets_pool_init ()`,
+  `game_set_player_comparator ()`, `lobby_stats_set_threshold_time ()`, `lobby_get ()` and `lobby_search_with_id ()`
+  (they return a lobby without a reference), `timer_get_gmt_time ()` and `timer_get_local_time ()` (not reentrant);
+  the docs mark the `threshold_time` of the connections, the admins and the lobbies, `CONNECTION_DEFAULT_BAD_PACKETS`,
+  the `SERVICE_*` and `GAME_DEFAULT_*` macros and `ClientEvent::request_type`
+
+## 1.9b-1 (from 1.8.2)
+
+The structure of the tree of the 3.0 (`labs` 3.0b-2), its documentation and its license: every header changes its
+path and the functions with `_by_` are named with `_with_`; the wire does not change, a 1.9b-1 talks with a 1.8.2.
+
+- **The license is Apache-2.0** (`LICENSE.md`, `NOTICE`); `thirdparty.md` lists the code of other projects that cerver
+  includes (sha-2 and fastbase64), with their licenses
+- **Every include changes:** the headers are in folders by domain (`core/`, `admin/`, `auth/`, `client/`,
+  `connection/`, `files/`, `handler/`, `load/`, `network/`, `packets/`, `system/`), e.g. `cerver/client.h` is
+  `cerver/client/client.h`, `cerver/auth.h` is `cerver/auth/auth.h`, `cerver/sessions.h` is `cerver/auth/sessions.h`,
+  `cerver/balancer.h` is `cerver/load/balancer.h`, `cerver/receive.h` is `cerver/handler/receive.h`,
+  `cerver/socket.h` is `cerver/network/socket.h`, `cerver/serializer.h` is `cerver/packets/serializer.h`,
+  `cerver/timer.h` is `cerver/system/timer.h` and `cerver/game/gametype.h` is `cerver/game/types.h`;
+  `cerver/config.h` and `cerver/version.h` stay on top. There are no headers with the old paths
+- **The big headers are split in parts,** and the main header of a module does not include its parts: a program
+  that used `cerver_start ()` with `cerver/cerver.h` now includes `cerver/core/start.h` (or the umbrella). The parts
+  are `cerver/core/{types,info,data,handler,start,update,end,report,serialization}.h`,
+  `cerver/admin/{cerver,stats,lifecycle,handler,poll}.h`, `cerver/auth/hold.h`,
+  `cerver/client/{events,connect,requests,handler}.h`,
+  `cerver/connection/{stats,data,lifecycle,end,registry,update,send}.h`,
+  `cerver/files/{cerver,images,send,receive}.h`, `cerver/load/{stats,service,start,route,end}.h` and
+  `cerver/packets/header.h`
+- **`<cerver/cerver.h>` is now the umbrella of the core:** it includes every public header. The `Cerver` is declared
+  in `cerver/core/cerver.h`; a program that included `cerver/cerver.h` still compiles, with more headers
+- **The functions with `_by_` are named with `_with_`:** `admin_comparator_with_id ()`,
+  `admin_get_with_session_id ()`, `admin_get_with_sock_fd ()`, `admin_remove_connection_with_sock_fd ()`,
+  `cerver_poll_get_idx_with_sock_fd ()`, `client_get_with_session_id ()`, `client_get_with_sock_fd ()`,
+  `client_remove_connection_with_sock_fd ()`, `connection_get_with_sock_fd_from_admin ()`,
+  `connection_get_with_sock_fd_from_client ()`, `connection_get_with_sock_fd_from_on_hold ()`,
+  `dlist_merge_two_with_condition ()`, `dlist_remove_with_condition ()`, `dlist_split_with_condition ()`,
+  `file_send_with_fd ()`, `files_image_get_type_with_extension ()`, `game_type_get_with_name ()`,
+  `lobby_search_with_id ()`, `player_comparator_with_id ()` and `player_get_with_sock_fd_list ()`
+- **New:** `cerver/crypto/random.h` with `cerver_crypto_random_bytes ()`, the random bytes of the kernel that the
+  default session ids use (it was a static function of `sessions.c`)
+- The header guards follow the paths (`_CERVER_CORE_CERVER_H_`, `_CERVER_CLIENT_CLIENT_H_`, …); `_CERVER_H_` is the
+  umbrella. The internal declarations of the parts are in `src/cerver/<module>/internal.h`, never installed, and the
+  build adds `-I src`
+- `cerver_start (NULL)` returns 1, it dereferenced the NULL cerver; `cerver_set_admin_enable ()` called again keeps
+  the admin cerver that the cerver already has (and returns 0), it created another one and lost the first
+- **The fixes that the documentation found** (each one with its test), that change what a call returns:
+  - with a NULL argument they fail or keep the current value instead of crashing: `connection_set_name ()`,
+    `connection_set_values ()`, `client_set_name ()`, `client_get_with_session_id ()`, `packet_send ()`,
+    `packet_send_unsafe ()`, `packet_send_split ()`, `packet_send_pieces ()`, `str_contains ()` (-1),
+    `c_string_concat ()`, `bool_value_from_string ()`, `xtoi ()`, `cerver_log_with_date ()`, `job_reset ()`,
+    `lobby_summary_packet_create ()`, `admin_get_with_session_id ()`, `admin_cerver_get_n_handlers_alive ()` (before
+    the admin cerver starts), `balancer_get_type ()` (`BALANCER_TYPE_NONE`), `balancer_service_get_status ()`
+    (`SERVICE_STATUS_NONE`) and `avl_is_not_empty ()` (false); `packet_send_to_socket ()`, `packet_generate ()` and
+    `game_type_add_lobby_config ()` return 1 with a NULL argument (they returned 0)
+  - `sock_set_timeout ()` returns 1 on error (it returned -1); `random_int_in_range ()` includes both limits (also
+    when they are equal or reversed); `c_string_remove_sub_after_token_with_idx ()` returns NULL without the token
+  - `str_set ()` and `str_set_with_args ()` do not change a String without `max_len` (they overflowed it);
+    `str_n_copy ()` and `str_n_replace_with ()` keep the real length of a shorter source; `str_split ()` counts its
+    tokens and returns NULL for a String of only delimiters
+  - `arena_alloc ()` fails with the sizes that wrap around; `packet_append_data ()` fails when the size wraps;
+    `packet_set_packet ()` releases the copy of a packet that was a reference; `c_string_create_with_ptrs ()` and
+    `c_string_n_copy ()` (with 0) do not write out of their buffers; `receive_handle_new ()` starts without received
+    bytes
+- The headers are documented with Doxygen: `make docs` writes the reference in `reference/` (HTML and XML), with
+  `Doxyfile`, `Dockerfile.docs` (Doxygen 1.9.8) and the `docs` job of `build.yml`, that fails with any warning; every
+  clang build adds `-Wdocumentation -Wdocumentation-unknown-command -fcomment-block-commands=threadsafety`
+- The tests binaries follow the folders: `test/bin/connection`, `files`, `handler`, `load` (balancer and routing),
+  `network` (network, socket and udp), `packets`, `system` and `crypto` replace
+  `test/bin/{connection,files,receive,balancer,routing,network,socket,udp,packets,system}`; the handler pair is
+  `cerver/handler`; `test/test.h` scales the short timeouts with `TEST_TIME_SCALE` (valgrind and the sanitizers)
+
 ## 1.8.2 (from 1.8.1)
 
 The wire and the ABI do not change: a 1.8.2 talks with a 1.8.1, and an application built with the 1.8.1 runs with it.

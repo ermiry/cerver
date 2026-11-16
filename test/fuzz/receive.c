@@ -1,10 +1,10 @@
-#include <stdlib.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <cerver/packets.h>
-#include <cerver/receive.h>
+#include <cerver/handler/receive.h>
+#include <cerver/packets/packets.h>
 
 // the assembly of packets from the received buffers: the first byte selects the size of
 // every piece, so a header or a packet is split at any offset, and the rest is the stream

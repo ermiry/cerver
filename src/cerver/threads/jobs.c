@@ -1,9 +1,9 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include "cerver/collections/pool.h"
 
@@ -83,9 +83,11 @@ Job *job_get (JobQueue *job_queue) {
 
 void job_reset (Job *job) {
 
-	job->id = 0;
-	job->work = NULL;
-	job->args = NULL;
+	if (job) {
+		job->id = 0;
+		job->work = NULL;
+		job->args = NULL;
+	}
 
 }
 
@@ -230,6 +232,11 @@ void job_handler_wait (
 		}
 
 		job_handler_return (job_queue, handler);
+	}
+
+	// without a job handler nothing takes the data, so it is released here
+	else if (data && data_delete) {
+		data_delete (data);
 	}
 
 }
@@ -397,9 +404,7 @@ JobQueue *job_queue_new (void) {
 		job_queue->signals = 0;
 		job_queue->signaled = false;
 
-		job_queue->waiting = false;
-		job_queue->requested_id = 0;
-		job_queue->requested_job = NULL;
+		job_queue->requests = NULL;
 
 		job_queue->running = false;
 		job_queue->handler_thread_id = 0;
@@ -656,6 +661,12 @@ unsigned int job_queue_push (JobQueue *job_queue, void *job_ptr) {
 
 }
 
+static bool job_queue_is_of_jobs (const JobQueue *job_queue) {
+
+	return job_queue && (job_queue->type == JOB_QUEUE_TYPE_JOBS);
+
+}
+
 // creates & adds a new job to the queue with a priority
 // returns 0 on success, 1 on error
 unsigned int job_queue_push_job_priority (
@@ -666,7 +677,8 @@ unsigned int job_queue_push_job_priority (
 
 	unsigned int retval = 1;
 
-	Job *job = job_get (job_queue);
+	// the pool of a queue of job handlers has job handlers, not jobs
+	Job *job = job_queue_is_of_jobs (job_queue) ? job_get (job_queue) : NULL;
 	if (job) {
 		job->work = work;
 		job->args = args;
@@ -692,6 +704,16 @@ unsigned int job_queue_push_job (
 
 }
 
+// the first thread that waits for the id and has no job yet, called with the queue's lock
+static JobQueueRequest *job_queue_request_waiting (JobQueue *job_queue, const u64 job_id) {
+
+	JobQueueRequest *request = job_queue->requests;
+	while (request && ((request->id != job_id) || request->job)) request = request->next;
+
+	return request;
+
+}
+
 // the job goes directly to the thread that waits for its id
 static unsigned int job_queue_push_job_with_id_internal (
 	JobQueue *job_queue, Job *job
@@ -701,11 +723,9 @@ static unsigned int job_queue_push_job_with_id_internal (
 
 	(void) pthread_mutex_lock (&job_queue->mutex);
 
-	if (
-		job_queue->waiting && !job_queue->requested_job
-		&& (job_queue->requested_id == job->id)
-	) {
-		job_queue->requested_job = job;
+	JobQueueRequest *request = job_queue_request_waiting (job_queue, job->id);
+	if (request) {
+		request->job = job;
 		job_queue->stats.total_jobs += 1;
 
 		(void) pthread_cond_broadcast (&job_queue->has_request);
@@ -735,7 +755,7 @@ unsigned int job_queue_push_job_with_id (
 
 	unsigned int retval = 1;
 
-	Job *job = job_get (job_queue);
+	Job *job = job_queue_is_of_jobs (job_queue) ? job_get (job_queue) : NULL;
 	if (job) {
 		job->id = job_id;
 		job->work = work;
@@ -967,17 +987,27 @@ static void *job_queue_request_find (JobQueue *job_queue, const u64 job_id) {
 
 }
 
-// waits with the queue's lock for the job with the id to be pushed
+// takes the request out of the list of its queue, called with the queue's lock
+static void job_queue_request_remove (JobQueue *job_queue, const JobQueueRequest *request) {
+
+	JobQueueRequest **link = &job_queue->requests;
+	while (*link && (*link != request)) link = &(*link)->next;
+
+	if (*link) *link = request->next;
+
+}
+
+// waits with the queue's lock for the job with the id to be pushed;
+// each waiting thread has its own request, so two threads that wait at the same time do not replace each other
 static void *job_queue_request_wait (
 	JobQueue *job_queue, const u64 job_id, const struct timespec *deadline
 ) {
 
-	job_queue->waiting = true;
-	job_queue->requested_id = job_id;
-	job_queue->requested_job = NULL;
+	JobQueueRequest request = { job_id, NULL, job_queue->requests };
+	job_queue->requests = &request;
 
 	bool waiting = true;
-	while (waiting && !job_queue->requested_job) {
+	while (waiting && !request.job) {
 		if (deadline) {
 			waiting = (pthread_cond_timedwait (
 				&job_queue->has_request, &job_queue->mutex, deadline
@@ -989,14 +1019,11 @@ static void *job_queue_request_wait (
 		}
 	}
 
-	void *match = job_queue->requested_job;
-	if (!match) job_queue->stats.timed_out_waits += 1;
+	job_queue_request_remove (job_queue, &request);
 
-	job_queue->waiting = false;
-	job_queue->requested_id = 0;
-	job_queue->requested_job = NULL;
+	if (!request.job) job_queue->stats.timed_out_waits += 1;
 
-	return match;
+	return request.job;
 
 }
 
@@ -1152,7 +1179,8 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 			struct timespec start = { 0, 0 };
 			(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
-			job_queue->handler (job_handler->data);
+			// a queue without its handler still answers the thread that waits for the job handler
+			if (job_queue->handler) job_queue->handler (job_handler->data);
 
 			job_queue_record_run (job_queue, &start);
 
@@ -1194,15 +1222,14 @@ static unsigned int job_queue_start_internal (JobQueue *job_queue) {
 
 }
 
+// a queue that is already running keeps its thread, a second start would create another one
 unsigned int job_queue_start (JobQueue *job_queue) {
 
-	unsigned int errors = 0;
+	unsigned int errors = 1;
 
-	if (job_queue) {
-		if (job_queue_start_internal (job_queue)) {
-			__atomic_store_n (&job_queue->running, false, __ATOMIC_RELEASE);
-			errors = 1;
-		}
+	if (job_queue && !__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE)) {
+		errors = job_queue_start_internal (job_queue);
+		if (errors) __atomic_store_n (&job_queue->running, false, __ATOMIC_RELEASE);
 	}
 
 	return errors;

@@ -1,19 +1,19 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
-#include <signal.h>
-
-#include <cerver/cerver.h>
-#include <cerver/events.h>
-#include <cerver/handler.h>
-#include <cerver/sessions.h>
-#include <cerver/udp.h>
-
-#include <app/auth.h>
-#include <app/handler.h>
+#include <cerver/auth/sessions.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/events.h>
+#include <cerver/handler/handler.h>
+#include <cerver/network/udp.h>
 
 #include "../test.h"
+#include <app/auth.h>
+#include <app/handler.h>
 
 // an UDP cerver with authentication and sessions, its client is test/client/udp.c:
 // every peer that authenticated is removed by its close connection packet before the cerver stops

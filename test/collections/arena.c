@@ -1,8 +1,8 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 #include <cerver/types/string.h>
 
@@ -155,6 +155,20 @@ static void test_arena_strings (void) {
 
 }
 
+// a size that wraps around when it is aligned, or with the header of a large allocation, is an error
+static void test_arena_overflow (void) {
+
+	Arena *arena = arena_create (ARENA_TEST_CHUNK_SIZE);
+
+	test_check (arena_alloc (arena, SIZE_MAX) == NULL, "arena_alloc () returned memory for SIZE_MAX bytes");
+	test_check (arena_alloc (arena, SIZE_MAX - ARENA_ALIGNMENT) == NULL, "arena_alloc () returned a large allocation that wrapped around");
+	test_check (arena->n_allocations == 0, NULL);
+	test_check (arena->used == 0, NULL);
+
+	arena_delete (arena);
+
+}
+
 void collections_tests_arena (void) {
 
 	(void) printf ("Testing COLLECTIONS arena...\n");
@@ -164,6 +178,7 @@ void collections_tests_arena (void) {
 	test_arena_large ();
 	test_arena_reset ();
 	test_arena_strings ();
+	test_arena_overflow ();
 
 	(void) printf ("Done!\n");
 

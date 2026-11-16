@@ -1,17 +1,18 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-
 #include <time.h>
-#include <signal.h>
 
-#include <cerver/cerver.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/game/game.h>
-#include <cerver/game/gametype.h>
 #include <cerver/game/lobby.h>
+#include <cerver/game/types.h>
 
 #include "../test.h"
 

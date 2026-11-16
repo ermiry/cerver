@@ -1,16 +1,17 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdbool.h>
-
 #include <errno.h>
-#include <pthread.h>
 #include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
-#include <cerver/client.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
+#include <pthread.h>
+
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
 
 #include <cerver/utils/log.h>
 

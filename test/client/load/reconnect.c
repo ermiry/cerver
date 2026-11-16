@@ -1,10 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
-
-#include "balancer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "../../test.h"
+#include "balancer.h"
 
 // a service stops in the middle of the pair and test/supervise.sh starts it again:
 // the balancer sends everything to the other one, connects to the new one,

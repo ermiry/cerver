@@ -1,12 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 
-#include "balancer.h"
+#include <cerver/load/service.h>
 
 #include "../../test.h"
+#include "balancer.h"
 
 // many clients use the balancer at the same time, each with its own bodies:
 // every response reaches the client that sent its request (the routes by fd),

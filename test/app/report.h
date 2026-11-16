@@ -1,7 +1,7 @@
 #ifndef _TEST_APP_REPORT_H_
 #define _TEST_APP_REPORT_H_
 
-#include <cerver/serializer.h>
+#include <cerver/packets/serializer.h>
 
 #define REPORT_NAME_SIZE			32
 #define REPORT_VERSION				1

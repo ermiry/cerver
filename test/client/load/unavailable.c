@@ -1,10 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
-
-#include "balancer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "../../test.h"
+#include "balancer.h"
 
 // both services stop, and test/supervise.sh starts them again some seconds later:
 // meanwhile the balancer answers each request with an error instead of hanging,

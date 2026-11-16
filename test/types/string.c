@@ -1,8 +1,7 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
 
 #include <cerver/types/string.h>
@@ -12,6 +11,8 @@
 #define STRING_TEST_GROWTH_APPENDS			(1 << 16)
 #define STRING_TEST_GROWTH_MAX_MOVES		(1 << 6)
 #define STRING_TEST_RESERVE					(1 << 8)
+#define STRING_TEST_LONGER					(1 << 5)
+#define STRING_TEST_NO_TOKENS				(-1)
 
 static const char *string_test_byte = "x";
 
@@ -654,6 +655,122 @@ static void test_str_contains (void) {
 
 }
 
+// the n copies keep the length of what they copied when the source is shorter than n
+static void test_str_n_shorter_source (void) {
+
+	String *from = str_new ("Erick");
+	String *to = str_new (NULL);
+
+	str_n_copy (to, from, STRING_TEST_LONGER);
+	test_check_unsigned_eq (to->len, strlen ("Erick"), "str_n_copy () kept n as the length");
+	test_check_str_eq (to->str, "Erick", NULL);
+
+	str_n_replace_with (to, "Salas", STRING_TEST_LONGER);
+	test_check_unsigned_eq (to->len, strlen ("Salas"), "str_n_replace_with () kept n as the length");
+	test_check_str_eq (to->str, "Salas", NULL);
+
+	str_delete (to);
+	str_delete (from);
+
+}
+
+// a string without a max len (not created with str_allocate ()) grows to the value that str_set () writes
+// (it was not changed, and before that the value overflowed its buffer)
+static void test_str_set_without_max_len (void) {
+
+	const char *value = "I am Erick Salas and I am 22 years old!";
+
+	String *str = str_new ("Erick");
+	str_set (str, "%s", value);
+	test_check_str_eq (str->str, value, "str_set () did not grow a string without a max len");
+	test_check_unsigned_eq (str->len, strlen (value), NULL);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	str_delete (str);
+
+	String *empty = str_new (NULL);
+	str_set (empty, "%s", "Erick Salas");
+	test_check_str_eq (empty->str, "Erick Salas", "str_set () did not grow an empty string");
+	test_check_unsigned_eq (empty->len, strlen ("Erick Salas"), NULL);
+	str_delete (empty);
+
+}
+
+// a NULL string or a NULL query never match
+static void test_str_contains_null (void) {
+
+	String *str = str_new ("Erick Salas");
+	test_check_int_eq (str_contains (NULL, "Erick"), -1, NULL);
+	test_check_int_eq (str_contains (str, NULL), -1, NULL);
+	str_delete (str);
+
+}
+
+// a string of only delimiters has no tokens
+static void test_str_split_only_delimiters (void) {
+
+	String *str = str_new (",,,");
+	int n_tokens = STRING_TEST_NO_TOKENS;
+	char **tokens = str_split (str, ',', &n_tokens);
+	test_check (tokens == NULL, "str_split () returned tokens of a string of only delimiters");
+	test_check_int_eq (n_tokens, 0, NULL);
+	str_delete (str);
+
+	String *pair = str_new ("a,,b");
+	n_tokens = STRING_TEST_NO_TOKENS;
+	tokens = str_split (pair, ',', &n_tokens);
+	test_check_ptr (tokens);
+	test_check_int_eq (n_tokens, 2, NULL);
+	test_check_str_eq (tokens[0], "a", NULL);
+	test_check_str_eq (tokens[1], "b", NULL);
+	for (int i = 0; i < n_tokens; i++) free (tokens[i]);
+	free (tokens);
+	str_delete (pair);
+
+	// a string without the delimiter is its only token (it returned NULL)
+	String *single = str_new ("Erick Salas");
+	n_tokens = STRING_TEST_NO_TOKENS;
+	tokens = str_split (single, ',', &n_tokens);
+	test_check_ptr (tokens);
+	test_check_int_eq (n_tokens, 1, "a string without the delimiter is not its only token");
+	test_check_str_eq (tokens[0], "Erick Salas", NULL);
+	free (tokens[0]);
+	free (tokens);
+	str_delete (single);
+
+}
+
+// a String without characters (str_new (NULL)) is compared, copied and cleaned without a crash (strcmp () got NULL)
+static void test_str_null_characters (void) {
+
+	String *empty = str_new (NULL);
+	String *value = str_new ("cerver");
+	test_check_ptr (empty);
+	test_check_ptr (value);
+	test_check_null_ptr (empty->str);
+
+	test_check (str_compare (value, empty) < 0, "a String with characters is not before one without them");
+	test_check (str_compare (empty, value) > 0, "a String without characters is not after one with them");
+	test_check_int_eq (str_compare (empty, empty), 0, NULL);
+	test_check_int_eq (str_comparator (empty, empty), 0, NULL);
+
+	str_copy (value, empty);
+	test_check_str_eq (value->str, "cerver", "a copy of a String without characters changed the String");
+
+	str_n_copy (value, empty, 1);
+	test_check_str_eq (value->str, "cerver", NULL);
+
+	str_remove_char (empty, 'c');
+	test_check_null_ptr (empty->str);
+
+	str_copy (empty, value);
+	test_check_str_eq (empty->str, "cerver", NULL);
+	test_check_unsigned_eq ((unsigned int) empty->len, (unsigned int) value->len, NULL);
+
+	str_delete (value);
+	str_delete (empty);
+
+}
+
 void types_tests_string (void) {
 
 	(void) printf ("Testing TYPES string...\n");
@@ -685,6 +802,11 @@ void types_tests_string (void) {
 	test_str_remove_char ();
 	test_str_remove_last_char ();
 	test_str_contains ();
+	test_str_n_shorter_source ();
+	test_str_set_without_max_len ();
+	test_str_contains_null ();
+	test_str_split_only_delimiters ();
+	test_str_null_characters ();
 
 	(void) printf ("Done!\n");
 

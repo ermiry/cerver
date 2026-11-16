@@ -1,0 +1,16 @@
+clang-tidy src/cerver/system/system.c cert-err34-c
+clang-tidy src/cerver/utils/utils.c cert-msc30-c
+cppcheck src/cerver/packets/serializer.c pointerSize
+cppcheck src/cerver/packets/serializer.c uninitvar
+cppcheck src/cerver/threads/jobs.c autoVariables
+gcc src/cerver/collections/dlist.c analyzer-null-dereference
+gcc src/cerver/core/start.c analyzer-fd-leak
+gcc src/cerver/game/lobby.c analyzer-use-after-free
+gcc src/cerver/game/score.c analyzer-malloc-leak
+gcc src/cerver/handler/handler.c analyzer-null-dereference
+scan-build src/cerver/core/data.c unix.MallocSizeof
+scan-build src/cerver/game/lobby.c core.NullDereference
+scan-build src/cerver/game/lobby.c unix.Malloc
+scan-build src/cerver/handler/handler.c core.NonNullParamChecker
+scan-build src/cerver/packets/serializer.c core.NonNullParamChecker
+scan-build src/cerver/threads/jobs.c core.DivideZero

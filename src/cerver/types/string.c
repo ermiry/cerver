@@ -1,10 +1,10 @@
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <ctype.h>
-#include <stdarg.h>
 
 #include "cerver/types/string.h"
 
@@ -92,20 +92,35 @@ String *str_allocate (const unsigned int max_len) {
 
 }
 
-void str_set (String *str, const char *format, ...) {
+static inline void str_set_in_room (
+	String *str, const char *format, va_list args
+) CERVER_PRINTF_FORMAT (2, 0);
 
-	if (str && format) {
-		va_list args;
-		va_start (args, format);
+static inline void str_set_growing (
+	String *str, const char *format, va_list args
+) CERVER_PRINTF_FORMAT (2, 0);
 
-		(void) vsnprintf (
-			str->str, str->max_len - 1,
-			format, args
-		);
+// a string with its max len (str_allocate (), str_reserve ()) is written in its room, cut to fit
+static inline void str_set_in_room (String *str, const char *format, va_list args) {
 
-		str->len = strlen (str->str);
+	(void) vsnprintf (
+		str->str, str->max_len - 1,
+		format, args
+	);
 
-		va_end (args);
+	str->len = strlen (str->str);
+
+}
+
+// the others (str_new (), str_create ()) have exactly len + 1 bytes and a max len of 0,
+// so they get a new buffer with the size of the value; without memory they keep the value they had
+static inline void str_set_growing (String *str, const char *format, va_list args) {
+
+	char *value = NULL;
+	if (vasprintf (&value, format, args) >= 0) {
+		free (str->str);
+		str->str = value;
+		str->len = strlen (value);
 	}
 
 }
@@ -115,19 +130,40 @@ void str_set_with_args (
 ) {
 
 	if (str && format) {
-		(void) vsnprintf (
-			str->str, str->max_len - 1,
-			format, args
-		);
-
-		str->len = strlen (str->str);
+		if (str->str && str->max_len) str_set_in_room (str, format, args);
+		else str_set_growing (str, format, args);
 	}
+
+}
+
+void str_set (String *str, const char *format, ...) {
+
+	if (str && format) {
+		va_list args;
+		va_start (args, format);
+
+		str_set_with_args (str, format, args);
+
+		va_end (args);
+	}
+
+}
+
+// a NULL goes after a value, like a NULL String
+static int str_compare_values (const char *one, const char *two) {
+
+	int result = 0;
+	if (one && two) result = strcmp (one, two);
+	else if (one) result = -1;
+	else if (two) result = 1;
+
+	return result;
 
 }
 
 int str_compare (const String *s1, const String *s2) {
 
-	if (s1 && s2) return strcmp (s1->str, s2->str);
+	if (s1 && s2) return str_compare_values (s1->str, s2->str);
 	else if (s1 && !s2) return -1;
 	else if (!s1 && s2) return 1;
 	return 0;
@@ -136,33 +172,38 @@ int str_compare (const String *s1, const String *s2) {
 
 int str_comparator (const void *a, const void *b) {
 
-	if (a && b) return strcmp (((String *) a)->str, ((String *) b)->str);
-	else if (a && !b) return -1;
-	else if (!a && b) return 1;
-	return 0;
+	return str_compare ((const String *) a, (const String *) b);
+
+}
+
+// the string takes a copy of the first n characters of the value (fewer when it is shorter),
+// without memory it keeps the value that it had
+static void str_take_copy (String *to, const char *value, const size_t n) {
+
+	char *copy = (char *) calloc (n + 1, sizeof (char));
+	if (copy) {
+		(void) strncpy (copy, value, n);
+
+		free (to->str);
+		to->str = copy;
+		to->len = strlen (copy);
+		to->max_len = 0;
+	}
 
 }
 
 void str_copy (String *to, const String *from) {
 
-	if (to && from) {
-		if (to->str) free (to->str);
-		to->max_len = 0;
-		to->len = from->len;
-		to->str = (char *) calloc (to->len + 1, sizeof (char));
-		(void) strncpy (to->str, from->str, from->len);
+	if (to && from && from->str) {
+		str_take_copy (to, from->str, from->len);
 	}
 
 }
 
 void str_n_copy (String *to, const String *from, const size_t n) {
 
-	if (to && from) {
-		if (to->str) free (to->str);
-		to->max_len = 0;
-		to->len = n;
-		to->str = (char *) calloc (to->len + 1, sizeof (char));
-		(void) strncpy (to->str, from->str, n);
+	if (to && from && from->str) {
+		str_take_copy (to, from->str, n);
 	}
 
 }
@@ -200,12 +241,7 @@ void str_replace (String *str, const char *format, ...) {
 void str_replace_with (String *str, const char *c_str) {
 
 	if (str && c_str) {
-		if (str->str) free (str->str);
-		str->max_len = 0;
-		str->len = strlen (c_str);
-		str->str = (char *) calloc (str->len + 1, sizeof (char));
-		if (str->str) (void) memcpy (str->str, c_str, str->len);
-		else str->len = 0;
+		str_take_copy (str, c_str, strlen (c_str));
 	}
 
 }
@@ -215,11 +251,7 @@ void str_n_replace_with (
 ) {
 
 	if (str && c_str) {
-		if (str->str) free (str->str);
-		str->max_len = 0;
-		str->len = n;
-		str->str = (char *) calloc (str->len + 1, sizeof (char));
-		(void) strncpy (str->str, c_str, n);
+		str_take_copy (str, c_str, n);
 	}
 
 }
@@ -382,7 +414,7 @@ void str_to_upper (String *str) {
 
 	if (str) {
 		for (size_t i = 0; i < str->len; i++) {
-			str->str[i] = toupper (str->str[i]);
+			str->str[i] = (char) toupper ((unsigned char) str->str[i]);
 		}
 	}
 
@@ -392,7 +424,7 @@ void str_to_lower (String *str) {
 
 	if (str) {
 		for (size_t i = 0; i < str->len; i++) {
-			str->str[i] = tolower (str->str[i]);
+			str->str[i] = (char) tolower ((unsigned char) str->str[i]);
 		}
 	}
 
@@ -426,13 +458,13 @@ static char **str_split_internal (
 	// check if we have info between delims
 	if (str->str[0] == delim && count) count--;
 
+	// without the delimiter the whole string is its only token
 	if (last) count += (last < temp);
+	else count = 1;
 
 	if (count) {
 		result = (char **) calloc (count, sizeof (char *));
 		if (result) {
-			if (n_tokens) *n_tokens = count;
-
 			size_t idx = 0;
 
 			char dlm[2];
@@ -441,9 +473,17 @@ static char **str_split_internal (
 
 			char *token = NULL;
 			char *rest = string;
-			while ((token = __strtok_r (rest, dlm, &rest))) {
+			while ((idx < count) && (token = __strtok_r (rest, dlm, &rest))) {
 				result[idx] = strdup (token);
 				idx++;
+			}
+
+			// a string of only delimiters is counted as one token but has none
+			if (n_tokens) *n_tokens = (int) idx;
+
+			if (!idx) {
+				free (result);
+				result = NULL;
 			}
 		}
 	}
@@ -477,7 +517,7 @@ char **str_split (
 
 void str_remove_char (String *str, const char garbage) {
 
-	if (str) {
+	if (str && str->str) {
 		char *src, *dst;
 		for (src = dst = str->str; *src != '\0'; src++) {
 			*dst = *src;
@@ -498,8 +538,10 @@ void str_remove_last_char (String *s) {
 		if (s->len > 0) {
 			const size_t new_len = s->len;
 
-			s->str = (char *) realloc (s->str, s->len);
-			if (s->str) {
+			// a realloc () that fails keeps the buffer that it got, so the string is not lost
+			char *shorter = (char *) realloc (s->str, s->len);
+			if (shorter) {
+				s->str = shorter;
 				s->str[s->len - 1] = '\0';
 				s->len = new_len - 1;
 				s->max_len = 0;
@@ -510,6 +552,8 @@ void str_remove_last_char (String *s) {
 }
 
 int str_contains (const String *str, const char *to_find) {
+
+	if (!str || !to_find) return -1;
 
 	const size_t slen = str->len;
 	const size_t to_find_len = strlen (to_find);

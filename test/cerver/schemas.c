@@ -1,18 +1,18 @@
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
-#include <signal.h>
-
-#include <cerver/cerver.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
-#include <cerver/serializer.h>
-
-#include <app/report.h>
+#include <cerver/core/cerver.h>
+#include <cerver/core/end.h>
+#include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
+#include <cerver/packets/serializer.h>
 
 #include "../test.h"
+#include <app/report.h>
 
 // the newer peer: it reads the reports of an older client, whose missing field takes its default,
 // and answers with the new field, that the older client ignores

@@ -1,15 +1,16 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include <cerver/client.h>
-#include <cerver/packets.h>
-
-#include <app/app.h>
-#include <app/auth.h>
-
-#include "client.h"
+#include <cerver/client/client.h>
+#include <cerver/client/connect.h>
+#include <cerver/client/events.h>
+#include <cerver/connection/data.h>
+#include <cerver/packets/packets.h>
 
 #include "../test.h"
+#include <app/app.h>
+#include <app/auth.h>
+#include "client.h"
 
 #define REQUESTS			64
 

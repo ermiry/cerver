@@ -1,13 +1,13 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <sys/time.h>
 
-#include <cerver/cerver.h>
-#include <cerver/handler.h>
-#include <cerver/packets.h>
-#include <cerver/timer.h>
+#include <cerver/core/cerver.h>
+#include <cerver/handler/handler.h>
+#include <cerver/packets/packets.h>
+#include <cerver/system/timer.h>
 
 #define BUFFER_SIZE				1024
 

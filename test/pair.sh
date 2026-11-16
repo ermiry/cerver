@@ -19,6 +19,7 @@ SERVERS=()
 PORTS=()
 RESTARTS=()
 CLIENT_ARGUMENTS=()
+DIRECTORY="."
 
 balancer_servers () {
 	SERVERS=(
@@ -54,11 +55,6 @@ case "$PAIR" in
 		SERVERS=("test/bin/cerver/${PAIR#cerver/}")
 		PORTS=($TCP_PORT)
 		CLIENT="test/bin/client/${PAIR#cerver/}"
-		;;
-	handler)
-		SERVERS=("test/bin/handler/cerver")
-		PORTS=($TCP_PORT)
-		CLIENT="test/bin/handler/client"
 		;;
 	examples/handlers)
 		example_servers "handlers -t q"
@@ -131,9 +127,9 @@ for index in "${!SERVERS[@]}"; do
 	SERVER_LOGS+=("$SERVER_LOG")
 
 	if [ -n "${RESTARTS[$index]}" ]; then
-		bash "$ROOT/test/supervise.sh" "${RESTARTS[$index]}" $ROOT/${SERVERS[$index]} > "$SERVER_LOG" 2>&1 &
+		(cd "$ROOT/$DIRECTORY" && exec bash "$ROOT/test/supervise.sh" "${RESTARTS[$index]}" $ROOT/${SERVERS[$index]}) > "$SERVER_LOG" 2>&1 &
 	else
-		$ROOT/${SERVERS[$index]} > "$SERVER_LOG" 2>&1 &
+		(cd "$ROOT/$DIRECTORY" && exec $ROOT/${SERVERS[$index]}) > "$SERVER_LOG" 2>&1 &
 	fi
 	SERVER_PIDS+=($!)
 

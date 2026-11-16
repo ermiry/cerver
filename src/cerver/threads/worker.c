@@ -1,9 +1,9 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
@@ -143,11 +143,13 @@ WorkerState worker_get_state (Worker *worker) {
 
 	WorkerState state = WORKER_STATE_NONE;
 
-	(void) pthread_mutex_lock (&worker->mutex);
+	if (worker) {
+		(void) pthread_mutex_lock (&worker->mutex);
 
-	state = worker->state;
+		state = worker->state;
 
-	(void) pthread_mutex_unlock (&worker->mutex);
+		(void) pthread_mutex_unlock (&worker->mutex);
+	}
 
 	return state;
 
@@ -255,7 +257,7 @@ void worker_set_work (
 	Worker *worker, void (*work) (void *args)
 ) {
 
-	worker->work = work;
+	if (worker) worker->work = work;
 
 }
 
@@ -263,7 +265,7 @@ void worker_set_delete_data (
 	Worker *worker, void (*delete_data) (void *args)
 ) {
 
-	worker->delete_data = delete_data;
+	if (worker) worker->delete_data = delete_data;
 
 }
 
@@ -271,7 +273,7 @@ void worker_set_reference (
 	Worker *worker, const void *reference
 ) {
 
-	worker->reference = reference;
+	if (worker) worker->reference = reference;
 
 }
 
@@ -279,7 +281,7 @@ void worker_set_remove_reference (
 	Worker *worker, void (*remove_reference) (const void *args)
 ) {
 
-	worker->remove_reference = remove_reference;
+	if (worker) worker->remove_reference = remove_reference;
 
 }
 
@@ -445,9 +447,7 @@ unsigned int worker_push_job (
 	Worker *worker, void *args
 ) {
 
-	return job_queue_push_job (
-		worker->job_queue, NULL, args
-	);
+	return worker_push_job_with_work (worker, NULL, args);
 
 }
 
@@ -456,9 +456,13 @@ unsigned int worker_push_job_with_work (
 	void (*work) (void *args), void *args
 ) {
 
-	return job_queue_push_job (
-		worker->job_queue, work, args
-	);
+	unsigned int retval = 1;
+
+	if (worker) {
+		retval = job_queue_push_job (worker->job_queue, work, args);
+	}
+
+	return retval;
 
 }
 

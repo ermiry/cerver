@@ -1,8 +1,8 @@
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
 #include <time.h>
 
 #include <cerver/utils/utils.h>
@@ -65,6 +65,47 @@ static void test_random_int_in_range (void) {
 		test_check_true ((result <= max));
 	}
 
+	// a range of a single value returns it
+	test_check_int_eq (random_int_in_range (5, 5), 5, NULL);
+
+	// the limits in the other order are the same inclusive range
+	bool lowest = false;
+	bool highest = false;
+	for (unsigned int i = 0; i < 1000; i++) {
+		const int result = random_int_in_range (3, 1);
+
+		test_check_true ((result >= 1));
+		test_check_true ((result <= 3));
+
+		if (result == 1) lowest = true;
+		if (result == 3) highest = true;
+	}
+
+	test_check (lowest && highest, "the limits in the other order were not inclusive");
+
+}
+
+#define MATH_TEST_INT_MIN_DIGITS		"-2147483648"
+#define MATH_TEST_INT_DIGITS_SIZE		12
+#define MATH_TEST_LIMITS_ROUNDS			64
+
+// INT_MIN has a result in abs_int () and its digits in itoa (), and the whole int range is a range
+// (they overflowed: undefined behavior that UBSan reports)
+static void test_math_limits (void) {
+
+	test_check_int_eq (abs_int (INT_MIN), INT_MAX, "abs_int () of INT_MIN is not INT_MAX");
+	test_check_int_eq (abs_int (INT_MIN + 1), INT_MAX, NULL);
+
+	char digits[MATH_TEST_INT_DIGITS_SIZE] = { 0 };
+	test_check_str_eq (itoa (INT_MIN, digits), MATH_TEST_INT_MIN_DIGITS, "itoa () of INT_MIN");
+
+	for (unsigned int i = 0; i < MATH_TEST_LIMITS_ROUNDS; i++) {
+		(void) random_int_in_range (INT_MIN, INT_MAX);
+		(void) random_int_in_range (INT_MAX - 1, INT_MAX);
+	}
+
+	test_check_int_eq (random_int_in_range (INT_MAX, INT_MAX), INT_MAX, NULL);
+
 }
 
 void utils_tests_math (void) {
@@ -76,6 +117,7 @@ void utils_tests_math (void) {
 	test_float_compare ();
 	test_random_set_seed ();
 	test_random_int_in_range ();
+	test_math_limits ();
 
 	(void) printf ("Done!\n");
 

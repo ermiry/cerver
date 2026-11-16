@@ -1,18 +1,18 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cerver/types/types.h"
+
+#include "cerver/collections/avl.h"
+#include "cerver/collections/dlist.h"
+#include "cerver/collections/htab.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 #include "cerver/game/player.h"
 #include "cerver/game/score.h"
-
-#include "cerver/collections/avl.h"
-#include "cerver/collections/dlist.h"
-#include "cerver/collections/htab.h"
 
 // a score manager for any game: player name -> (score type -> value)
 // the names are keys with their '\0', every value is allocated and owned by its player's table
@@ -104,6 +104,12 @@ ScoreBoard *game_score_create (unsigned int playersNum, unsigned int scoresNum, 
 	if (sb) {
 		sb->scores = htab_create (playersNum, NULL, game_score_player_delete);
 		sb->scoreTypes = (char **) calloc (scoresNum ? scoresNum : 1, sizeof (char *));
+
+		// a board without memory for its scores or its types is not returned
+		if (!sb->scores || !sb->scoreTypes) {
+			game_score_delete (sb);
+			return NULL;
+		}
 
 		va_list valist;
 		va_start (valist, scoresNum);

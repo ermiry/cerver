@@ -1,9 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include <pthread.h>
-#include <time.h>
 
 #include <cerver/collections/pool.h>
 
@@ -76,6 +76,9 @@ static void test_job_reset (void) {
 	test_check_null_ptr (job->args);
 
 	job_delete (job);
+
+	// a NULL job has nothing to reset
+	job_reset (NULL);
 
 }
 
@@ -159,9 +162,7 @@ static void test_job_queue_new (void) {
 	test_check_unsigned_eq (job_queue->n_priorities, JOB_QUEUE_DEFAULT_PRIORITIES, NULL);
 	test_check_unsigned_eq ((unsigned int) job_queue->count, 0, NULL);
 	test_check_unsigned_eq (job_queue->starvation_limit, JOB_QUEUE_DEFAULT_STARVATION_LIMIT, NULL);
-	test_check_bool_eq (job_queue->waiting, false, NULL);
-	test_check_unsigned_eq (job_queue->requested_id, 0, NULL);
-	test_check_null_ptr (job_queue->requested_job);
+	test_check_null_ptr (job_queue->requests);
 	test_check_bool_eq (job_queue->running, false, NULL);
 	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
 	test_check_null_ptr (job_queue->handler);
@@ -440,6 +441,99 @@ static void test_job_queue_request (void) {
 
 }
 
+#define JOBS_TEST_WAITERS				2
+#define JOBS_TEST_WAITER_FIRST_ID		11
+#define JOBS_TEST_WAITERS_TIMEOUT		8000
+#define JOBS_TEST_WAITERS_NANOSECONDS	200000000L
+
+typedef struct JobsTestWaiter {
+
+	JobQueue *job_queue;
+	u64 id;
+	Job *job;
+
+} JobsTestWaiter;
+
+static void *jobs_test_waiter (void *waiter_ptr) {
+
+	JobsTestWaiter *waiter = (JobsTestWaiter *) waiter_ptr;
+
+	waiter->job = (Job *) job_queue_request_timeout (waiter->job_queue, waiter->id, JOBS_TEST_WAITERS_TIMEOUT);
+
+	return NULL;
+
+}
+
+// two threads that wait for different ids at the same time both get their job:
+// the second one used to replace the id of the first one, which then timed out
+static void test_job_queue_request_two_waiters (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+
+	JobsTestWaiter waiters[JOBS_TEST_WAITERS];
+	pthread_t threads[JOBS_TEST_WAITERS];
+	for (unsigned int i = 0; i < JOBS_TEST_WAITERS; i++) {
+		waiters[i].job_queue = job_queue;
+		waiters[i].id = JOBS_TEST_WAITER_FIRST_ID + i;
+		waiters[i].job = NULL;
+		test_check_int_eq (pthread_create (&threads[i], NULL, jobs_test_waiter, &waiters[i]), 0, NULL);
+	}
+
+	const struct timespec waiting = { 0, JOBS_TEST_WAITERS_NANOSECONDS };
+	(void) nanosleep (&waiting, NULL);
+
+	for (unsigned int i = 0; i < JOBS_TEST_WAITERS; i++) {
+		test_check_unsigned_eq (
+			job_queue_push_job_with_id (job_queue, JOBS_TEST_WAITER_FIRST_ID + i, work_method, NULL), 0, NULL
+		);
+	}
+
+	for (unsigned int i = 0; i < JOBS_TEST_WAITERS; i++) {
+		test_check_int_eq (pthread_join (threads[i], NULL), 0, NULL);
+		test_check (waiters[i].job != NULL, "a thread that waited for its job did not get it");
+		test_check_unsigned_eq ((unsigned int) waiters[i].job->id, (unsigned int) waiters[i].id, NULL);
+		job_return (job_queue, waiters[i].job);
+	}
+
+	job_queue_delete (job_queue);
+
+}
+
+static unsigned int jobs_test_data_deleted = 0;
+
+static void jobs_test_data_delete (void *data) {
+
+	jobs_test_data_deleted += 1;
+
+	free (data);
+
+}
+
+// a queue starts its thread once; a queue of job handlers does not take jobs;
+// and the data of a job handler that could not be created is released (a leak before)
+static void test_job_queue_misuse (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+	test_check_unsigned_eq (job_queue_start (job_queue), 0, NULL);
+	test_check_unsigned_eq (job_queue_start (job_queue), 1, "a running queue was started again");
+	test_check_unsigned_eq (job_queue_stop (job_queue), 0, NULL);
+	job_queue_delete (job_queue);
+
+	JobQueue *handlers = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);
+	test_check_unsigned_eq (job_queue_push_job (handlers, work_method, NULL), 1, "a queue of job handlers took a job");
+	test_check_unsigned_eq (
+		job_queue_push_job_with_id (handlers, JOBS_TEST_REQUEST_ID, work_method, NULL), 1,
+		"a queue of job handlers took a job with an id"
+	);
+	job_queue_delete (handlers);
+
+	void *data = malloc (sizeof (u64));
+	test_check_ptr (data);
+	job_handler_wait (NULL, data, jobs_test_data_delete);
+	test_check_unsigned_eq (jobs_test_data_deleted, 1, "the data of a job handler that was not created was kept");
+
+}
+
 // the jobs come from the pool of the queue and go back to it
 static void test_job_queue_pool (void) {
 
@@ -684,6 +778,8 @@ void threads_tests_jobs (void) {
 	test_job_queue_starvation ();
 	test_job_queue_timeouts ();
 	test_job_queue_request ();
+	test_job_queue_request_two_waiters ();
+	test_job_queue_misuse ();
 	test_job_queue_pool ();
 	test_job_queue_pool_steady ();
 	test_job_queue_threads ();
