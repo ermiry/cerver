@@ -3,6 +3,98 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-8 (from 3.0b-7)
+
+The JWT of cerver (L2 of `roadmap.md`): `cerver/jwt/` signs and verifies the tokens (RFC 7515, 7518 and 7519) over
+the JSON of cerver, with the keys and the signatures of `cerver/crypto/`, that only the provider of OpenSSL
+computes. The JWT that came from libjwt and the copy of Jansson are gone, with their headers, their 56 `jwt_*`
+methods and their rows of `thirdparty.md`. A program that used the `jwt_*` of cerver moves to the `cerver_jwt_*`
+(the table below); there is no layer of compatibility. **The tokens are the same bytes:** a token that the 3.0b-7
+or the 2.x signed is verified, and the same values with the same key give the same token (HS256, HS384, HS512,
+RS256, RS384 and RS512; an ES token has a random part).
+
+**The JWT of libjwt left the API**
+
+- **`cerver/http/jwt/{jwt,alg,key}.h` do not exist**, and `libcerver.so` does not export the 56 `jwt_*` methods
+  (`jwt_new ()`, `jwt_decode ()`, `jwt_encode_str ()`, `jwt_add_grant ()`, `jwt_get_grant ()`, `jwt_validate ()`,
+  `jwt_key_create ()`, …): a binary that calls one does not link. The names are free again for the libjwt of the
+  system. `cerver/jwt/{jwt,key,sign,verify,claims}.h` are in `cerver/cerver.h`
+- **`jwt_alg_t` is `CerverJwtAlgorithm`** (`cerver/jwt/jwt.h`): `JWT_ALG_HS256` … `JWT_ALG_ES512` are
+  `CERVER_JWT_ALGORITHM_HS256` … `CERVER_JWT_ALGORITHM_ES512` with the same numbers (1 to 9), and
+  `CERVER_JWT_ALGORITHM_NONE` is 0. **10 was `JWT_ALG_TERM` (`JWT_ALG_INVAL`) and is `CERVER_JWT_ALGORITHM_PS256`**:
+  11 and 12 are PS384 and PS512, 13 is `CERVER_JWT_ALGORITHM_EDDSA`, and what is not an algorithm is
+  `CERVER_JWT_ALGORITHM_NONE`. `JWT_DEFAULT_ALG` is `HTTP_CERVER_DEFAULT_JWT_ALGORITHM`
+- **`http_cerver_auth_set_jwt_algorithm ()`** takes a `CerverJwtAlgorithm`; `HttpCerver::jwt_alg` has that type,
+  `HttpCerver::jwt_private_key` and `jwt_public_key` are `CerverJwtKey *`, and the struct has
+  `HttpCerver::jwt_subject`. **`HttpJwt` lost its `jwt` field** (the `struct jwt *` of libjwt) and **`HttpRequest`
+  has `claims`**: the three structs changed their layout, so what uses them is built again
+- **The token of `http_cerver_auth_generate_jwt ()` is released with `free ()`**, it was released with
+  `jwt_free_str ()`. `http_cerver_auth_generate_jwt_actual ()` and `http_cerver_auth_generate_bearer_jwt_actual ()`
+  (`CERVER_PRIVATE`) take a `const CerverJwtKey *`
+
+| The JWT of libjwt | The JWT of cerver |
+|---|---|
+| `jwt_t`, `jwt_new ()`, `jwt_free ()`, `jwt_dup ()` | None: a token is a text; its claims are a `const CerverJsonValue *` that `cerver_jwt_verify ()` reads in the arena of the caller |
+| `jwt_alg_t`, `jwt_alg_str ()`, `jwt_str_alg ()`, `jwt_get_alg ()`, `jwt_set_alg ()` | `CerverJwtAlgorithm`, `cerver_jwt_algorithm_to_string ()`, `cerver_jwt_algorithm_from_string ()`, `cerver_jwt_key_algorithm ()`: the algorithm is the one of the key, a token never sets it |
+| `JwtKey`, `jwt_key_create ()`, `jwt_key_check_strength ()`, `jwt_key_delete ()` | `CerverJwtKey`: `cerver_jwt_key_create_secret ()`, `cerver_jwt_key_create_pem ()`, `cerver_jwt_key_create_jwk ()` or `cerver_jwt_key_create ()` with a `CerverCryptoKey`; they check the strength; `cerver_jwt_key_delete ()` |
+| `JwtKeyError`, `jwt_key_error_to_string ()`, `jwt_key_type_to_string ()` | `CerverJwtError` and `cerver_jwt_error_to_string ()`; `cerver_jwt_key_is_private ()`, and `cerver_crypto_key_type ()` of `cerver_jwt_key_crypto ()` |
+| `jwt_key_sign ()`, `jwt_key_verify ()` | `cerver_crypto_sign ()`, `cerver_crypto_verify ()` (`cerver/crypto/signature.h`) with a `CerverCryptoKey` |
+| `jwt_add_grant ()`, `jwt_add_grant_int ()`, `jwt_add_grant_bool ()`, `jwt_add_grants_json ()`, `jwt_del_grants ()` | The claims are the text of a JSON object, written with a `CerverJsonWriter` |
+| `jwt_encode_str ()`, `jwt_encode_with_key ()`, `jwt_encode_fp ()`, `jwt_free_str ()` | `cerver_jwt_sign ()` into a buffer of the caller of `cerver_jwt_sign_size ()` bytes; nothing to release |
+| `jwt_decode ()`, `jwt_decode_with_key ()` | `cerver_jwt_verify ()`: the size, the three parts, the header, the signature and then the claims with their validation, in one call |
+| `jwt_get_grant ()`, `jwt_get_grant_int ()`, `jwt_get_grant_bool ()`, `jwt_get_grants_json ()` | `cerver_json_object_get ()` and the getters of `cerver/json/value.h` on the claims; `cerver_json_write ()` for their text; `http_request_claims ()` for the ones of the bearer of a request |
+| `jwt_add_header ()`, `jwt_add_header_int ()`, `jwt_add_header_bool ()`, `jwt_add_headers_json ()`, `jwt_del_headers ()`, `jwt_get_header ()`, `jwt_get_header_int ()`, `jwt_get_header_bool ()`, `jwt_get_headers_json ()` | None: the header that cerver writes is `{"alg":"<algorithm>","typ":"JWT"}`, and the header of a token that it verifies is not given |
+| `jwt_valid_t`, `jwt_valid_new ()`, `jwt_valid_free ()`, `jwt_valid_set_now ()`, `jwt_valid_set_headers ()`, `jwt_validate ()`, `jwt_valid_get_status ()` | A `CerverJwtValidation` for each call (`now`, `leeway`, `require_expiration`, `issuer`, `subject`, `audience`, `max_size`), for `cerver_jwt_verify ()` or `cerver_jwt_claims_validate ()`; the claims that a header repeats are always checked |
+| `jwt_valid_add_grant ()`, `jwt_valid_add_grant_int ()`, `jwt_valid_add_grant_bool ()`, `jwt_valid_add_grants_json ()`, `jwt_valid_del_grants ()`, `jwt_valid_get_grant ()`, `jwt_valid_get_grant_int ()`, `jwt_valid_get_grant_bool ()`, `jwt_valid_get_grants_json ()` | `CerverJwtValidation::issuer`, `subject` and `audience`; any other claim is compared by the program with its getter |
+| `jwt_error_t` (`JWT_VALIDATION_*`), `jwt_error_str ()` | `CerverJwtError` (`CERVER_JWT_ERROR_*`: one value, not a mask), `cerver_jwt_error_to_string ()` |
+| `jwt_dump_fp ()`, `jwt_dump_str ()` | None |
+
+**The tokens that a cerver takes**
+
+- **`iat` is checked:** a token that was issued in the future (after the clock plus the leeway of
+  `http_cerver_auth_set_jwt_leeway_seconds ()`) is not valid; `iat` was never read. Like `exp` and `nbf`, an `iat`
+  that is not an integer is not valid. **The leeway is 0 by default:** a cerver that verifies the tokens that
+  another host just signed refuses them while the clock of that host is ahead of its own, so the cervers that
+  share tokens set a leeway of the seconds that their clocks can differ
+- **`http_cerver_auth_set_jwt_subject ()` is new:** with it, the `sub` of a token must be that string. Without it
+  nothing changes
+- **A size of 0 in `http_cerver_auth_set_jwt_max_size ()` is `CERVER_JWT_SIZE_MAX` (2^20)**, the limit of every
+  token; it was no limit. The default is still 2^13
+- **The header of a token that cerver did not write is read with limits:** at most `CERVER_JWT_HEADER_SIZE_MAX`
+  (2^10) characters and `CERVER_JWT_HEADER_DEPTH` (2^2) levels, without a key more than once and without a null
+  character; with a `crit` member it is refused (no extension is understood); and an `iss`, a `sub` or an `aud`
+  that it repeats must be equal to the one of the claims, whatever their type is (an `iss` or a `sub` that was
+  not a string was not compared)
+- **An integer between 2^63 and 2^64 - 1 in the claims or in the header is read** (the JSON of cerver has it as an
+  unsigned): the copy of Jansson refused the whole token. As `exp`, `nbf` or `iat` it is not a time, and the token
+  is not valid
+- **The algorithms PS256, PS384, PS512 (RSA of at least 2048 bits) and EdDSA (Ed25519 or Ed448) are new.** The rules
+  of the keys are the ones of before: a secret with at least the bytes of its digest that is not the text of a PEM,
+  RSA of at least 2048 bits, the curve of its ES algorithm, a PEM with a passphrase is never read. A key of RSA of
+  more than `CERVER_CRYPTO_RSA_BITS_MAX` (2^14) bits is refused
+- **The file of a key that starts with `{` is a JWK** (RFC 7517; the spaces before it do not count), also for an
+  HS algorithm: **a secret whose first character is `{` was the secret of its bytes and is now read as a JWK**, and
+  the cerver does not start if it is not one. A JWK is an `oct`, an `RSA`, an `EC` (P-256, P-384, P-521) or an
+  `OKP` (Ed25519, Ed448) key; one with a `use` that is not `sig`, or with `key_ops` without `sign` and without
+  `verify`, is refused
+- With `HTTP_AUTH_DEBUG`, a token that is not valid logs its `cerver_jwt_error_to_string ()`
+
+**`cerver/crypto` has keys and signatures** (`cerver/crypto/key.h`, `cerver/crypto/signature.h`, both in
+`cerver/cerver.h`): `CerverCryptoKey` (a secret, a PEM or a JWK), `cerver_crypto_sign ()` and
+`cerver_crypto_verify ()` with the 14 algorithms of `CERVER_CRYPTO_SIGNATURE_MAP`, and `cerver_crypto_equal ()` in
+`cerver/crypto/memory.h`. `src/cerver/crypto/openssl.c` is the only file of cerver that includes OpenSSL.
+`libcerver.so` exports 1815 symbols, it exported 1837: the 56 `jwt_*` are gone and 34 are new (17
+`cerver_crypto_*`, 15 `cerver_jwt_*`, `http_cerver_auth_set_jwt_subject ()` and `http_request_claims ()`).
+
+**Tests and scripts:** `test/bin/jansson`, `test/jansson/`, the keys of `test/jwt/keys/` (the ones of the tests are
+in `test/crypto/keys/`) and the fuzz targets `jansson` and `compare` are gone. `test/bin/crypto` and `test/bin/jwt`
+have the examples of RFC 4231, 7515, 7517, 7520, 8032 and 8037; the fuzz targets `jwk` and `differential` are new,
+and `differential` (`make TYPE=test CC=clang differential`, `test/fuzz/differential/jwt.c`) needs the libjwt of the
+system, that `Dockerfile.fuzz` installs. `make conformance` also builds `test/bin/conformance/jwt`, that
+`test/conformance/jwt.sh` runs with the vectors of Wycheproof of `Dockerfile.conformance`.
+`benchmarks/competitors/` measures the JWT against libjwt, l8w8jwt and jwt-cpp, that `Dockerfile.competitors`
+builds from their sources, and its backend `legacy` of the JSON is gone.
+
 ## 3.0b-7 (from 3.0b-6)
 
 HTTP over the JSON of cerver (the second beta of L1 of `roadmap.md`): the stats of the admin routes, the routes
