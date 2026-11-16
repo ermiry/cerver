@@ -48,7 +48,7 @@ CURL		:= -l curl
 DEFINES		:= -D _GNU_SOURCE
 
 ifeq ($(CRYPTO), openssl)
-	DEFINES += -D CERVER_CRYPTO_OPENSSL
+	override DEFINES += -D CERVER_CRYPTO_OPENSSL
 else
 $(error the provider of the cryptography $(CRYPTO) is not supported)
 endif
@@ -428,6 +428,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/network/*.o -o ./$(TESTTARGET)/network $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/crypto/*.o -o ./$(TESTTARGET)/crypto $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/events/*.o -o ./$(TESTTARGET)/events $(TESTLIBS)
 ifeq ($(SANITIZER),)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/faults/*.o ./$(TESTBUILD)/websockets/raw.o -o ./$(TESTTARGET)/faults $(TESTLIBS)
 endif
@@ -508,6 +509,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/json.o -o $(INTWEBOUT)/json $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/multi.o -o $(INTWEBOUT)/multi $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/multiple.o -o $(INTWEBOUT)/multiple $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/pools.o -o $(INTWEBOUT)/pools $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/router.o -o $(INTWEBOUT)/router $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
@@ -530,6 +532,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/json.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/json $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/multi.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/multi $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/multiple.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/multiple $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/pools.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/pools $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/router.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/router $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/upload.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/upload $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/web.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/web $(INTWEBCLIENTLIBS)
