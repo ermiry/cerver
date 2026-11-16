@@ -53,6 +53,18 @@ jobs:
           path: ./autobahn-reports/
           retention-days: 7
 
+  conformance-sanitizers:
+    name: Cerver JSON conformance with the sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: JSON
+        env:
+          SANITIZER: address,undefined
+        run: bash test/conformance/json.sh
+
   units-thread:
     name: Cerver in process tests with thread sanitizer
     runs-on: ubuntu-latest

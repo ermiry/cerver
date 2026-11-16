@@ -558,6 +558,11 @@ test: testout
 	$(MAKE) units
 	$(MAKE) integration
 
+conformance:
+	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT)
+	@mkdir -p ./$(TESTTARGET)/conformance
+	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/json.$(OBJEXT) -o ./$(TESTTARGET)/conformance/json $(TESTLIBS)
+
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)

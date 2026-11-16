@@ -1,0 +1,25 @@
+FROM gcc:16.2
+
+ARG SANITIZER=''
+ARG ZLIB=1
+ARG WERROR=1
+
+RUN apt-get update && apt-get install -y libssl-dev zlib1g-dev && apt-get clean
+
+ENV JSON_TEST_SUITE_COMMIT=1ef36fa01286573e846ac449e8683f8833c5b26a
+
+ENV CONFORMANCE=/opt/conformance
+
+WORKDIR ${CONFORMANCE}
+
+RUN curl -fsSL https://github.com/nst/JSONTestSuite/archive/${JSON_TEST_SUITE_COMMIT}.tar.gz | tar xz \
+	&& mv JSONTestSuite-${JSON_TEST_SUITE_COMMIT} json
+
+WORKDIR /opt/cerver
+
+COPY . .
+RUN make clean && make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} -j4 && make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} conformance
+
+ENV LD_LIBRARY_PATH=/opt/cerver/bin
+
+CMD ["bash", "test/conformance/json.sh"]

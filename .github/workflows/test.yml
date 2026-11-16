@@ -92,6 +92,16 @@ jobs:
           path: ./autobahn-reports/
           retention-days: 7
 
+  conformance:
+    name: Cerver JSON conformance (JSONTestSuite)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: JSON
+        run: bash test/conformance/json.sh
+
   fuzz:
     name: Cerver fuzzing
     runs-on: ubuntu-latest
