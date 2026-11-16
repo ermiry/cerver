@@ -3,6 +3,17 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9b-3 (from 1.9b-2)
+
+The port of `thpool_has_queued ()` of the 2.1b-17 (`nightly`), so `threads/thpool.c` is the same in the four lines:
+`Thpool` has a new field at its end (a binary that allocates a `Thpool` itself is built again), the rest keeps its
+ABI and the wire does not change.
+
+- **`Thpool` has `queue_awaited`** at its end, the count of the jobs in its queue that `thpool_has_queued ()` reads
+  without the mutex of the queue. **New:** `thpool_has_queued ()`
+- The docs of `cerver_stop_request ()` and `cerver_shutdown ()` say what they do since the 1.9b-2 (its stop pipe):
+  the request is async-signal-safe, and the shutdown too without `CERVER_DEBUG`
+
 ## 1.9b-2 (from 1.9b-1)
 
 The fixes of the audit of the code: the wire does not change, a 1.9b-2 talks with a 1.9b-1, but some structs change
