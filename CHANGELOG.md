@@ -1,32 +1,32 @@
 ## General
-- Added a bounded copy to the utils & fixed the limits of ints
-- Using localtime_r in the log & reentrant times in the timers
-- Removed the defines of glibc from config.h with an #error
-- Fixed the str_set that grows & str_split without a delimiter
-- Fixed the locks of the collections & their new safe variants
-- Fixed the requests of jobs, the semaphores & each worker
-- Added the references to the arguments of events & errors
-- Fixed the stop from a signal, the stats & the core handlers
-- Added the limits of the admins & its own check of packets
-- Fixed the drop of the poll of the clients & of their requests
-- Releasing the old received data that a connection replaces
-- Keeping the data of packets that can't grow & their copies
-- Rejecting uploads without a path & taking the plain names
-- Added the references of lobbies & the checks of the score
-- Using the bounded copy in sessions & in the load services
-- Updated the roadmap with the backlog & L1 for the 3.0b-5
-- Updated CLAUDE.md with the analyzers & the faults tests
-- Added the changes of the 3.0b-4 to the incompatibility file
+- Added thpool_has_queued () to ask for jobs with no mutex
+- Added the events handler type & the setters of the cervers
+- Added the poller & the timer wheel of the web event loops
+- Added the event loop, the HTTP connection & the pool job
+- Added the group of event loops with the drain in two parts
+- Updated roadmap & CLAUDE.md with F3, F4, F5 of nightly
+- Added the changes of the 3.0b-5 to the incompatibility file
 
 ## HTTP
-- Answering the videos with RFC 9110 & checking the pools
-- Releasing the custom data the endpoints & groups replace
-- Keeping the last character of the dirname of a request too
-- Removed the warning of timeouts that are not powers of 2
-- Checking the memory of the query & of the multipart pairs
-- Added the MIT notice of the multipart parser to the source
-- Keeping each websocket stream in the thread that owns it
+- Added keep-alive settings with their setters to HttpCerver
+- Added the pools of threads of the HttpCerver & their lanes
+- Added a pool setting to the groups, endpoints & old routes
+- Added pools, connections & health series into the metrics
+- Added pools, connections & health into admin routes stats
+- Measuring the time & the bytes of the files of every upload
 
 ## Tests
-- Added the tests of the faults of allocations to the core too
-- Added the static analyzers with their suppressions & a job
+- Added the test handler type to run the tests in two models
+- Added the tests of the poller & of the timer wheel of loops
+- Feeding the requests of the receive tests through the loop
+- Running the server tests in both models & the events ones
+- Added the keep-alive tests of a real cerver in both models
+- Added HTTP tests of pools, their drain & the health routes
+- Testing thpool_has_queued () with jobs in a queue & none
+- Running WebSocket, faults & autobahn tests in the models
+- Taking the handler type of the web pairs from environment
+- Registered the web pools pair in the makefile & integration
+- Added the loop fuzzer with its corpus & its scheduled jobs
+- Testing nginx with kept connections & cervers that restart
+- Added kept connections to load client & benchmark server
+- Requiring 150 % of the req/s with a connection that is kept
