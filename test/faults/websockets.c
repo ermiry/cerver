@@ -24,6 +24,7 @@
 #include <cerver/http/websockets/websocket.h>
 
 #include "../address.h"
+#include "../handler.h"
 #include "../test.h"
 #include "../websockets/raw.h"
 #include "faults.h"
@@ -355,7 +356,8 @@ static void faults_test_server_start (FaultsTestServer *server) {
 	Cerver *cerver = cerver_create_web ("faults-test", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (cerver, test_handler_type ());
+	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 	cerver_set_thpool_n_threads (cerver, FAULTS_TEST_THREADS);

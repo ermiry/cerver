@@ -154,15 +154,16 @@ puede ocupar varias.
 | **L0.1** | 3.0b-2 | La estructura: subcarpetas, archivos partidos, headers internos en `src/`, paraguas | L0 |
 | **L0.2** | 3.0b-3 | La documentación de los headers: Doxygen con sintaxis Javadoc y su gate | L0.1 |
 | **L0.3** | 3.0b-4 | El backlog de la revisión: los fixes de la 1.9b-2 y de la 2.0b-75, lo sin uso quitado, el dueño del stream de WebSocket, los analizadores estáticos | L0.2 |
-| **L1** | 3.0b-5 | El JSON propio | L0.3 |
-| **L2** | 3.0b-6 | El JWT propio | L1 |
-| **L3** | 3.0b-7 | El parser HTTP/1.1 propio | L0.2 |
-| **L4** | 3.0b-8 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
-| **L5** | 3.0b-9 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-10 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-11 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-12 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-13 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **L0.4** | 3.0b-5 | El event loop, keep-alive y los pools de `nightly` (sus F3, F4 y F5) | L0.3 |
+| **L1** | 3.0b-6 | El JSON propio | L0.4 |
+| **L2** | 3.0b-7 | El JWT propio | L1 |
+| **L3** | 3.0b-8 | El parser HTTP/1.1 propio | L0.2 |
+| **L4** | 3.0b-9 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
+| **L5** | 3.0b-10 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-11 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-12 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-13 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-14 | WebSocket sobre el I/O nuevo | L4, L5 |
 | **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
@@ -317,6 +318,20 @@ para que los ports entre líneas sigan siendo directos.
   sueltan el mutex del dueño (`test_server_foreign_stream`).
 - L1 y las fases siguientes se recorren una beta.
 
+### 4.0.4 L0.4 — El event loop, keep-alive y los pools de `nightly` (3.0b-5)
+
+- **El port de F3, F4 y F5 de `nightly`** (la 2.1b-15, la 2.1b-16 y la 2.1b-17, con lo que la 2.1b-18 les cambió),
+  a mano sobre la 3.0b-4: `CERVER_HANDLER_TYPE_EVENTS` con sus pollers, la rueda de timers, los loops y su grupo;
+  keep-alive en los dos modelos; los pools con nombre, sus lanes y las rutas de health y de ready;
+  `thpool_has_queued ()`. Lo que la 3.0b-4 quitó se queda fuera, y las marcas `@since` son de la 3.0b-5.
+- **El stop:** el thread de `cerver_start ()` con event loops espera en el extremo de lectura del `stop_pipe` de la
+  3.0b-4 (`event_loop_group_stop_pipe_check ()`), sin el eventfd `stop_fd` de `nightly`
+  (`test_server_events_stop_from_signal`).
+- **Con lo de `nightly`:** el drain de `test/http/disconnect.c` (`disconnect_cases_drain ()`) y el `override` del
+  `DEFINES` del `makefile`.
+- **El rendimiento:** `test/performance.sh` pide el 90 % de las req/s de THREADS con EVENTS y el 150 % con una conexión
+  que se conserva; `nightly` todavía no llega al 150 % (su 2.1b-19), y L4 reemplaza este I/O.
+
 ### 4.1 L1 — El JSON propio
 
 - **El modelo:**
@@ -413,7 +428,8 @@ para que los ports entre líneas sigan siendo directos.
   - los pares web en io_uring y en epoll;
   - nginx con keep-alive y reinicios bajo carga;
   - la inyección de fallos de las syscalls (una CQE con error, un ring lleno, `ENOBUFS`).
-- **Lo de `nightly`:** F3–F5 dejan lecciones y tests que se reusan, pero el diseño de L4 es propio. **Riesgo:** el
+- **Lo de `nightly`:** F3–F5 (en `labs` desde la 3.0b-5) dejan lecciones y tests que se reusan, pero el diseño de L4
+  es propio. **Riesgo:** el
   perfil seccomp por default de Docker bloquea io_uring; el plan de la fase define el perfil de las imágenes de test y
   el aviso al arrancar.
 

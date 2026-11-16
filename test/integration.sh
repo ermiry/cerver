@@ -43,6 +43,7 @@ PAIRS=(
 	web/worker
 	web/admin
 	web/router
+	web/pools
 	web/features
 	web/websocket
 )
@@ -60,6 +61,10 @@ EXAMPLE_PAIRS=(
 EXAMPLES_ADDRESS=127.0.0.1
 
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
+
+HANDLERS=(${HANDLERS:-threads events})
+DEFAULT_HANDLER=threads
+WEB_PAIRS=web/
 
 TAG=test
 
@@ -126,6 +131,14 @@ if [ "$COVERAGE" -ne 0 ]; then
 	coverage_init
 fi
 
+pair_handlers () {
+	if [[ "$1" == "$WEB_PAIRS"* ]]; then
+		echo "${HANDLERS[@]}"
+	else
+		echo "$DEFAULT_HANDLER"
+	fi
+}
+
 FAILED=()
 RUNS=0
 for address in "${ADDRESSES[@]}"; do
@@ -135,14 +148,17 @@ for address in "${ADDRESSES[@]}"; do
 	fi
 
 	for pair in "${ADDRESS_PAIRS[@]}"; do
-		echo "Integration test $pair in $address..."
-		RUNS=$(( RUNS + 1 ))
-		if ! $DOCKER run "${RUN_FLAGS[@]}" \
-			--add-host "service-1:$address" --add-host "service-2:$address" \
-			-e CERVER_TEST_ADDRESS="$address" \
-			"$IMAGE" bash test/pair.sh "$pair"; then
-			FAILED+=("$pair@$address")
-		fi
+		for handler in $(pair_handlers "$pair"); do
+			echo "Integration test $pair in $address with $handler..."
+			RUNS=$(( RUNS + 1 ))
+			if ! $DOCKER run "${RUN_FLAGS[@]}" \
+				--add-host "service-1:$address" --add-host "service-2:$address" \
+				-e CERVER_TEST_ADDRESS="$address" \
+				-e CERVER_TEST_HANDLER="$handler" \
+				"$IMAGE" bash test/pair.sh "$pair"; then
+				FAILED+=("$pair@$address/$handler")
+			fi
+		done
 	done
 done
 

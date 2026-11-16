@@ -12,6 +12,7 @@
 #include <cerver/utils/log.h>
 
 #include "../../address.h"
+#include "../../handler.h"
 #include "curl.h"
 
 // the client of test/web/features: standalone, against the cerver,
@@ -233,12 +234,36 @@ static unsigned int features_client_expect_body (const char *context, const char
 
 }
 
-// every response has a Date and Connection: close, also the ones of an unknown path
+// what a response says about its connection is what happens to it: one that is closed after the response
+// says "close" (a cerver that does not keep its connections, a proxy that does not keep the ones of its clients,
+// or a client that asked for it), and one that the cerver keeps for the next request says nothing
+static unsigned int features_client_connection (CURL *curl) {
+
+	static const char *close_values[] = { "Connection: close", NULL };
+
+	const bool kept = !features_proxy && test_keep_alive ();
+
+	unsigned int errors = features_client_request (curl, "GET", "", "/features/small", NULL, HTTP_STATUS_OK);
+	errors |= kept ?
+		features_client_expect_no_header ("connection", "Connection") :
+		features_client_expect_header ("connection", "Connection", "close");
+
+	errors |= features_client_request (curl, "GET", "", "/features/small", close_values, HTTP_STATUS_OK);
+	errors |= features_client_expect_header ("connection asked to close", "Connection", "close");
+	errors |= features_client_expect_body ("connection asked to close", "doki");
+
+	errors |= features_client_request (curl, "GET", "", "/features/small", NULL, HTTP_STATUS_OK);
+	errors |= features_client_expect_body ("connection after a close", "doki");
+
+	return errors;
+
+}
+
+// every response has a Date, also the ones of an unknown path
 static unsigned int features_client_date (CURL *curl) {
 
 	unsigned int errors = features_client_request (curl, "GET", "", "/features/small", NULL, HTTP_STATUS_OK);
 	errors |= features_client_expect_header ("date", "Date", " GMT");
-	errors |= features_client_expect_header ("date", "Connection", "close");
 	errors |= features_client_expect_body ("date", "doki");
 
 	errors |= features_client_request (curl, "GET", "", "/plain/missing", NULL, HTTP_STATUS_NOT_FOUND);
@@ -533,6 +558,7 @@ int main (int argc, char **argv) {
 
 	CURL *curl = curl_easy_init ();
 	if (curl) {
+		errors |= features_client_connection (curl);
 		errors |= features_client_date (curl);
 		errors |= features_client_request_id (curl);
 		errors |= features_client_address (curl);

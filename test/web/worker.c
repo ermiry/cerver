@@ -25,6 +25,7 @@
 #include <cerver/utils/utils.h>
 
 #include "../address.h"
+#include "../handler.h"
 #include <app/data.h>
 
 static Cerver *web_cerver = NULL;
@@ -207,7 +208,8 @@ int main (void) {
 		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handler_type (web_cerver, test_handler_type ());
+		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 

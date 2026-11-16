@@ -7,6 +7,7 @@ AUTOBAHN=${AUTOBAHN:-crossbario/autobahn-testsuite:25.10.1}
 PYTHON_IMAGE=${PYTHON_IMAGE:-gcc:16.2}
 REPORTS=${REPORTS:-autobahn-reports}
 MODES=(${MODES:-server client})
+HANDLER=${HANDLER:-threads}
 NETWORK=${NETWORK:-cerver-autobahn}
 WAIT_SECONDS=${WAIT_SECONDS:-60}
 
@@ -60,10 +61,10 @@ fuzzer_report () {
 }
 
 run_server () {
-	echo "Autobahn fuzzingclient against the server of cerver..."
+	echo "Autobahn fuzzingclient against the server of cerver with $HANDLER..."
 
 	$DOCKER run -d --name "$SERVER" --network-alias cerver "${RUN_FLAGS[@]}" \
-		-e CERVER_TEST_ADDRESS=0.0.0.0 -w /opt/cerver/test/web \
+		-e CERVER_TEST_ADDRESS=0.0.0.0 -e CERVER_TEST_HANDLER="$HANDLER" -w /opt/cerver/test/web \
 		"$IMAGE" ../bin/web/autobahn > /dev/null || return 1
 
 	wait_listening "$SERVER" || { $DOCKER logs "$SERVER" | tail -n 64; return 1; }

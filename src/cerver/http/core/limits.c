@@ -227,6 +227,61 @@ void http_cerver_set_send_timeout_milliseconds (
 
 }
 
+void http_cerver_set_keep_alive (
+	HttpCerver *http_cerver, const bool keep_alive
+) {
+
+	if (http_cerver) {
+		http_cerver->keep_alive = keep_alive;
+		http_cerver->keep_alive_configured = true;
+	}
+
+}
+
+void http_cerver_set_keep_alive_timeout (
+	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("keep_alive_timeout", keep_alive_timeout);
+
+		http_cerver_set_keep_alive_timeout_milliseconds (
+			http_cerver, http_cerver_timeout_milliseconds (keep_alive_timeout)
+		);
+	}
+
+}
+
+void http_cerver_set_keep_alive_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
+) {
+
+	if (http_cerver) {
+		http_cerver->keep_alive_timeout = keep_alive_timeout ?
+			keep_alive_timeout : HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
+	}
+
+}
+
+void http_cerver_set_keep_alive_requests (
+	HttpCerver *http_cerver, const unsigned int keep_alive_requests
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("keep_alive_requests", keep_alive_requests);
+		http_cerver->keep_alive_requests = keep_alive_requests;
+	}
+
+}
+
+void http_cerver_set_keep_alive_follow (
+	HttpCerver *http_cerver, const unsigned int microseconds
+) {
+
+	if (http_cerver) http_cerver->keep_alive_follow = microseconds;
+
+}
+
 void http_cerver_set_half_close_is_gone (
 	HttpCerver *http_cerver, const bool half_close_is_gone
 ) {

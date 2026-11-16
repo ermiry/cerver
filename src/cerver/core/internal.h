@@ -51,6 +51,18 @@ CERVER_HIDDEN void cerver_set_running (Cerver *cerver, bool value);
 
 /**
  * @internal
+ * @brief Returns whether a stop of the cerver was requested (cerver_stop_request ()), with __atomic: a web
+ * cerver that stops does not keep its connections for another request.
+ *
+ * A cerver that has not started is not stopping.
+ *
+ * @param[in] cerver the cerver
+ * @return true after a stop was requested, false for a NULL cerver
+ */
+CERVER_HIDDEN bool cerver_is_stopping (const Cerver *cerver);
+
+/**
+ * @internal
  * @brief Creates the stop pipe of a new cerver, both ends close on exec and do not block.
  *
  * @param[out] cerver the cerver
@@ -191,6 +203,16 @@ CERVER_HIDDEN u8 cerver_handlers_destroy (Cerver *cerver);
  * @param[in,out] cerver the cerver
  */
 CERVER_HIDDEN void cerver_close_socket (Cerver *cerver);
+
+/**
+ * @internal
+ * @brief Creates another socket that listens in the address of the cerver, for an event loop that is not the
+ * first one: non blocking and with SO_REUSEPORT, like the socket of a cerver with more than one I/O thread.
+ *
+ * @param[in] cerver the cerver, with its address already set by its own socket
+ * @return the socket, -1 on error
+ */
+CERVER_HIDDEN i32 cerver_network_listen_socket_create (const Cerver *cerver);
 
 /**
  * @internal

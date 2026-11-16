@@ -92,9 +92,21 @@ typedef enum HttpReceiveDispatch {
 	HTTP_RECEIVE_DISPATCH_CATCH_ALL				= 4,
 	/** @brief A redirect of its trailing slash. */
 	HTTP_RECEIVE_DISPATCH_REDIRECT				= 5,
+	/**
+	 * @brief The health route of the cerver (http_cerver_set_health_route ()).
+	 *
+	 * @since 3.0b-5
+	 */
+	HTTP_RECEIVE_DISPATCH_HEALTH				= 6,
+	/**
+	 * @brief The ready route of the cerver (http_cerver_set_ready_route ()).
+	 *
+	 * @since 3.0b-5
+	 */
+	HTTP_RECEIVE_DISPATCH_READY					= 7,
 
 	/** @brief The number of dispatches, the first value that is not valid. */
-	HTTP_RECEIVE_DISPATCH_MAX					= 6
+	HTTP_RECEIVE_DISPATCH_MAX					= 8
 
 } HttpReceiveDispatch;
 
@@ -142,6 +154,22 @@ struct _HttpReceiveDiagnostics {
 typedef struct _HttpReceiveDiagnostics HttpReceiveDiagnostics;
 
 /**
+ * @brief Where the parser of a request of an event loop stopped to give the request to a thread of the pool.
+ *
+ * @since 3.0b-5
+ */
+typedef enum HttpReceivePause {
+
+	/** @brief The parser is not paused for the pool. */
+	HTTP_RECEIVE_PAUSE_NONE				= 0,
+	/** @brief The headers are complete: the request is authorized before its body is received. */
+	HTTP_RECEIVE_PAUSE_HEADERS			= 1,
+	/** @brief The request is complete: it is handled. */
+	HTTP_RECEIVE_PAUSE_MESSAGE			= 2
+
+} HttpReceivePause;
+
+/**
  * @brief The state of an HTTP connection and of the request that it is receiving.
  *
  * What belongs to the connection (its cerver receive, the parser, the resources of its owner, the state of its
@@ -156,7 +184,13 @@ struct _HttpReceive {
 	/** @brief The cerver receive of the connection. */
 	CerverReceive *cr;
 
-	/** @brief Keep the connection alive: it is not closed after the request ends. */
+	/**
+	 * @brief The connection is kept after the response of the request, for the next one of its client.
+	 *
+	 * A value of each request: false until the request is complete, when the cerver decides it before the response
+	 * is sent (so the response says it in its Connection header); a response whose end the client can not find,
+	 * one that failed, one with its own "Connection: close" or a cerver that stops close the connection anyway.
+	 */
 	bool keep_alive;
 
 	/** @brief Handles each buffer that the connection receives. */
@@ -172,7 +206,7 @@ struct _HttpReceive {
 	/** @brief The callbacks of the parser. */
 	llhttp_settings_t settings;
 
-	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()); the connection is still closed after the response. */
+	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()): HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
 	bool keep_alive_requested;
 
 	/** @brief The bytes of the last buffer that were not parsed after the request was completed (a pipelined request). */
@@ -313,6 +347,38 @@ struct _HttpReceive {
 
 	/** @brief The last state of the client that was found, a gone client never comes back. */
 	HttpClientState client_state;
+
+	/**
+	 * @brief The connection of the event loop that owns the receive, NULL with the other handler types.
+	 *
+	 * With it the parser does not handle the request: it pauses, and the loop answers it or gives it to the pool.
+	 *
+	 * @since 3.0b-5
+	 */
+	struct HttpConnection *connection;
+
+	/**
+	 * @brief Where the parser was paused for the pool, a value of a request.
+	 *
+	 * @since 3.0b-5
+	 */
+	HttpReceivePause pause;
+
+	/**
+	 * @brief The second part of the headers (the authentication, the upgrade, the uploads, the static path) has not
+	 * run: a thread of the pool runs it before the body is received or before the request is handled.
+	 *
+	 * @since 3.0b-5
+	 */
+	bool authorize_pending;
+
+	/**
+	 * @brief The requests that were completed in the connection, with the one that is being handled; a value of
+	 * the connection.
+	 *
+	 * @since 3.0b-5
+	 */
+	unsigned int n_requests;
 
 };
 

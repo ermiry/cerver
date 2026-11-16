@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -22,6 +23,7 @@
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
+#include "cerver/events/internal.h"
 #include <cerver/files/files.h>
 #include <cerver/network/network.h>
 
@@ -1297,9 +1299,17 @@ static void disconnect_leave (const int fd, const DisconnectForm form) {
 
 }
 
+// the connections that the cerver took and the ones that it finished:
+// with a thread for each connection they are the jobs of its thpool,
+// with event loops a connection takes none, one or two jobs, so the loops count them
 static void disconnect_thpool_stats (const DisconnectServer *server, ThpoolStats *stats) {
 
 	thpool_get_stats (server->thpool, stats);
+
+	if (server->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS) {
+		stats->total_jobs = event_loop_group_accepted (server->cerver);
+		stats->completed_jobs = event_loop_group_ended (server->cerver);
+	}
 
 }
 
@@ -1396,10 +1406,14 @@ static void disconnect_server_ready (DisconnectServer *server) {
 
 }
 
+// how the cervers of the tests that run now handle their connections,
+// the tests run with a thread for each connection and with event loops
+static CerverHandlerType disconnect_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
 static DisconnectOptions disconnect_options_default (void) {
 
 	DisconnectOptions options;
-	options.handler_type = CERVER_HANDLER_TYPE_THREADS;
+	options.handler_type = disconnect_handler_type;
 	options.threads = DISCONNECT_THREADS;
 	options.queue_size = DISCONNECT_QUEUE_SIZE;
 	options.overload_policy = CERVER_OVERLOAD_POLICY_WAIT;
@@ -1437,6 +1451,10 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
 	http_cerver_set_headers_timeout_milliseconds (http_cerver, DISCONNECT_HEADERS_TIMEOUT);
+
+	// the clients of these tests read each response until the cerver closes its connection,
+	// the connections that are kept have their own tests (keepalive.c)
+	http_cerver_set_keep_alive (http_cerver, false);
 
 	http_cerver_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
 	http_cerver_set_default_uploads_filename_generator (http_cerver);
@@ -1546,13 +1564,58 @@ static void disconnect_case_send_model (DisconnectCase *dc) {
 
 }
 
+// the cases of the batch that is starting, and how many of them already started
+static DisconnectCase *disconnect_batch_cases = NULL;
+static size_t disconnect_batch_started = 0;
+
+static void disconnect_case_keep (DisconnectCase *dc, const char *buffer, const size_t length);
+
+static void disconnect_cases_drain (DisconnectCase *cases, const size_t n_started);
+
+// the milliseconds that a client waits for more of its cut before the other clients of its batch read again
+#define DISCONNECT_CUT_POLL					(1 << 4)
+
+// reads what is ready of the cut of a client, without waiting
+// returns true when its response ended before the cut
+static bool disconnect_case_read_cut_ready (DisconnectCase *dc) {
+
+	char buffer[DISCONNECT_READ_BUFFER];
+
+	const size_t left = dc->cut - dc->received;
+
+	const ssize_t rc = recv (
+		dc->fd, buffer, (left < DISCONNECT_READ_BUFFER) ? left : DISCONNECT_READ_BUFFER, MSG_DONTWAIT
+	);
+
+	if (rc > 0) disconnect_case_keep (dc, buffer, (size_t) rc);
+
+	return !rc || ((rc < 0) && (errno != EAGAIN) && (errno != EINTR));
+
+}
+
+// a client reads the cut of its response; while it waits for it (its handler has to start) and between
+// its reads, the half-close clients of its batch that already left keep reading theirs
+static void disconnect_case_read_cut (DisconnectCase *dc) {
+
+	const double deadline = test_wait_now () + (double) DISCONNECT_CLIENT_TIMEOUT;
+
+	bool ended = false;
+	while ((dc->received < dc->cut) && !ended && (test_wait_now () < deadline)) {
+		struct pollfd descriptor = { dc->fd, POLLIN, 0 };
+		if (poll (&descriptor, 1, DISCONNECT_CUT_POLL) > 0) ended = disconnect_case_read_cut_ready (dc);
+
+		disconnect_cases_drain (disconnect_batch_cases, disconnect_batch_started);
+	}
+
+}
+
 static void disconnect_case_send (DisconnectCase *dc) {
 
 	if (dc->model) disconnect_case_send_model (dc);
 	else if (dc->request) disconnect_send (dc->fd, dc->request, strlen (dc->request));
 
 	if (dc->cut) {
-		dc->received = disconnect_read (dc->fd, dc->cut, dc->response, DISCONNECT_RESPONSE_SIZE - 1);
+		disconnect_case_read_cut (dc);
 		if (dc->received != dc->cut) disconnect_case_describe (dc);
 		test_check (dc->received == dc->cut, "the response ended before the cut");
 	}
@@ -1588,6 +1651,33 @@ static void disconnect_case_keep (DisconnectCase *dc, const char *buffer, const 
 	}
 
 	dc->received += length;
+
+}
+
+// a half-close client that already left reads what it has received, without waiting
+static void disconnect_case_drain (DisconnectCase *dc) {
+
+	char buffer[DISCONNECT_READ_BUFFER];
+
+	ssize_t rc = 0;
+	while ((rc = recv (dc->fd, buffer, DISCONNECT_READ_BUFFER, MSG_DONTWAIT)) > 0) {
+		disconnect_case_keep (dc, buffer, (size_t) rc);
+	}
+
+}
+
+// the half-close clients that already left keep reading while the rest of their batch starts:
+// the response of the first one waited without a reader until every client had started (each one
+// waits for its handler and reads its cut), and with a slow handler or a slow machine it ran into
+// the send timeout of the cerver, so its client only got what fit in the buffers
+static void disconnect_cases_drain (DisconnectCase *cases, const size_t n_started) {
+
+	for (size_t i = 0; i < n_started; i++) {
+		DisconnectCase *dc = &cases[i];
+		if ((dc->form == DISCONNECT_FORM_HALF_CLOSE) && !dc->wait_handler && (dc->fd > -1)) {
+			disconnect_case_drain (dc);
+		}
+	}
 
 }
 
@@ -1769,11 +1859,19 @@ static void disconnect_batch_run (
 	for (size_t i = 0; i < n_cases; i++) {
 		if (cases[i].cut) cases[i].fd = disconnect_connect (server->port, cases[i].small_receive_buffer);
 
+		disconnect_batch_cases = cases;
+		disconnect_batch_started = i;
+
 		disconnect_case_send (&cases[i]);
 
 		if (cases[i].wait_handler) waiting += 1;
 		else disconnect_case_leave (&cases[i]);
+
+		disconnect_cases_drain (cases, i + 1);
 	}
+
+	disconnect_batch_cases = NULL;
+	disconnect_batch_started = 0;
 
 	if (waiting) {
 		disconnect_wait_value (&gone_waiting, gone_before + waiting);
@@ -2346,15 +2444,40 @@ static long disconnect_task_syscall (const char *task) {
 
 static pid_t disconnect_probe_task = 0;
 
-// keeps its task id and waits in the same recv () as the connections of the cerver
+// the thread of an event loop waits for its connections in its poller, not in a recv ()
+static void disconnect_receive_probe_poller (const int fd) {
+
+	const int poller = epoll_create1 (EPOLL_CLOEXEC);
+
+	struct epoll_event event;
+	(void) memset (&event, 0, sizeof (struct epoll_event));
+	event.events = EPOLLIN;
+	event.data.fd = fd;
+	(void) epoll_ctl (poller, EPOLL_CTL_ADD, fd, &event);
+
+	struct epoll_event ready;
+	(void) epoll_wait (poller, &ready, 1, -1);
+
+	(void) close (poller);
+
+}
+
+// keeps its task id and waits like the thread that reads the connections of the cerver:
+// in the same recv (), or in the poller of an event loop
 static void *disconnect_receive_probe (void *fd_ptr) {
 
 	const int fd = *(const int *) fd_ptr;
 
 	__atomic_store_n (&disconnect_probe_task, (pid_t) syscall (SYS_gettid), __ATOMIC_SEQ_CST);
 
-	char byte = 0;
-	(void) recv (fd, &byte, sizeof (byte), 0);
+	if (disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS) {
+		disconnect_receive_probe_poller (fd);
+	}
+
+	else {
+		char byte = 0;
+		(void) recv (fd, &byte, sizeof (byte), 0);
+	}
 
 	return NULL;
 
@@ -2481,7 +2604,7 @@ static void test_disconnect_interrupted (void) {
 
 	test_check_int_eq (sigaction (SIGUSR1, &previous, NULL), 0, NULL);
 
-	test_check (interrupted > 0, "the thread of the connection was not interrupted in recvfrom ()");
+	test_check (interrupted > 0, "the thread that reads the connection was not interrupted while it waited");
 	test_check (
 		!strncmp (response, disconnect_ok_status, strlen (disconnect_ok_status)),
 		"an interrupted recv () ended the request"
@@ -2648,6 +2771,16 @@ static void test_disconnect_pipelined (void) {
 
 #pragma region overload
 
+// waits until the queue of the thpool has the expected jobs
+static void disconnect_wait_queued (const DisconnectServer *server, const unsigned int expected) {
+
+	const double deadline = test_wait_now () + (double) disconnect_wait_seconds ();
+	while ((thpool_get_queued (server->thpool) < expected) && (test_wait_now () < deadline)) disconnect_sleep ();
+
+	test_check (thpool_get_queued (server->thpool) >= expected, "the request did not reach the queue of the thpool");
+
+}
+
 // a client that leaves before reading the 503 of a full cerver
 static void test_disconnect_overload (void) {
 
@@ -2663,16 +2796,26 @@ static void test_disconnect_overload (void) {
 	int blocked = -1;
 	disconnect_gate_fill (server, &blocked, 1);
 
+	// a cerver with a thread for each connection queues the connection when it accepts it;
+	// one with event loops queues its request when it is complete, so its client sends it now
+	const bool events = (options.handler_type == CERVER_HANDLER_TYPE_EVENTS);
+
 	const int queued = disconnect_connect (server->port, false);
+	if (events) {
+		disconnect_send (queued, ok_request, strlen (ok_request));
+		disconnect_wait_queued (server, 1);
+	}
 
 	ThpoolStats stats;
 	disconnect_thpool_stats (server, &stats);
 
 	const u64 rejected = __atomic_load_n (&server->cerver->stats->total_rejected_connections, __ATOMIC_SEQ_CST);
 
-	// the queue is full, the cerver answers 503 to a client that already left
+	// the queue is full, the cerver answers 503 to a client that already left:
+	// with event loops the client leaves after its request, that has to arrive to be rejected
 	const int extra = disconnect_connect (server->port, false);
-	disconnect_leave (extra, DISCONNECT_FORM_RESET);
+	if (events) disconnect_send (extra, ok_request, strlen (ok_request));
+	disconnect_leave (extra, events ? DISCONNECT_FORM_CLOSE : DISCONNECT_FORM_RESET);
 
 	test_check (
 		test_wait_counter_64 (&server->cerver->stats->total_rejected_connections, rejected + 1, disconnect_wait_seconds ()) == rejected + 1,
@@ -2681,7 +2824,7 @@ static void test_disconnect_overload (void) {
 
 	disconnect_gate_release (&blocked, 1);
 
-	disconnect_send (queued, ok_request, strlen (ok_request));
+	if (!events) disconnect_send (queued, ok_request, strlen (ok_request));
 
 	char response[DISCONNECT_RESPONSE_SIZE] = { 0 };
 	(void) disconnect_read (queued, DISCONNECT_RESPONSE_SIZE - 1, response, DISCONNECT_RESPONSE_SIZE - 1);
@@ -2812,13 +2955,12 @@ static void test_disconnect_requests_poll (void) {
 
 }
 
-void http_tests_disconnect (void) {
+// the tests of a cerver that handles its connections with a model: a thread for each one, or event loops
+static void disconnect_tests_model (const CerverHandlerType handler_type) {
 
-	(void) printf ("Testing HTTP disconnect...\n");
+	disconnect_handler_type = handler_type;
 
-	disconnect_level_init ();
-
-	disconnect_files_create ();
+	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
 
 	disconnect_job_queue = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);
 	test_check_ptr (disconnect_job_queue);
@@ -2847,9 +2989,25 @@ void http_tests_disconnect (void) {
 	job_queue_delete (disconnect_job_queue);
 	disconnect_job_queue = NULL;
 
-	test_run (test_disconnect_requests_poll);
 	test_run (test_disconnect_overload);
 	test_run (test_disconnect_drain);
+
+	disconnect_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
+}
+
+void http_tests_disconnect (void) {
+
+	(void) printf ("Testing HTTP disconnect...\n");
+
+	disconnect_level_init ();
+
+	disconnect_files_create ();
+
+	disconnect_tests_model (CERVER_HANDLER_TYPE_THREADS);
+	disconnect_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+
+	test_run (test_disconnect_requests_poll);
 
 	disconnect_files_delete ();
 

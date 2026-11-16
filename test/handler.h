@@ -1,0 +1,62 @@
+#ifndef _CERVER_TESTS_HANDLER_H_
+#define _CERVER_TESTS_HANDLER_H_
+
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <cerver/core/types.h>
+
+// the web servers of the tests run once with each way of handling their connections:
+// a thread for each one (the default) or event loops
+#define TEST_HANDLER_VARIABLE				"CERVER_TEST_HANDLER"
+#define TEST_HANDLER_EVENTS					"events"
+
+// the I/O threads of a web server of the tests with event loops, 1 by default
+#define TEST_IO_THREADS_VARIABLE			"CERVER_TEST_IO_THREADS"
+#define TEST_IO_THREADS_BASE				10
+
+static inline CerverHandlerType test_handler_type (void) {
+
+	const char *handler = getenv (TEST_HANDLER_VARIABLE);
+
+	return (handler && !strcmp (handler, TEST_HANDLER_EVENTS)) ?
+		CERVER_HANDLER_TYPE_EVENTS : CERVER_HANDLER_TYPE_THREADS;
+
+}
+
+// returns 0 when the variable is not set: cerver_set_io_threads () keeps its default
+static inline unsigned int test_io_threads (void) {
+
+	const char *threads = getenv (TEST_IO_THREADS_VARIABLE);
+
+	return (threads && threads[0]) ? (unsigned int) strtoul (threads, NULL, TEST_IO_THREADS_BASE) : 0;
+
+}
+
+// whether a web server of the tests keeps its connections between requests: "1" asks for it and "0"
+// closes each one after its response; without the variable the cerver decides, only the event loops keep them
+#define TEST_KEEP_ALIVE_VARIABLE			"CERVER_TEST_KEEP_ALIVE"
+#define TEST_KEEP_ALIVE_ENABLED				"1"
+
+// returns true when the variable is set: the server calls http_cerver_set_keep_alive () with test_keep_alive ()
+static inline bool test_keep_alive_is_set (void) {
+
+	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
+
+	return keep_alive && keep_alive[0];
+
+}
+
+// what the server does with its connections, that its client expects in its responses
+static inline bool test_keep_alive (void) {
+
+	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
+
+	return (keep_alive && keep_alive[0]) ?
+		!strcmp (keep_alive, TEST_KEEP_ALIVE_ENABLED) :
+		(test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
+
+}
+
+#endif

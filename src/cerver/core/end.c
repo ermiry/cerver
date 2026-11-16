@@ -32,6 +32,7 @@
 #include "cerver/core/handler.h"
 #include "cerver/core/internal.h"
 #include "cerver/core/start.h"
+#include "cerver/events/internal.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
@@ -44,6 +45,7 @@
 #include "cerver/game/game.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
 
@@ -81,8 +83,8 @@ void cerver_stop_pipe_close (Cerver *cerver) {
 
 }
 
-// a byte in the stop pipe wakes up every sleep, and the pipe stays readable,
-// so a sleep that starts after the stop returns at once
+// a byte in the stop pipe wakes up every sleep and the wait of cerver_start () with event loops,
+// and the pipe stays readable, so a sleep that starts after the stop returns at once
 // write () is async-signal-safe: the stop can be requested from a signal handler,
 // the old condition variable needed a mutex that the sleeping thread could hold
 static void cerver_stop_wake_threads (Cerver *cerver) {
@@ -341,18 +343,70 @@ static void cerver_shutdown_clients (Cerver *cerver) {
 
 }
 
+// the HTTP data of a web cerver, with its named pools of threads
+static HttpCerver *cerver_http_data (const Cerver *cerver) {
+
+	return (cerver->type == CERVER_TYPE_WEB) ? (HttpCerver *) cerver->cerver_data : NULL;
+
+}
+
+// the named pools of a web cerver are drained like its thpool
+// returns true if their jobs finished before the timeout
+static bool cerver_drain_pools (
+	const Cerver *cerver, const bool run_queued, const time_t timeout
+) {
+
+	HttpCerver *http_cerver = cerver_http_data (cerver);
+
+	return !http_cerver || !http_cerver_pools_drain (http_cerver, run_queued, timeout);
+
+}
+
+// the threads that run a job: the ones of the thpool and the ones of the named pools of a web cerver
+static unsigned int cerver_drain_working (const Cerver *cerver) {
+
+	const HttpCerver *http_cerver = cerver_http_data (cerver);
+
+	return (cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0)
+		+ (http_cerver ? http_cerver_pools_working (http_cerver) : 0);
+
+}
+
+// the jobs that wait for a thread, in the thpool and in the named pools of a web cerver
+static unsigned int cerver_drain_queued (const Cerver *cerver) {
+
+	const HttpCerver *http_cerver = cerver_http_data (cerver);
+
+	return (cerver->thpool ? thpool_get_queued (cerver->thpool) : 0)
+		+ (http_cerver ? http_cerver_pools_queued (http_cerver) : 0);
+
+}
+
 // waits for the thpool and for the detachable connection threads,
 // returns true if both finished before the timeout
 static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
 
 	bool drained = true;
 
-	if (cerver->thpool) {
-		drained = !thpool_drain (
-			cerver->thpool,
-			(cerver->drain_policy == CERVER_DRAIN_POLICY_RUN),
-			timeout
-		);
+	const bool run_queued = (cerver->drain_policy == CERVER_DRAIN_POLICY_RUN);
+
+	// the requests that the event loops are reading go to the thpool or end first:
+	// a thpool that is being drained does not take them anymore
+	if (cerver->event_loops && !event_loop_group_quiesce (cerver->event_loops, !run_queued, timeout)) {
+		drained = false;
+	}
+
+	if (cerver->thpool && thpool_drain (cerver->thpool, run_queued, timeout)) {
+		drained = false;
+	}
+
+	if (!cerver_drain_pools (cerver, run_queued, timeout)) {
+		drained = false;
+	}
+
+	// the event loops end when the thpool gave them back their connections
+	if (cerver->event_loops && !event_loop_group_finish (cerver->event_loops, timeout)) {
+		drained = false;
 	}
 
 	if (thread_group_wait (&cerver->connection_threads, timeout)) {
@@ -371,8 +425,8 @@ static void cerver_drain_report (Cerver *cerver) {
 		"%u thpool connections working - %u queued - %u connection threads - "
 		"%u event threads - %u handlers alive, the data they use will not be released",
 		cerver->info->name, cerver->drain_timeout, CERVER_DRAIN_GRACE_TIMEOUT,
-		cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0,
-		cerver->thpool ? thpool_get_queued (cerver->thpool) : 0,
+		cerver_drain_working (cerver),
+		cerver_drain_queued (cerver),
 		thread_group_alive (&cerver->connection_threads),
 		thread_group_alive (&cerver->event_threads),
 		cerver_get_n_handlers_alive (cerver)
@@ -411,8 +465,8 @@ static void cerver_drain (Cerver *cerver) {
 		cerver_log_msg (
 			"Draining cerver %s - %u working - %u queued - %u connection threads - %s policy - %u secs timeout",
 			cerver->info->name,
-			cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0,
-			cerver->thpool ? thpool_get_queued (cerver->thpool) : 0,
+			cerver_drain_working (cerver),
+			cerver_drain_queued (cerver),
 			thread_group_alive (&cerver->connection_threads),
 			cerver_drain_policy_to_string (cerver->drain_policy),
 			cerver->drain_timeout
@@ -492,7 +546,18 @@ static void cerver_destroy_clients (Cerver *cerver) {
 
 }
 
+// the threads of the named pools of a web cerver end like the ones of its thpool
+static void cerver_clean_pools (const Cerver *cerver) {
+
+	HttpCerver *http_cerver = cerver_http_data (cerver);
+
+	if (http_cerver) http_cerver_pools_end (http_cerver);
+
+}
+
 static void cerver_clean_thpool (Cerver *cerver) {
+
+	cerver_clean_pools (cerver);
 
 	if (cerver->thpool) {
 		#ifdef CERVER_DEBUG
@@ -556,6 +621,9 @@ static void cerver_clean (Cerver *cerver) {
 			}
 
 			cerver_clean_thpool (cerver);
+
+			// the event loops ended with the drain, no thread uses them
+			event_loop_group_delete (cerver);
 
 			cerver_clean_data (cerver);
 		}

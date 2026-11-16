@@ -26,8 +26,10 @@
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
 
+#include "cerver/http/core/connection.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/utils.h"
 #include "cerver/http/headers/buffer.h"
@@ -45,11 +47,16 @@
 #include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/tree.h"
 #include "cerver/http/security/origin.h"
+#include "cerver/http/websockets/handshake.h"
 
 #include "cerver/utils/utils.h"
 
 // the separators ", " and ": " of the json bodies, as they were written before
 #define HTTP_RESPONSE_JSON_DUMP_FLAGS		0
+
+// the version of the clients that close their connection unless its response says "keep-alive": HTTP/1.0
+#define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR		1
+#define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR		0
 
 typedef struct HttpResponseProducer {
 
@@ -1045,6 +1052,26 @@ static void http_response_send_failed (
 
 }
 
+// how the bytes of a request leave: a thread that handles the request waits for a full socket
+// until the deadline of the response; the thread of an event loop never waits,
+// its connection keeps what the socket does not take and writes it later
+// returns 0 on success, 1 on error
+static u8 http_response_transport_send (
+	const HttpReceive *http_receive, struct iovec *parts, const int n_parts,
+	size_t *sent, int *error
+) {
+
+	HttpConnection *connection = http_receive->connection;
+
+	return (connection && http_connection_is_loop_owned (connection)) ?
+		http_connection_send (connection, parts, n_parts, sent, error) :
+		socket_send_vector_until (
+			http_receive->cr->connection->socket, parts, n_parts, 0,
+			http_response_send_deadline (http_receive), sent, error
+		);
+
+}
+
 // sends all the parts with as few system calls as the socket takes,
 // with the send of the core (MSG_NOSIGNAL, EINTR, and poll () on a full socket
 // until the deadline of the response)
@@ -1053,8 +1080,6 @@ static u8 http_response_send_vector (
 	const HttpReceive *http_receive, struct iovec *parts, int n_parts
 ) {
 
-	const Socket *socket = http_receive->cr->connection->socket;
-
 	http_response_mark_responded (http_receive);
 
 	size_t total = 0;
@@ -1062,10 +1087,7 @@ static u8 http_response_send_vector (
 
 	size_t sent = 0;
 	int error = 0;
-	const u8 retval = socket_send_vector_until (
-		socket, parts, n_parts, 0, http_response_send_deadline (http_receive),
-		&sent, &error
-	);
+	const u8 retval = http_response_transport_send (http_receive, parts, n_parts, &sent, &error);
 
 	if (retval) {
 		// the bytes that left before the failure are part of the response
@@ -1146,6 +1168,22 @@ u8 http_response_send_pieces_status (
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent (http_receive, status, total);
+
+	return retval;
+
+}
+
+u8 http_response_send_interim (
+	const HttpReceive *http_receive, const char *data, const size_t length
+) {
+
+	struct iovec part = { (void *) data, length };
+
+	size_t sent = 0;
+	int error = 0;
+	const u8 retval = http_response_transport_send (http_receive, &part, 1, &sent, &error);
+
+	if (retval) errno = error ? error : EPIPE;
 
 	return retval;
 
@@ -1465,20 +1503,58 @@ static void http_response_extra_vary (
 
 }
 
-// a connection that is closed after the response says so, as it is known when it is sent,
-// a response with its own Connection header keeps it
-static void http_response_extra_connection (
+// an HTTP/1.0 client only keeps its connection when the response says so
+static bool http_response_client_needs_keep_alive (const HttpReceive *http_receive) {
+
+	return (http_receive->parser.http_major == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
+		&& (http_receive->parser.http_minor == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
+
+}
+
+// the connection is closed after the response: the cerver did not keep it, or the request was rejected
+// (a complete one that is rejected later, like an authentication that runs with its handler, was going to keep it)
+static bool http_response_closes_connection (const HttpReceive *http_receive) {
+
+	return !http_receive->keep_alive || !http_receive_was_handled (http_receive);
+
+}
+
+// what cerver knows about the connection when the response is sent: one that is closed after it says so,
+// one that is kept says nothing to an HTTP/1.1 client (it is its default) and "keep-alive" to an HTTP/1.0 one
+static void http_response_extra_connection_add (
 	const HttpReceive *http_receive, HttpResponseMessage *message
 ) {
 
-	if (
-		!http_receive->keep_alive
-		&& !http_response_message_has (message, HTTP_HEADER_CONNECTION)
-	) {
+	if (http_response_closes_connection (http_receive)) {
 		http_response_extra_add_header (
 			&message->extra, HTTP_HEADER_CONNECTION,
 			HTTP_RESPONSE_CONNECTION_CLOSE, sizeof (HTTP_RESPONSE_CONNECTION_CLOSE) - 1
 		);
+	}
+
+	else if (http_response_client_needs_keep_alive (http_receive)) {
+		http_response_extra_add_header (
+			&message->extra, HTTP_HEADER_CONNECTION,
+			HTTP_RESPONSE_CONNECTION_KEEP_ALIVE, sizeof (HTTP_RESPONSE_CONNECTION_KEEP_ALIVE) - 1
+		);
+	}
+
+}
+
+// a response with its own Connection header keeps it, and its "close" closes the connection after it
+static void http_response_extra_connection (
+	const HttpReceive *http_receive, HttpResponseMessage *message
+) {
+
+	const char *value = NULL;
+	size_t value_length = 0;
+
+	if (!http_response_message_find_type (message, HTTP_HEADER_CONNECTION, &value, &value_length)) {
+		http_response_extra_connection_add (http_receive, message);
+	}
+
+	else if (http_web_socket_header_has_token (value, value_length, HTTP_RESPONSE_CONNECTION_CLOSE)) {
+		((HttpReceive *) http_receive)->keep_alive = false;
 	}
 
 }
@@ -3540,6 +3616,18 @@ u8 http_response_send_service_unavailable (const int sock_fd) {
 	}
 
 	return retval;
+
+}
+
+u8 http_response_send_unavailable (const HttpReceive *http_receive) {
+
+	struct iovec part = {
+		(void *) http_response_service_unavailable, sizeof (http_response_service_unavailable) - 1
+	};
+
+	return http_response_send_pieces_status (
+		http_receive, HTTP_STATUS_SERVICE_UNAVAILABLE, &part, 1
+	);
 
 }
 

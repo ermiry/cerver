@@ -81,6 +81,8 @@ CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
  * @param[in,out] http_cerver the HttpCerver
  * @param[in] uploads_filename_generator the method, NULL to save each file with the sanitized filename of its part;
  * a method that does not set a name also falls back to it, with a warning
+ * @warning With CERVER_HANDLER_TYPE_EVENTS the method runs in an I/O thread, that reads no other connection until
+ * it returns: it must not wait.
  */
 CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
@@ -130,6 +132,8 @@ CERVER_EXPORT void http_cerver_default_uploads_dirname_generator (
  *
  * @param[in,out] http_cerver the HttpCerver
  * @param[in] uploads_dirname_generator the method, NULL to save the files in the uploads path
+ * @warning With CERVER_HANDLER_TYPE_EVENTS the method runs in an I/O thread, that reads no other connection until
+ * it returns: it must not wait.
  */
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,

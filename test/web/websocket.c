@@ -19,6 +19,7 @@
 #include <cerver/utils/log.h>
 
 #include "../address.h"
+#include "../handler.h"
 
 // the server of the web/websocket pair: an echo, a chat with rooms and an endpoint with authentication
 
@@ -137,7 +138,8 @@ int main (int argc, char **argv) {
 	if (websocket_cerver) {
 		(void) cerver_set_bind_address (websocket_cerver, test_address ());
 		cerver_set_thpool_n_threads (websocket_cerver, WEBSOCKET_THREADS);
-		cerver_set_handler_type (websocket_cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handler_type (websocket_cerver, test_handler_type ());
+		cerver_set_io_threads (websocket_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (websocket_cerver, true);
 
 		websocket_configure ((HttpCerver *) websocket_cerver->cerver_data);
