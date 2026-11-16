@@ -16,7 +16,6 @@
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
-#include <cerver/http/jwt/alg.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
@@ -27,6 +26,8 @@
 #include <cerver/json/json.h>
 #include <cerver/json/value.h>
 #include <cerver/json/writer.h>
+
+#include <cerver/jwt/jwt.h>
 
 #include <cerver/utils/log.h>
 
@@ -170,7 +171,7 @@ static void bench_server_auth (HttpCerver *http_cerver, HttpRoute *bench_route) 
 
 	const char *secret = getenv (BENCH_SERVER_AUTH_VARIABLE);
 	if (secret) {
-		(void) http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_HS256);
+		(void) http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_HS256);
 		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, secret);
 		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, secret);
 
