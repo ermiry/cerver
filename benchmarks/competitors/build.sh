@@ -17,7 +17,8 @@ gcc $FLAGS -c $SOURCE/parser/driver.c -o $OUTPUT/parser.o
 
 gcc $FLAGS $SOURCE/json/cerver.c $OUTPUT/json.o $OUTPUT/measure.o -o $OUTPUT/json-cerver $CERVER
 
-gcc $FLAGS $SOURCE/json/legacy.c $OUTPUT/json.o $OUTPUT/measure.o -o $OUTPUT/json-legacy $CERVER
+gcc $FLAGS -I ./src $SOURCE/json/legacy.c objs/cerver/http/json/*.o $OUTPUT/json.o $OUTPUT/measure.o \
+	-o $OUTPUT/json-legacy $CERVER
 
 gcc $FLAGS -I "$COMPETITORS/jansson/include" $SOURCE/json/jansson.c $OUTPUT/json.o $OUTPUT/measure.o \
 	-o $OUTPUT/json-jansson -L "$COMPETITORS/jansson/lib" -l:libjansson.a
