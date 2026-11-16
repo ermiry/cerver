@@ -94,6 +94,10 @@ static const char http_receive_protocol[] = { "HTTP" };
 
 // sends a response before the request was completed
 // and marks it, so the rest of the request is not handled
+// a request that is rejected closes its connection, and its response has to say it: its status is set before
+// its response is sent, because a complete request that is rejected later (an authentication that runs with
+// its handler) was already going to keep its connection, and a connection that is closed after a response
+// that did not say it is a 502 behind a proxy
 // returns 1, a parser callback answers it with HTTP_RECEIVE_PARSER_STOP
 int http_receive_reject (
 	HttpReceive *http_receive,
@@ -101,10 +105,11 @@ int http_receive_reject (
 ) {
 
 	if (!http_receive->responded) {
+		http_receive->receive_status = status;
+
 		(void) http_response_send (response, http_receive);
 
 		http_receive->responded = true;
-		http_receive->receive_status = status;
 
 		if (status == HTTP_RECEIVE_STATUS_LIMIT) {
 			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
