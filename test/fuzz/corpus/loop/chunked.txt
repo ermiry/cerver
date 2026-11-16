@@ -1,0 +1,9 @@
+APOST /secure/items HTTP/1.1
+Host: localhost
+Authorization: a-token
+Transfer-Encoding: chunked
+
+5
+hello
+0
+
