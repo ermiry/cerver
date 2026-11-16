@@ -801,7 +801,9 @@ u8 http_response_compile (HttpResponse *response) {
 		response->res = malloc (response->res_len);
 		if (response->res) {
 			char *end = (char *) response->res;
-			(void) memcpy (end, response->header, response->header_len);
+
+			// a response without its header yet has only its data (memcpy () does not take a NULL source)
+			if (response->header) (void) memcpy (end, response->header, response->header_len);
 
 			if (response->data) {
 				end += response->header_len;

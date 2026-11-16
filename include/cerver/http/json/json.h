@@ -77,7 +77,7 @@ enum json_error_code {
 };
 
 CERVER_PUBLIC enum json_error_code json_error_code (
-	const json_error_t *e
+	const json_error_t *error
 );
 
 CERVER_HIDDEN void jsonp_error_init (
@@ -90,12 +90,12 @@ CERVER_HIDDEN void jsonp_error_set_source (
 
 CERVER_HIDDEN void jsonp_error_set (
 	json_error_t *error, int line, int column, size_t position,
-	enum json_error_code code, const char *msg, ...
+	enum json_error_code code, const char *message, ...
 ) CERVER_PRINTF_FORMAT (6, 7);
 
 CERVER_HIDDEN void jsonp_error_vset (
 	json_error_t *error, int line, int column, size_t position,
-	enum json_error_code code, const char *msg, va_list ap
+	enum json_error_code code, const char *message, va_list arguments
 ) CERVER_PRINTF_FORMAT (6, 0);
 
 #pragma endregion
@@ -103,17 +103,17 @@ CERVER_HIDDEN void jsonp_error_vset (
 #pragma region pack
 
 CERVER_PUBLIC json_t *json_pack (
-	const char *fmt, ...
+	const char *format, ...
 ) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_pack_ex (
 	json_error_t *error, size_t flags,
-	const char *fmt, ...
+	const char *format, ...
 ) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_vpack_ex (
 	json_error_t *error, size_t flags,
-	const char *fmt, va_list ap
+	const char *format, va_list arguments
 ) CERVER_ATTRS ((warn_unused_result));
 
 #pragma endregion
@@ -124,17 +124,17 @@ CERVER_PUBLIC json_t *json_vpack_ex (
 #define JSON_STRICT        	0x2
 
 CERVER_PUBLIC int json_unpack (
-	json_t *root, const char *fmt, ...
+	json_t *root, const char *format, ...
 );
 
 CERVER_PUBLIC int json_unpack_ex (
 	json_t *root, json_error_t *error, size_t flags,
-	const char *fmt, ...
+	const char *format, ...
 );
 
 CERVER_PUBLIC int json_vunpack_ex (
 	json_t *root, json_error_t *error, size_t flags,
-	const char *fmt, va_list ap
+	const char *format, va_list arguments
 );
 
 #pragma endregion
@@ -148,7 +148,7 @@ CERVER_PUBLIC int json_vunpack_ex (
 #define JSON_ALLOW_NUL				0x10
 
 typedef size_t (*json_load_callback_t) (
-	void *buffer, size_t buflen, void *data
+	void *buffer, size_t buffer_length, void *data
 );
 
 // sets the bytes of values that a parse can allocate for each byte that it reads,
@@ -161,7 +161,7 @@ CERVER_PUBLIC json_t *json_loads (
 ) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_loadb (
-	const char *buffer, size_t buflen, size_t flags, json_error_t *error
+	const char *buffer, size_t buffer_length, size_t flags, json_error_t *error
 ) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_loadf (

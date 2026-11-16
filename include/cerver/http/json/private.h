@@ -41,7 +41,7 @@ CERVER_HIDDEN struct json_t *jsonp_stringn_nocheck_own (
 );
 
 CERVER_HIDDEN int jsonp_dtostr (
-	char *buffer, size_t size, double value, int prec
+	char *buffer, size_t size, double value, int precision
 );
 
 /* Wrappers for custom memory functions */
@@ -49,14 +49,14 @@ CERVER_HIDDEN void *jsonp_malloc (
 	size_t size
 ) CERVER_ATTRS ((warn_unused_result));
 
-CERVER_HIDDEN void jsonp_free (void *ptr);
+CERVER_HIDDEN void jsonp_free (void *pointer);
 
 CERVER_HIDDEN char *jsonp_strdup (
-	const char *str
+	const char *string
 ) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_HIDDEN char *jsonp_strndup (
-	const char *str, size_t len
+	const char *string, size_t length
 ) CERVER_ATTRS ((warn_unused_result));
 
 // the key of a value in the check of circular references:
