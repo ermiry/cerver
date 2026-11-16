@@ -20,6 +20,7 @@
 #include <cerver/http/core/admin.h>
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
@@ -429,16 +430,24 @@ static int features_connect (void) {
 
 }
 
+// how the cerver of the tests that run now handles its connections,
+// the tests run with a thread for each connection and with event loops
+static CerverHandlerType features_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
 static void features_cerver_start (void) {
 
 	features_cerver = cerver_create_web ("features-test", FEATURES_TEST_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (features_cerver);
 
-	cerver_set_handler_type (features_cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (features_cerver, features_handler_type);
 	cerver_set_reusable_address_flags (features_cerver, true);
 	cerver_set_thpool_n_threads (features_cerver, 2);
 
 	HttpCerver *http_cerver = (HttpCerver *) features_cerver->cerver_data;
+
+	// the clients of these tests read each response until the cerver closes its connection,
+	// the connections that are kept have their own tests (keepalive.c)
+	http_cerver_set_keep_alive (http_cerver, false);
 
 	http_cerver_set_request_id (http_cerver, true);
 
@@ -1216,13 +1225,14 @@ static void test_features_without_date (void) {
 
 #pragma endregion
 
-void http_tests_features (void) {
+// the features of a cerver that handles its connections with a model: a thread for each one, or event loops
+static void features_tests_model (const CerverHandlerType handler_type) {
 
-	(void) printf ("Testing HTTP features...\n");
+	features_handler_type = handler_type;
+
+	(void) printf ("\t%s\n", cerver_handler_type_to_string (handler_type));
 
 	(void) alarm (FEATURES_TEST_ALARM);
-
-	features_json_create ();
 
 	features_cerver_start ();
 
@@ -1244,6 +1254,19 @@ void http_tests_features (void) {
 	features_cerver_stop ();
 
 	(void) alarm (0);
+
+	features_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
+}
+
+void http_tests_features (void) {
+
+	(void) printf ("Testing HTTP features...\n");
+
+	features_json_create ();
+
+	features_tests_model (CERVER_HANDLER_TYPE_THREADS);
+	features_tests_model (CERVER_HANDLER_TYPE_EVENTS);
 
 	(void) printf ("Done!\n");
 
