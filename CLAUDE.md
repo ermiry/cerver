@@ -67,4 +67,4 @@ Enums and their string conversions are generated with X-macro `*_MAP(XX)` tables
 
 ## Branches
 
-- `core` / `beta` is the 1.x line (the 1.9 plan: 1.9b-1 the structure, the documentation and the license; 1.9b-2 the audit; 1.9b-3 macOS; 1.9b-4 the ports between `core` and `http`), `http` / `http-beta` the 2.0 line, `nightly` / `nightly-beta` the 2.1 line and `labs` / `labs-beta` the 3.0 line. The fixes of the core land in `core` first and are seeded by hand in the other lines.
+- `core` / `beta` is the 1.x line (the 1.9 plan: 1.9b-1 the structure, the documentation and the license; 1.9b-2 the audit; 1.9b-3 the port of `thpool_has_queued ()` of the 2.1b-17, the last beta; then Release 1.9 to `master`; 1.9.1 macOS; a 1.9.x for the ports between `core` and `http` before the 2.0; anything else of the 1.x is a 1.9.x), `http` / `http-beta` the 2.0 line, `nightly` / `nightly-beta` the 2.1 line and `labs` / `labs-beta` the 3.0 line. The fixes of the core land in `core` first and are seeded by hand in the other lines.
