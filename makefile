@@ -436,6 +436,7 @@ endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files/*.o -o ./$(TESTTARGET)/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/handler/*.o -o ./$(TESTTARGET)/handler $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jansson/*.o -o ./$(TESTTARGET)/jansson $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS) $(MATH)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/packets/*.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/system/*.o -o ./$(TESTTARGET)/system $(TESTLIBS)
