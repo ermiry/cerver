@@ -1,12 +1,12 @@
 FROM debian:trixie
 
-RUN apt-get update && apt-get install -y clang libclang-rt-dev libssl-dev zlib1g-dev make && apt-get clean
+RUN apt-get update && apt-get install -y clang libclang-rt-dev libssl-dev zlib1g-dev libjwt-dev make && apt-get clean
 
 ARG WERROR=1
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} -j4 fuzz
+RUN make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} -j4 fuzz && make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} differential
 
 CMD ["bash", "test/fuzz.sh"]
