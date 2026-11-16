@@ -60,8 +60,7 @@ CERVER_PUBLIC int clamp_int (
  * @brief Returns the absolute value of an int.
  *
  * @param[in] value the value
- * @return the absolute value
- * @warning INT_MIN has no positive int: its result is undefined behavior.
+ * @return the absolute value; INT_MAX for INT_MIN, which has no positive int
  */
 CERVER_PUBLIC int abs_int (const int value);
 
@@ -112,7 +111,8 @@ CERVER_PUBLIC void random_set_seed (
  * @param[in] min one limit
  * @param[in] max the other limit
  * @return the value, with rand ()
- * @warning The range can not be bigger than INT_MAX values, like INT_MIN to INT_MAX.
+ * @note Any two limits work, INT_MIN to INT_MAX too; a range bigger than RAND_MAX values only gets its first
+ * RAND_MAX + 1 values.
  */
 CERVER_PUBLIC int random_int_in_range (
 	const int min, int max
@@ -153,8 +153,7 @@ CERVER_PUBLIC int xtoi (char *hex_string);
  *
  * @param[in] i the value
  * @param[out] b the string, with room for the characters, the sign and the null byte (12 bytes)
- * @return b
- * @warning INT_MIN has no positive int: its result is undefined behavior.
+ * @return b; INT_MIN has its digits too
  */
 CERVER_PUBLIC char *itoa (int i, char *b);
 
@@ -199,6 +198,21 @@ CERVER_PUBLIC void c_string_copy (
  */
 CERVER_PUBLIC void c_string_n_copy (
 	char *to, const char *from, size_t n
+);
+
+/**
+ * @brief Copies a string into a buffer of size bytes, cut to size - 1 characters and always with an ending null
+ * byte, so the buffer does not need to start with zeros.
+ *
+ * @param[out] to the destination, of size bytes; NULL copies nothing
+ * @param[in] from the string, NULL leaves an empty destination
+ * @param[in] size the size of the destination, 0 copies nothing
+ * @retval true the string did not fit and was cut
+ * @retval false it was copied whole, or there was nothing to copy
+ * @since 1.9b-2
+ */
+CERVER_PUBLIC bool c_string_copy_bounded (
+	char *to, const char *from, size_t size
 );
 
 /**
@@ -277,8 +291,7 @@ CERVER_PUBLIC size_t c_string_count_tokens (
  * @param[in] delim the delimiter
  * @param[out] n_tokens the number of tokens, it can be NULL
  * @return an array of n_tokens new strings, released with free () each and the array; NULL for a NULL string, a
- * string of one character or less, or without tokens
- * @warning A string of only delimiters (like ",,") gets one token that is NULL.
+ * string of one character or less, or without tokens (a string of only delimiters, like ",,", sets n_tokens to 0)
  */
 CERVER_PUBLIC char **c_string_split (
 	const char *original, const char delim, size_t *n_tokens
