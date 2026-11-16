@@ -267,12 +267,9 @@ u8 on_hold_connection_remove (
 
 	if (cerver && connection) {
 		if (!on_hold_poll_unregister_connection ((Cerver *) cerver, connection)) {
-			// remove the connection associated to the sock fd
-			Connection *query = connection_new ();
-			query->socket = socket_new ();
-			if (query->socket) query->socket->sock_fd = connection->socket->sock_fd;
-
-			if (avl_remove_node (cerver->on_hold_connections, query)) {
+			// the connection is its own query: the tree compares the sock fd of its connections,
+			// and a query that is allocated could not be created without memory
+			if (avl_remove_node (cerver->on_hold_connections, connection)) {
 				#ifdef AUTH_DEBUG
 				cerver_log_debug (
 					"on_hold_connection_remove () - "
@@ -307,8 +304,6 @@ u8 on_hold_connection_remove (
 					"failed to remove connection from on_hold_connection_sock_fd_map htab!"
 				);
 			}
-
-			connection_delete (query);
 
 			retval = 0;
 		}

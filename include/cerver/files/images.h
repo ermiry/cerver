@@ -65,11 +65,12 @@ CERVER_EXPORT const char *files_image_type_extension (
 );
 
 /**
- * @brief Finds the type of an open file by the magic bytes of its first 24 bytes: JPEG, PNG or GIF.
+ * @brief Finds the type of an open file by the magic bytes of its first 24 bytes: JPEG, PNG, GIF or BMP.
+ *
+ * A BMP starts with "BM" and the size of a known DIB header (12, 40, 52, 56, 64, 108 or 124) at its byte 14.
  *
  * @param[in] file the FILE, it must not be NULL; it is left at the end of its header
  * @return the type, IMAGE_TYPE_NONE for a file of 24 bytes or less or of another type
- * @note A BMP is never found by its bytes.
  */
 CERVER_EXPORT ImageType files_image_get_type_from_file (
 	const void *file

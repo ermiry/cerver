@@ -39,6 +39,17 @@
 // the bytes that are read to find the type of an image
 #define FILES_IMAGE_HEADER_SIZE			24
 
+// a BMP starts with "BM", and its DIB header (after the 14 bytes of the file header) starts with its own size
+#define FILES_IMAGE_BMP_DIB_OFFSET		14
+#define FILES_IMAGE_BMP_DIB_SIZES		7
+#define FILES_IMAGE_BYTE_BITS			8
+#define FILES_IMAGE_UINT32_BYTES		4
+
+// the sizes of BITMAPCOREHEADER, BITMAPINFOHEADER, the two of Adobe, OS22XBITMAPHEADER, V4 and V5
+static const unsigned int files_image_bmp_dib_sizes[FILES_IMAGE_BMP_DIB_SIZES] = {
+	12, 40, 52, 56, 64, 108, 124
+};
+
 static const char *image_bmp_extension = { "bmp" };
 static const char *image_gif_extension = { "gif" };
 static const char *image_png_extension = { "png" };
@@ -66,6 +77,34 @@ const char *files_image_type_extension (const ImageType type) {
 	}
 
 	return NULL;
+
+}
+
+// a little endian u32 of the header
+static unsigned int files_image_read_uint32 (const unsigned char *bytes) {
+
+	unsigned int value = 0;
+	for (unsigned int i = FILES_IMAGE_UINT32_BYTES; i > 0; i--) {
+		value = (value << FILES_IMAGE_BYTE_BITS) | bytes[i - 1];
+	}
+
+	return value;
+
+}
+
+// "BM" alone is too common for a text file, the size of its DIB header has to be a known one
+static bool files_image_is_bmp (const unsigned char *header) {
+
+	bool bmp = false;
+
+	if ((header[0] == 'B') && (header[1] == 'M')) {
+		const unsigned int dib_size = files_image_read_uint32 (header + FILES_IMAGE_BMP_DIB_OFFSET);
+		for (unsigned int i = 0; (i < FILES_IMAGE_BMP_DIB_SIZES) && !bmp; i++) {
+			bmp = (dib_size == files_image_bmp_dib_sizes[i]);
+		}
+	}
+
+	return bmp;
 
 }
 
@@ -100,6 +139,10 @@ ImageType files_image_get_type_from_file (const void *file_ptr) {
 
 		else if (buf[0] =='G' && buf[1] =='I' && buf[2] =='F') {
 			type = IMAGE_TYPE_GIF;
+		}
+
+		else if (files_image_is_bmp (buf)) {
+			type = IMAGE_TYPE_BMP;
 		}
 	}
 
