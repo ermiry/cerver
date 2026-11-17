@@ -37,12 +37,21 @@ static bool event_dispatcher_thpool_is_awaited (const EventDispatcher *dispatche
 
 }
 
+static unsigned int event_dispatcher_thpool_submit_work (
+	EventDispatcher *dispatcher, void (*work) (void *), void (*reject) (void *), void *args
+) {
+
+	return thpool_add_work_with_reject ((Thpool *) dispatcher->data, work, reject, args) ? 1 : 0;
+
+}
+
 void event_dispatcher_thpool (EventDispatcher *dispatcher, Thpool *thpool) {
 
 	if (dispatcher) {
 		dispatcher->submit = event_dispatcher_thpool_submit;
 		dispatcher->is_full = event_dispatcher_thpool_is_full;
 		dispatcher->is_awaited = event_dispatcher_thpool_is_awaited;
+		dispatcher->submit_work = event_dispatcher_thpool_submit_work;
 		dispatcher->data = thpool;
 	}
 
@@ -72,12 +81,26 @@ static bool event_dispatcher_inline_is_full (const EventDispatcher *dispatcher) 
 
 }
 
+static unsigned int event_dispatcher_inline_submit_work (
+	EventDispatcher *dispatcher, void (*work) (void *), void (*reject) (void *), void *args
+) {
+
+	(void) dispatcher;
+	(void) reject;
+
+	work (args);
+
+	return 0;
+
+}
+
 void event_dispatcher_inline (EventDispatcher *dispatcher) {
 
 	if (dispatcher) {
 		dispatcher->submit = event_dispatcher_inline_submit;
 		dispatcher->is_full = event_dispatcher_inline_is_full;
 		dispatcher->is_awaited = NULL;
+		dispatcher->submit_work = event_dispatcher_inline_submit_work;
 		dispatcher->data = NULL;
 	}
 

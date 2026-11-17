@@ -50,46 +50,46 @@ static const char *content_length_header = { "Content-Length: 128\r\n" };
 
 static void test_http_headers_get_string (void) {
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT), HEADER_ACCEPT, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_CHARSET), HEADER_ACCEPT_CHARSET, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_ENCODING), HEADER_ACCEPT_ENCODING, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_LANGUAGE), HEADER_ACCEPT_LANGUAGE, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ACCEPT), HEADER_ACCEPT, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ACCEPT_CHARSET), HEADER_ACCEPT_CHARSET, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ACCEPT_ENCODING), HEADER_ACCEPT_ENCODING, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ACCEPT_LANGUAGE), HEADER_ACCEPT_LANGUAGE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_AUTHORIZATION), HEADER_AUTHORIZATION, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_AUTHORIZATION), HEADER_AUTHORIZATION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CACHE_CONTROL), HEADER_CACHE_CONTROL, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_CACHE_CONTROL), HEADER_CACHE_CONTROL, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONNECTION), HEADER_CONNECTION, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_CONNECTION), HEADER_CONNECTION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONTENT_LENGTH), HEADER_CONTENT_LENGTH, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONTENT_TYPE), HEADER_CONTENT_TYPE, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_CONTENT_LENGTH), HEADER_CONTENT_LENGTH, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_CONTENT_TYPE), HEADER_CONTENT_TYPE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_COOKIE), HEADER_COOKIE, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_COOKIE), HEADER_COOKIE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_DATE), HEADER_DATE, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_DATE), HEADER_DATE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_EXPECT), HEADER_EXPECT, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_EXPECT), HEADER_EXPECT, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_HOST), HEADER_HOST, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_HOST), HEADER_HOST, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ORIGIN), HEADER_ORIGIN, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_ORIGIN), HEADER_ORIGIN, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_PROXY_AUTHORIZATION), HEADER_PROXY_AUTHORIZATION, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_PROXY_AUTHORIZATION), HEADER_PROXY_AUTHORIZATION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UPGRADE), HEADER_UPGRADE, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_UPGRADE), HEADER_UPGRADE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_USER_AGENT), HEADER_USER_AGENT, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_USER_AGENT), HEADER_USER_AGENT, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY), HEADER_WEB_SOCKET_KEY, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_KEY), HEADER_WEB_SOCKET_KEY, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 1024), HEADER_OTHER, NULL);
 
 }
 
@@ -139,46 +139,46 @@ static void test_http_headers_get_type_by_string (void) {
 
 static void test_http_header_type_by_string (void) {
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_CHARSET));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_ENCODING));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_LANGUAGE));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ACCEPT));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ACCEPT_CHARSET));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ACCEPT_ENCODING));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ACCEPT_LANGUAGE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_AUTHORIZATION));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_AUTHORIZATION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CACHE_CONTROL));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_CACHE_CONTROL));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CONNECTION));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_CONNECTION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_LENGTH));
-	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_TYPE));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_CONTENT_LENGTH));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_CONTENT_TYPE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_COOKIE));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_COOKIE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_DATE));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_DATE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_EXPECT));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_EXPECT));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_HOST));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_HOST));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ORIGIN));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_ORIGIN));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_PROXY_AUTHORIZATION));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_PROXY_AUTHORIZATION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_UPGRADE));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_UPGRADE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_USER_AGENT));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_USER_AGENT));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
-	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
+	test_check_ptr (http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_to_string ((const http_header) 1024), HEADER_OTHER, NULL);
 
 }
 

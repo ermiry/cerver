@@ -144,8 +144,9 @@ typedef enum http_header {
  * @param[in] header the header
  * @return the name of its row in #HTTP_HEADERS_MAP, or "Undefined" for a value out of the table; a static string that
  * must not be freed
+ * @since 2.1b-21 (it was http_header_string ())
  */
-CERVER_PUBLIC const char *http_header_string (
+CERVER_PUBLIC const char *http_header_to_string (
 	const http_header header
 );
 

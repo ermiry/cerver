@@ -78,7 +78,7 @@ static void websocket_on_close (HttpWebSocket *web_socket, u16 code, const char 
 }
 
 static const HttpWebSocketHandlers websocket_handlers = {
-	NULL, NULL, websocket_on_message, NULL, NULL, NULL, websocket_on_close, NULL
+	NULL, NULL, websocket_on_message, NULL, NULL, NULL, websocket_on_close, NULL, NULL
 };
 
 static void websocket_url (char *url, const char *path) {
@@ -113,8 +113,8 @@ static bool websocket_connect (WebSocketPairClient *pair, const char *path, cons
 	test_check_ptr (pair->client);
 	test_check_unsigned_eq (http_web_socket_client_set_url (pair->client, url), 0, NULL);
 	http_web_socket_client_set_handlers (pair->client, &websocket_handlers);
-	http_web_socket_client_set_data (pair->client, pair);
-	http_web_socket_client_set_compression (pair->client, compression);
+	http_web_socket_client_set_data (pair->client, pair, NULL);
+	http_web_socket_settings_enable_compression (http_web_socket_client_get_settings (pair->client), compression);
 	if (token) (void) http_web_socket_client_add_header (pair->client, "Authorization", token);
 
 	return !http_web_socket_client_connect (pair->client);

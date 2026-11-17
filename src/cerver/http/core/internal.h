@@ -454,6 +454,65 @@ static inline void http_receive_buffer_reset (String *buffer) {
 
 /**
  * @internal
+ * @brief The value that a parser callback returns when it stops the parser, because it rejected the request or
+ * because its client is gone (public until 2.1b-20).
+ */
+#define HTTP_RECEIVE_PARSER_STOP			HPE_USER
+
+/**
+ * @internal
+ * @brief Returns the parser of a receive, which lives in its opaque HttpReceive::parser.
+ *
+ * @param[in] http_receive the receive
+ * @return its parser
+ */
+static inline llhttp_t *http_receive_parser (HttpReceive *http_receive) {
+
+	return (llhttp_t *) http_receive->parser.bytes;
+
+}
+
+/**
+ * @internal
+ * @brief Returns the parser of a receive that is only read.
+ *
+ * @param[in] http_receive the receive
+ * @return its parser
+ */
+static inline const llhttp_t *http_receive_parser_read (const HttpReceive *http_receive) {
+
+	return (const llhttp_t *) http_receive->parser.bytes;
+
+}
+
+/**
+ * @internal
+ * @brief Returns the callbacks of the parser of a receive, which live in its opaque HttpReceive::settings.
+ *
+ * @param[in] http_receive the receive
+ * @return the callbacks of its parser
+ */
+static inline llhttp_settings_t *http_receive_parser_settings (HttpReceive *http_receive) {
+
+	return (llhttp_settings_t *) http_receive->settings.bytes;
+
+}
+
+/**
+ * @internal
+ * @brief Returns the callbacks of the parser of a receive that are only read.
+ *
+ * @param[in] http_receive the receive
+ * @return the callbacks of its parser
+ */
+static inline const llhttp_settings_t *http_receive_parser_settings_read (const HttpReceive *http_receive) {
+
+	return (const llhttp_settings_t *) http_receive->settings.bytes;
+
+}
+
+/**
+ * @internal
  * @brief The value that a parser callback returns: the parser stops when the request was rejected or its client is
  * gone.
  *

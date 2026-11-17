@@ -481,7 +481,7 @@ void http_endpoint_set_pool (
 		http_tree_error (
 			endpoint->group ? endpoint->group->tree : NULL,
 			"route %s \"%s\" - the name of its pool is too long",
-			http_request_method_str (endpoint->method),
+			http_request_method_to_string (endpoint->method),
 			endpoint->path ? endpoint->path->str : http_tree_empty_path
 		);
 	}
@@ -508,7 +508,7 @@ u8 http_endpoint_add_after (
 
 #pragma region websocket
 
-void http_endpoint_set_web_socket (
+void http_endpoint_set_web_socket_handlers (
 	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
 ) {
 
@@ -519,72 +519,9 @@ void http_endpoint_set_web_socket (
 
 }
 
-void http_endpoint_set_web_socket_max_message (
-	HttpEndpoint *endpoint, const size_t max_message
-) {
+HttpWebSocketSettings *http_endpoint_get_web_socket_settings (HttpEndpoint *endpoint) {
 
-	if (endpoint) http_web_socket_settings_set_max_message (&endpoint->settings.web_socket, max_message);
-
-}
-
-u8 http_endpoint_set_web_socket_protocols (
-	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
-) {
-
-	return endpoint ?
-		http_web_socket_settings_set_protocols (&endpoint->settings.web_socket, protocols, n_protocols) : 1;
-
-}
-
-void http_endpoint_set_web_socket_compression (
-	HttpEndpoint *endpoint, const bool compression
-) {
-
-	HttpWebSocketDeflateOptions options;
-	http_web_socket_deflate_options_init (&options);
-	options.enabled = compression;
-
-	http_endpoint_set_web_socket_compression_options (endpoint, &options);
-
-}
-
-void http_endpoint_set_web_socket_compression_options (
-	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
-) {
-
-	if (endpoint) http_web_socket_settings_set_compression (&endpoint->settings.web_socket, options);
-
-}
-
-void http_endpoint_set_web_socket_origin_check (
-	HttpEndpoint *endpoint, const bool origin_check
-) {
-
-	if (endpoint) http_web_socket_settings_set_origin_check (&endpoint->settings.web_socket, origin_check);
-
-}
-
-void http_endpoint_set_web_socket_ping_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_ping_milliseconds (&endpoint->settings.web_socket, ping_interval, pong_timeout);
-
-}
-
-void http_endpoint_set_web_socket_close_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int close_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_close_timeout_milliseconds (&endpoint->settings.web_socket, close_timeout);
-
-}
-
-void http_endpoint_set_web_socket_send_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int send_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_send_timeout_milliseconds (&endpoint->settings.web_socket, send_timeout);
+	return endpoint ? &endpoint->settings.web_socket : NULL;
 
 }
 
@@ -904,11 +841,11 @@ static HttpEndpoint *http_group_endpoint_add (
 		}
 
 		else if (handler_required && !handler) {
-			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_str (method), path ? path : "");
+			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_to_string (method), path ? path : "");
 		}
 
 		else if (http_tree_path_validate (path, error, HTTP_TREE_ERROR_SIZE)) {
-			http_tree_error (group->tree, "route %s \"%s\" - %s", http_request_method_str (method), path ? path : "", error);
+			http_tree_error (group->tree, "route %s \"%s\" - %s", http_request_method_to_string (method), path ? path : "", error);
 		}
 
 		else {
@@ -1155,7 +1092,7 @@ HttpEndpoint *http_group_web_socket_add (
 
 }
 
-void http_group_set_web_socket (
+void http_group_set_web_socket_handlers (
 	HttpGroup *group, const HttpWebSocketHandlers *handlers
 ) {
 
@@ -1163,72 +1100,9 @@ void http_group_set_web_socket (
 
 }
 
-void http_group_set_web_socket_max_message (
-	HttpGroup *group, const size_t max_message
-) {
+HttpWebSocketSettings *http_group_get_web_socket_settings (HttpGroup *group) {
 
-	if (group) http_web_socket_settings_set_max_message (&group->settings.web_socket, max_message);
-
-}
-
-u8 http_group_set_web_socket_protocols (
-	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
-) {
-
-	return group ?
-		http_web_socket_settings_set_protocols (&group->settings.web_socket, protocols, n_protocols) : 1;
-
-}
-
-void http_group_set_web_socket_compression (
-	HttpGroup *group, const bool compression
-) {
-
-	HttpWebSocketDeflateOptions options;
-	http_web_socket_deflate_options_init (&options);
-	options.enabled = compression;
-
-	http_group_set_web_socket_compression_options (group, &options);
-
-}
-
-void http_group_set_web_socket_compression_options (
-	HttpGroup *group, const HttpWebSocketDeflateOptions *options
-) {
-
-	if (group) http_web_socket_settings_set_compression (&group->settings.web_socket, options);
-
-}
-
-void http_group_set_web_socket_origin_check (
-	HttpGroup *group, const bool origin_check
-) {
-
-	if (group) http_web_socket_settings_set_origin_check (&group->settings.web_socket, origin_check);
-
-}
-
-void http_group_set_web_socket_ping_milliseconds (
-	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
-) {
-
-	if (group) http_web_socket_settings_set_ping_milliseconds (&group->settings.web_socket, ping_interval, pong_timeout);
-
-}
-
-void http_group_set_web_socket_close_timeout_milliseconds (
-	HttpGroup *group, const unsigned int close_timeout
-) {
-
-	if (group) http_web_socket_settings_set_close_timeout_milliseconds (&group->settings.web_socket, close_timeout);
-
-}
-
-void http_group_set_web_socket_send_timeout_milliseconds (
-	HttpGroup *group, const unsigned int send_timeout
-) {
-
-	if (group) http_web_socket_settings_set_send_timeout_milliseconds (&group->settings.web_socket, send_timeout);
+	return group ? &group->settings.web_socket : NULL;
 
 }
 
@@ -1634,14 +1508,14 @@ static void http_tree_insert_fail (HttpTreeInsert *insert) {
 	if (insert->compatibility) {
 		http_tree_warning (
 			"route %s %s - %s - it is not registered",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
+			http_request_method_to_string (endpoint->method), endpoint->path->str, insert->error
 		);
 	}
 
 	else {
 		http_tree_error (
 			insert->tree, "route %s %s - %s",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
+			http_request_method_to_string (endpoint->method), endpoint->path->str, insert->error
 		);
 	}
 
@@ -1743,7 +1617,7 @@ static u8 http_tree_resolve_web_socket (
 		else if (endpoint->method != REQUEST_METHOD_GET) {
 			http_tree_error (
 				tree, "websocket %s \"%s\" - a WebSocket endpoint is a GET",
-				http_request_method_str (endpoint->method), endpoint->path->str
+				http_request_method_to_string (endpoint->method), endpoint->path->str
 			);
 
 			errors = 1;
@@ -1770,7 +1644,7 @@ u8 http_tree_resolve_pool (
 		if (!resolved->pool) {
 			http_tree_error (
 				tree, "route %s \"%s\" - the cerver has no pool \"%s\" (http_cerver_pool_create ())",
-				http_request_method_str (endpoint->method), endpoint->path->str, resolved->pool_name
+				http_request_method_to_string (endpoint->method), endpoint->path->str, resolved->pool_name
 			);
 
 			errors = 1;
@@ -2134,7 +2008,7 @@ static void http_tree_print_methods (const HttpRouteNode *node, const char *inde
 
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 		if (node->endpoints[method]) {
-			http_tree_print_append (methods, &length, http_request_method_str (node->endpoints[method]->method));
+			http_tree_print_append (methods, &length, http_request_method_to_string (node->endpoints[method]->method));
 		}
 	}
 
@@ -2165,7 +2039,7 @@ static void http_tree_print_value (
 		char method_value[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
 		(void) snprintf (
 			method_value, HTTP_TREE_PRINT_VALUES_SIZE, "%s %s",
-			http_request_method_str (node->endpoints[method]->method), value (node->endpoints[method])
+			http_request_method_to_string (node->endpoints[method]->method), value (node->endpoints[method])
 		);
 
 		http_tree_print_append (values, &length, method_value);
@@ -2304,7 +2178,7 @@ static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
 	json_t *endpoint_object = json_object ();
 	if (endpoint_object) {
 		(void) json_object_set_new (
-			endpoint_object, "method", json_string (http_request_method_str (endpoint->method))
+			endpoint_object, "method", json_string (http_request_method_to_string (endpoint->method))
 		);
 
 		(void) json_object_set_new (

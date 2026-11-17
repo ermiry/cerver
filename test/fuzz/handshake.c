@@ -40,7 +40,7 @@ static HttpWebSocketDeflateOptions fuzz_handshake_options (void) {
 static void fuzz_handshake_response (const char *text, const size_t size) {
 
 	HttpWebSocketClientResponse response;
-	if (!http_web_socket_client_response_parse (text, size, &response)) {
+	if (http_web_socket_client_response_parse (text, size, &response) == HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE) {
 		const HttpWebSocketDeflateOptions options = fuzz_handshake_options ();
 
 		const char *protocol = NULL;

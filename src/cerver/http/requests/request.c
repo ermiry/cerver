@@ -847,7 +847,7 @@ void http_request_headers_print (const HttpRequest *http_request) {
 			if (http_request->headers[i]) {
 				cerver_log_msg (
 					"%s: %s",
-					http_header_string ((const http_header) i),
+					http_header_to_string ((const http_header) i),
 					http_request->headers[i]->str
 				);
 			}
@@ -863,7 +863,7 @@ void http_request_headers_print_full (const HttpRequest *http_request) {
 		for (u8 i = 0; i < HTTP_HEADERS_MAX; i++) {
 			cerver_log_msg (
 				"%s: %s",
-				http_header_string ((const http_header) i),
+				http_header_to_string ((const http_header) i),
 				http_request->headers[i] ? http_request->headers[i]->str : null
 			);
 		}

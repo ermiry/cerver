@@ -13,7 +13,7 @@
 
 #pragma region types
 
-const char *http_header_string (
+const char *http_header_to_string (
 	const http_header header
 ) {
 
@@ -23,7 +23,7 @@ const char *http_header_string (
 		#undef XX
 	}
 
-	return http_header_string (HTTP_HEADER_UNDEFINED);
+	return http_header_to_string (HTTP_HEADER_UNDEFINED);
 
 }
 
@@ -63,7 +63,7 @@ static unsigned int http_headers_hash (const char *name) {
 
 static void http_headers_table_insert (const http_header type) {
 
-	unsigned int slot = http_headers_hash (http_header_string (type)) & (HTTP_HEADERS_TABLE_SIZE - 1);
+	unsigned int slot = http_headers_hash (http_header_to_string (type)) & (HTTP_HEADERS_TABLE_SIZE - 1);
 	while (http_headers_table[slot]) {
 		slot = (slot + 1) & (HTTP_HEADERS_TABLE_SIZE - 1);
 	}
@@ -92,7 +92,7 @@ const http_header http_header_type_with_string (
 		unsigned int slot = http_headers_hash (header_type_string) & (HTTP_HEADERS_TABLE_SIZE - 1);
 		while (http_headers_table[slot]) {
 			const http_header candidate = (http_header) (http_headers_table[slot] - 1);
-			if (!strcasecmp (http_header_string (candidate), header_type_string)) {
+			if (!strcasecmp (http_header_to_string (candidate), header_type_string)) {
 				found = candidate;
 				break;
 			}

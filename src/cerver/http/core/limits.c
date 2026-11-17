@@ -306,7 +306,7 @@ static void http_cerver_parser_lenient_warning (
 		cerver_log_warning (
 			"HTTP cerver - the parser accepts %s (lenient %s), "
 			"it can open the cerver to request smuggling or cache poisoning attacks",
-			http_parser_lenient_description (lenient), http_parser_lenient_string (lenient)
+			http_parser_lenient_description (lenient), http_parser_lenient_to_string (lenient)
 		);
 	}
 
@@ -321,9 +321,15 @@ void http_cerver_set_parser_lenient (
 
 		#define XX(num, name, string, description) \
 			http_cerver_parser_lenient_warning (http_cerver, HTTP_PARSER_LENIENT_##name);
-		LLHTTP_LENIENT_MAP(XX)
+		HTTP_PARSER_LENIENT_MAP(XX)
 		#undef XX
 	}
+
+}
+
+unsigned int http_cerver_get_parser_lenient (const HttpCerver *http_cerver) {
+
+	return http_cerver ? http_cerver->parser_lenient : HTTP_PARSER_LENIENT_NONE;
 
 }
 

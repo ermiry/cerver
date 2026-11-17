@@ -32,11 +32,15 @@
 /** @brief The most bytes of the payload of a control frame. */
 #define HTTP_WEB_SOCKET_CONTROL_MAX_SIZE			125
 
-/** @brief The bytes of the code of a close frame. */
-#define HTTP_WEB_SOCKET_CLOSE_CODE_SIZE				2
+/**
+ * @brief The bytes of the code of a close frame.
+ *
+ * @since 2.1b-21 (it was HTTP_WEB_SOCKET_CLOSE_CODE_SIZE, the prefix of the codes)
+ */
+#define HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE		2
 
 /** @brief The most bytes of the reason of a close frame. */
-#define HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE		(HTTP_WEB_SOCKET_CONTROL_MAX_SIZE - HTTP_WEB_SOCKET_CLOSE_CODE_SIZE)
+#define HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE		(HTTP_WEB_SOCKET_CONTROL_MAX_SIZE - HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE)
 
 #ifdef __cplusplus
 extern "C" {
@@ -94,8 +98,10 @@ CERVER_PUBLIC bool http_web_socket_opcode_is_control (const u8 opcode);
 /**
  * @brief The X-macro table of the status codes of a close frame (RFC 6455 section 7.4.1 and the IANA registry):
  * the number, the name, the string and the description of each one.
+ *
+ * @since 2.1b-21 (it was HTTP_WEB_SOCKET_CLOSE_MAP)
  */
-#define HTTP_WEB_SOCKET_CLOSE_MAP(XX)																			\
+#define HTTP_WEB_SOCKET_CLOSE_CODE_MAP(XX)																		\
 	XX(1000,	NORMAL,					Normal,					The purpose of the connection was fulfilled)	\
 	XX(1001,	GOING_AWAY,				Going Away,				The endpoint is going away)					\
 	XX(1002,	PROTOCOL_ERROR,			Protocol Error,			The endpoint received a protocol error)		\
@@ -113,13 +119,15 @@ CERVER_PUBLIC bool http_web_socket_opcode_is_control (const u8 opcode);
 	XX(1015,	TLS_HANDSHAKE,			TLS Handshake,			The TLS handshake failed)
 
 /**
- * @brief A status code of a close frame, one `HTTP_WEB_SOCKET_CLOSE_<name>` for each row of
- * #HTTP_WEB_SOCKET_CLOSE_MAP.
+ * @brief A status code of a close frame, one `HTTP_WEB_SOCKET_CLOSE_CODE_<name>` for each row of
+ * #HTTP_WEB_SOCKET_CLOSE_CODE_MAP.
+ *
+ * @since 2.1b-21 (the enumerators were `HTTP_WEB_SOCKET_CLOSE_<name>`)
  */
 typedef enum HttpWebSocketCloseCode {
 
-	#define XX(num, name, string, description) HTTP_WEB_SOCKET_CLOSE_##name = num,
-	HTTP_WEB_SOCKET_CLOSE_MAP (XX)
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_CLOSE_CODE_##name = num,
+	HTTP_WEB_SOCKET_CLOSE_CODE_MAP (XX)
 	#undef XX
 
 } HttpWebSocketCloseCode;
@@ -128,7 +136,7 @@ typedef enum HttpWebSocketCloseCode {
  * @brief Returns the string of a close code.
  *
  * @param[in] code the code
- * @return the string of its row in #HTTP_WEB_SOCKET_CLOSE_MAP, or "Undefined" for another code; a static string
+ * @return the string of its row in #HTTP_WEB_SOCKET_CLOSE_CODE_MAP, or "Undefined" for another code; a static string
  * that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_close_code_to_string (const u16 code);
@@ -137,7 +145,7 @@ CERVER_PUBLIC const char *http_web_socket_close_code_to_string (const u16 code);
  * @brief Returns the description of a close code.
  *
  * @param[in] code the code
- * @return the description of its row in #HTTP_WEB_SOCKET_CLOSE_MAP, or "Undefined" for another code; a static
+ * @return the description of its row in #HTTP_WEB_SOCKET_CLOSE_CODE_MAP, or "Undefined" for another code; a static
  * string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_close_code_description (const u16 code);
@@ -184,8 +192,8 @@ typedef enum HttpWebSocketFrameError {
  * @brief Returns the string of a frame error.
  *
  * @param[in] error the error
- * @return the string of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or the one of HTTP_WEB_SOCKET_FRAME_ERROR_NONE
- * for a value out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_frame_error_to_string (
 	const HttpWebSocketFrameError error
@@ -195,8 +203,8 @@ CERVER_PUBLIC const char *http_web_socket_frame_error_to_string (
  * @brief Returns the description of a frame error.
  *
  * @param[in] error the error
- * @return the description of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or the one of
- * HTTP_WEB_SOCKET_FRAME_ERROR_NONE for a value out of the table; a static string that must not be freed
+ * @return the description of its row in #HTTP_WEB_SOCKET_FRAME_ERROR_MAP, or "Undefined" for a value out of the
+ * table; a static string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_frame_error_description (
 	const HttpWebSocketFrameError error
@@ -213,16 +221,36 @@ CERVER_PUBLIC u16 http_web_socket_frame_error_close_code (
 );
 
 /**
- * @brief The side of a connection: a client masks its frames and a server never does.
+ * @brief The X-macro table of the sides of a connection: the number, the name and the string of each one; the
+ * frames of a server are not masked, the ones of a client are.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_ROLE_MAP(XX)							\
+	XX(0,	SERVER,		Server)									\
+	XX(1,	CLIENT,		Client)
+
+/**
+ * @brief The side of a connection, one `HTTP_WEB_SOCKET_ROLE_<name>` for each row of #HTTP_WEB_SOCKET_ROLE_MAP: a
+ * client masks its frames and a server never does.
  */
 typedef enum HttpWebSocketRole {
 
-	/** @brief The server side, its frames are not masked. */
-	HTTP_WEB_SOCKET_ROLE_SERVER = 0,
-	/** @brief The client side, its frames are masked. */
-	HTTP_WEB_SOCKET_ROLE_CLIENT = 1
+	#define XX(num, name, string) HTTP_WEB_SOCKET_ROLE_##name = num,
+	HTTP_WEB_SOCKET_ROLE_MAP (XX)
+	#undef XX
 
 } HttpWebSocketRole;
+
+/**
+ * @brief Returns the string of a role.
+ *
+ * @param[in] role the role
+ * @return the string of its row in #HTTP_WEB_SOCKET_ROLE_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_role_to_string (const HttpWebSocketRole role);
 
 /**
  * @brief The header of a frame.
@@ -284,18 +312,38 @@ CERVER_PUBLIC void http_web_socket_mask (
 );
 
 /**
- * @brief The state of the parser.
+ * @brief The X-macro table of the states of the parser: the number, the name and the string of each one. It waits
+ * for the bytes of a header, it takes the bytes of a payload, or a frame was invalid (the error of the parser says
+ * why, and it is final).
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_PARSER_STATE_MAP(XX)					\
+	XX(0,	HEADER,		Header)									\
+	XX(1,	PAYLOAD,	Payload)								\
+	XX(2,	FAILED,		Failed)
+
+/**
+ * @brief The state of the parser, one `HTTP_WEB_SOCKET_PARSER_STATE_<name>` for each row of
+ * #HTTP_WEB_SOCKET_PARSER_STATE_MAP.
  */
 typedef enum HttpWebSocketParserState {
 
-	/** @brief The parser waits for the bytes of a header. */
-	HTTP_WEB_SOCKET_PARSER_STATE_HEADER = 0,
-	/** @brief The parser takes the bytes of a payload. */
-	HTTP_WEB_SOCKET_PARSER_STATE_PAYLOAD = 1,
-	/** @brief A frame was invalid, the error of the parser says why; it is final. */
-	HTTP_WEB_SOCKET_PARSER_STATE_FAILED = 2
+	#define XX(num, name, string) HTTP_WEB_SOCKET_PARSER_STATE_##name = num,
+	HTTP_WEB_SOCKET_PARSER_STATE_MAP (XX)
+	#undef XX
 
 } HttpWebSocketParserState;
+
+/**
+ * @brief Returns the string of a state of the parser.
+ *
+ * @param[in] state the state
+ * @return the string of its row in #HTTP_WEB_SOCKET_PARSER_STATE_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_parser_state_to_string (const HttpWebSocketParserState state);
 
 struct _HttpWebSocketParser;
 

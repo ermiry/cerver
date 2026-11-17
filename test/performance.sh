@@ -49,6 +49,7 @@ WEB_SOCKET_ALLOCATION_CONNECTIONS=8
 WEB_SOCKET_ALLOCATION_MESSAGES=1024
 WEB_SOCKET_MAX_ALLOCATIONS=0.01
 WEB_SOCKET_LOAD_MESSAGES=1048576
+WEB_SOCKET_EVENTS_THREADS=$(nproc)
 
 source test/process.sh
 
@@ -328,6 +329,53 @@ check_web_socket_load () {
 	[ "$per_second" -ge "$minimum" ] || fail "$HANDLER WebSocket connections $connections: $per_second msg/s < $minimum"
 }
 
+web_socket_per_second () {
+	local connections="$1"
+
+	# with threads each connection has a thread of its own, the pool of the event loops has one for each core
+	local THREADS=$THREADS
+	[ "$HANDLER" = "events" ] && THREADS=$WEB_SOCKET_EVENTS_THREADS
+
+	server_start "$LOGS/compare.log" $READY_SECONDS
+	local result=$(./benchmarks/bin/messages $PORT "$connections" $(( WEB_SOCKET_LOAD_MESSAGES / connections )) $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
+	server_stop || return 1
+
+	[ "$(field "$result" failed)" = "0" ] || { echo "the messages of the comparison failed: $result" >&2; return 1; }
+
+	echo "$result" | sed -E 's/.* - ([0-9]+) msg\/s.*/\1/'
+}
+
+# the WebSocket connections of the event loops against a thread for each connection (F6b)
+check_web_socket_events () {
+	local connections="$1"
+	local threads=() events=() value
+
+	for (( run = 0; run < COMPARE_RUNS; run++ )); do
+		for HANDLER in "${HANDLERS[@]}"; do
+			value=$(web_socket_per_second "$connections") \
+				|| { fail "$HANDLER WebSocket connections $connections: the load of the comparison failed"; return; }
+
+			if [ "$HANDLER" = "events" ]; then
+				events+=("$value")
+			else
+				threads+=("$value")
+			fi
+		done
+	done
+
+	local threads_median=$(median "${threads[@]}")
+	local events_median=$(median "${events[@]}")
+	local percent=$(( events_median * 100 / threads_median ))
+
+	echo "WebSocket connections $connections - threads $threads_median msg/s - events ($WEB_SOCKET_EVENTS_THREADS threads) $events_median msg/s - $percent %"
+
+	# more connections than the threads of the pool are only measured (backlog §43)
+	if [ "$connections" -le "$WEB_SOCKET_EVENTS_THREADS" ]; then
+		[ "$percent" -ge $EVENTS_MINIMUM_PERCENT ] \
+			|| fail "WebSocket connections $connections: events $events_median msg/s < $EVENTS_MINIMUM_PERCENT % of threads $threads_median"
+	fi
+}
+
 check_tree () {
 	local routes="$1"
 
@@ -369,6 +417,7 @@ echo "Event loops against threads..."
 for concurrency in "${CONCURRENCIES[@]}"; do
 	check_events GET $GET_PATH "" "$concurrency"
 	check_events POST $POST_PATH "$JSON_BODY" "$concurrency"
+	check_web_socket_events "$concurrency"
 done
 
 echo "Kept connections against a connection by request..."

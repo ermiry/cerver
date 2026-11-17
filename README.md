@@ -6,7 +6,7 @@
 
 **Cerver** is a framework, created by Ermiry, to build fast and reliable servers in C, also usable from C++. It is a single shared library, `libcerver.so`, with everything that a server needs out of the box: sockets and connections, the packets of its own protocol, handlers and threads, authentication and sessions, a load balancer, file transfers, game lobbies, an HTTP server and the collections and utilities that all of them are built with.
 
-This is the 2.0 line, the one with the HTTP server. It depends on pthreads and OpenSSL, and optionally on zlib for the compression of the HTTP responses.
+This is the 2.1 line, the experimental one: the HTTP server of the 2.0 with an event loop, real keep alive, named pools and WebSocket. It can break its API for a better design, and every break is in [incompatibilities.md](./incompatibilities.md). It depends on pthreads and OpenSSL, and optionally on zlib for the compression of the HTTP responses and of the WebSocket messages.
 
 ## Goal
 
@@ -38,7 +38,10 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 
 ### HTTP
 
-- **An HTTP/1.1 server** in a `CERVER_TYPE_WEB` cerver, that handles each request in its thread pool, with keep alive, pipelining and limits for the headers and the body
+- **An HTTP/1.1 server** in a `CERVER_TYPE_WEB` cerver, with keep alive, pipelining and limits for the headers and the body, parsed with llhttp in its strict mode
+- **Two models**: `CERVER_HANDLER_TYPE_THREADS`, a thread for each connection that is read, or `CERVER_HANDLER_TYPE_EVENTS`, event loops with epoll that read and parse every connection without waiting and give the requests to the pools, with the connections that are kept waiting in their loop and a wait or a 503 when the pools are full
+- **Named pools** for the endpoints that must not wait for the others, with health and ready routes
+- **WebSocket** (RFC 6455) with permessage-deflate (RFC 7692), in endpoints and groups, with subprotocols, the origins, ping and pong, rooms, broadcasts, a bounded output queue with backpressure in each connection, and a client with reconnection; with the event loop a connection lives in its loop and its methods run in the pool of its endpoint
 - **Routes** in a radix tree, with groups that pass their settings to their subgroups and endpoints, path parameters with validators, wildcards, middlewares, and automatic `OPTIONS`, 405 and 308 responses
 - **JWT authentication** with HMAC, RSA or ECDSA keys (HS, RS and ES of 256, 384 and 512 bits), validated against their algorithm when the cerver starts
 - **Uploads** of multipart forms, with their own limits and a path that never keeps the files of a request that failed
@@ -58,7 +61,8 @@ Zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IP
 |---|---|---|
 | **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver, without HTTP |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus the HTTP server. It reaches `master` with the release 2.0 |
-| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive and WebSocket |
+| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, named pools and WebSocket; then TLS and HTTP/2 (its [roadmap](./roadmap.md)) |
+| **3.0** | `labs` (development), `labs-beta` | The next major line, with cerver's own code in place of the code of other projects |
 
 The changes between versions are in [CHANGELOG.md](./CHANGELOG.md) and [incompatibilities.md](./incompatibilities.md).
 
@@ -68,7 +72,7 @@ Cerver builds in Linux with gcc 16.2 and `make`:
 
 ``` bash
 make -j4                         # bin/libcerver.so
-make ZLIB=1 -j4                  # with the gzip of the HTTP responses
+make ZLIB=1 -j4                  # with gzip in the HTTP responses and permessage-deflate in WebSocket
 make examples -j4                # examples/bin
 sudo make install                # /usr/local/lib/libcerver.so and /usr/local/include/cerver
 ```
@@ -238,8 +242,11 @@ docker run --rm ermiry/cerver:test bash test/run.sh     # the unit tests
 bash test/integration.sh                                # cervers with their clients, in IPv4 and IPv6
 bash test/nginx/run.sh                                  # the web cervers behind nginx
 bash test/disconnect.sh                                 # the clients that leave in every part of a request
-bash test/performance.sh                                # the allocations per request and the requests per second
+bash test/performance.sh                                # the allocations, the requests per second and the WebSocket messages in both models
+bash test/autobahn/run.sh                               # autobahn-testsuite against the WebSocket server and client
 ```
+
+`CERVER_TEST_HANDLER=events` runs the web tests with the event loop, and `test/run.sh` runs the WebSocket ones in both models.
 
 Build the image with `--build-arg SANITIZER=address,undefined` (or `thread`) to run them with the sanitizers.
 

@@ -364,11 +364,11 @@ static void test_frame_errors (void) {
 	);
 
 	test_check_unsigned_eq (
-		http_web_socket_frame_error_close_code (HTTP_WEB_SOCKET_FRAME_ERROR_TOO_BIG), HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG, NULL
+		http_web_socket_frame_error_close_code (HTTP_WEB_SOCKET_FRAME_ERROR_TOO_BIG), HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG, NULL
 	);
 
 	test_check_unsigned_eq (
-		http_web_socket_frame_error_close_code (HTTP_WEB_SOCKET_FRAME_ERROR_OPCODE), HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR, NULL
+		http_web_socket_frame_error_close_code (HTTP_WEB_SOCKET_FRAME_ERROR_OPCODE), HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR, NULL
 	);
 
 }

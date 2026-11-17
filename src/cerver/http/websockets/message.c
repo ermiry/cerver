@@ -15,20 +15,25 @@
 // a method returned this to stop the parser
 #define HTTP_WEB_SOCKET_MESSAGE_STOP				1
 
+// the buffer of a message larger than this goes back to nothing after it (W7)
+#define HTTP_WEB_SOCKET_MESSAGE_SHRINK_SIZE			(1 << 16)
+
 // the payload of an empty message is never NULL, so a copy of its 0 bytes is valid
 static const u8 http_web_socket_message_empty[1] = { 0 };
+
+static const char *http_web_socket_receive_result_undefined = { "Undefined" };
 
 const char *http_web_socket_receive_result_to_string (
 	const HttpWebSocketReceiveResult result
 ) {
 
 	switch (result) {
-		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_RECEIVE_##name: return #string;
-		HTTP_WEB_SOCKET_RECEIVE_MAP(XX)
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_RECEIVE_RESULT_##name: return #string;
+		HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP(XX)
 		#undef XX
 	}
 
-	return http_web_socket_receive_result_to_string (HTTP_WEB_SOCKET_RECEIVE_CONTINUE);
+	return http_web_socket_receive_result_undefined;
 
 }
 
@@ -49,7 +54,7 @@ static int http_web_socket_receiver_fail (
 	HttpWebSocketReceiver *receiver, const u16 close_code
 ) {
 
-	return http_web_socket_receiver_finish (receiver, HTTP_WEB_SOCKET_RECEIVE_FAILED, close_code);
+	return http_web_socket_receiver_finish (receiver, HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED, close_code);
 
 }
 
@@ -58,8 +63,8 @@ static int http_web_socket_receiver_handled (
 	HttpWebSocketReceiver *receiver, const int stop
 ) {
 
-	if (stop && (receiver->result == HTTP_WEB_SOCKET_RECEIVE_CONTINUE)) {
-		receiver->result = HTTP_WEB_SOCKET_RECEIVE_STOPPED;
+	if (stop && (receiver->result == HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE)) {
+		receiver->result = HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED;
 	}
 
 	return stop ? HTTP_WEB_SOCKET_MESSAGE_STOP : 0;
@@ -107,14 +112,14 @@ static int http_web_socket_receiver_sink (void *receiver_ptr, const u8 *bytes, s
 
 	receiver->message_received += size;
 	if (receiver->max_message && (receiver->message_received > receiver->max_message)) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG);
 	}
 
 	else if (
 		(receiver->type == HTTP_WEB_SOCKET_OPCODE_TEXT)
 		&& !http_web_socket_text_validate (&receiver->text, bytes, size)
 	) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD);
 	}
 
 	else if (receiver->handlers->on_fragment) {
@@ -135,7 +140,7 @@ static int http_web_socket_receiver_sink (void *receiver_ptr, const u8 *bytes, s
 	}
 
 	else {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INTERNAL_ERROR);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INTERNAL_ERROR);
 	}
 
 	return stop;
@@ -150,21 +155,21 @@ static int http_web_socket_receiver_data (
 	int stop = 0;
 
 	if (receiver->compressed) {
-		const u8 result = http_web_socket_deflate_decompress (
+		const HttpWebSocketInflateResult result = http_web_socket_deflate_decompress (
 			receiver->deflate, bytes, size, end, http_web_socket_receiver_sink, receiver
 		);
 
 		// the sink already set the result of its own stop, and a decompressor that failed
 		// is not an error of the bytes of the peer
 		if (result == HTTP_WEB_SOCKET_INFLATE_INVALID) {
-			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD);
 		}
 
 		else if (result == HTTP_WEB_SOCKET_INFLATE_FAILED) {
-			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INTERNAL_ERROR);
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INTERNAL_ERROR);
 		}
 
-		else if (result) stop = HTTP_WEB_SOCKET_MESSAGE_STOP;
+		else if (result != HTTP_WEB_SOCKET_INFLATE_DONE) stop = HTTP_WEB_SOCKET_MESSAGE_STOP;
 	}
 
 	else if (size) {
@@ -175,16 +180,25 @@ static int http_web_socket_receiver_data (
 
 }
 
-// the last frame of a message
-static int http_web_socket_receiver_message_end (HttpWebSocketReceiver *receiver) {
+// the buffer of a message larger than 2^16 goes back to nothing after it (W7)
+static void http_web_socket_receiver_shrink (HttpWebSocketReceiver *receiver) {
 
-	int stop = http_web_socket_receiver_data (receiver, NULL, 0, true);
+	if (receiver->message_capacity > HTTP_WEB_SOCKET_MESSAGE_SHRINK_SIZE) {
+		free (receiver->message);
+		receiver->message = NULL;
+		receiver->message_capacity = 0;
+	}
+
+}
+
+// the message is complete: its text is checked and its methods get it
+static int http_web_socket_receiver_message_complete (HttpWebSocketReceiver *receiver, int stop) {
 
 	if (
 		!stop && (receiver->type == HTTP_WEB_SOCKET_OPCODE_TEXT)
 		&& !http_web_socket_text_complete (&receiver->text)
 	) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD);
 	}
 
 	receiver->in_message = false;
@@ -211,8 +225,21 @@ static int http_web_socket_receiver_message_end (HttpWebSocketReceiver *receiver
 	}
 
 	receiver->message_size = 0;
+	http_web_socket_receiver_shrink (receiver);
 
 	return stop;
+
+}
+
+// the last frame of a message: a stop of the sink in the end of its decompression leaves the rest of the message
+// for the next call, that goes on with it before it parses (W4)
+static int http_web_socket_receiver_message_end (HttpWebSocketReceiver *receiver) {
+
+	const int stop = http_web_socket_receiver_data (receiver, NULL, 0, true);
+
+	receiver->ending = stop && (receiver->result == HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED);
+
+	return receiver->ending ? stop : http_web_socket_receiver_message_complete (receiver, stop);
 
 }
 
@@ -224,7 +251,7 @@ static int http_web_socket_receiver_message_begin (
 	int stop = 0;
 
 	if (receiver->in_message) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR);
 	}
 
 	else {
@@ -253,7 +280,7 @@ static int http_web_socket_receiver_data_begin (
 
 	// a continuation needs a message, and only the first frame can be compressed
 	else if (!receiver->in_message || frame->rsv1) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR);
 	}
 
 	// a message without compression is known to be too big before its payload
@@ -261,7 +288,7 @@ static int http_web_socket_receiver_data_begin (
 		!stop && !receiver->compressed && receiver->max_message
 		&& (frame->length > (u64) (receiver->max_message - receiver->message_received))
 	) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG);
 	}
 
 	return stop;
@@ -277,30 +304,30 @@ static int http_web_socket_receiver_close (HttpWebSocketReceiver *receiver) {
 
 	int stop = HTTP_WEB_SOCKET_MESSAGE_STOP;
 
-	u16 code = HTTP_WEB_SOCKET_CLOSE_NO_STATUS;
+	u16 code = HTTP_WEB_SOCKET_CLOSE_CODE_NO_STATUS;
 	const char *reason = NULL;
 	size_t reason_length = 0;
 
 	if (receiver->control_size == 1) {
-		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR);
+		stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR);
 	}
 
-	else if (receiver->control_size >= HTTP_WEB_SOCKET_CLOSE_CODE_SIZE) {
+	else if (receiver->control_size >= HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE) {
 		code = (u16) ((receiver->control[0] << HTTP_WEB_SOCKET_MESSAGE_BITS_PER_BYTE) | receiver->control[1]);
-		reason = (const char *) receiver->control + HTTP_WEB_SOCKET_CLOSE_CODE_SIZE;
-		reason_length = receiver->control_size - HTTP_WEB_SOCKET_CLOSE_CODE_SIZE;
+		reason = (const char *) receiver->control + HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE;
+		reason_length = receiver->control_size - HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE;
 
 		if (!http_web_socket_close_code_is_valid (code)) {
-			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR);
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR);
 		}
 
 		else if (!http_web_socket_text_check (reason, reason_length)) {
-			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD);
+			stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD);
 		}
 	}
 
-	if (receiver->result != HTTP_WEB_SOCKET_RECEIVE_FAILED) {
-		(void) http_web_socket_receiver_finish (receiver, HTTP_WEB_SOCKET_RECEIVE_CLOSED, code);
+	if (receiver->result != HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED) {
+		(void) http_web_socket_receiver_finish (receiver, HTTP_WEB_SOCKET_RECEIVE_RESULT_CLOSED, code);
 		if (receiver->handlers->on_close) {
 			(void) receiver->handlers->on_close (receiver->data, code, reason, reason_length);
 		}
@@ -360,7 +387,7 @@ static int http_web_socket_receiver_on_frame_begin (
 
 	if (http_web_socket_opcode_is_control (frame->opcode)) {
 		// a control frame is never compressed
-		if (frame->rsv1) stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR);
+		if (frame->rsv1) stop = http_web_socket_receiver_fail (receiver, HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR);
 		else receiver->control_size = 0;
 	}
 
@@ -450,8 +477,8 @@ void http_web_socket_receiver_init (
 
 		http_web_socket_text_init (&receiver->text);
 
-		receiver->close_code = HTTP_WEB_SOCKET_CLOSE_NORMAL;
-		receiver->result = HTTP_WEB_SOCKET_RECEIVE_CONTINUE;
+		receiver->close_code = HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL;
+		receiver->result = HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE;
 	}
 
 }
@@ -463,6 +490,7 @@ void http_web_socket_receiver_end (HttpWebSocketReceiver *receiver) {
 		receiver->message = NULL;
 		receiver->message_size = 0;
 		receiver->message_capacity = 0;
+		receiver->ending = false;
 	}
 
 }
@@ -472,16 +500,21 @@ HttpWebSocketReceiveResult http_web_socket_receiver_execute (
 	u8 *data, const size_t size, size_t *parsed
 ) {
 
-	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_FAILED;
+	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED;
 	size_t taken = 0;
 
 	if (receiver && receiver->handlers) {
 		// a stop is only for the bytes of its call
-		if (receiver->result == HTTP_WEB_SOCKET_RECEIVE_STOPPED) {
-			receiver->result = HTTP_WEB_SOCKET_RECEIVE_CONTINUE;
+		if (receiver->result == HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED) {
+			receiver->result = HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE;
 		}
 
-		if (receiver->result == HTTP_WEB_SOCKET_RECEIVE_CONTINUE) {
+		// the end of a message that was stopped goes on before the next bytes (W4)
+		if ((receiver->result == HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE) && receiver->ending) {
+			(void) http_web_socket_receiver_message_end (receiver);
+		}
+
+		if (receiver->result == HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE) {
 			taken = http_web_socket_parser_execute (&receiver->parser, data, size);
 
 			if (receiver->parser.state == HTTP_WEB_SOCKET_PARSER_STATE_FAILED) {

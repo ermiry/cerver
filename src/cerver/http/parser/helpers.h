@@ -30,6 +30,8 @@
 #ifndef _CERVER_HTTP_PARSER_HELPERS_H_
 #define _CERVER_HTTP_PARSER_HELPERS_H_
 
+#include "cerver/http/parser/parser.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -99,28 +101,16 @@ enum llhttp_flags {
 
 typedef enum llhttp_flags llhttp_flags_t;
 
-// what each lenient flag accepts, all of them are disabled by default (strict mode)
-// the descriptions are stringified with #, they can not have commas
+// the lenient flags of llhttp are the rows of HTTP_PARSER_LENIENT_MAP (cerver/http/parser/parser.h),
+// all of them are disabled by default (strict mode)
 // the flag 0x400 of llhttp (header value relaxed) is left out: in 9.4.3 a NUL byte in a header value
 // makes llhttp_execute () loop forever with it, so cerver never enables it
 #define LLHTTP_LENIENT_HEADER_VALUE_RELAXED		0x400
 
-#define LLHTTP_LENIENT_MAP(XX)																										\
-	XX(0x1,		HEADERS,					headers,					invalid header values without checks)						\
-	XX(0x2,		CHUNKED_LENGTH,				chunked_length,				Transfer-Encoding with Content-Length)						\
-	XX(0x4,		KEEP_ALIVE,					keep_alive,					the data after a request with Connection close)				\
-	XX(0x8,		TRANSFER_ENCODING,			transfer_encoding,			a value after chunked in Transfer-Encoding)					\
-	XX(0x10,	VERSION,					version,					any HTTP version)											\
-	XX(0x20,	DATA_AFTER_CLOSE,			data_after_close,			and discards the data after a request with Connection close)	\
-	XX(0x40,	OPTIONAL_LF_AFTER_CR,		optional_lf_after_cr,		a CR without LF at the end of a line)						\
-	XX(0x80,	OPTIONAL_CRLF_AFTER_CHUNK,	optional_crlf_after_chunk,	a chunk right after the previous one without CRLF)			\
-	XX(0x100,	OPTIONAL_CR_BEFORE_LF,		optional_cr_before_lf,		a LF without CR at the end of a line)						\
-	XX(0x200,	SPACES_AFTER_CHUNK_SIZE,	spaces_after_chunk_size,	spaces after the size of a chunk)
-
 enum llhttp_lenient_flags {
 
 	#define XX(num, name, string, description) LENIENT_##name = num,
-	LLHTTP_LENIENT_MAP(XX)
+	HTTP_PARSER_LENIENT_MAP(XX)
 	#undef XX
 
 };

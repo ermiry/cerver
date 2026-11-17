@@ -53,10 +53,11 @@ typedef enum RangeType {
  * @brief Returns the string of a range type.
  *
  * @param[in] range_type the type
- * @return the string of its row in #HTTP_RANGE_TYPE_MAP, or the one of HTTP_RANGE_TYPE_NONE for a value out of the
- * table; a static string that must not be freed
+ * @return the string of its row in #HTTP_RANGE_TYPE_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21 (it was http_range_type_string ())
  */
-CERVER_PUBLIC const char *http_range_type_string (
+CERVER_PUBLIC const char *http_range_type_to_string (
 	const RangeType range_type
 );
 

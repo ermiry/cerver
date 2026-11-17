@@ -55,11 +55,11 @@ static void autobahn_count (
 }
 
 static const HttpWebSocketHandlers autobahn_echo_handlers = {
-	NULL, NULL, autobahn_echo, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, autobahn_echo, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static const HttpWebSocketHandlers autobahn_count_handlers = {
-	NULL, NULL, autobahn_count, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, autobahn_count, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 // runs a connection until the server closes it
@@ -71,9 +71,11 @@ static unsigned int autobahn_run (const char *url, const HttpWebSocketHandlers *
 	HttpWebSocketClient *client = http_web_socket_client_create ();
 	if (client && !http_web_socket_client_set_url (client, url)) {
 		http_web_socket_client_set_handlers (client, handlers);
-		http_web_socket_client_set_max_message (client, AUTOBAHN_MAX_MESSAGE);
-		http_web_socket_client_set_compression (client, true);
-		http_web_socket_client_set_ping_milliseconds (client, 0, 0);
+
+		HttpWebSocketSettings *settings = http_web_socket_client_get_settings (client);
+		http_web_socket_settings_set_max_message (settings, AUTOBAHN_MAX_MESSAGE);
+		http_web_socket_settings_enable_compression (settings, true);
+		http_web_socket_settings_set_ping_milliseconds (settings, 0, 0);
 
 		if (!http_web_socket_client_connect (client)) {
 			http_web_socket_client_wait (client);

@@ -99,7 +99,10 @@ static int http_receive_handle_headers_completed (llhttp_t *parser);
 
 static int http_receive_handle_message_completed (llhttp_t *parser);
 
-const char *http_receive_status_str (
+// the string of a value out of the table of its enum
+static const char *http_receive_undefined = { "Undefined" };
+
+const char *http_receive_status_to_string (
 	const HttpReceiveStatus status
 ) {
 
@@ -109,41 +112,11 @@ const char *http_receive_status_str (
 		#undef XX
 	}
 
-	return http_receive_status_str (HTTP_RECEIVE_STATUS_NONE);
+	return http_receive_undefined;
 
 }
 
-static const char *http_parser_lenient_none = { "none" };
-
-const char *http_parser_lenient_string (const HttpParserLenient lenient) {
-
-	switch (lenient) {
-		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #string;
-		LLHTTP_LENIENT_MAP(XX)
-		#undef XX
-
-		default: break;
-	}
-
-	return http_parser_lenient_none;
-
-}
-
-const char *http_parser_lenient_description (const HttpParserLenient lenient) {
-
-	switch (lenient) {
-		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #description;
-		LLHTTP_LENIENT_MAP(XX)
-		#undef XX
-
-		default: break;
-	}
-
-	return http_parser_lenient_none;
-
-}
-
-const char *http_stage_string (const HttpStage stage) {
+const char *http_stage_to_string (const HttpStage stage) {
 
 	switch (stage) {
 		#define XX(num, name, string, label) case HTTP_STAGE_##name: return #string;
@@ -151,7 +124,7 @@ const char *http_stage_string (const HttpStage stage) {
 		#undef XX
 	}
 
-	return http_stage_string (HTTP_STAGE_QUEUED);
+	return http_receive_undefined;
 
 }
 
@@ -167,7 +140,7 @@ const char *http_stage_label (const HttpStage stage) {
 
 }
 
-const char *http_abort_reason_string (const HttpAbortReason reason) {
+const char *http_abort_reason_to_string (const HttpAbortReason reason) {
 
 	switch (reason) {
 		#define XX(num, name, string, label) case HTTP_ABORT_REASON_##name: return #string;
@@ -175,7 +148,7 @@ const char *http_abort_reason_string (const HttpAbortReason reason) {
 		#undef XX
 	}
 
-	return http_abort_reason_string (HTTP_ABORT_REASON_CLOSED);
+	return http_receive_undefined;
 
 }
 
@@ -191,7 +164,7 @@ const char *http_abort_reason_label (const HttpAbortReason reason) {
 
 }
 
-const char *http_client_state_string (const HttpClientState state) {
+const char *http_client_state_to_string (const HttpClientState state) {
 
 	switch (state) {
 		#define XX(num, name, string) case HTTP_CLIENT_STATE_##name: return #string;
@@ -199,7 +172,7 @@ const char *http_client_state_string (const HttpClientState state) {
 		#undef XX
 	}
 
-	return http_client_state_string (HTTP_CLIENT_STATE_CONNECTED);
+	return http_receive_undefined;
 
 }
 
@@ -303,8 +276,8 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->http_cerver = NULL;
 
-		(void) memset (&http_receive->parser, 0, sizeof (llhttp_t));
-		llhttp_settings_init (&http_receive->settings);
+		(void) memset (&http_receive->parser, 0, sizeof (HttpParserState));
+		llhttp_settings_init (http_receive_parser_settings (http_receive));
 
 		http_receive->url_buffer = NULL;
 		http_receive->field_buffer = NULL;
@@ -510,13 +483,16 @@ static void http_receive_settings_init (llhttp_settings_t *settings) {
 // so its on_body can change for each request
 static void http_receive_parser_init (HttpReceive *http_receive) {
 
-	http_receive_settings_init (&http_receive->settings);
+	llhttp_t *parser = http_receive_parser (http_receive);
+	llhttp_settings_t *settings = http_receive_parser_settings (http_receive);
 
-	llhttp_init (&http_receive->parser, HTTP_REQUEST, &http_receive->settings);
-	http_receive->parser.data = http_receive;
+	http_receive_settings_init (settings);
+
+	llhttp_init (parser, HTTP_REQUEST, settings);
+	parser->data = http_receive;
 
 	if (http_receive->http_cerver) {
-		llhttp_set_lenient_flags (&http_receive->parser, (uint16_t) http_receive->http_cerver->parser_lenient);
+		llhttp_set_lenient_flags (parser, (uint16_t) http_receive->http_cerver->parser_lenient);
 	}
 
 }
@@ -617,8 +593,8 @@ u8 http_receive_reset (HttpReceive *http_receive) {
 
 		// the parser keeps its type and its lenient flags,
 		// and the callbacks that a request changed are the ones of a new request
-		http_receive_settings_init (&http_receive->settings);
-		llhttp_reset (&http_receive->parser);
+		http_receive_settings_init (http_receive_parser_settings (http_receive));
+		llhttp_reset (http_receive_parser (http_receive));
 
 		http_receive_buffer_reset (http_receive->url_buffer);
 		http_receive_buffer_reset (http_receive->field_buffer);
@@ -933,7 +909,7 @@ static void http_receive_handle_catch_all (
 	#ifdef HTTP_RECEIVE_DEBUG
 	cerver_log_warning (
 		"No matching route for %s %s",
-		http_request_method_str (request->method),
+		http_request_method_to_string (request->method),
 		request->url->str
 	);
 	#endif
@@ -1521,7 +1497,7 @@ static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 		if (!http_mpart_get_boundary (
 			boundary, content_type->str, (unsigned int) content_type->len
 		)) {
-			http_receive->settings.on_body = http_receive_handle_mpart_body;
+			http_receive_parser_settings (http_receive)->on_body = http_receive_handle_mpart_body;
 
 			if (http_receive_init_mpart_parser (http_receive, boundary)) {
 				retval = http_receive->responded ? 1 : http_receive_reject (
@@ -1633,7 +1609,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
 		"%s %s",
-		http_request_method_str (request->method),
+		http_request_method_to_string (request->method),
 		request->url->str
 	);
 	#endif
@@ -1663,7 +1639,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 // returns 0 on success, HTTP_RECEIVE_PARSER_STOP if the request was rejected or its client is gone
 int http_receive_headers_authorize (HttpReceive *http_receive) {
 
-	llhttp_t *parser = &http_receive->parser;
+	llhttp_t *parser = http_receive_parser (http_receive);
 	HttpCerver *http_cerver = http_receive->http_cerver;
 	HttpRequest *request = http_receive->request;
 
@@ -1698,7 +1674,7 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 			if (!http_receive_handle_static_authenticate (http_receive, request)) return HTTP_RECEIVE_PARSER_STOP;
 		}
 
-		http_receive->settings.on_body = http_receive_handle_body_discard;
+		http_receive_parser_settings (http_receive)->on_body = http_receive_handle_body_discard;
 	}
 
 	// a client that is gone stops the parser, without a response
@@ -2093,7 +2069,7 @@ static void http_receive_handle_unanswered (HttpReceive *http_receive) {
 			LOG_TYPE_WARNING, LOG_TYPE_HTTP,
 			"http_receive_handle () - the request was not answered - fd %d - %s %s",
 			http_receive->cr->connection->socket->sock_fd,
-			http_request_method_str (http_receive->request->method),
+			http_request_method_to_string (http_receive->request->method),
 			http_receive_url (http_receive)
 		);
 
@@ -2190,7 +2166,7 @@ static bool http_receive_keep_alive_allowed (const HttpReceive *http_receive) {
 
 	return http_cerver->keep_alive
 		&& http_receive->keep_alive_requested
-		&& !http_receive->parser.upgrade
+		&& !llhttp_get_upgrade (http_receive_parser_read (http_receive))
 		&& (
 			!http_cerver->keep_alive_requests
 			|| (http_receive->n_requests < http_cerver->keep_alive_requests)
@@ -2205,7 +2181,7 @@ static bool http_receive_keep_alive_allowed (const HttpReceive *http_receive) {
 static void http_receive_keep_alive_decide (HttpReceive *http_receive) {
 
 	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive)
-	http_receive->keep_alive_requested = llhttp_should_keep_alive (&http_receive->parser);
+	http_receive->keep_alive_requested = llhttp_should_keep_alive (http_receive_parser_read (http_receive));
 
 	http_receive->n_requests += 1;
 
@@ -2330,7 +2306,7 @@ void http_receive_parser_failed (
 ) {
 
 	if (!http_receive->responded && (http_receive->receive_status != HTTP_RECEIVE_STATUS_CLOSED)) {
-		const char *reason = llhttp_get_error_reason (&http_receive->parser);
+		const char *reason = llhttp_get_error_reason (http_receive_parser_read (http_receive));
 
 		cerver_log_with_date (
 			LOG_TYPE_ERROR, LOG_TYPE_HTTP,
@@ -2340,7 +2316,7 @@ void http_receive_parser_failed (
 			http_receive->cr->connection->socket->sock_fd,
 			llhttp_errno_name (parser_errno),
 			reason ? reason : http_receive_parser_no_reason,
-			http_receive_status_str (http_receive->receive_status)
+			http_receive_status_to_string (http_receive->receive_status)
 		);
 
 		(void) http_receive_reject (
@@ -2412,7 +2388,7 @@ static size_t http_receive_parsed_bytes (
 
 	size_t parsed = length;
 
-	const char *position = llhttp_get_error_pos (&http_receive->parser);
+	const char *position = llhttp_get_error_pos (http_receive_parser_read (http_receive));
 	if (
 		(parser_errno != HPE_OK) && position
 		&& (position >= buffer) && (position <= (buffer + length))
@@ -2435,7 +2411,7 @@ llhttp_errno_t http_receive_execute (
 	}
 
 	const llhttp_errno_t parser_errno = llhttp_execute (
-		&http_receive->parser, buffer, length
+		http_receive_parser (http_receive), buffer, length
 	);
 
 	*n_parsed = http_receive_parsed_bytes (http_receive, parser_errno, buffer, length);
@@ -2448,7 +2424,7 @@ void http_receive_resume (HttpReceive *http_receive) {
 
 	http_receive->pause = HTTP_RECEIVE_PAUSE_NONE;
 
-	llhttp_resume (&http_receive->parser);
+	llhttp_resume (http_receive_parser (http_receive));
 
 }
 

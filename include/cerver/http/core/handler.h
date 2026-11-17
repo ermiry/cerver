@@ -54,10 +54,11 @@ typedef enum HttpReceiveStatus {
  * @brief Returns the string of the status of a receive.
  *
  * @param[in] status the status
- * @return the string of its row in #HTTP_RECEIVE_STATUS_MAP, or the one of HTTP_RECEIVE_STATUS_NONE for a value
- * out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_RECEIVE_STATUS_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21 (it was http_receive_status_str ())
  */
-CERVER_PUBLIC const char *http_receive_status_str (
+CERVER_PUBLIC const char *http_receive_status_to_string (
 	const HttpReceiveStatus status
 );
 
@@ -201,12 +202,12 @@ struct _HttpReceive {
 	/** @brief The HttpCerver of the connection. */
 	HttpCerver *http_cerver;
 
-	/** @brief The parser of the request, embedded in the receive with its own settings, so the body callback can change for each request. */
-	llhttp_t parser;
-	/** @brief The callbacks of the parser. */
-	llhttp_settings_t settings;
+	/** @brief The state of the parser of the request, embedded in the receive with its own settings, so the body callback can change for each request; opaque since 2.1b-21, only cerver reads it. */
+	HttpParserState parser;
+	/** @brief The callbacks of the parser; opaque since 2.1b-21, only cerver reads them. */
+	HttpParserSettings settings;
 
-	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()): HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
+	/** @brief What the client asked when its request was completed: HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
 	bool keep_alive_requested;
 
 	/** @brief The bytes of the last buffer that were not parsed after the request was completed (a pipelined request). */

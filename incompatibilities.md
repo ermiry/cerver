@@ -3,6 +3,129 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-21 (from 2.1b-20)
+
+The WebSocket connections over the event loop (F6b of `roadmap.md` §4.6), their bounded queue and the API of the
+backlog §31.2. The renames are direct, without aliases: code that uses the old names does not compile, and every
+struct of the WebSocket connections and of the parser changes its size (a binary built with the 2.1b-20 is built
+again).
+
+**The connections and their queue (F6b, A5)**
+
+- **With `CERVER_HANDLER_TYPE_EVENTS` a connection has no thread of its own:** its loop reads and parses its frames,
+  answers its pongs and its closing handshake, and writes its queue; its methods run in a job of the pool of its
+  endpoint, one job at a time for each connection and in order (the loop does not read it while one runs). A method
+  that blocks holds a thread of the pool, not of the connection. With `CERVER_HANDLER_TYPE_THREADS` each connection
+  keeps its thread
+- **A send never waits:** it takes the frame in the queue of its connection (or writes it at once when nothing waits
+  before it) and the owner of the connection writes the rest. The sends return `HttpWebSocketSendResult` (they
+  returned `u8`, 0 when it was sent): `HTTP_WEB_SOCKET_SEND_QUEUED` and `BACKPRESSURE` are taken, `DROPPED`,
+  `CLOSED` and `FAILED` are not; `http_web_socket_send_result_is_taken ()` says which. This is the result of
+  `http_web_socket_send ()`, `_send_text ()`, `_send_binary ()`, `_send_begin ()`, `_send_write ()`, `_send_end ()`
+  and `http_web_socket_client_send ()`, `_send_text ()`, `_send_binary ()`; a code that checks `!send (...)` sees
+  `BACKPRESSURE` (1) as a failure
+- **The queue is bounded:** 2^20 bytes by default (`HTTP_WEB_SOCKET_DEFAULT_MAX_QUEUE`), with
+  `http_web_socket_settings_set_queue ()` (inherited from the groups) or `http_cerver_set_web_socket_queue ()`. A
+  message that does not fit is dropped (`HTTP_WEB_SOCKET_OVERFLOW_DROP`, the default) or closes the connection with
+  1008 (`HTTP_WEB_SOCKET_OVERFLOW_CLOSE`); a message larger than the queue fits only when the queue is empty; the
+  control frames and the pieces of a stream are always taken. Over half of the queue a send returns
+  `BACKPRESSURE`, and `on_drain ()` runs once the queue is empty again
+- **`HttpWebSocketHandlers` has `on_drain` at its end:** a positional initializer of the 2.1b-20 still compiles (the
+  field is NULL), but `-Wmissing-field-initializers` warns about it
+- **The send timeout is the time that a queue can wait without writing a byte:** then the connection fails with 1006
+  and `HTTP_WEB_SOCKET_ERROR_SEND` (a send waited up to it); it is the same in both models
+- **The broadcast timeout is removed:** `http_cerver_set_web_socket_broadcast_timeout_milliseconds ()` and
+  `HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT`; a broadcast takes the message in the queue of each connection, with its
+  policy and its compression, and returns the connections that took it
+- **A connection is registered after its `on_open ()`** (S7): a broadcast, a count or a for each does not reach it
+  while it runs (a broadcast of its own `on_open ()` reaches the others, not it); its own sends and its joins work,
+  and its rooms reach it once it is registered
+- **The ids are unique in the process** (A9), for the servers and the clients: a connection of a second cerver does
+  not start again from 1
+- **`HttpWebSocketStats` has `n_dropped`, `n_drains` and `n_queued_bytes`** after `n_slow`; the metrics
+  `cerver_websocket_dropped_messages_total`, `cerver_websocket_drains_total` and `cerver_websocket_queued_bytes`, and
+  `n_dropped`, `n_drains` and `queued_bytes` in the `websockets` of the admin stats
+- **A connection that ended releases zlib, the buffer of its messages and its empty queue** after its `on_close ()`
+  (W7 / S10), not with its last reference; `http_web_socket_is_compressed ()` still says what was negotiated
+
+**The rooms and the broadcasts (A14)**
+
+- **`HttpWebSocketTarget {room, endpoint, except}`** selects the connections of `http_cerver_web_socket_count ()`,
+  `http_cerver_web_socket_broadcast ()` and `http_cerver_web_socket_for_each ()` (they took a room, and the broadcast
+  the connection that does not receive it); NULL is every connection. **Removed:**
+  `http_endpoint_web_socket_broadcast ()`, the target with its endpoint
+- **The rooms are an index of the registry** without the limit of 16 rooms of 63 bytes: **removed**
+  `HTTP_WEB_SOCKET_MAX_ROOMS` and `HTTP_WEB_SOCKET_ROOM_NAME_SIZE`; a broadcast to a room only goes through its
+  members
+- **`http_web_socket_join ()` returns `HttpWebSocketJoin`** (`HTTP_WEB_SOCKET_JOIN_MAP`: JOINED, ALREADY, INVALID,
+  UNREGISTERED, FAILED; it returned 0 for both of the first ones); an empty name is INVALID
+- **The rooms of a connection are kept while its `on_close ()` runs** and removed after it (they were removed before
+  it); **new:** `http_web_socket_leave_all ()`, `http_web_socket_get_rooms ()`; `http_web_socket_in_room ()` takes a
+  `const` connection
+- **New:** `http_cerver_web_socket_get_with_id ()`, with a reference
+
+**The settings as an object (A7, A13, A17)**
+
+- **The settings of a WebSocket endpoint, group or client are set with `http_web_socket_settings_set_* ()`** on
+  `http_endpoint_get_web_socket_settings ()`, `http_group_get_web_socket_settings ()` and
+  `http_web_socket_client_get_settings ()`. **Removed:** `http_endpoint_set_web_socket_max_message ()`,
+  `_protocols ()`, `_compression ()`, `_compression_options ()`, `_origin_check ()`, `_ping_milliseconds ()`,
+  `_close_timeout_milliseconds ()`, `_send_timeout_milliseconds ()`, the same eight of `http_group_set_web_socket_*`,
+  and `http_web_socket_client_set_protocols ()`, `_set_compression ()`, `_set_compression_options ()`,
+  `_set_max_message ()`, `_set_ping_milliseconds ()`, `_set_close_timeout_milliseconds ()`,
+  `_set_send_timeout_milliseconds ()`, `_set_timeouts_milliseconds ()`; **new:** the shortcut
+  `http_web_socket_settings_enable_compression ()`
+- **Renamed:** `http_endpoint_set_web_socket ()` → `http_endpoint_set_web_socket_handlers ()`,
+  `http_group_set_web_socket ()` → `http_group_set_web_socket_handlers ()`
+- **`origin_check` is `HttpWebSocketOriginCheck`** (`NONE`, `REQUIRED`, `IF_PRESENT`; it was a `bool`, true is
+  `REQUIRED`): `IF_PRESENT` lets a request without an Origin through
+- **The client:** `http_web_socket_client_set_data ()` takes the method that releases its data (it is released with
+  the client or with the next data); the timeouts of the connect and of the handshake are set apart
+  (`_set_connect_timeout_milliseconds ()`, `_set_handshake_timeout_milliseconds ()`);
+  `http_web_socket_client_get_connections ()` → `http_web_socket_client_get_connections_count ()`; **new:**
+  `http_web_socket_client_ping ()`, `http_web_socket_client_get_state ()`
+- `HttpWebSocketSettings` has `max_queue` and `overflow`, and `HTTP_WEB_SOCKET_SETTING_QUEUE` marks them
+
+**The names (A8, A18, A19, A21, A23)**
+
+- **The strings of the enums are `*_to_string ()`:** `http_status_string ()`, `http_stage_string ()`,
+  `http_abort_reason_string ()`, `http_client_state_string ()`, `http_header_string ()`,
+  `http_range_type_string ()`, `http_trusted_proxies_string ()`, `http_parser_lenient_string ()`,
+  `http_request_method_str ()` and `http_receive_status_str ()` are `*_to_string ()`; a value out of a table is
+  "Undefined" in every one of them
+- **The close codes are `HTTP_WEB_SOCKET_CLOSE_CODE_<name>`** of `HTTP_WEB_SOCKET_CLOSE_CODE_MAP` (they were
+  `HTTP_WEB_SOCKET_CLOSE_<name>` of `HTTP_WEB_SOCKET_CLOSE_MAP`), and the size of the code of a close frame is
+  `HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE` (`HTTP_WEB_SOCKET_CLOSE_CODE_SIZE`)
+- **The results of the receiver are `HTTP_WEB_SOCKET_RECEIVE_RESULT_<name>`** of
+  `HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP` (`HTTP_WEB_SOCKET_RECEIVE_<name>` of `HTTP_WEB_SOCKET_RECEIVE_MAP`)
+- `http_web_socket_get_endpoint_data ()` → `http_web_socket_get_endpoint_custom_data ()`, that returns `const void *`
+- **New:** `http_request_method_from_string ()`, `http_web_socket_role_to_string ()`,
+  `http_web_socket_parser_state_to_string ()`, `http_web_socket_get_error ()`, `http_web_socket_get_buffered_size ()`,
+  and the `_to_string ()` of each new map (`HttpWebSocketSendResult`, `HttpWebSocketOverflow`,
+  `HttpWebSocketOriginCheck`, `HttpWebSocketJoin`, `HttpWebSocketInflateResult` and the result of the response of the
+  client), with the `_description ()` of the overflow, the origin check and the join;
+  `HTTP_WEB_SOCKET_REJECTIONS` is counted from its table
+
+**The protocol (A20, W4, W11)**
+
+- **A close without a payload:** `http_web_socket_close ()` takes `HTTP_WEB_SOCKET_CLOSE_WITHOUT_CODE` (0) without a
+  reason, and returns the result of its send (1 when a close was already sent)
+- **A peer that asks for a window of 2^8 is accepted** (W11): the server answers `server_max_window_bits=8` and the
+  client takes `client_max_window_bits=8` (they were declined), and cerver compresses for it with 2^9, whose
+  distances fit in 2^8
+- **`http_web_socket_deflate_decompress ()` returns `HttpWebSocketInflateResult`** (`HTTP_WEB_SOCKET_INFLATE_MAP`:
+  DONE, INVALID, STOPPED, FAILED; they were three defines with the same values and 0): after a stop it keeps what is
+  left and gives it in the next call (W4), so a receiver that is stopped inside a compressed message loses nothing
+  and gets the last piece of it; `HttpWebSocketDeflate` and `HttpWebSocketReceiver` have new fields
+
+**The parser (A22 / V6)**
+
+- **llhttp is not installed anymore:** `include/cerver/http/parser/api.h`, `helpers.h` and `llhttp.h` are in `src/`;
+  `HttpReceive` keeps the parser and its settings in `HttpParserState` and `HttpParserSettings`, opaque bytes of a
+  fixed size. `include/cerver/http/parser/parser.h` has `HTTP_PARSER_LENIENT_MAP` with the values of llhttp,
+  `HttpParserLenient`, `HTTP_PARSER_LENIENT_ALL` and their strings; `HTTP_RECEIVE_PARSER_STOP` is internal; **new:**
+  `http_cerver_get_parser_lenient ()`
+
 ## 2.1b-20 (from 2.1b-19)
 
 The sync with the Release 1.9 of `core` and the 2.0b-77 of `http`: the wire only adds a header, but some structs grow

@@ -780,7 +780,7 @@ static size_t http_response_main_header (
 	const int written = snprintf (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
-		(unsigned int) status, http_status_string (status),
+		(unsigned int) status, http_status_to_string (status),
 		CERVER_VERSION
 	);
 
@@ -1291,7 +1291,7 @@ static void http_response_extra_add_header (
 	if (http_headers_add (extra, type, value, value_length)) {
 		cerver_log_warning (
 			"http_response_send () - The %s header could not be added to the response",
-			http_header_string (type)
+			http_header_to_string (type)
 		);
 	}
 
@@ -1406,7 +1406,7 @@ static bool http_response_message_find_type (
 	const char **value, size_t *value_length
 ) {
 
-	const char *name = http_header_string (type);
+	const char *name = http_header_to_string (type);
 
 	return http_response_message_find (message, type, name, strlen (name), value, value_length);
 
@@ -1510,8 +1510,10 @@ static void http_response_extra_vary (
 // an HTTP/1.0 client only keeps its connection when the response says so
 static bool http_response_client_needs_keep_alive (const HttpReceive *http_receive) {
 
-	return (http_receive->parser.http_major == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
-		&& (http_receive->parser.http_minor == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
+	const llhttp_t *parser = http_receive_parser_read (http_receive);
+
+	return (llhttp_get_http_major (parser) == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
+		&& (llhttp_get_http_minor (parser) == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
 
 }
 
@@ -1616,7 +1618,7 @@ static bool http_response_header_line_is (
 	const char *line, const size_t line_length, const http_header type
 ) {
 
-	const char *name = http_header_string (type);
+	const char *name = http_header_to_string (type);
 
 	return http_response_header_line_is_name (line, line_length, name, strlen (name));
 

@@ -10,6 +10,9 @@
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/settings.h"
 
+// the string of a value out of the table of its enum
+static const char *http_web_socket_settings_undefined = { "Undefined" };
+
 const char *http_web_socket_error_to_string (const HttpWebSocketError error) {
 
 	switch (error) {
@@ -18,7 +21,7 @@ const char *http_web_socket_error_to_string (const HttpWebSocketError error) {
 		#undef XX
 	}
 
-	return http_web_socket_error_to_string (HTTP_WEB_SOCKET_ERROR_NONE);
+	return http_web_socket_settings_undefined;
 
 }
 
@@ -30,7 +33,63 @@ const char *http_web_socket_error_description (const HttpWebSocketError error) {
 		#undef XX
 	}
 
-	return http_web_socket_error_description (HTTP_WEB_SOCKET_ERROR_NONE);
+	return http_web_socket_settings_undefined;
+
+}
+
+const char *http_web_socket_origin_check_to_string (const HttpWebSocketOriginCheck check) {
+
+	switch (check) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_ORIGIN_CHECK_##name: return #string;
+		HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_web_socket_settings_undefined;
+
+}
+
+const char *http_web_socket_origin_check_description (const HttpWebSocketOriginCheck check) {
+
+	switch (check) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_ORIGIN_CHECK_##name: return #description;
+		HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_web_socket_settings_undefined;
+
+}
+
+const char *http_web_socket_overflow_to_string (const HttpWebSocketOverflow overflow) {
+
+	switch (overflow) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_OVERFLOW_##name: return #string;
+		HTTP_WEB_SOCKET_OVERFLOW_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_web_socket_settings_undefined;
+
+}
+
+const char *http_web_socket_overflow_description (const HttpWebSocketOverflow overflow) {
+
+	switch (overflow) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_OVERFLOW_##name: return #description;
+		HTTP_WEB_SOCKET_OVERFLOW_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_web_socket_settings_undefined;
 
 }
 
@@ -92,7 +151,7 @@ void http_web_socket_settings_init (HttpWebSocketSettings *settings) {
 
 		http_web_socket_deflate_options_init (&settings->compression);
 
-		settings->origin_check = false;
+		settings->origin_check = HTTP_WEB_SOCKET_ORIGIN_CHECK_NONE;
 
 		settings->ping_interval = HTTP_WEB_SOCKET_DEFAULT_PING_INTERVAL;
 		settings->pong_timeout = HTTP_WEB_SOCKET_DEFAULT_PONG_TIMEOUT;
@@ -100,6 +159,9 @@ void http_web_socket_settings_init (HttpWebSocketSettings *settings) {
 		settings->close_timeout = HTTP_WEB_SOCKET_DEFAULT_CLOSE_TIMEOUT;
 
 		settings->send_timeout = 0;
+
+		settings->max_queue = 0;
+		settings->overflow = HTTP_WEB_SOCKET_OVERFLOW_DROP;
 	}
 
 }
@@ -198,6 +260,11 @@ void http_web_socket_settings_inherit (
 
 		if (missing & HTTP_WEB_SOCKET_SETTING_SEND_TIMEOUT) resolved->send_timeout = source->send_timeout;
 
+		if (missing & HTTP_WEB_SOCKET_SETTING_QUEUE) {
+			resolved->max_queue = source->max_queue;
+			resolved->overflow = source->overflow;
+		}
+
 		resolved->set |= missing;
 	}
 
@@ -261,8 +328,20 @@ void http_web_socket_settings_set_compression (
 
 }
 
+void http_web_socket_settings_enable_compression (
+	HttpWebSocketSettings *settings, const bool enabled
+) {
+
+	HttpWebSocketDeflateOptions options;
+	http_web_socket_deflate_options_init (&options);
+	options.enabled = enabled;
+
+	http_web_socket_settings_set_compression (settings, &options);
+
+}
+
 void http_web_socket_settings_set_origin_check (
-	HttpWebSocketSettings *settings, const bool origin_check
+	HttpWebSocketSettings *settings, const HttpWebSocketOriginCheck origin_check
 ) {
 
 	if (settings) {
@@ -303,6 +382,18 @@ void http_web_socket_settings_set_send_timeout_milliseconds (
 	if (settings) {
 		settings->send_timeout = send_timeout;
 		settings->set |= HTTP_WEB_SOCKET_SETTING_SEND_TIMEOUT;
+	}
+
+}
+
+void http_web_socket_settings_set_queue (
+	HttpWebSocketSettings *settings, const size_t max_queue, const HttpWebSocketOverflow overflow
+) {
+
+	if (settings) {
+		settings->max_queue = max_queue;
+		settings->overflow = overflow;
+		settings->set |= HTTP_WEB_SOCKET_SETTING_QUEUE;
 	}
 
 }

@@ -22,6 +22,16 @@
 #define MESSAGE_TEST_MAX_EVENTS			16
 #define MESSAGE_TEST_EVENT_SIZE			(1 << 13)
 
+// W4: the messages that stop the receiver at every piece, the byte of their payloads and the most calls that take
+// them
+#define MESSAGE_TEST_STOPPED_SIZE		(1 << 16)
+#define MESSAGE_TEST_STOPPED_SECOND		(1 << 10)
+#define MESSAGE_TEST_STOPPED_BYTE		'a'
+#define MESSAGE_TEST_STOPPED_CALLS		(1 << 10)
+
+// W7: a message larger than the size that a buffer keeps
+#define MESSAGE_TEST_LARGE_MESSAGE		(1 << 17)
+
 static const u8 message_test_mask[HTTP_WEB_SOCKET_MASK_SIZE] = { 0x01, 0x02, 0x03, 0x04 };
 
 typedef enum MessageTestEventType {
@@ -203,13 +213,13 @@ static HttpWebSocketReceiveResult message_test_receive (
 
 	size_t total = 0;
 	size_t taken = 0;
-	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_CONTINUE;
+	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE;
 	if (offset) {
 		result = http_web_socket_receiver_execute (&receiver, copy, offset, &taken);
 		total += taken;
 	}
 
-	if (result == HTTP_WEB_SOCKET_RECEIVE_CONTINUE) {
+	if (result == HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE) {
 		result = http_web_socket_receiver_execute (&receiver, copy + offset, size - offset, &taken);
 		total += taken;
 	}
@@ -247,7 +257,7 @@ static void test_message_fragments (void) {
 				buffer, size, offset, streaming, NULL, &events, &code, NULL
 			);
 
-			test_check_int_eq (result, HTTP_WEB_SOCKET_RECEIVE_CLOSED, NULL);
+			test_check_int_eq (result, HTTP_WEB_SOCKET_RECEIVE_RESULT_CLOSED, NULL);
 			test_check_unsigned_eq (code, 1000, NULL);
 			test_check_unsigned_eq (events.n_events, 4, NULL);
 
@@ -287,7 +297,7 @@ static void message_test_failure (
 		bytes, size, 0, false, deflate, &events, &code, NULL
 	);
 
-	if ((result != HTTP_WEB_SOCKET_RECEIVE_FAILED) || (code != expected)) {
+	if ((result != HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED) || (code != expected)) {
 		(void) fprintf (
 			stderr, "%s: %s with %u, expected %u\n",
 			description, http_web_socket_receive_result_to_string (result), code, expected
@@ -453,6 +463,168 @@ static void test_message_compressed_failures (void) {
 
 }
 
+// what a stream got from a receiver that stops at each piece
+typedef struct MessageTestStopped {
+
+	size_t received;
+	unsigned int pieces;
+	unsigned int lasts;
+	bool wrong;
+
+} MessageTestStopped;
+
+static int message_test_stopped_on_fragment (
+	void *data, HttpWebSocketOpcode type,
+	const u8 *payload, size_t size, bool first, bool last
+) {
+
+	(void) type;
+	(void) first;
+
+	MessageTestStopped *stopped = (MessageTestStopped *) data;
+
+	for (size_t i = 0; i < size; i++) stopped->wrong = stopped->wrong || (payload[i] != MESSAGE_TEST_STOPPED_BYTE);
+
+	stopped->received += size;
+	stopped->pieces += 1;
+	if (last) stopped->lasts += 1;
+
+	return 1;
+
+}
+
+static const HttpWebSocketReceiverHandlers message_test_stopped_handlers = {
+	NULL, message_test_stopped_on_fragment, NULL, NULL, NULL
+};
+
+// appends a compressed message of the client to the buffer
+static size_t message_test_compressed (
+	HttpWebSocketDeflate *client, u8 *buffer, const size_t position, const u8 *payload, const size_t size
+) {
+
+	const u8 *compressed = NULL;
+	size_t compressed_size = 0;
+	test_check_unsigned_eq (http_web_socket_deflate_compress (client, payload, size, true, &compressed, &compressed_size), 0, NULL);
+
+	return message_test_frame (buffer, position, true, true, HTTP_WEB_SOCKET_OPCODE_BINARY, compressed, compressed_size);
+
+}
+
+// W4: a stream that stops the receiver at every piece of compressed messages loses nothing: the bytes that the
+// inflater did not take and the output that it had go on in the next call, and the last piece of each message
+// arrives, also when the stop was in the end of its decompression
+static void test_message_compressed_stop (void) {
+
+	if (!http_web_socket_deflate_available ()) return;
+
+	HttpWebSocketDeflateOptions options;
+	http_web_socket_deflate_options_init (&options);
+	options.enabled = true;
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	HttpWebSocketDeflate *client = http_web_socket_deflate_create (HTTP_WEB_SOCKET_ROLE_CLIENT, &parameters, &options);
+	HttpWebSocketDeflate *server = http_web_socket_deflate_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters, &options);
+	test_check_ptr (client);
+	test_check_ptr (server);
+
+	u8 *payload = (u8 *) malloc (MESSAGE_TEST_STOPPED_SIZE);
+	u8 *buffer = (u8 *) malloc (MESSAGE_TEST_BUFFER_SIZE);
+	test_check_ptr (payload);
+	test_check_ptr (buffer);
+	(void) memset (payload, MESSAGE_TEST_STOPPED_BYTE, MESSAGE_TEST_STOPPED_SIZE);
+
+	size_t size = message_test_compressed (client, buffer, 0, payload, MESSAGE_TEST_STOPPED_SIZE);
+	size = message_test_compressed (client, buffer, size, payload, MESSAGE_TEST_STOPPED_SECOND);
+
+	MessageTestStopped stopped;
+	(void) memset (&stopped, 0, sizeof (MessageTestStopped));
+
+	HttpWebSocketReceiver receiver;
+	http_web_socket_receiver_init (
+		&receiver, HTTP_WEB_SOCKET_ROLE_SERVER, 0, 0, server, &message_test_stopped_handlers, &stopped
+	);
+
+	size_t position = 0;
+	unsigned int calls = 0;
+	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED;
+	while ((result == HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED) && (calls < MESSAGE_TEST_STOPPED_CALLS)) {
+		size_t parsed = 0;
+		result = http_web_socket_receiver_execute (&receiver, buffer + position, size - position, &parsed);
+		position += parsed;
+		calls += 1;
+	}
+
+	test_check_int_eq (result, HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL);
+	test_check_unsigned_eq (position, size, NULL);
+	test_check_unsigned_eq (stopped.received, MESSAGE_TEST_STOPPED_SIZE + MESSAGE_TEST_STOPPED_SECOND, NULL);
+	test_check_unsigned_eq (stopped.lasts, 2, NULL);
+	test_check_false (stopped.wrong);
+	test_check (stopped.pieces > 2, "the receiver was not stopped inside the messages");
+
+	test_check_str_eq (http_web_socket_inflate_result_to_string (HTTP_WEB_SOCKET_INFLATE_STOPPED), "Stopped", NULL);
+	test_check_str_eq (http_web_socket_inflate_result_to_string ((HttpWebSocketInflateResult) MESSAGE_TEST_STOPPED_CALLS), "Undefined", NULL);
+
+	http_web_socket_receiver_end (&receiver);
+	http_web_socket_deflate_delete (server);
+	http_web_socket_deflate_delete (client);
+	free (buffer);
+	free (payload);
+
+}
+
+// the size of the last message
+static int message_test_size_on_message (void *data, HttpWebSocketOpcode type, const u8 *payload, size_t size) {
+
+	(void) type;
+	(void) payload;
+
+	*((size_t *) data) = size;
+
+	return 0;
+
+}
+
+static const HttpWebSocketReceiverHandlers message_test_size_handlers = {
+	message_test_size_on_message, NULL, NULL, NULL, NULL
+};
+
+// W7: the buffer of a message larger than 2^16 goes back to nothing after it, a small one keeps its buffer
+static void test_message_buffer_shrinks (void) {
+
+	u8 *payload = (u8 *) malloc (MESSAGE_TEST_LARGE_MESSAGE);
+	u8 *buffer = (u8 *) malloc (MESSAGE_TEST_LARGE_MESSAGE + MESSAGE_TEST_MAX_MESSAGE);
+	test_check_ptr (payload);
+	test_check_ptr (buffer);
+	(void) memset (payload, 'x', MESSAGE_TEST_LARGE_MESSAGE);
+
+	size_t received = 0;
+
+	HttpWebSocketReceiver receiver;
+	http_web_socket_receiver_init (
+		&receiver, HTTP_WEB_SOCKET_ROLE_SERVER, 0, 0, NULL, &message_test_size_handlers, &received
+	);
+
+	size_t size = message_test_frame (buffer, 0, true, false, HTTP_WEB_SOCKET_OPCODE_BINARY, payload, MESSAGE_TEST_LARGE_MESSAGE);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL);
+	test_check_unsigned_eq (received, MESSAGE_TEST_LARGE_MESSAGE, NULL);
+	test_check_unsigned_eq (receiver.message_capacity, 0, "the buffer of the large message was kept");
+	test_check_null_ptr (receiver.message);
+
+	size = message_test_frame (buffer, 0, true, false, HTTP_WEB_SOCKET_OPCODE_BINARY, payload, 10);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL);
+	test_check (receiver.message_capacity > 0, "the small message has no buffer");
+	test_check_unsigned_eq (received, 10, NULL);
+
+	http_web_socket_receiver_end (&receiver);
+	free (buffer);
+	free (payload);
+
+}
+
 // a close without a code reports 1005, and the bytes after a close are ignored
 static void test_message_close (void) {
 
@@ -466,7 +638,7 @@ static void test_message_close (void) {
 	size_t parsed = 0;
 	test_check_int_eq (
 		message_test_receive (buffer, size, 0, false, NULL, &events, &code, &parsed),
-		HTTP_WEB_SOCKET_RECEIVE_CLOSED, NULL
+		HTTP_WEB_SOCKET_RECEIVE_RESULT_CLOSED, NULL
 	);
 
 	test_check_unsigned_eq (code, 1005, NULL);
@@ -493,13 +665,13 @@ static void test_message_stop (void) {
 	);
 
 	size_t parsed = 0;
-	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, &parsed), HTTP_WEB_SOCKET_RECEIVE_STOPPED, NULL);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, &parsed), HTTP_WEB_SOCKET_RECEIVE_RESULT_STOPPED, NULL);
 	test_check_unsigned_eq (events.n_events, 1, NULL);
 
 	size_t rest = 0;
 	test_check_int_eq (
 		http_web_socket_receiver_execute (&receiver, buffer + parsed, size - parsed, &rest),
-		HTTP_WEB_SOCKET_RECEIVE_CONTINUE, NULL
+		HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL
 	);
 
 	test_check_unsigned_eq (parsed + rest, size, NULL);
@@ -527,13 +699,13 @@ static void test_message_buffer (void) {
 	);
 
 	size_t size = message_test_frame (buffer, 0, true, false, HTTP_WEB_SOCKET_OPCODE_BINARY, payload, sizeof (payload));
-	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_CONTINUE, NULL);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL);
 	test_check_unsigned_eq (receiver.message_capacity, MESSAGE_TEST_MAX_MESSAGE, NULL);
 
 	const u8 *message = receiver.message;
 	events.n_events = 0;
 	size = message_test_frame (buffer, 0, true, false, HTTP_WEB_SOCKET_OPCODE_BINARY, payload, 10);
-	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_CONTINUE, NULL);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, buffer, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL);
 	test_check_ptr_eq (receiver.message, message);
 	test_check_unsigned_eq (events.events[0].size, 10, NULL);
 
@@ -555,7 +727,7 @@ static void test_message_empty (void) {
 		u16 code = 0;
 		test_check_int_eq (
 			message_test_receive (buffer, size, 0, streaming, NULL, &events, &code, NULL),
-			HTTP_WEB_SOCKET_RECEIVE_CONTINUE, NULL
+			HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE, NULL
 		);
 
 		test_check_unsigned_eq (events.n_events, 2, NULL);
@@ -572,9 +744,11 @@ void web_socket_tests_message (void) {
 	test_run (test_message_fragments);
 	test_run (test_message_failures);
 	test_run (test_message_compressed_failures);
+	test_run (test_message_compressed_stop);
 	test_run (test_message_close);
 	test_run (test_message_stop);
 	test_run (test_message_buffer);
+	test_run (test_message_buffer_shrinks);
 	test_run (test_message_empty);
 
 	(void) printf ("Done!\n");

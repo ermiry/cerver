@@ -187,8 +187,9 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
 # the parser is internal, its objects never export their symbols:
-# llhttp.c is generated and it defines its methods without a visibility
-PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS))
+# llhttp.c is generated and it defines its methods without a visibility,
+# parser.o has the public names of the lenient flags
+PARSEROBJS	:= $(filter-out $(BUILDDIR)/cerver/http/parser/parser.$(OBJEXT),$(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS)))
 
 $(PARSEROBJS): CFLAGS += -fvisibility=hidden
 

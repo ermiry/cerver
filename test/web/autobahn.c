@@ -45,7 +45,7 @@ static void autobahn_on_message (
 }
 
 static const HttpWebSocketHandlers autobahn_handlers = {
-	NULL, NULL, autobahn_on_message, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, autobahn_on_message, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static void autobahn_configure (HttpCerver *http_cerver) {
@@ -53,11 +53,12 @@ static void autobahn_configure (HttpCerver *http_cerver) {
 	HttpGroup *group = http_cerver_group_create (http_cerver, "ws");
 
 	HttpEndpoint *echo = http_group_web_socket_add (group, "echo", &autobahn_handlers);
-	http_endpoint_set_web_socket_max_message (echo, AUTOBAHN_MAX_MESSAGE);
-	http_endpoint_set_web_socket_compression (echo, true);
+	HttpWebSocketSettings *settings = http_endpoint_get_web_socket_settings (echo);
+	http_web_socket_settings_set_max_message (settings, AUTOBAHN_MAX_MESSAGE);
+	http_web_socket_settings_enable_compression (settings, true);
 
 	// autobahn never answers pings of the server
-	http_endpoint_set_web_socket_ping_milliseconds (echo, 0, 0);
+	http_web_socket_settings_set_ping_milliseconds (settings, 0, 0);
 
 }
 

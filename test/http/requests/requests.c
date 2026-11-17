@@ -262,10 +262,10 @@ static void test_http_request_params (void) {
 // the methods have the values of the HTTP parser (llhttp): PATCH is 28, 34 is PRI
 static void test_http_request_methods (void) {
 
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_PATCH), "PATCH", NULL);
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_GET), "GET", NULL);
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_COPY), "COPY", NULL);
-	test_check_str_eq (http_request_method_str ((RequestMethod) 34), "Undefined", NULL);
+	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_PATCH), "PATCH", NULL);
+	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_GET), "GET", NULL);
+	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_COPY), "COPY", NULL);
+	test_check_str_eq (http_request_method_to_string ((RequestMethod) 34), "Undefined", NULL);
 
 	test_check_true (http_request_method_is_valid (REQUEST_METHOD_PATCH));
 	test_check_true (http_request_method_is_valid (REQUEST_METHOD_TRACE));

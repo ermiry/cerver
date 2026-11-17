@@ -262,7 +262,7 @@ u8 http_headers_add (
 		headers && http_headers_type_is_known (type)
 		&& http_header_value_is_valid (value, value_length)
 	) {
-		const char *name = http_header_string (type);
+		const char *name = http_header_to_string (type);
 
 		retval = http_headers_append (
 			headers, type, name, strlen (name), value, value_length

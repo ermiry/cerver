@@ -14,6 +14,7 @@
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/parser/api.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/request.h"
@@ -75,7 +76,7 @@ static void http_access_file (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %u - %zu",
 		http_receive->cr->connection->ip,
-		http_request_method_str (http_receive->request->method),
+		http_request_method_to_string (http_receive->request->method),
 		http_receive->served_file,
 		http_receive->received,
 		process_time,
@@ -99,7 +100,7 @@ static void http_access_route (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %u - %zu%s%s",
 		client,
-		http_request_method_str (http_receive->request->method),
+		http_request_method_to_string (http_receive->request->method),
 		endpoint ? endpoint->path->str : http_receive->request->url->str,
 		http_receive->received,
 		process_time,
@@ -148,7 +149,7 @@ static void http_access_unhandled (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> No matching route -> %u - %zu",
 		http_receive->cr->connection->ip,
-		http_request_method_str (http_receive->request->method),
+		http_request_method_to_string (http_receive->request->method),
 		http_receive->request->url->str,
 		http_receive->received,
 		process_time,
@@ -173,17 +174,17 @@ static void http_access_rejected (
 	http_access_client (http_receive, client);
 
 	// the method that the parser found, the request was rejected before its headers were complete
-	const uint8_t method = llhttp_get_method (&http_receive->parser);
+	const uint8_t method = llhttp_get_method (http_receive_parser_read (http_receive));
 
 	cerver_log_with_date (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %s -> %u - %zu%s%s",
 		client,
-		http_request_method_str ((RequestMethod) method),
+		http_request_method_to_string ((RequestMethod) method),
 		path,
 		http_receive->received,
 		process_time,
-		http_receive_status_str (http_receive->receive_status),
+		http_receive_status_to_string (http_receive->receive_status),
 		(unsigned int) http_receive->status, http_receive->sent,
 		http_access_separator (http_receive),
 		http_access_id (http_receive)
@@ -230,11 +231,11 @@ static void http_access_incomplete (
 		"%s -> Bad request - fd %d - status %s - stage %s - received %zu - recvs %u"
 		" - last rc %zd - errno %d - parser %s - running %d - %fs",
 		http_receive->cr->connection->ip, http_receive->sock_fd,
-		http_receive_status_str (http_receive->receive_status),
-		http_stage_string (http_receive->stage),
+		http_receive_status_to_string (http_receive->receive_status),
+		http_stage_to_string (http_receive->stage),
 		http_receive->received, http_receive->diagnostics.n_recvs,
 		http_receive->diagnostics.last_rc, http_receive->diagnostics.last_errno,
-		llhttp_errno_name (llhttp_get_errno (&http_receive->parser)),
+		llhttp_errno_name (llhttp_get_errno (http_receive_parser_read (http_receive))),
 		cerver_is_running (http_receive->cr->cerver), process_time
 	);
 

@@ -519,7 +519,7 @@ static size_t http_request_body_reserve_size (
 	const HttpReceive *http_receive, const size_t length
 ) {
 
-	const llhttp_t *parser = &http_receive->parser;
+	const llhttp_t *parser = http_receive_parser_read (http_receive);
 
 	if ((parser->flags & F_CHUNKED) || !(parser->flags & F_CONTENT_LENGTH)) return 0;
 

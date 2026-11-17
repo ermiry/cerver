@@ -177,9 +177,9 @@ void raw_send_close (const int fd, const u16 code, const char *reason) {
 	payload[1] = (u8) code;
 
 	const size_t length = reason ? strlen (reason) : 0;
-	if (length) (void) memcpy (payload + HTTP_WEB_SOCKET_CLOSE_CODE_SIZE, reason, length);
+	if (length) (void) memcpy (payload + HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE, reason, length);
 
-	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_CLOSE, payload, HTTP_WEB_SOCKET_CLOSE_CODE_SIZE + length);
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_CLOSE, payload, HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE + length);
 
 }
 
@@ -308,8 +308,8 @@ bool raw_read_frame (RawReader *reader, RawFrame *frame, const int timeout) {
 
 u16 raw_close_code (const RawFrame *frame) {
 
-	return (frame->size >= HTTP_WEB_SOCKET_CLOSE_CODE_SIZE) ?
-		(u16) ((frame->data[0] << RAW_BITS_PER_BYTE) | frame->data[1]) : HTTP_WEB_SOCKET_CLOSE_NO_STATUS;
+	return (frame->size >= HTTP_WEB_SOCKET_CLOSE_FRAME_CODE_SIZE) ?
+		(u16) ((frame->data[0] << RAW_BITS_PER_BYTE) | frame->data[1]) : HTTP_WEB_SOCKET_CLOSE_CODE_NO_STATUS;
 
 }
 

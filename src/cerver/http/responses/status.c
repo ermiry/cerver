@@ -1,6 +1,6 @@
 #include "cerver/http/responses/status.h"
 
-const char *http_status_string (const http_status status) {
+const char *http_status_to_string (const http_status status) {
 
 	switch (status) {
 		#define XX(num, name, string) case HTTP_STATUS_##name: return #string;
@@ -8,6 +8,6 @@ const char *http_status_string (const http_status status) {
 		#undef XX
 	}
 
-	return http_status_string (HTTP_STATUS_NONE);
+	return http_status_to_string (HTTP_STATUS_NONE);
 
 }

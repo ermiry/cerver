@@ -26,6 +26,7 @@
 
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/connection.h"
+#include "cerver/http/core/internal.h"
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
@@ -760,7 +761,7 @@ static unsigned int test_receive_uploads_count (void) {
 
 // the methods of the WebSocket endpoints, a socket pair never starts their connections
 static const HttpWebSocketHandlers test_receive_web_socket_handlers = {
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static HttpRoute *test_receive_child_route (
@@ -797,7 +798,7 @@ static void test_receive_groups_create (HttpCerver *http_cerver) {
 
 	// a request without an upgrade goes to its handler
 	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
-	http_endpoint_set_web_socket (socket, &test_receive_web_socket_handlers);
+	http_endpoint_set_web_socket_handlers (socket, &test_receive_web_socket_handlers);
 
 	// a request without an upgrade is answered with 426
 	test_check_ptr (http_group_web_socket_add (v2, "only", &test_receive_web_socket_handlers));
@@ -5835,7 +5836,7 @@ static void test_receive_session_start (TestReceiveSession *session, Cerver *cer
 
 	session->http_receive = test_receive_create (&session->cerver_receive);
 
-	session->on_body = session->http_receive->settings.on_body;
+	session->on_body = http_receive_parser_settings (session->http_receive)->on_body;
 
 	session->arena_used = receive_arena ? receive_arena->used : 0;
 	session->arena_allocations = receive_arena ? receive_arena->n_allocations : 0;
@@ -5947,10 +5948,10 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->start_time > 0);
 
 	// the parser is ready for a new request with the callbacks of a new one
-	test_receive_expect (http_receive->parser.error == HPE_OK);
-	test_receive_expect (http_receive->parser.data == http_receive);
-	test_receive_expect (http_receive->parser.settings == &http_receive->settings);
-	test_receive_expect (http_receive->settings.on_body == session->on_body);
+	test_receive_expect (http_receive_parser_read (http_receive)->error == HPE_OK);
+	test_receive_expect (http_receive_parser_read (http_receive)->data == http_receive);
+	test_receive_expect (http_receive_parser_read (http_receive)->settings == http_receive_parser_settings_read (http_receive));
+	test_receive_expect (http_receive_parser_settings_read (http_receive)->on_body == session->on_body);
 
 	// the request is a new one, without what the one before received
 	const HttpRequest *request = http_receive->request;

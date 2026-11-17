@@ -178,7 +178,7 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 	json_t *handler_object = json_object ();
 
 	(void) json_object_set_new (
-		handler_object, "method", json_string (http_request_method_str (method))
+		handler_object, "method", json_string (http_request_method_to_string (method))
 	);
 
 	(void) json_object_set_new (
@@ -568,6 +568,9 @@ static void http_cerver_admin_handler_web_socket_stats (
 		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_received", stats.n_bytes_received);
 		http_cerver_admin_web_socket_value (web_sockets, "n_bytes_sent", stats.n_bytes_sent);
 		http_cerver_admin_web_socket_value (web_sockets, "n_failed_sends", stats.n_slow);
+		http_cerver_admin_web_socket_value (web_sockets, "n_dropped", stats.n_dropped);
+		http_cerver_admin_web_socket_value (web_sockets, "n_drains", stats.n_drains);
+		http_cerver_admin_web_socket_value (web_sockets, "queued_bytes", stats.n_queued_bytes);
 		http_cerver_admin_web_socket_value (web_sockets, "n_errors", stats.n_errors);
 
 		json_t *rejected = json_object ();

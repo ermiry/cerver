@@ -15,6 +15,8 @@
 #include <time.h>
 
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/uio.h>
 
 #include "cerver/types/string.h"
 #include "cerver/types/types.h"
@@ -24,6 +26,7 @@
 #include "cerver/config.h"
 
 #include "cerver/connection/connection.h"
+#include "cerver/events/internal.h"
 #include "cerver/network/network.h"
 #include "cerver/network/socket.h"
 
@@ -74,100 +77,47 @@ CERVER_HIDDEN void http_web_socket_settings_inherit (
 	HttpWebSocketSettings *resolved, const HttpWebSocketSettings *source
 );
 
-/**
- * @internal
- * @brief Sets the handlers of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] handlers the handlers, copied; NULL changes nothing
- */
-CERVER_HIDDEN void http_web_socket_settings_set_handlers (
-	HttpWebSocketSettings *settings, const HttpWebSocketHandlers *handlers
-);
+struct _HttpWebSocketRoom;
 
 /**
  * @internal
- * @brief Sets the max message of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] max_message the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE
+ * @brief The place of a connection in a room: a node of the list of the members of the room and of the list of the
+ * rooms of the connection, protected by the mutex of the registry.
  */
-CERVER_HIDDEN void http_web_socket_settings_set_max_message (
-	HttpWebSocketSettings *settings, const size_t max_message
-);
+typedef struct HttpWebSocketMembership {
+
+	/** @internal @brief The room. */
+	struct _HttpWebSocketRoom *room;
+	/** @internal @brief The connection. */
+	struct _HttpWebSocket *web_socket;
+
+	/** @internal @brief The previous member of the room. */
+	struct HttpWebSocketMembership *previous;
+	/** @internal @brief The next member of the room. */
+	struct HttpWebSocketMembership *next;
+
+	/** @internal @brief The next room of the connection. */
+	struct HttpWebSocketMembership *next_room;
+
+} HttpWebSocketMembership;
 
 /**
  * @internal
- * @brief Copies the subprotocols, at most #HTTP_WEB_SOCKET_MAX_PROTOCOLS; a list that is rejected does not change
- * the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] protocols the subprotocols
- * @param[in] n_protocols the number of subprotocols
- * @retval 0 the subprotocols were set
- * @retval 1 a list that is not valid or no memory
+ * @brief A room of the index of the registry, created with its first member and released with its last one.
  */
-CERVER_HIDDEN u8 http_web_socket_settings_set_protocols (
-	HttpWebSocketSettings *settings,
-	const char * const *protocols, const unsigned int n_protocols
-);
+typedef struct _HttpWebSocketRoom {
 
-/**
- * @internal
- * @brief Sets the options of permessage-deflate of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] compression the options, copied; NULL changes nothing
- */
-CERVER_HIDDEN void http_web_socket_settings_set_compression (
-	HttpWebSocketSettings *settings, const HttpWebSocketDeflateOptions *compression
-);
+	/** @internal @brief A copy of the name. */
+	char *name;
+	/** @internal @brief The bytes of the name, the key of the index. */
+	size_t length;
 
-/**
- * @internal
- * @brief Sets the check of the Origin of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] origin_check true to check it
- */
-CERVER_HIDDEN void http_web_socket_settings_set_origin_check (
-	HttpWebSocketSettings *settings, const bool origin_check
-);
+	/** @internal @brief The first member. */
+	HttpWebSocketMembership *first;
+	/** @internal @brief The members. */
+	unsigned int count;
 
-/**
- * @internal
- * @brief Sets the pings of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] ping_interval the milliseconds before a ping, 0 disables them
- * @param[in] pong_timeout the milliseconds to wait for the pong
- */
-CERVER_HIDDEN void http_web_socket_settings_set_ping_milliseconds (
-	HttpWebSocketSettings *settings,
-	const unsigned int ping_interval, const unsigned int pong_timeout
-);
-
-/**
- * @internal
- * @brief Sets the close timeout of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] close_timeout the milliseconds
- */
-CERVER_HIDDEN void http_web_socket_settings_set_close_timeout_milliseconds (
-	HttpWebSocketSettings *settings, const unsigned int close_timeout
-);
-
-/**
- * @internal
- * @brief Sets the send timeout of the settings.
- *
- * @param[in,out] settings the settings
- * @param[in] send_timeout the milliseconds, 0 uses the send timeout of the HTTP cerver
- */
-CERVER_HIDDEN void http_web_socket_settings_set_send_timeout_milliseconds (
-	HttpWebSocketSettings *settings, const unsigned int send_timeout
-);
+} HttpWebSocketRoom;
 
 /**
  * @internal
@@ -205,6 +155,160 @@ typedef struct HttpWebSocketHandshake {
 	size_t pending_size;
 
 } HttpWebSocketHandshake;
+
+/** @internal @brief The first bytes of the queue of a connection, that it keeps while it lives. */
+#define HTTP_WEB_SOCKET_QUEUE_INITIAL_SIZE			(1 << 12)
+
+/** @internal @brief The buffers of a connection above this size go back to their first size after their use (W7). */
+#define HTTP_WEB_SOCKET_SHRINK_SIZE					(1 << 16)
+
+/**
+ * @internal
+ * @brief How a connection reads, writes and ends its stream; a socket today, TLS later (A24).
+ *
+ * Every method can be called with the stream already ended: it fails without touching the file descriptor.
+ */
+typedef struct HttpWebSocketTransport {
+
+	/** @internal @brief A recv () without waiting: the bytes, 0 at the end, -1 with errno. */
+	ssize_t (*read) (struct _HttpWebSocket *web_socket, void *buffer, size_t size);
+
+	/** @internal @brief A sendmsg () without waiting: the bytes that the stream took, -1 with errno. */
+	ssize_t (*write) (struct _HttpWebSocket *web_socket, const struct iovec *parts, int n_parts);
+
+	/** @internal @brief Ends the writes (SHUT_WR) of the stream, its reads stay open. */
+	void (*end_writes) (struct _HttpWebSocket *web_socket);
+
+	/** @internal @brief Ends both directions, a read or a write that waits ends now. */
+	void (*shutdown) (struct _HttpWebSocket *web_socket);
+
+	/** @internal @brief The file descriptor that a poller watches, -1 without one. */
+	int (*fd) (const struct _HttpWebSocket *web_socket);
+
+} HttpWebSocketTransport;
+
+/** @internal @brief The transport of the connections over a socket. */
+CERVER_HIDDEN const HttpWebSocketTransport http_web_socket_socket_transport;
+
+/** @internal @brief What an event of a connection that its pool runs is (http/websockets/loop.c). */
+typedef enum HttpWebSocketEventType {
+
+	/** @internal @brief on_open (). */
+	HTTP_WEB_SOCKET_EVENT_OPEN			= 0,
+	/** @internal @brief on_message () with a whole message. */
+	HTTP_WEB_SOCKET_EVENT_MESSAGE		= 1,
+	/** @internal @brief on_fragment () with a piece of a message. */
+	HTTP_WEB_SOCKET_EVENT_FRAGMENT		= 2,
+	/** @internal @brief on_ping (), the loop already answered it. */
+	HTTP_WEB_SOCKET_EVENT_PING			= 3,
+	/** @internal @brief on_pong (). */
+	HTTP_WEB_SOCKET_EVENT_PONG			= 4,
+	/** @internal @brief on_drain (). */
+	HTTP_WEB_SOCKET_EVENT_DRAIN			= 5,
+	/** @internal @brief on_error () and on_close (), the last ones. */
+	HTTP_WEB_SOCKET_EVENT_END			= 6
+
+} HttpWebSocketEventType;
+
+/** @internal @brief An event of a connection, its payload is in the data of its batch. */
+typedef struct HttpWebSocketEvent {
+
+	/** @internal @brief What the event is. */
+	HttpWebSocketEventType type;
+	/** @internal @brief The opcode of a message or of a fragment. */
+	HttpWebSocketOpcode opcode;
+	/** @internal @brief The first piece of a message. */
+	bool first;
+	/** @internal @brief The last piece of a message. */
+	bool last;
+	/** @internal @brief Where its payload starts in the data of the batch. */
+	size_t offset;
+	/** @internal @brief The bytes of its payload. */
+	size_t size;
+
+} HttpWebSocketEvent;
+
+/**
+ * @internal
+ * @brief The events that the loop read for a connection, that one job of its pool runs in order; the loop writes
+ * them and the job reads them, never at the same time.
+ */
+typedef struct HttpWebSocketBatch {
+
+	/** @internal @brief The events. */
+	HttpWebSocketEvent *events;
+	/** @internal @brief The events in the batch. */
+	unsigned int n_events;
+	/** @internal @brief The places of #events. */
+	unsigned int capacity;
+
+	/** @internal @brief The payloads of the events. */
+	u8 *data;
+	/** @internal @brief The bytes in #data. */
+	size_t size;
+	/** @internal @brief The size of #data. */
+	size_t data_capacity;
+
+} HttpWebSocketBatch;
+
+/** @internal @brief Another thread asks the loop of a connection to adopt it. */
+#define HTTP_WEB_SOCKET_REQUEST_ADOPT				(1u << 0)
+/** @internal @brief Another thread left bytes in the queue of a connection. */
+#define HTTP_WEB_SOCKET_REQUEST_OUTPUT				(1u << 1)
+/** @internal @brief The job of a connection ended. */
+#define HTTP_WEB_SOCKET_REQUEST_JOB_DONE			(1u << 2)
+/** @internal @brief The pool did not run the job of a connection, the loop runs it. */
+#define HTTP_WEB_SOCKET_REQUEST_JOB_REJECTED		(1u << 3)
+/** @internal @brief The timers of a connection changed (a close that another thread sent). */
+#define HTTP_WEB_SOCKET_REQUEST_TIMERS				(1u << 4)
+/** @internal @brief The cerver goes away (1001). */
+#define HTTP_WEB_SOCKET_REQUEST_GO_AWAY				(1u << 5)
+/** @internal @brief The connection ends now, without its closing handshake. */
+#define HTTP_WEB_SOCKET_REQUEST_ABORT				(1u << 6)
+
+/** @internal @brief A park whose connection is owned by its loop or by a thread of its pool. */
+#define HTTP_WEB_SOCKET_PARK_TAKEN					0
+/** @internal @brief A park whose connection waits in the poller of its pool, the first one that takes it owns it. */
+#define HTTP_WEB_SOCKET_PARK_PARKED					1
+
+/** @internal @brief What a thread of the pool read after a job: nothing that ends the connection. */
+#define HTTP_WEB_SOCKET_READ_END_NONE				0
+/** @internal @brief The frames that it read ended the connection (a close or a failure of the peer). */
+#define HTTP_WEB_SOCKET_READ_END_FRAMES				1
+/** @internal @brief The peer ended its side of the TCP connection. */
+#define HTTP_WEB_SOCKET_READ_END_PEER				2
+/** @internal @brief A read failed. */
+#define HTTP_WEB_SOCKET_READ_END_FAILED				3
+
+struct _HttpWebSocket;
+
+/**
+ * @internal
+ * @brief Where a connection of a loop waits for its next frames in the poller of its pool, between two jobs: the
+ * threads of the pool read it when they have nothing else, like the connections that are kept (F4b).
+ *
+ * A park lives in a list of its loop and is released with it, never with its connection: a thread that got its
+ * report from the poller after the connection was taken (and maybe released) only finds it taken, or parked by
+ * another connection that it reads in vain.
+ */
+typedef struct HttpWebSocketPark {
+
+	/** @internal @brief The source of the socket in the poller of the pool, its owner is the park. */
+	EventSource source;
+
+	/** @internal @brief Protects the state, the connection and the arming of the source. */
+	pthread_mutex_t mutex;
+	/** @internal @brief #HTTP_WEB_SOCKET_PARK_TAKEN or #HTTP_WEB_SOCKET_PARK_PARKED. */
+	unsigned int state;
+	/** @internal @brief The connection, NULL when the park is free. */
+	struct _HttpWebSocket *web_socket;
+
+	/** @internal @brief The next free park of the loop. */
+	struct HttpWebSocketPark *next;
+	/** @internal @brief The next park of the loop, free or not. */
+	struct HttpWebSocketPark *all_next;
+
+} HttpWebSocketPark;
 
 /**
  * @internal
@@ -263,8 +367,10 @@ struct _HttpWebSocket {
 	/** @internal @brief Releases the decoded data. */
 	void (*delete_decoded_data)(void *);
 
-	/** @internal @brief The compression, NULL when it was not negotiated. */
+	/** @internal @brief The compression, NULL when it was not negotiated or after the end of the connection (W7). */
 	HttpWebSocketDeflate *deflate;
+	/** @internal @brief The compression was negotiated, it stays after zlib is released. */
+	bool compressed;
 
 	/** @internal @brief The receiver of the messages. */
 	HttpWebSocketReceiver receiver;
@@ -343,11 +449,90 @@ struct _HttpWebSocket {
 	u8 masks[HTTP_WEB_SOCKET_MASKS_SIZE];
 	/** @internal @brief The next mask in #masks. */
 	size_t masks_position;
-	/** @internal @brief The buffer where a client masks its payloads. */
-	u8 *scratch;
+	/** @internal @brief How the connection reads and writes, NULL until it has a stream. */
+	const HttpWebSocketTransport *transport;
 
-	/** @internal @brief The rooms, protected by the mutex of the registry. */
-	char rooms[HTTP_WEB_SOCKET_MAX_ROOMS][HTTP_WEB_SOCKET_ROOM_NAME_SIZE];
+	/**
+	 * @internal
+	 * @brief The frames that wait to be written, from #queue_start to #queue_end, protected by #send_mutex; a send
+	 * writes what the stream takes and leaves the rest here, and the owner of the connection (its loop or its
+	 * thread) writes it.
+	 */
+	u8 *queue;
+	/** @internal @brief The size of #queue. */
+	size_t queue_capacity;
+	/** @internal @brief The first byte that waits. */
+	size_t queue_start;
+	/** @internal @brief The end of the bytes that wait. */
+	size_t queue_end;
+	/** @internal @brief The bytes that wait, atomic: http_web_socket_get_buffered_size () reads it without the mutex. */
+	size_t queue_size;
+	/** @internal @brief The most bytes of data frames that wait, resolved when the connection starts. */
+	size_t queue_max;
+	/** @internal @brief What a send does with a message that does not fit. */
+	HttpWebSocketOverflow overflow;
+	/** @internal @brief A send went over half of the queue: on_drain () runs when it is empty. */
+	bool queue_backpressure;
+	/** @internal @brief The queue became empty after #queue_backpressure: on_drain () has to run. */
+	bool queue_drained;
+	/** @internal @brief When the queue fails if it writes nothing more: its send timeout after its last write, or after its first byte. */
+	struct timespec queue_deadline;
+	/** @internal @brief The writes of the stream were ended (SHUT_WR). */
+	bool writes_ended;
+
+	/** @internal @brief The loop that owns the connection, NULL with a thread (CERVER_HANDLER_TYPE_THREADS and the clients). */
+	EventLoop *loop;
+	/** @internal @brief Its source in the poller of its loop. */
+	EventSource source;
+	/** @internal @brief Its timer in the wheel of its loop. */
+	EventTimer timer;
+	/** @internal @brief The lane of its loop whose pool runs its jobs. */
+	unsigned int lane;
+	/** @internal @brief The HTTP_WEB_SOCKET_REQUEST_* flags that other threads gave the loop, atomic. */
+	unsigned int loop_requests;
+	/** @internal @brief The next connection with requests for the loop, with the mutex of the completed connections. */
+	struct _HttpWebSocket *loop_next;
+	/** @internal @brief The next connection whose job waits for a place in its pool, only the loop uses it. */
+	struct _HttpWebSocket *waiting_next;
+	/** @internal @brief The job of the connection waits for a place in its pool. */
+	bool waiting;
+	/** @internal @brief The events of the next job. */
+	HttpWebSocketBatch batch;
+	/** @internal @brief The events that the current job runs, the loop fills #batch meanwhile. */
+	HttpWebSocketBatch running;
+	/** @internal @brief A job of the pool runs its events: the loop does not read the connection. */
+	bool job;
+	/** @internal @brief on_open () ran and the connection is in the registry. */
+	bool opened;
+	/** @internal @brief The loop reads the connection. */
+	bool reading;
+	/** @internal @brief The connection ends: the loop writes its queue, ends its writes and drains its peer. */
+	bool ending;
+	/** @internal @brief The loop reads and discards what the peer sends after the writes ended. */
+	bool draining;
+	/** @internal @brief The bytes that were drained. */
+	size_t drained;
+	/** @internal @brief The end of the drain, in the milliseconds of the loop. */
+	u64 drain_deadline;
+	/** @internal @brief The last events (on_error (), on_close ()) were given to its pool: nothing else runs. */
+	bool finished;
+	/** @internal @brief The loop released the connection: the requests that still come are ignored. */
+	bool released;
+	/** @internal @brief The place of the handshake is still the one of the connection, it is given back if it is not registered. */
+	bool reserved;
+
+	/** @internal @brief Where it waits in the poller of its pool between its jobs, NULL when it can not. */
+	HttpWebSocketPark *park;
+	/**
+	 * @internal @brief Its queue was empty again while a job had it: its on_drain () goes after the job (loop); atomic,
+	 * the thread of the job reads it before it parks the connection.
+	 */
+	bool drain_pending;
+	/** @internal @brief What a thread of the pool read that ends it, a `HTTP_WEB_SOCKET_READ_END_*`. */
+	unsigned int read_end;
+
+	/** @internal @brief The rooms, protected by the mutex of the registry; kept while on_close () runs. */
+	HttpWebSocketMembership *rooms;
 	/** @internal @brief The number of rooms. */
 	unsigned int n_rooms;
 
@@ -472,42 +657,401 @@ CERVER_HIDDEN void http_web_socket_go_away (HttpWebSocket *web_socket);
  */
 CERVER_HIDDEN void http_web_socket_abort (HttpWebSocket *web_socket);
 
-/** @internal @brief The timeout of a send that is the one of its connection, resolved when the message can be sent. */
-#define HTTP_WEB_SOCKET_SEND_TIMEOUT_CONNECTION		0
+/**
+ * @internal
+ * @brief The milliseconds of each send of a connection: the ones of its settings, of its HTTP cerver, of its cerver
+ * or the default.
+ *
+ * @param[in] web_socket the connection
+ * @return the milliseconds
+ */
+CERVER_HIDDEN unsigned int http_web_socket_send_milliseconds (const HttpWebSocket *web_socket);
 
 /**
  * @internal
- * @brief Sends a whole message with a deadline of some milliseconds (for a broadcast), or with the one of the
- * connection.
- *
- * A send that does not end in time fails the connection; one that the connection does not take because it is
- * closing only returns its error.
+ * @brief The connection fails: it keeps its first error and ends without its closing handshake.
  *
  * @param[in,out] web_socket the connection
- * @param[in] type the opcode
- * @param[in] data the payload
- * @param[in] size the bytes of the payload
- * @param[in] timeout the milliseconds, or #HTTP_WEB_SOCKET_SEND_TIMEOUT_CONNECTION
- * @retval 0 the message was sent
- * @retval 1 it was not sent
+ * @param[in] error the error, HTTP_WEB_SOCKET_ERROR_SEND also counts a slow peer
  */
-CERVER_HIDDEN u8 http_web_socket_send_timeout (
-	HttpWebSocket *web_socket,
-	const HttpWebSocketOpcode type, const void *data, const size_t size,
-	const unsigned int timeout
+CERVER_HIDDEN void http_web_socket_fail (HttpWebSocket *web_socket, const HttpWebSocketError error);
+
+/**
+ * @internal
+ * @brief Keeps the first error of a connection, the one that on_error () reports.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] error the error
+ */
+CERVER_HIDDEN void http_web_socket_set_error (HttpWebSocket *web_socket, const HttpWebSocketError error);
+
+/**
+ * @internal
+ * @brief The next 4 random bytes of the masks of a client, renewed when they run out.
+ *
+ * @param[in,out] web_socket the connection of a client
+ * @param[out] mask where the mask is written, #HTTP_WEB_SOCKET_MASK_SIZE bytes
+ */
+CERVER_HIDDEN void http_web_socket_next_mask (HttpWebSocket *web_socket, u8 *mask);
+
+/**
+ * @internal
+ * @brief Tells the owner of a connection (its loop or its thread) that something of the connection changed: its
+ * queue, its timers, a go away or an abort.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] requests the HTTP_WEB_SOCKET_REQUEST_* flags, for a loop
+ */
+CERVER_HIDDEN void http_web_socket_notify (HttpWebSocket *web_socket, const unsigned int requests);
+
+/**
+ * @internal
+ * @brief Sends the close frame once (into the queue), the send mutex must be held.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] code the code, 1005 sends a close frame without a payload
+ * @param[in] reason the reason, it can be NULL
+ * @param[in] length the bytes of the reason
+ * @retval 0 the close frame was taken now
+ * @retval 1 it was already sent, or the connection could not take it
+ */
+CERVER_HIDDEN u8 http_web_socket_close_frame_locked (
+	HttpWebSocket *web_socket, const u16 code, const char *reason, const size_t length
 );
 
 /**
  * @internal
- * @brief Starts the connection of the server of an upgraded request in its own thread; it takes its connection.
+ * @brief Starts the connection of the server of an upgraded request; it takes its connection.
+ *
+ * With a loop (CERVER_HANDLER_TYPE_EVENTS) the connection goes to that loop, that reads it and writes its queue,
+ * and its methods run in jobs of the pool of its endpoint; without one it runs in its own thread.
  *
  * @param[in,out] cr the receive of the connection
  * @param[in,out] http_receive the receive of the request
+ * @param[in,out] loop the loop of the connection, NULL for a thread
  * @return true when it started, then the caller must not drop the connection
  */
 CERVER_HIDDEN bool http_web_socket_start (
-	struct CerverReceive *cr, struct _HttpReceive *http_receive
+	struct CerverReceive *cr, struct _HttpReceive *http_receive, EventLoop *loop
 );
+
+/**
+ * @internal
+ * @brief A connection reads and writes a socket: its transport, its queue and, with its own thread, its buffer.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] socket the socket, the connection does not own it
+ * @param[in] thread the connection runs in its own thread, that reads in a buffer of its own
+ * @retval 0 the connection has its stream
+ * @retval 1 no memory
+ */
+CERVER_HIDDEN u8 http_web_socket_stream_set (HttpWebSocket *web_socket, Socket *socket, const bool thread);
+
+/**
+ * @internal
+ * @brief The connection that ended leaves its registry (or gives its place back) and its TCP connection is
+ * dropped, by its owner.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_stream_end (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Returns whether the peer can still be sending after the close of cerver, that it did not answer.
+ *
+ * @param[in] web_socket the connection
+ * @return true when the connection drains its peer after its writes ended
+ */
+CERVER_HIDDEN bool http_web_socket_drain_needed (const HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Gives a new connection of the server to a loop, from the thread of the pool that answered its upgrade.
+ *
+ * @param[in,out] web_socket the connection, the loop takes its reference
+ * @param[in,out] loop the loop
+ * @return true when the loop took it
+ */
+CERVER_HIDDEN bool http_web_socket_loop_adopt (HttpWebSocket *web_socket, EventLoop *loop);
+
+/**
+ * @internal
+ * @brief Releases the events of a batch.
+ *
+ * @param[in,out] batch the batch
+ */
+CERVER_HIDDEN void http_web_socket_batch_delete (HttpWebSocketBatch *batch);
+
+/**
+ * @internal
+ * @brief Resolves the size and the policy of the queue of a connection, from its settings or from its cerver.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_queue_setup (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Releases the queue of a connection.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_queue_delete (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Sends a frame: it writes what the stream takes without waiting when nothing waits before it, and leaves
+ * the rest in the queue for the owner of the connection. The send mutex must be held.
+ *
+ * A whole message that does not fit takes the policy of the queue; the control frames and the pieces of a stream
+ * always fit. A frame larger than the queue fits only when the queue is empty.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] fin the last frame of its message
+ * @param[in] rsv1 a compressed message
+ * @param[in] opcode the opcode
+ * @param[in] payload the payload
+ * @param[in] size the bytes of the payload
+ * @param[in] exempt a frame that never takes the policy: a control frame or a piece of a stream
+ * @return HTTP_WEB_SOCKET_SEND_QUEUED or HTTP_WEB_SOCKET_SEND_BACKPRESSURE when it was taken, the other results when
+ * it was not
+ */
+CERVER_HIDDEN HttpWebSocketSendResult http_web_socket_queue_frame (
+	HttpWebSocket *web_socket,
+	const bool fin, const bool rsv1, const u8 opcode,
+	const u8 *payload, const size_t size, const bool exempt
+);
+
+/**
+ * @internal
+ * @brief Writes what the stream takes of the queue, without waiting; the send mutex must be held.
+ *
+ * @param[in,out] web_socket the connection
+ * @retval 0 the stream took what it could
+ * @retval 1 a write failed, the connection fails
+ */
+CERVER_HIDDEN u8 http_web_socket_queue_flush (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Returns whether nothing waits in the queue, with the send mutex held or by the owner of the connection.
+ *
+ * @param[in] web_socket the connection
+ * @return true when the queue is empty
+ */
+CERVER_HIDDEN bool http_web_socket_queue_is_empty (const HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Returns the milliseconds until the queue fails for not writing a byte in its send timeout.
+ *
+ * @param[in] web_socket the connection
+ * @return the milliseconds, 0 when it is over, -1 with an empty queue
+ */
+CERVER_HIDDEN int http_web_socket_queue_remaining (const HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief The buffers of a connection that grew above #HTTP_WEB_SOCKET_SHRINK_SIZE go back to their first size
+ * (W7, S10); the owner of the connection calls it when they are empty.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_queue_shrink (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Adds an event to the next job of a connection of a loop, with a copy of its payload; the loop calls it
+ * while it parses what it read.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] type the event
+ * @param[in] opcode the opcode of a message or of a fragment
+ * @param[in] payload the payload, it can be NULL with 0
+ * @param[in] size the bytes of the payload
+ * @param[in] first the first piece of a message
+ * @param[in] last the last piece of a message
+ * @retval 0 the event was added
+ * @retval 1 no memory
+ */
+CERVER_HIDDEN u8 http_web_socket_loop_event (
+	HttpWebSocket *web_socket, const HttpWebSocketEventType type, const HttpWebSocketOpcode opcode,
+	const u8 *payload, const size_t size, const bool first, const bool last
+);
+
+/**
+ * @internal
+ * @brief The receiver of a connection: what it parsed goes to its methods (a thread) or to its next job (a loop).
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_receiver_setup (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Parses bytes that the connection received.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] data the bytes
+ * @param[in] size the number of bytes
+ * @return true when the connection ends
+ */
+CERVER_HIDDEN bool http_web_socket_receive_bytes (HttpWebSocket *web_socket, u8 *data, const size_t size);
+
+/**
+ * @internal
+ * @brief The next ping is sent after the ping interval without receiving anything.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_alive (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief The code and the reason that on_close () reports.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] code the code
+ * @param[in] reason the reason, it can be NULL
+ * @param[in] length the bytes of the reason
+ */
+CERVER_HIDDEN void http_web_socket_set_close (
+	HttpWebSocket *web_socket, const u16 code, const char *reason, const size_t length
+);
+
+/**
+ * @internal
+ * @brief The timers of a connection that expired: the closing handshake, the pong of a ping and the next ping, and
+ * the send timeout of its queue.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] pings false while the methods run and the connection is not read (a loop): its pings wait
+ * @return true when the connection ends
+ */
+CERVER_HIDDEN bool http_web_socket_timers (HttpWebSocket *web_socket, const bool pings);
+
+/**
+ * @internal
+ * @brief The milliseconds until the next timer of a connection, -1 without one.
+ *
+ * @param[in] web_socket the connection
+ * @param[in] pings false while its pings wait
+ * @return the milliseconds
+ */
+CERVER_HIDDEN int http_web_socket_next_timeout (const HttpWebSocket *web_socket, const bool pings);
+
+/**
+ * @internal
+ * @brief Counts the end of a connection and takes it out of its registry, before its last methods.
+ *
+ * @param[in,out] web_socket the connection
+ * @return the first error of the connection
+ */
+CERVER_HIDDEN HttpWebSocketError http_web_socket_ended (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Runs the last methods of a connection, on_error () and on_close ().
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] error the first error of the connection
+ */
+CERVER_HIDDEN void http_web_socket_closed_methods (HttpWebSocket *web_socket, const HttpWebSocketError error);
+
+/**
+ * @internal
+ * @brief Puts a connection whose on_open () ran in its registry; a cerver that is going away sends it 1001.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_register (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief Gives the loop of a connection some requests from another thread; the loop handles them in its next step.
+ *
+ * @param[in,out] web_socket the connection, of a loop
+ * @param[in] requests the HTTP_WEB_SOCKET_REQUEST_* flags
+ */
+CERVER_HIDDEN void http_web_socket_loop_request (HttpWebSocket *web_socket, const unsigned int requests);
+
+/**
+ * @internal
+ * @brief The loop handles the requests of a connection that other threads gave it; it releases the reference of
+ * the request.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_loop_requests (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief The poller of the loop reported the socket of a connection.
+ *
+ * @param[in,out] web_socket the connection
+ * @param[in] ready the EVENT_READY_* flags
+ */
+CERVER_HIDDEN void http_web_socket_loop_ready (HttpWebSocket *web_socket, const unsigned int ready);
+
+/**
+ * @internal
+ * @brief The timer of a connection expired in the wheel of its loop.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_loop_timeout (HttpWebSocket *web_socket);
+
+/**
+ * @internal
+ * @brief The jobs of the connections of a loop that did not find a place in their pools try again.
+ *
+ * @param[in,out] loop the loop
+ */
+CERVER_HIDDEN void http_web_socket_loop_retry (EventLoop *loop);
+
+/**
+ * @internal
+ * @brief A thread of a pool got the report of a park: it owns its connection when the connection still waits there.
+ *
+ * @param[in,out] park the park of the report
+ * @return the connection, to read with http_web_socket_park_work (); NULL when it was taken before
+ */
+CERVER_HIDDEN HttpWebSocket *http_web_socket_park_take (HttpWebSocketPark *park);
+
+/**
+ * @internal
+ * @brief The work of a thread of a pool that took a connection from its park: it reads it, runs its methods, and
+ * parks it again or gives it back to its loop.
+ *
+ * @param[in,out] web_socket_ptr the connection
+ */
+CERVER_HIDDEN void http_web_socket_park_work (void *web_socket_ptr);
+
+/**
+ * @internal
+ * @brief A loop found the report of a park in the poller of a pool whose threads do not wait: the connection goes
+ * back to its loop, that reads it.
+ *
+ * @param[in,out] park the park of the report
+ */
+CERVER_HIDDEN void http_web_socket_park_rescued (HttpWebSocketPark *park);
+
+/**
+ * @internal
+ * @brief Releases the parks of a loop, after the threads of its pools ended.
+ *
+ * @param[in,out] loop the loop
+ */
+CERVER_HIDDEN void http_web_socket_parks_delete (EventLoop *loop);
+
+/**
+ * @internal
+ * @brief Releases the requests that a loop did not handle, when it is deleted.
+ *
+ * @param[in,out] web_socket the first connection of the list
+ */
+CERVER_HIDDEN void http_web_socket_loop_discard (HttpWebSocket *web_socket);
 
 /**
  * @internal
@@ -529,6 +1073,9 @@ typedef struct _HttpWebSocketRegistry {
 	/** @internal @brief The first connection of the list. */
 	HttpWebSocket *first;
 
+	/** @internal @brief The rooms by their names, each one with its members (A14). */
+	struct Htab *rooms;
+
 	/** @internal @brief The connections that are registered. */
 	unsigned int count;
 
@@ -538,14 +1085,13 @@ typedef struct _HttpWebSocketRegistry {
 	/** @internal @brief The most connections. */
 	unsigned int max_connections;
 
-	/** @internal @brief The milliseconds that a broadcast waits for each connection. */
-	unsigned int broadcast_timeout;
+	/** @internal @brief The size of the queue of the connections whose endpoint did not set one. */
+	size_t max_queue;
+	/** @internal @brief The policy of the queue of the connections whose endpoint did not set one. */
+	HttpWebSocketOverflow overflow;
 
 	/** @internal @brief The cerver is going away, no more connections are accepted. */
 	bool stopping;
-
-	/** @internal @brief The id of the next connection. */
-	u64 next_id;
 
 	/** @internal @brief The connections that were opened, read and written atomically like the stats below. */
 	u64 n_opened;
@@ -563,6 +1109,10 @@ typedef struct _HttpWebSocketRegistry {
 	u64 n_bytes_sent;
 	/** @internal @brief The connections that failed because a send did not end in time. */
 	u64 n_slow;
+	/** @internal @brief The messages that a queue without a place did not take. */
+	u64 n_dropped;
+	/** @internal @brief The times that a queue was empty again after its backpressure (on_drain ()). */
+	u64 n_drains;
 	/** @internal @brief The connections that ended with an error. */
 	u64 n_errors;
 	/** @internal @brief The connections that ended with each close code from #HTTP_WEB_SOCKET_CLOSE_CODES_FIRST. */
@@ -628,6 +1178,23 @@ CERVER_HIDDEN u8 http_web_socket_registry_add (
 CERVER_HIDDEN void http_web_socket_registry_remove (
 	HttpWebSocketRegistry *registry, HttpWebSocket *web_socket
 );
+
+/**
+ * @internal
+ * @brief Returns the bytes that the queues of the connections of the registry have now.
+ *
+ * @param[in] registry the registry
+ * @return the bytes
+ */
+CERVER_HIDDEN size_t http_web_socket_registry_queued (HttpWebSocketRegistry *registry);
+
+/**
+ * @internal
+ * @brief Removes a connection from every one of its rooms, after its on_close () (A14); it can run more than once.
+ *
+ * @param[in,out] web_socket the connection
+ */
+CERVER_HIDDEN void http_web_socket_rooms_clear (HttpWebSocket *web_socket);
 
 /**
  * @internal
@@ -703,12 +1270,42 @@ typedef struct HttpWebSocketClientResponse {
 
 } HttpWebSocketClientResponse;
 
-/** @internal @brief A result of http_web_socket_client_response_parse (): the response is complete. */
-#define HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE	0
-/** @internal @brief A result of http_web_socket_client_response_parse (): it needs more bytes. */
-#define HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL		1
-/** @internal @brief A result of http_web_socket_client_response_parse (): the response is not valid. */
-#define HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID		2
+/**
+ * @internal
+ * @brief The X-macro table of the results of http_web_socket_client_response_parse (): the number, the name, the
+ * string and the description of each one.
+ *
+ * @since 2.1b-21 (they were three defines)
+ */
+#define HTTP_WEB_SOCKET_CLIENT_RESPONSE_MAP(XX)																\
+	XX(0,	COMPLETE,	Complete,	The response is complete)												\
+	XX(1,	PARTIAL,	Partial,	It needs more bytes)													\
+	XX(2,	INVALID,	Invalid,	The response is not valid)
+
+/**
+ * @internal
+ * @brief The result of http_web_socket_client_response_parse (), one `HTTP_WEB_SOCKET_CLIENT_RESPONSE_<name>` for
+ * each row of #HTTP_WEB_SOCKET_CLIENT_RESPONSE_MAP.
+ */
+typedef enum HttpWebSocketClientResponseResult {
+
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_CLIENT_RESPONSE_##name = num,
+	HTTP_WEB_SOCKET_CLIENT_RESPONSE_MAP (XX)
+	#undef XX
+
+} HttpWebSocketClientResponseResult;
+
+/**
+ * @internal
+ * @brief Returns the string of a result of http_web_socket_client_response_parse ().
+ *
+ * @param[in] result the result
+ * @return the string of its row in #HTTP_WEB_SOCKET_CLIENT_RESPONSE_MAP, or "Undefined" for a value out of the
+ * table; a static string that must not be freed
+ */
+CERVER_PUBLIC const char *http_web_socket_client_response_result_to_string (
+	const HttpWebSocketClientResponseResult result
+);
 
 /**
  * @internal
@@ -722,7 +1319,7 @@ typedef struct HttpWebSocketClientResponse {
  * @retval HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID it is not valid (invalid is set), also without its end in
  * #HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE bytes
  */
-CERVER_PUBLIC u8 http_web_socket_client_response_parse (
+CERVER_PUBLIC HttpWebSocketClientResponseResult http_web_socket_client_response_parse (
 	const char *data, const size_t size,
 	HttpWebSocketClientResponse *response
 );
@@ -791,6 +1388,11 @@ struct _HttpWebSocketClient {
 
 	/** @internal @brief http_web_socket_client_close () or delete (): there are no more reconnections. */
 	bool stopping;
+	/**
+	 * @internal @brief The connection of now opened after the close of the client, which did not find it: its thread
+	 * closes it (#mutex, with #web_socket).
+	 */
+	bool stopped_before_open;
 
 	/** @internal @brief The thread of the client. */
 	pthread_t thread;
@@ -818,6 +1420,8 @@ struct _HttpWebSocketClient {
 
 	/** @internal @brief The data of the application, every connection of the client has it since it is created. */
 	void *data;
+	/** @internal @brief Releases the data when the client is deleted, or when another data takes its place. */
+	void (*delete_data)(void *);
 
 };
 

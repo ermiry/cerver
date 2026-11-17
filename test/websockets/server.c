@@ -14,6 +14,8 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
+#include "cerver/events/internal.h"
+
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/metrics.h>
@@ -27,6 +29,8 @@
 #include "cerver/http/websockets/internal.h"
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
+
+#include <cerver/threads/thread.h>
 
 #include "../handler.h"
 #include "../test.h"
@@ -59,6 +63,19 @@
 #define SERVER_TEST_SENDER_MESSAGES			(1 << 7)
 
 #define SERVER_TEST_ROOM_CLIENTS			4
+
+// A14: more rooms than the 16 of before, and a name longer than their 63 bytes
+#define SERVER_TEST_MANY_ROOMS				(1 << 6)
+#define SERVER_TEST_LONG_ROOM_SIZE			(1 << 8)
+
+// a value out of the table of an enum
+#define SERVER_TEST_UNDEFINED_VALUE			(1 << 10)
+
+// A5: the queue of the drop and strict endpoints, and the messages that fill it
+#define SERVER_TEST_SMALL_QUEUE				(1 << 16)
+#define SERVER_TEST_FILL_SIZE				(1 << 12)
+#define SERVER_TEST_FILL_MESSAGES			(1 << 14)
+#define SERVER_TEST_LARGE_BUFFER			(1 << 20)
 
 // a socket buffer that fills fast
 #define SERVER_TEST_SMALL_BUFFER			(1 << 12)
@@ -99,6 +116,13 @@ static const char *server_test_pong_data = { "pong-data" };
 #define SERVER_TEST_SETTINGS_OWN_LEVEL		9
 #define SERVER_TEST_SETTINGS_MESSAGE		(1 << 12)
 #define SERVER_TEST_SETTINGS_CLOSE_TIMEOUT	(1 << 7)
+#define SERVER_TEST_SETTINGS_QUEUE			(1 << 16)
+
+// F6b: a message larger than a socket takes and than the default queue, sent while a method is blocked
+#define SERVER_TEST_BLOCKED_SIZE			(1 << 22)
+
+// the time that a message waits for the one that is blocked, 2^27 ns
+#define SERVER_TEST_SERIAL_NANOSECONDS		(1L << 27)
 
 // milliseconds that the connections of the patient endpoint wait for the close of their peers,
 // and the secs of the drain of the cerver that cuts them before
@@ -135,9 +159,42 @@ typedef struct ServerTestCounters {
 	unsigned int last_code;
 	unsigned int last_error;
 
+	// the methods that are blocked until the test lets them go
+	unsigned int blocked;
+
+	// the rooms that the connections were in when their on_close () ran
+	unsigned int closed_rooms;
+
+	// the connections that were already registered in their on_open ()
+	unsigned int open_registered;
+
+	// the result of the join of an on_open () (one more than it), and the count of its room then
+	unsigned int open_join;
+	unsigned int open_room_count;
+
+	// A5: the results of the sends of the last fill, and the on_drain () that ran
+	unsigned int fill_queued;
+	unsigned int fill_backpressure;
+	unsigned int fill_dropped;
+	unsigned int fill_closed;
+	unsigned int drains;
+
+	// the fills whose method saw its queue empty before it returned
+	unsigned int fill_emptied;
+
 } ServerTestCounters;
 
 static ServerTestCounters counters;
+
+// the blocked methods go on
+static unsigned int server_test_released = 0;
+
+// the connections join a room in their on_open ()
+static unsigned int server_test_join_on_open = 0;
+#define SERVER_TEST_OPEN_ROOM				"opened"
+
+// what the send of the method that was blocked returned, one more than the result once it sent
+static unsigned int server_test_unblocked = 0;
 
 typedef struct ServerTest {
 
@@ -154,7 +211,27 @@ typedef struct ServerTest {
 
 static void server_test_on_open (HttpWebSocket *web_socket) {
 
-	(void) web_socket;
+	// S7: the connection is registered after its on_open (), the broadcasts and the for each do not reach it yet
+	HttpWebSocket *registered = http_cerver_web_socket_get_with_id (
+		http_web_socket_get_http_cerver (web_socket), http_web_socket_get_id (web_socket)
+	);
+
+	if (registered) {
+		test_counter_add (&counters.open_registered);
+		http_web_socket_release (registered);
+	}
+
+	// it joins a room in its on_open (), the counts see it once it is registered
+	if (__atomic_load_n (&server_test_join_on_open, __ATOMIC_SEQ_CST)) {
+		const HttpWebSocketJoin join = http_web_socket_join (web_socket, SERVER_TEST_OPEN_ROOM);
+		__atomic_store_n (&counters.open_join, (unsigned int) join + 1, __ATOMIC_SEQ_CST);
+
+		const HttpWebSocketTarget room = { SERVER_TEST_OPEN_ROOM, NULL, NULL };
+		__atomic_store_n (
+			&counters.open_room_count, http_cerver_web_socket_count (http_web_socket_get_http_cerver (web_socket), &room),
+			__ATOMIC_SEQ_CST
+		);
+	}
 
 	test_counter_add (&counters.opened);
 
@@ -164,9 +241,14 @@ static void server_test_on_close (
 	HttpWebSocket *web_socket, u16 code, const char *reason, size_t length
 ) {
 
-	(void) web_socket;
 	(void) reason;
 	(void) length;
+
+	// A14: the rooms are kept while on_close () runs
+	unsigned int n_rooms = 0;
+	char **rooms = http_web_socket_get_rooms (web_socket, &n_rooms);
+	free (rooms);
+	(void) __atomic_add_fetch (&counters.closed_rooms, n_rooms, __ATOMIC_SEQ_CST);
 
 	__atomic_store_n (&counters.last_code, (unsigned int) code, __ATOMIC_SEQ_CST);
 	test_counter_add (&counters.closed);
@@ -267,20 +349,86 @@ static void server_test_foreign_stream (HttpWebSocket *web_socket) {
 
 }
 
-// sends large messages until a send fails, to a client that never reads
+// sends large messages until the queue does not take one, to a client that never reads
 static void server_test_flood (HttpWebSocket *web_socket) {
 
 	u8 *data = (u8 *) calloc (1, SERVER_TEST_FLOOD_SIZE);
 	test_check_ptr (data);
 
 	unsigned int sent = 0;
-	while ((sent < SERVER_TEST_FLOOD_MESSAGES) && !http_web_socket_send_binary (web_socket, data, SERVER_TEST_FLOOD_SIZE)) {
+	while (
+		(sent < SERVER_TEST_FLOOD_MESSAGES)
+		&& http_web_socket_send_result_is_taken (http_web_socket_send_binary (web_socket, data, SERVER_TEST_FLOOD_SIZE))
+	) {
 		sent += 1;
 	}
 
 	if (sent < SERVER_TEST_FLOOD_MESSAGES) test_counter_add (&counters.floods);
 
 	free (data);
+
+}
+
+static void server_test_fill_count (const HttpWebSocketSendResult result) {
+
+	switch (result) {
+		case HTTP_WEB_SOCKET_SEND_QUEUED: test_counter_add (&counters.fill_queued); break;
+		case HTTP_WEB_SOCKET_SEND_BACKPRESSURE: test_counter_add (&counters.fill_backpressure); break;
+		case HTTP_WEB_SOCKET_SEND_DROPPED: test_counter_add (&counters.fill_dropped); break;
+		default: test_counter_add (&counters.fill_closed); break;
+	}
+
+}
+
+// A5: sends messages to a client that does not read until one is not taken, and counts what each send returned
+static void server_test_fill (HttpWebSocket *web_socket) {
+
+	u8 *data = (u8 *) calloc (1, SERVER_TEST_FILL_SIZE);
+	test_check_ptr (data);
+
+	HttpWebSocketSendResult result = HTTP_WEB_SOCKET_SEND_QUEUED;
+	for (unsigned int sent = 0; (sent < SERVER_TEST_FILL_MESSAGES) && http_web_socket_send_result_is_taken (result); sent++) {
+		result = http_web_socket_send_binary (web_socket, data, SERVER_TEST_FILL_SIZE);
+		server_test_fill_count (result);
+	}
+
+	// a control frame never takes the policy, while the policy keeps the connection open
+	if ((result == HTTP_WEB_SOCKET_SEND_DROPPED) && (http_web_socket_get_state (web_socket) == HTTP_WEB_SOCKET_STATE_OPEN)) {
+		test_check_unsigned_eq (http_web_socket_ping (web_socket, "full", 4), 0, NULL);
+		test_check (http_web_socket_get_buffered_size (web_socket) > 0, "the queue was empty");
+	}
+
+	test_counter_add (&counters.floods);
+
+	free (data);
+
+}
+
+// a fill whose method waits until its client read the queue: in EVENTS the loop empties it while the job of the
+// connection still runs
+static void server_test_fill_wait (HttpWebSocket *web_socket) {
+
+	server_test_fill (web_socket);
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while (http_web_socket_get_buffered_size (web_socket) && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	if (!http_web_socket_get_buffered_size (web_socket)) test_counter_add (&counters.fill_emptied);
+
+}
+
+// a method that waits until the test lets it go
+static void server_test_block (HttpWebSocket *web_socket) {
+
+	test_counter_add (&counters.blocked);
+
+	(void) test_wait_counter (&server_test_released, 1, TEST_WAIT_SECONDS);
+
+	const HttpWebSocketSendResult result = http_web_socket_send_text (web_socket, "unblocked", 9);
+	__atomic_store_n (&server_test_unblocked, (unsigned int) result + 1, __ATOMIC_SEQ_CST);
 
 }
 
@@ -291,7 +439,7 @@ static bool server_test_command (HttpWebSocket *web_socket, const char *text) {
 	char argument[SERVER_TEST_TEXT_SIZE] = { 0 };
 
 	if (sscanf (text, "join:%63s", argument) == 1) {
-		test_check_unsigned_eq (http_web_socket_join (web_socket, argument), 0, NULL);
+		test_check_unsigned_eq (http_web_socket_join (web_socket, argument), HTTP_WEB_SOCKET_JOIN_JOINED, NULL);
 		(void) http_web_socket_send_text (web_socket, "joined", 6);
 	}
 
@@ -306,6 +454,9 @@ static bool server_test_command (HttpWebSocket *web_socket, const char *text) {
 	else if (!strcmp (text, "closed-stream")) server_test_closed_stream (web_socket);
 	else if (!strcmp (text, "foreign-stream")) server_test_foreign_stream (web_socket);
 	else if (!strcmp (text, "flood")) server_test_flood (web_socket);
+	else if (!strcmp (text, "block")) server_test_block (web_socket);
+	else if (!strcmp (text, "fill")) server_test_fill (web_socket);
+	else if (!strcmp (text, "fill-wait")) server_test_fill_wait (web_socket);
 	else if (!strcmp (text, "close")) (void) http_web_socket_close (web_socket, 4001, "asked");
 	else command = false;
 
@@ -332,7 +483,21 @@ static void server_test_on_message (
 
 static const HttpWebSocketHandlers server_test_echo_handlers = {
 	NULL, server_test_on_open, server_test_on_message, NULL,
-	NULL, NULL, server_test_on_close, server_test_on_error
+	NULL, NULL, server_test_on_close, server_test_on_error, NULL
+};
+
+// A5: the queue was empty again after its backpressure, its peer learns it with a text
+static void server_test_on_drain (HttpWebSocket *web_socket) {
+
+	test_counter_add (&counters.drains);
+
+	(void) http_web_socket_send_text (web_socket, "drained", 7);
+
+}
+
+static const HttpWebSocketHandlers server_test_queue_handlers = {
+	NULL, server_test_on_open, server_test_on_message, NULL,
+	NULL, NULL, server_test_on_close, server_test_on_error, server_test_on_drain
 };
 
 // the fragments are counted, and the size of the message is the answer at its end
@@ -366,7 +531,7 @@ static void server_test_on_fragment (
 
 static const HttpWebSocketHandlers server_test_stream_handlers = {
 	NULL, server_test_on_open, NULL, server_test_on_fragment,
-	NULL, NULL, server_test_on_close, server_test_on_error
+	NULL, NULL, server_test_on_close, server_test_on_error, NULL
 };
 
 static bool server_test_header_is (
@@ -493,7 +658,7 @@ static void server_test_adopt_open (HttpWebSocket *web_socket) {
 
 static const HttpWebSocketHandlers server_test_adopt_handlers = {
 	server_test_adopt_upgrade, server_test_adopt_open, server_test_on_message, NULL,
-	NULL, NULL, server_test_on_close, server_test_on_error
+	NULL, NULL, server_test_on_close, server_test_on_error, NULL
 };
 
 // the control frames of the peer: the ping was already answered by cerver
@@ -521,7 +686,7 @@ static void server_test_on_pong (HttpWebSocket *web_socket, const void *data, si
 
 static const HttpWebSocketHandlers server_test_control_handlers = {
 	NULL, server_test_on_open, server_test_on_message, NULL,
-	server_test_on_ping, server_test_on_pong, server_test_on_close, server_test_on_error
+	server_test_on_ping, server_test_on_pong, server_test_on_close, server_test_on_error, NULL
 };
 
 // a before middleware that answers the upgrades with X-Stop, the connection never starts
@@ -564,7 +729,7 @@ static void server_test_upgrade_open (HttpWebSocket *web_socket) {
 
 static const HttpWebSocketHandlers server_test_upgrade_handlers = {
 	server_test_on_upgrade, server_test_upgrade_open, server_test_on_message, NULL,
-	NULL, NULL, server_test_on_close, server_test_on_error
+	NULL, NULL, server_test_on_close, server_test_on_error, NULL
 };
 
 // closes the connection as soon as it opens
@@ -577,7 +742,7 @@ static void server_test_closer_open (HttpWebSocket *web_socket) {
 
 static const HttpWebSocketHandlers server_test_closer_handlers = {
 	NULL, server_test_closer_open, server_test_on_message, NULL,
-	NULL, NULL, server_test_on_close, server_test_on_error
+	NULL, NULL, server_test_on_close, server_test_on_error, NULL
 };
 
 static unsigned int server_test_authenticate (
@@ -627,12 +792,14 @@ static void server_test_settings_routes (HttpGroup *ws) {
 	options.level = SERVER_TEST_SETTINGS_LEVEL;
 	options.min_size = SERVER_TEST_SETTINGS_MIN_SIZE;
 
-	http_group_set_web_socket_max_message (settings, SERVER_TEST_SMALL_MESSAGE);
-	test_check_unsigned_eq (http_group_set_web_socket_protocols (settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
-	http_group_set_web_socket_compression_options (settings, &options);
-	http_group_set_web_socket_origin_check (settings, true);
-	http_group_set_web_socket_ping_milliseconds (settings, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
-	http_group_set_web_socket_send_timeout_milliseconds (settings, SERVER_TEST_SEND_TIMEOUT);
+	HttpWebSocketSettings *group_settings = http_group_get_web_socket_settings (settings);
+	http_web_socket_settings_set_max_message (group_settings, SERVER_TEST_SMALL_MESSAGE);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (group_settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	http_web_socket_settings_set_compression (group_settings, &options);
+	http_web_socket_settings_set_origin_check (group_settings, HTTP_WEB_SOCKET_ORIGIN_CHECK_REQUIRED);
+	http_web_socket_settings_set_ping_milliseconds (group_settings, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
+	http_web_socket_settings_set_send_timeout_milliseconds (group_settings, SERVER_TEST_SEND_TIMEOUT);
+	http_web_socket_settings_set_queue (group_settings, SERVER_TEST_SETTINGS_QUEUE, HTTP_WEB_SOCKET_OVERFLOW_CLOSE);
 
 	server_test_inherited = http_group_web_socket_add (settings, "inherited", NULL);
 	test_check_ptr (server_test_inherited);
@@ -640,16 +807,18 @@ static void server_test_settings_routes (HttpGroup *ws) {
 	HttpGroup *inner = http_group_create (settings, "inner");
 	test_check_ptr (inner);
 
-	http_group_set_web_socket_max_message (inner, SERVER_TEST_SETTINGS_MESSAGE);
-	http_group_set_web_socket_origin_check (inner, false);
-	http_group_set_web_socket_compression (inner, false);
+	HttpWebSocketSettings *inner_settings = http_group_get_web_socket_settings (inner);
+	http_web_socket_settings_set_max_message (inner_settings, SERVER_TEST_SETTINGS_MESSAGE);
+	http_web_socket_settings_set_origin_check (inner_settings, HTTP_WEB_SOCKET_ORIGIN_CHECK_NONE);
+	http_web_socket_settings_enable_compression (inner_settings, false);
 
 	HttpEndpoint *own = http_group_web_socket_add (inner, "own", NULL);
 	test_check_ptr (own);
 
 	options.level = SERVER_TEST_SETTINGS_OWN_LEVEL;
-	http_endpoint_set_web_socket_compression_options (own, &options);
-	http_endpoint_set_web_socket_close_timeout_milliseconds (own, SERVER_TEST_SETTINGS_CLOSE_TIMEOUT);
+	HttpWebSocketSettings *own_settings = http_endpoint_get_web_socket_settings (own);
+	http_web_socket_settings_set_compression (own_settings, &options);
+	http_web_socket_settings_set_close_timeout_milliseconds (own_settings, SERVER_TEST_SETTINGS_CLOSE_TIMEOUT);
 
 	server_test_own = own;
 
@@ -664,25 +833,33 @@ static void server_test_routes (HttpCerver *http_cerver) {
 	test_check_ptr (ws);
 
 	// the endpoints without their own handlers take the ones of the group
-	http_group_set_web_socket (ws, &server_test_echo_handlers);
+	http_group_set_web_socket_handlers (ws, &server_test_echo_handlers);
 
 	test_check_ptr (http_group_web_socket_add (ws, "echo", NULL));
 
 	HttpEndpoint *plain = http_group_get (ws, "plain", server_test_plain_handler);
-	http_endpoint_set_web_socket (plain, &server_test_echo_handlers);
+	http_endpoint_set_web_socket_handlers (plain, &server_test_echo_handlers);
 
 	HttpEndpoint *auth = http_group_web_socket_add (ws, "auth", NULL);
 	http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
 	http_endpoint_set_authentication_handler (auth, server_test_authenticate);
 
 	HttpEndpoint *origin = http_group_web_socket_add (ws, "origin", NULL);
-	http_endpoint_set_web_socket_origin_check (origin, true);
+	http_web_socket_settings_set_origin_check (
+		http_endpoint_get_web_socket_settings (origin), HTTP_WEB_SOCKET_ORIGIN_CHECK_REQUIRED
+	);
+
+	HttpEndpoint *present = http_group_web_socket_add (ws, "present", NULL);
+	http_web_socket_settings_set_origin_check (
+		http_endpoint_get_web_socket_settings (present), HTTP_WEB_SOCKET_ORIGIN_CHECK_IF_PRESENT
+	);
 
 	HttpEndpoint *protocols = http_group_web_socket_add (ws, "protocols", NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (protocols, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (http_endpoint_get_web_socket_settings (protocols), server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
 	HttpEndpoint *upgrade = http_group_web_socket_add (ws, "upgrade", &server_test_upgrade_handlers);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	HttpWebSocketSettings *upgrade_settings = http_endpoint_get_web_socket_settings (upgrade);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (upgrade_settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
 	HttpEndpoint *adopt = http_group_web_socket_add (ws, "adopt", &server_test_adopt_handlers);
 	http_endpoint_set_auth (adopt, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
@@ -695,7 +872,9 @@ static void server_test_routes (HttpCerver *http_cerver) {
 
 	// its connections wait for the close of their peers longer than the drain of the cerver of its test
 	HttpEndpoint *patient = http_group_web_socket_add (ws, "patient", NULL);
-	http_endpoint_set_web_socket_close_timeout_milliseconds (patient, SERVER_TEST_PATIENT_CLOSE_TIMEOUT);
+	http_web_socket_settings_set_close_timeout_milliseconds (
+		http_endpoint_get_web_socket_settings (patient), SERVER_TEST_PATIENT_CLOSE_TIMEOUT
+	);
 
 	server_test_settings_routes (ws);
 
@@ -706,28 +885,41 @@ static void server_test_routes (HttpCerver *http_cerver) {
 
 	static const char *spaced[] = { "chat", "not a token" };
 
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS + 1), 1, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, spaced, 2), 1, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS), 0, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (upgrade_settings, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS + 1), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (upgrade_settings, spaced, 2), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (upgrade_settings, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_settings_set_protocols (upgrade_settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
 	HttpEndpoint *compressed = http_group_web_socket_add (ws, "compressed", NULL);
-	http_endpoint_set_web_socket_compression (compressed, true);
+	http_web_socket_settings_enable_compression (http_endpoint_get_web_socket_settings (compressed), true);
 
 	HttpEndpoint *small = http_group_web_socket_add (ws, "small", NULL);
-	http_endpoint_set_web_socket_max_message (small, SERVER_TEST_SMALL_MESSAGE);
+	http_web_socket_settings_set_max_message (http_endpoint_get_web_socket_settings (small), SERVER_TEST_SMALL_MESSAGE);
 
 	HttpEndpoint *ping = http_group_web_socket_add (ws, "ping", NULL);
-	http_endpoint_set_web_socket_ping_milliseconds (ping, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
+	http_web_socket_settings_set_ping_milliseconds (
+		http_endpoint_get_web_socket_settings (ping), SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT
+	);
 
 	HttpEndpoint *slow = http_group_web_socket_add (ws, "slow", NULL);
-	http_endpoint_set_web_socket_send_timeout_milliseconds (slow, SERVER_TEST_SEND_TIMEOUT);
+	http_web_socket_settings_set_send_timeout_milliseconds (http_endpoint_get_web_socket_settings (slow), SERVER_TEST_SEND_TIMEOUT);
+
+	// A5: a small queue that drops what does not fit, and one that closes with 1008
+	HttpEndpoint *drop = http_group_web_socket_add (ws, "drop", &server_test_queue_handlers);
+	http_web_socket_settings_set_queue (
+		http_endpoint_get_web_socket_settings (drop), SERVER_TEST_SMALL_QUEUE, HTTP_WEB_SOCKET_OVERFLOW_DROP
+	);
+
+	HttpEndpoint *strict = http_group_web_socket_add (ws, "strict", &server_test_queue_handlers);
+	http_web_socket_settings_set_queue (
+		http_endpoint_get_web_socket_settings (strict), SERVER_TEST_SMALL_QUEUE, HTTP_WEB_SOCKET_OVERFLOW_CLOSE
+	);
 
 	test_check_ptr (http_group_web_socket_add (ws, "stream", &server_test_stream_handlers));
 	test_check_ptr (http_group_web_socket_add (ws, "closer", &server_test_closer_handlers));
 
 	// every connection of the cerver waits this for the close frame of its peer
-	http_group_set_web_socket_close_timeout_milliseconds (ws, SERVER_TEST_CLOSE_TIMEOUT);
+	http_web_socket_settings_set_close_timeout_milliseconds (http_group_get_web_socket_settings (ws), SERVER_TEST_CLOSE_TIMEOUT);
 
 	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, server_test_origin), 0, NULL);
 
@@ -899,6 +1091,12 @@ static void test_server_handshake (void) {
 	test_check_unsigned_eq (server_test_status (port, "/ws/origin", "Origin: https://other.test\r\n"), 403, NULL);
 	test_check_unsigned_eq (server_test_status (port, "/ws/origin", NULL), 403, NULL);
 	test_check_unsigned_eq (server_test_status (port, "/ws/origin", "Origin: https://cerver.test\r\n"), 101, NULL);
+
+	// A13: an Origin must be one of the whitelist only when it is sent
+	test_check_unsigned_eq (server_test_status (port, "/ws/present", "Origin: https://other.test\r\n"), 403, NULL);
+	test_check_unsigned_eq (server_test_status (port, "/ws/present", NULL), 101, NULL);
+	test_check_unsigned_eq (server_test_status (port, "/ws/present", "Origin: https://cerver.test\r\n"), 101, NULL);
+
 	test_check_unsigned_eq (server_test_status (port, "/ws/upgrade", "X-Reject: yes\r\n"), 409, NULL);
 
 	// the protocol of the response is the first one of the server that the client offered
@@ -908,12 +1106,12 @@ static void test_server_handshake (void) {
 	test_check (strstr (response, "Sec-WebSocket-Protocol: chat.v2\r\n") != NULL, "the protocol is not the first one of the server");
 	(void) close (fd);
 
-	// echo, auth, origin and protocols were accepted
-	server_test_wait_closed (4);
+	// echo, auth, origin, present (twice) and protocols were accepted
+	server_test_wait_closed (6);
 
 	HttpWebSocketStats stats;
 	test_check_unsigned_eq (http_cerver_web_socket_get_stats (server->http_cerver, &stats), 0, NULL);
-	test_check_unsigned_eq (stats.n_rejected[HTTP_WEB_SOCKET_REJECTION_ORIGIN], 2, NULL);
+	test_check_unsigned_eq (stats.n_rejected[HTTP_WEB_SOCKET_REJECTION_ORIGIN], 3, NULL);
 	test_check_unsigned_eq (stats.n_rejected[HTTP_WEB_SOCKET_REJECTION_APPLICATION], 1, NULL);
 
 	server_test_stop (server);
@@ -1053,7 +1251,7 @@ static void test_server_close_server (void) {
 	raw_reader_init (&silent_reader, silent);
 	test_check (raw_wait_end (&silent_reader, RAW_TIMEOUT), "the close timeout did not end the connection");
 	server_test_wait_closed (2);
-	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&counters.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_CLOSE_TIMEOUT, NULL);
 
 	raw_reader_end (&reader);
@@ -1142,7 +1340,7 @@ static void test_server_abrupt (void) {
 	int fd = raw_open (server->port, "/ws/echo", NULL);
 	raw_reset (fd);
 	server_test_wait_closed (1);
-	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&counters.errors, __ATOMIC_SEQ_CST), 1, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&counters.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_RECEIVE, NULL);
 
@@ -1159,7 +1357,7 @@ static void test_server_abrupt (void) {
 	server_test_wait_closed (3);
 	(void) close (fd);
 
-	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&counters.messages, __ATOMIC_SEQ_CST), 0, NULL);
 
 	server_test_stop (server);
@@ -1216,7 +1414,7 @@ static void *server_test_sender (void *sender_ptr) {
 			sender->id, i, (int) (i % 64), "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 		);
 
-		test_check_unsigned_eq (http_web_socket_send_text (sender->web_socket, text, (size_t) length), 0, NULL);
+		test_check_unsigned_eq (http_web_socket_send_text (sender->web_socket, text, (size_t) length), HTTP_WEB_SOCKET_SEND_QUEUED, NULL);
 	}
 
 	return NULL;
@@ -1226,6 +1424,21 @@ static void *server_test_sender (void *sender_ptr) {
 static void server_test_take (HttpWebSocket *web_socket, void *args) {
 
 	*((HttpWebSocket **) args) = http_web_socket_retain (web_socket);
+
+}
+
+// S7: a connection is registered after its on_open (), that counts it as opened: waits until the registry has them
+static void server_test_wait_registered (const ServerTest *server, const unsigned int expected) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while (
+		(http_cerver_web_socket_count (server->http_cerver, NULL) < expected) && (test_wait_now () < deadline)
+	) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	test_check_unsigned_eq (http_cerver_web_socket_count (server->http_cerver, NULL), expected, NULL);
 
 }
 
@@ -1244,6 +1457,7 @@ static void test_server_concurrent_sends (void) {
 
 	const int fd = raw_open (server->port, "/ws/echo", NULL);
 	test_check_unsigned_eq (test_wait_counter (&counters.opened, 1, TEST_WAIT_SECONDS), 1, NULL);
+	server_test_wait_registered (server, 1);
 
 	HttpWebSocket *web_socket = NULL;
 	http_cerver_web_socket_for_each (server->http_cerver, NULL, server_test_take, &web_socket);
@@ -1288,7 +1502,7 @@ static void test_server_concurrent_sends (void) {
 	server_test_wait_closed (1);
 
 	// a send of a connection that ended fails without touching its socket
-	test_check_unsigned_eq (http_web_socket_send_text (web_socket, "late", 4), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_send_text (web_socket, "late", 4), HTTP_WEB_SOCKET_SEND_CLOSED, NULL);
 	test_check_int_eq (http_web_socket_get_state (web_socket), HTTP_WEB_SOCKET_STATE_CLOSED, NULL);
 	http_web_socket_release (web_socket);
 
@@ -1299,6 +1513,409 @@ static void test_server_concurrent_sends (void) {
 
 }
 
+// the WebSocket connections that the loops still have: with more than one I/O thread the connection goes to any of
+// them (SO_REUSEPORT)
+static unsigned int server_test_loop_web_sockets (const ServerTest *server) {
+
+	unsigned int n_web_sockets = 0;
+
+	const EventLoopGroup *group = server->cerver->event_loops;
+	for (unsigned int i = 0; group && (i < group->n_loops); i++) {
+		n_web_sockets += __atomic_load_n (&group->loops[i]->n_web_sockets, __ATOMIC_SEQ_CST);
+	}
+
+	return n_web_sockets;
+
+}
+
+static void server_test_wait_loop_empty (const ServerTest *server) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+
+	while (server_test_loop_web_sockets (server) && (test_wait_now () < deadline)) (void) nanosleep (&interval, NULL);
+
+}
+
+// F6b: with the event loop a connection is read and written by its loop, without a thread of its own,
+// and the loop does not end while it has it; with threads every connection has its own
+static void test_server_owner (void) {
+
+	ServerTest *server = server_test_start (0);
+	const bool events = (test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
+	__atomic_store_n (&server_test_join_on_open, 1, __ATOMIC_SEQ_CST);
+
+	const int fd = raw_open (server->port, "/ws/echo", NULL);
+	test_check_unsigned_eq (test_wait_counter (&counters.opened, 1, TEST_WAIT_SECONDS), 1, NULL);
+	__atomic_store_n (&server_test_join_on_open, 0, __ATOMIC_SEQ_CST);
+
+	test_check_unsigned_eq (thread_group_alive (&server->cerver->connection_threads), events ? 0 : 1, NULL);
+	test_check_unsigned_eq (server_test_loop_web_sockets (server), events ? 1 : 0, NULL);
+
+	// S7: it was not registered while its on_open () ran, it is after it
+	test_check_unsigned_eq (__atomic_load_n (&counters.open_registered, __ATOMIC_SEQ_CST), 0, NULL);
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while (!http_cerver_web_socket_count (server->http_cerver, NULL) && (test_wait_now () < deadline)) (void) nanosleep (&interval, NULL);
+	test_check_unsigned_eq (http_cerver_web_socket_count (server->http_cerver, NULL), 1, NULL);
+
+	// it joined its room in its on_open (), where the count did not see it yet; it does now
+	test_check_unsigned_eq (__atomic_load_n (&counters.open_join, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_JOIN_JOINED + 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.open_room_count, __ATOMIC_SEQ_CST), 0, NULL);
+	const HttpWebSocketTarget opened = { SERVER_TEST_OPEN_ROOM, NULL, NULL };
+	test_check_unsigned_eq (http_cerver_web_socket_count (server->http_cerver, &opened), 1, NULL);
+
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "owner", 5);
+	server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "owner", 5);
+
+	// with the event loop it waits for its next frames in the poller of its pool after its job, and a thread of
+	// the pool reads them (F6b)
+	if (events) {
+		HttpWebSocket *web_socket = NULL;
+		http_cerver_web_socket_for_each (server->http_cerver, NULL, server_test_take, &web_socket);
+		test_check_ptr (web_socket);
+		test_check_ptr (web_socket->park);
+
+		const double parked_deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+		while (
+			(__atomic_load_n (&web_socket->park->state, __ATOMIC_SEQ_CST) != HTTP_WEB_SOCKET_PARK_PARKED)
+			&& (test_wait_now () < parked_deadline)
+		) {
+			(void) nanosleep (&interval, NULL);
+		}
+
+		test_check_unsigned_eq (__atomic_load_n (&web_socket->park->state, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_PARK_PARKED, NULL);
+		http_web_socket_release (web_socket);
+
+		raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "parked", 6);
+		server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "parked", 6);
+	}
+
+	raw_send_close (fd, 1000, NULL);
+	server_test_expect_close (&reader, 1000);
+	server_test_wait_closed (1);
+
+	// the loop gives the connection back after its last methods
+	server_test_wait_loop_empty (server);
+	test_check_unsigned_eq (server_test_loop_web_sockets (server), 0, NULL);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+	server_test_stop (server);
+
+}
+
+// F6b: the owner of a connection writes its queue while one of its methods runs: with the event loop a message
+// larger than what the socket takes (and than the queue) arrives whole while on_message () is blocked, and what
+// the method sends next fits again; with a thread of its own the queue waits for the method, so what the method
+// sends does not fit (the policy drops it) and the large message arrives after the method
+static void test_server_written_while_blocked (void) {
+
+	ServerTest *server = server_test_start (0);
+	const bool events = (test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
+	__atomic_store_n (&server_test_released, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&server_test_unblocked, 0, __ATOMIC_SEQ_CST);
+
+	const int fd = raw_open (server->port, "/ws/echo", NULL);
+	test_check_unsigned_eq (test_wait_counter (&counters.opened, 1, TEST_WAIT_SECONDS), 1, NULL);
+	server_test_wait_registered (server, 1);
+
+	HttpWebSocket *web_socket = NULL;
+	http_cerver_web_socket_for_each (server->http_cerver, NULL, server_test_take, &web_socket);
+	test_check_ptr (web_socket);
+
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "block", 5);
+	test_check_unsigned_eq (test_wait_counter (&counters.blocked, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	// one method at a time: the next message waits for the one that is blocked
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "after", 5);
+	const struct timespec wait = { 0, SERVER_TEST_SERIAL_NANOSECONDS };
+	(void) nanosleep (&wait, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.messages, __ATOMIC_SEQ_CST), 1, "a message ran while another one was blocked");
+
+	u8 *large = (u8 *) malloc (SERVER_TEST_BLOCKED_SIZE);
+	test_check_ptr (large);
+	(void) memset (large, 'b', SERVER_TEST_BLOCKED_SIZE);
+
+	test_check (
+		http_web_socket_send_result_is_taken (http_web_socket_send_binary (web_socket, large, SERVER_TEST_BLOCKED_SIZE)),
+		"a message larger than the queue was not taken with an empty queue"
+	);
+
+	RawFrame frame;
+	if (events) {
+		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the loop did not write the queue while the method ran");
+		test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_BINARY, NULL);
+		test_check_unsigned_eq (frame.size, SERVER_TEST_BLOCKED_SIZE, NULL);
+		raw_frame_delete (&frame);
+
+		test_check_unsigned_eq (__atomic_load_n (&server_test_released, __ATOMIC_SEQ_CST), 0, "the method was not blocked");
+	}
+
+	__atomic_store_n (&server_test_released, 1, __ATOMIC_SEQ_CST);
+
+	test_check (test_wait_counter (&server_test_unblocked, 1, TEST_WAIT_SECONDS), "the method did not send");
+	test_check_unsigned_eq (
+		__atomic_load_n (&server_test_unblocked, __ATOMIC_SEQ_CST) - 1,
+		events ? HTTP_WEB_SOCKET_SEND_QUEUED : HTTP_WEB_SOCKET_SEND_DROPPED, NULL
+	);
+
+	if (events) {
+		server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "unblocked", 9);
+	}
+
+	else {
+		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the message did not arrive after the method");
+		test_check_unsigned_eq (frame.size, SERVER_TEST_BLOCKED_SIZE, NULL);
+		raw_frame_delete (&frame);
+	}
+
+	// the message that waited runs after the method, in its order (with a thread its echo finds the queue full)
+	if (events) server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "after", 5);
+	test_check_unsigned_eq (test_wait_counter (&counters.messages, 2, TEST_WAIT_SECONDS), 2, NULL);
+
+	raw_send_close (fd, 1000, NULL);
+	server_test_expect_close (&reader, 1000);
+	server_test_wait_closed (1);
+
+	http_web_socket_release (web_socket);
+	free (large);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+	server_test_stop (server);
+
+}
+
+// a client that does not read fills the small queue of the connection of the endpoint, with the command given
+static int server_test_fill_start (const ServerTest *server, const char *path, const char *command) {
+
+	const int fd = raw_connect (server->port);
+	const int size = SERVER_TEST_SMALL_BUFFER;
+	(void) setsockopt (fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof (int));
+
+	char response[RAW_RESPONSE_SIZE];
+	test_check_int_eq (raw_upgrade (fd, path, NULL, response), 101, NULL);
+
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, command, strlen (command));
+	test_check_unsigned_eq (test_wait_counter (&counters.floods, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	// the sends were taken, then over the half of the queue with backpressure, and the last one did not fit
+	test_check (__atomic_load_n (&counters.fill_queued, __ATOMIC_SEQ_CST) > 0, "no send was queued");
+	test_check (__atomic_load_n (&counters.fill_backpressure, __ATOMIC_SEQ_CST) > 0, "no send had backpressure");
+	test_check_unsigned_eq (__atomic_load_n (&counters.fill_dropped, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.fill_closed, __ATOMIC_SEQ_CST), 0, NULL);
+
+	HttpWebSocketStats stats;
+	test_check_unsigned_eq (http_cerver_web_socket_get_stats (server->http_cerver, &stats), 0, NULL);
+	test_check_unsigned_eq (stats.n_dropped, 1, NULL);
+
+	// the client reads fast from now: with the small buffer every segment waits for a delayed ACK, and the socket
+	// would take longer than the send timeout of the queue to make a place for it
+	const int large = SERVER_TEST_LARGE_BUFFER;
+	(void) setsockopt (fd, SOL_SOCKET, SO_RCVBUF, &large, sizeof (int));
+
+	return fd;
+
+}
+
+// reads the messages that the queue took, up to the first frame that is not binary
+static unsigned int server_test_fill_read (RawReader *reader, RawFrame *last) {
+
+	unsigned int received = 0;
+
+	bool binary = true;
+	while (binary) {
+		test_check (raw_read_frame (reader, last, RAW_TIMEOUT), "the frames of the queue did not arrive");
+		binary = (last->opcode == HTTP_WEB_SOCKET_OPCODE_BINARY) || (last->opcode == HTTP_WEB_SOCKET_OPCODE_PING);
+		if (last->opcode == HTTP_WEB_SOCKET_OPCODE_BINARY) received += 1;
+		if (binary) raw_frame_delete (last);
+	}
+
+	return received;
+
+}
+
+static unsigned int server_test_fill_taken (void) {
+
+	return __atomic_load_n (&counters.fill_queued, __ATOMIC_SEQ_CST)
+		+ __atomic_load_n (&counters.fill_backpressure, __ATOMIC_SEQ_CST);
+
+}
+
+// A5: with the drop policy the message that does not fit is not taken and the connection stays open; once the
+// client reads, every message that was taken arrives, and on_drain () runs once, after the last one
+static void test_server_queue_drop (void) {
+
+	ServerTest *server = server_test_start (0);
+
+	const int fd = server_test_fill_start (server, "/ws/drop", "fill");
+	test_check_unsigned_eq (__atomic_load_n (&counters.drains, __ATOMIC_SEQ_CST), 0, NULL);
+
+	HttpWebSocketStats stats;
+	test_check_unsigned_eq (http_cerver_web_socket_get_stats (server->http_cerver, &stats), 0, NULL);
+	test_check (stats.n_queued_bytes > 0, "the queue was not counted");
+
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	RawFrame frame;
+	test_check_unsigned_eq (server_test_fill_read (&reader, &frame), server_test_fill_taken (), NULL);
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_TEXT, NULL);
+	test_check ((frame.size == 7) && !memcmp (frame.data, "drained", 7), "on_drain () did not send its text");
+	raw_frame_delete (&frame);
+
+	test_check_unsigned_eq (__atomic_load_n (&counters.drains, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (http_cerver_web_socket_get_stats (server->http_cerver, &stats), 0, NULL);
+	test_check_unsigned_eq (stats.n_drains, 1, NULL);
+	test_check_unsigned_eq (stats.n_queued_bytes, 0, NULL);
+
+	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "alive", 5);
+	server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "alive", 5);
+
+	raw_send_close (fd, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
+	server_test_expect_close (&reader, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL);
+	server_test_wait_closed (1);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+	server_test_stop (server);
+
+}
+
+// A5: with the close policy the message that does not fit closes the connection with 1008, after the messages
+// that the queue took
+static void test_server_queue_close (void) {
+
+	ServerTest *server = server_test_start (0);
+
+	const int fd = server_test_fill_start (server, "/ws/strict", "fill");
+
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	RawFrame frame;
+	test_check_unsigned_eq (server_test_fill_read (&reader, &frame), server_test_fill_taken (), NULL);
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CLOSE, NULL);
+	test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_CODE_POLICY_VIOLATION, NULL);
+	raw_frame_delete (&frame);
+
+	raw_send_close (fd, HTTP_WEB_SOCKET_CLOSE_CODE_POLICY_VIOLATION, NULL);
+	test_check (raw_wait_end (&reader, RAW_TIMEOUT), "the server did not end the connection");
+	server_test_wait_closed (1);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_POLICY_VIOLATION, NULL);
+
+	HttpWebSocketStats stats;
+	test_check_unsigned_eq (http_cerver_web_socket_get_stats (server->http_cerver, &stats), 0, NULL);
+	test_check_unsigned_eq (
+		stats.n_closes[HTTP_WEB_SOCKET_CLOSE_CODE_POLICY_VIOLATION - HTTP_WEB_SOCKET_CLOSE_CODES_FIRST], 1, NULL
+	);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+	server_test_stop (server);
+
+}
+
+// A5 in EVENTS: the loop empties the queue while the job of the connection still runs, so on_drain () goes after
+// the job, and the connection does not wait in its park with it (it waited there until its peer wrote again)
+static void test_server_queue_drained_in_job (void) {
+
+	if (test_handler_type () != CERVER_HANDLER_TYPE_EVENTS) return;
+
+	ServerTest *server = server_test_start (0);
+
+	const int fd = server_test_fill_start (server, "/ws/drop", "fill-wait");
+
+	RawReader reader;
+	raw_reader_init (&reader, fd);
+
+	RawFrame frame;
+	test_check_unsigned_eq (server_test_fill_read (&reader, &frame), server_test_fill_taken (), NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.fill_emptied, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_TEXT, NULL);
+	test_check ((frame.size == 7) && !memcmp (frame.data, "drained", 7), "on_drain () did not send its text");
+	raw_frame_delete (&frame);
+
+	test_check_unsigned_eq (__atomic_load_n (&counters.drains, __ATOMIC_SEQ_CST), 1, NULL);
+
+	raw_send_close (fd, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
+	server_test_expect_close (&reader, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL);
+	server_test_wait_closed (1);
+
+	raw_reader_end (&reader);
+	(void) close (fd);
+
+	server_test_stop (server);
+
+}
+
+// the connections of a room
+static unsigned int server_test_room_count (HttpCerver *http_cerver, const char *room) {
+
+	const HttpWebSocketTarget target = { room, NULL, NULL };
+
+	return http_cerver_web_socket_count (http_cerver, &target);
+
+}
+
+static unsigned int server_test_room_broadcast (
+	HttpCerver *http_cerver, const char *room, const HttpWebSocket *except,
+	const HttpWebSocketOpcode type, const char *text
+) {
+
+	const HttpWebSocketTarget target = { room, NULL, except };
+
+	return http_cerver_web_socket_broadcast (http_cerver, &target, type, text, strlen (text));
+
+}
+
+// A14: a connection is in any number of rooms of any length, and every room is in the index
+static void server_test_rooms_many (HttpCerver *http_cerver, HttpWebSocket *web_socket) {
+
+	char name[SERVER_TEST_LONG_ROOM_SIZE + 1];
+	(void) memset (name, 'r', SERVER_TEST_LONG_ROOM_SIZE);
+	name[SERVER_TEST_LONG_ROOM_SIZE] = '\0';
+	test_check_unsigned_eq (http_web_socket_join (web_socket, name), HTTP_WEB_SOCKET_JOIN_JOINED, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, name), 1, NULL);
+
+	for (unsigned int i = 0; i < SERVER_TEST_MANY_ROOMS; i++) {
+		(void) snprintf (name, sizeof (name), "room-%u", i);
+		test_check_unsigned_eq (http_web_socket_join (web_socket, name), HTTP_WEB_SOCKET_JOIN_JOINED, NULL);
+	}
+
+	unsigned int n_rooms = 0;
+	char **rooms = http_web_socket_get_rooms (web_socket, &n_rooms);
+	test_check_ptr (rooms);
+	test_check_unsigned_eq (n_rooms, SERVER_TEST_MANY_ROOMS + 2, NULL);
+
+	bool blue = false;
+	for (unsigned int i = 0; i < n_rooms; i++) blue = blue || !strcmp (rooms[i], "blue");
+	test_check_true (blue);
+	free (rooms);
+
+	test_check_unsigned_eq (http_web_socket_leave (web_socket, "room-2"), 0, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "room-2"), 0, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "room-3"), 1, NULL);
+
+	// it leaves every room, and it joins blue again
+	test_check_unsigned_eq (http_web_socket_leave_all (web_socket), SERVER_TEST_MANY_ROOMS + 1, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "room-3"), 0, NULL);
+	test_check_null_ptr (http_web_socket_get_rooms (web_socket, &n_rooms));
+	test_check_unsigned_eq (n_rooms, 0, NULL);
+	test_check_unsigned_eq (http_web_socket_join (web_socket, "blue"), HTTP_WEB_SOCKET_JOIN_JOINED, NULL);
+
+}
+
 // the rooms and the broadcasts
 // the limits of the rooms of a connection that is in blue, and the closes that it can not send:
 // none of these branches had a test
@@ -1306,40 +1923,31 @@ static void server_test_rooms_limits (HttpCerver *http_cerver, HttpWebSocket *we
 
 	// joining a room again changes nothing
 	test_check_true (http_web_socket_in_room (web_socket, "blue"));
-	test_check_unsigned_eq (http_web_socket_join (web_socket, "blue"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "blue"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_join (web_socket, "blue"), HTTP_WEB_SOCKET_JOIN_ALREADY, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "blue"), 1, NULL);
 
 	test_check_false (http_web_socket_in_room (web_socket, "green"));
 	test_check_unsigned_eq (http_web_socket_leave (web_socket, "green"), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_join (web_socket, NULL), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_join (NULL, "green"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_join (web_socket, NULL), HTTP_WEB_SOCKET_JOIN_INVALID, NULL);
+	test_check_unsigned_eq (http_web_socket_join (web_socket, ""), HTTP_WEB_SOCKET_JOIN_INVALID, NULL);
+	test_check_unsigned_eq (http_web_socket_join (NULL, "green"), HTTP_WEB_SOCKET_JOIN_INVALID, NULL);
 	test_check_unsigned_eq (http_web_socket_leave (web_socket, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_leave_all (NULL), 0, NULL);
+	test_check_null_ptr (http_web_socket_get_rooms (NULL, NULL));
 
-	// the longest name of a room fits with its end, a longer one does not
-	char name[HTTP_WEB_SOCKET_ROOM_NAME_SIZE + 1];
-	(void) memset (name, 'r', HTTP_WEB_SOCKET_ROOM_NAME_SIZE);
-	name[HTTP_WEB_SOCKET_ROOM_NAME_SIZE] = '\0';
-	test_check_unsigned_eq (http_web_socket_join (web_socket, name), 1, NULL);
+	test_check_str_eq (http_web_socket_join_to_string (HTTP_WEB_SOCKET_JOIN_ALREADY), "Already", NULL);
+	test_check_str_eq (http_web_socket_join_to_string ((HttpWebSocketJoin) SERVER_TEST_UNDEFINED_VALUE), "Undefined", NULL);
+	test_check_str_eq (http_web_socket_join_description ((HttpWebSocketJoin) SERVER_TEST_UNDEFINED_VALUE), "Undefined", NULL);
 
-	name[HTTP_WEB_SOCKET_ROOM_NAME_SIZE - 1] = '\0';
-	test_check_unsigned_eq (http_web_socket_join (web_socket, name), 0, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, name), 1, NULL);
-
-	// it is in two rooms: the rest of them, and the one after the last
-	for (unsigned int i = 2; i < HTTP_WEB_SOCKET_MAX_ROOMS; i++) {
-		(void) snprintf (name, sizeof (name), "room-%u", i);
-		test_check_unsigned_eq (http_web_socket_join (web_socket, name), 0, NULL);
-	}
-
-	test_check_unsigned_eq (http_web_socket_join (web_socket, "one-more"), 1, NULL);
-	test_check_false (http_web_socket_in_room (web_socket, "one-more"));
-
-	// a room that is left gives its place to another one
-	test_check_unsigned_eq (http_web_socket_leave (web_socket, "room-2"), 0, NULL);
-	test_check_unsigned_eq (http_web_socket_join (web_socket, "one-more"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "one-more"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "room-2"), 0, NULL);
+	server_test_rooms_many (http_cerver, web_socket);
 	test_check_true (http_web_socket_in_room (web_socket, "blue"));
+
+	// A9: the id of a registered connection finds it with a reference
+	HttpWebSocket *found = http_cerver_web_socket_get_with_id (http_cerver, http_web_socket_get_id (web_socket));
+	test_check (found == web_socket, "the connection was not found with its id");
+	http_web_socket_release (found);
+	test_check_null_ptr (http_cerver_web_socket_get_with_id (http_cerver, 0));
+	test_check_null_ptr (http_cerver_web_socket_get_with_id (NULL, 1));
 
 	// the codes that an endpoint does not send and a reason that does not fit: the connection stays open
 	char reason[HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE + 2];
@@ -1347,11 +1955,11 @@ static void server_test_rooms_limits (HttpCerver *http_cerver, HttpWebSocket *we
 	reason[HTTP_WEB_SOCKET_CLOSE_REASON_MAX_SIZE + 1] = '\0';
 
 	test_check_unsigned_eq (http_web_socket_close (web_socket, 999, NULL), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_NO_STATUS, NULL), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_NORMAL, reason), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_NORMAL, "\xC3"), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_close (NULL, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_NO_STATUS, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, reason), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, "\xC3"), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_close (NULL, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL), 1, NULL);
 	test_check_int_eq (http_web_socket_get_state (web_socket), HTTP_WEB_SOCKET_STATE_OPEN, NULL);
 
 }
@@ -1373,11 +1981,12 @@ static void test_server_rooms (void) {
 	}
 
 	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, NULL), 4, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "red"), 3, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "blue"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "green"), 0, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "red"), 3, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "blue"), 1, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "green"), 0, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, ""), 0, NULL);
 
-	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, "red", NULL, HTTP_WEB_SOCKET_OPCODE_TEXT, "red", 3), 3, NULL);
+	test_check_unsigned_eq (server_test_room_broadcast (http_cerver, "red", NULL, HTTP_WEB_SOCKET_OPCODE_TEXT, "red"), 3, NULL);
 	for (unsigned int i = 0; i < 3; i++) server_test_expect_frame (&readers[i], HTTP_WEB_SOCKET_OPCODE_TEXT, "red", 3);
 
 	RawFrame frame;
@@ -1385,30 +1994,40 @@ static void test_server_rooms (void) {
 
 	raw_send_frame (fds[1], true, HTTP_WEB_SOCKET_OPCODE_TEXT, "leave:red", 9);
 	server_test_expect_frame (&readers[1], HTTP_WEB_SOCKET_OPCODE_TEXT, "left", 4);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "red"), 2, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "red"), 2, NULL);
 
-	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, NULL, NULL, HTTP_WEB_SOCKET_OPCODE_BINARY, "all", 3), 4, NULL);
+	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, NULL, HTTP_WEB_SOCKET_OPCODE_BINARY, "all", 3), 4, NULL);
 	for (unsigned int i = 0; i < SERVER_TEST_ROOM_CLIENTS; i++) {
 		server_test_expect_frame (&readers[i], HTTP_WEB_SOCKET_OPCODE_BINARY, "all", 3);
 	}
 
 	// every connection is of the echo endpoint
 	HttpWebSocket *any = NULL;
-	http_cerver_web_socket_for_each (http_cerver, "blue", server_test_take, &any);
+	const HttpWebSocketTarget blue = { "blue", NULL, NULL };
+	http_cerver_web_socket_for_each (http_cerver, &blue, server_test_take, &any);
 	test_check_ptr (any);
 	const HttpEndpoint *endpoint = http_web_socket_get_endpoint (any);
 
 	server_test_rooms_limits (http_cerver, any);
 
-	test_check_unsigned_eq (http_endpoint_web_socket_broadcast (http_cerver, endpoint, HTTP_WEB_SOCKET_OPCODE_TEXT, "echo", 4), 4, NULL);
+	const HttpWebSocketTarget echo = { NULL, endpoint, NULL };
+	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, &echo, HTTP_WEB_SOCKET_OPCODE_TEXT, "echo", 4), 4, NULL);
 	for (unsigned int i = 0; i < SERVER_TEST_ROOM_CLIENTS; i++) {
 		server_test_expect_frame (&readers[i], HTTP_WEB_SOCKET_OPCODE_TEXT, "echo", 4);
 	}
 
+	// a room and an endpoint together, and another endpoint
+	const HttpWebSocketTarget red_echo = { "red", endpoint, NULL };
+	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, &red_echo), 2, NULL);
+	const HttpWebSocketTarget other = { NULL, server_test_own, NULL };
+	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, &other), 0, NULL);
+
 	// the sender is left out
 	HttpWebSocket *sender = NULL;
-	http_cerver_web_socket_for_each (http_cerver, "blue", server_test_take, &sender);
-	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, NULL, sender, HTTP_WEB_SOCKET_OPCODE_TEXT, "others", 6), 3, NULL);
+	http_cerver_web_socket_for_each (http_cerver, &blue, server_test_take, &sender);
+	test_check_unsigned_eq (server_test_room_broadcast (http_cerver, NULL, sender, HTTP_WEB_SOCKET_OPCODE_TEXT, "others"), 3, NULL);
+	const HttpWebSocketTarget others = { NULL, NULL, sender };
+	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, &others), 3, NULL);
 	http_web_socket_release (sender);
 	for (unsigned int i = 0; i < 3; i++) server_test_expect_frame (&readers[i], HTTP_WEB_SOCKET_OPCODE_TEXT, "others", 6);
 
@@ -1419,13 +2038,17 @@ static void test_server_rooms (void) {
 
 	server_test_wait_closed (SERVER_TEST_ROOM_CLIENTS);
 	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, NULL), 0, NULL);
-	test_check_unsigned_eq (http_endpoint_web_socket_broadcast (http_cerver, endpoint, HTTP_WEB_SOCKET_OPCODE_TEXT, "none", 4), 0, NULL);
+	test_check_unsigned_eq (http_cerver_web_socket_broadcast (http_cerver, &echo, HTTP_WEB_SOCKET_OPCODE_TEXT, "none", 4), 0, NULL);
+
+	// A14: on_close () saw the rooms of each connection (2 in red and 1 in blue), and then they were cleared
+	test_check_unsigned_eq (__atomic_load_n (&counters.closed_rooms, __ATOMIC_SEQ_CST), 3, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "red"), 0, NULL);
 
 	// a connection that ended left its rooms, and it joins no other one
 	test_check_false (http_web_socket_in_room (any, "blue"));
-	test_check_unsigned_eq (http_web_socket_join (any, "late"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, "late"), 0, NULL);
-	test_check_unsigned_eq (http_web_socket_close (any, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_join (any, "late"), HTTP_WEB_SOCKET_JOIN_UNREGISTERED, NULL);
+	test_check_unsigned_eq (server_test_room_count (http_cerver, "late"), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_close (any, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL), 1, NULL);
 	http_web_socket_release (any);
 
 	server_test_stop (server);
@@ -1538,6 +2161,7 @@ static void test_server_shutdown (void) {
 	}
 
 	test_check_unsigned_eq (test_wait_counter (&counters.opened, SERVER_TEST_ROOM_CLIENTS, TEST_WAIT_SECONDS), SERVER_TEST_ROOM_CLIENTS, NULL);
+	server_test_wait_registered (server, SERVER_TEST_ROOM_CLIENTS);
 
 	// a connection that the application keeps after its cerver ended
 	HttpWebSocket *kept = NULL;
@@ -1551,10 +2175,10 @@ static void test_server_shutdown (void) {
 	for (unsigned int i = 0; i < SERVER_TEST_ROOM_CLIENTS; i++) {
 		RawFrame frame;
 		test_check (raw_read_frame (&readers[i], &frame, RAW_TIMEOUT), "the going away did not arrive");
-		test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_GOING_AWAY, NULL);
+		test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_CODE_GOING_AWAY, NULL);
 		raw_frame_delete (&frame);
 
-		raw_send_close (fds[i], HTTP_WEB_SOCKET_CLOSE_GOING_AWAY, NULL);
+		raw_send_close (fds[i], HTTP_WEB_SOCKET_CLOSE_CODE_GOING_AWAY, NULL);
 		test_check (raw_wait_end (&readers[i], RAW_TIMEOUT), "the connection did not end");
 	}
 
@@ -1562,8 +2186,8 @@ static void test_server_shutdown (void) {
 
 	// the sends of the connection that was kept only return their error:
 	// the timeout of a send was read from the cerver, that was already released
-	test_check_unsigned_eq (http_web_socket_send_text (kept, "late", 4), 1, NULL);
-	test_check_unsigned_eq (http_web_socket_send_binary (kept, "late", 4), 1, NULL);
+	test_check_unsigned_eq (http_web_socket_send_text (kept, "late", 4), HTTP_WEB_SOCKET_SEND_CLOSED, NULL);
+	test_check_unsigned_eq (http_web_socket_send_binary (kept, "late", 4), HTTP_WEB_SOCKET_SEND_CLOSED, NULL);
 	http_web_socket_release (kept);
 
 	for (unsigned int i = 0; i < SERVER_TEST_ROOM_CLIENTS; i++) {
@@ -1572,7 +2196,7 @@ static void test_server_shutdown (void) {
 	}
 
 	test_check_unsigned_eq (__atomic_load_n (&counters.closed, __ATOMIC_SEQ_CST), SERVER_TEST_ROOM_CLIENTS, NULL);
-	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_GOING_AWAY, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_GOING_AWAY, NULL);
 
 	test_check_unsigned_eq (raw_open_fds (), server->fds, NULL);
 	free (server);
@@ -1600,7 +2224,7 @@ static void server_test_silent_clients (
 	test_check_unsigned_eq (cerver_teardown (server->cerver), 0, NULL);
 
 	test_check_unsigned_eq (__atomic_load_n (&counters.closed, __ATOMIC_SEQ_CST), SERVER_TEST_ROOM_CLIENTS, NULL);
-	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&counters.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL);
 
 	if (error != HTTP_WEB_SOCKET_ERROR_NONE) {
 		test_check_unsigned_eq (__atomic_load_n (&counters.errors, __ATOMIC_SEQ_CST), SERVER_TEST_ROOM_CLIENTS, NULL);
@@ -1614,7 +2238,7 @@ static void server_test_silent_clients (
 		RawFrame frame;
 		test_check (raw_read_frame (&reader, &frame, RAW_TIMEOUT), "the going away did not arrive");
 		test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CLOSE, NULL);
-		test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_GOING_AWAY, NULL);
+		test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_CODE_GOING_AWAY, NULL);
 		raw_frame_delete (&frame);
 
 		test_check (raw_wait_end (&reader, RAW_TIMEOUT), "the connection did not end");
@@ -1973,11 +2597,13 @@ static void server_test_settings_resolved (void) {
 	test_check_true (inherited->compression.enabled);
 	test_check_int_eq (inherited->compression.level, SERVER_TEST_SETTINGS_LEVEL, NULL);
 	test_check_unsigned_eq (inherited->compression.min_size, SERVER_TEST_SETTINGS_MIN_SIZE, NULL);
-	test_check_true (inherited->origin_check);
+	test_check_unsigned_eq (inherited->origin_check, HTTP_WEB_SOCKET_ORIGIN_CHECK_REQUIRED, NULL);
 	test_check_unsigned_eq (inherited->ping_interval, SERVER_TEST_PING_INTERVAL, NULL);
 	test_check_unsigned_eq (inherited->pong_timeout, SERVER_TEST_PONG_TIMEOUT, NULL);
 	test_check_unsigned_eq (inherited->send_timeout, SERVER_TEST_SEND_TIMEOUT, NULL);
 	test_check_unsigned_eq (inherited->close_timeout, SERVER_TEST_CLOSE_TIMEOUT, NULL);
+	test_check_unsigned_eq (inherited->max_queue, SERVER_TEST_SETTINGS_QUEUE, NULL);
+	test_check_unsigned_eq (inherited->overflow, HTTP_WEB_SOCKET_OVERFLOW_CLOSE, NULL);
 
 	// the endpoint of the subgroup: its own compression and close timeout, the limit and the origin check
 	// of its subgroup, and the rest from the group
@@ -1987,10 +2613,11 @@ static void server_test_settings_resolved (void) {
 	test_check_unsigned_eq (own->n_protocols, SERVER_TEST_N_PROTOCOLS, NULL);
 	test_check_true (own->compression.enabled);
 	test_check_int_eq (own->compression.level, SERVER_TEST_SETTINGS_OWN_LEVEL, NULL);
-	test_check_false (own->origin_check);
+	test_check_unsigned_eq (own->origin_check, HTTP_WEB_SOCKET_ORIGIN_CHECK_NONE, NULL);
 	test_check_unsigned_eq (own->ping_interval, SERVER_TEST_PING_INTERVAL, NULL);
 	test_check_unsigned_eq (own->send_timeout, SERVER_TEST_SEND_TIMEOUT, NULL);
 	test_check_unsigned_eq (own->close_timeout, SERVER_TEST_SETTINGS_CLOSE_TIMEOUT, NULL);
+	test_check_unsigned_eq (own->max_queue, SERVER_TEST_SETTINGS_QUEUE, NULL);
 
 }
 
@@ -2047,7 +2674,7 @@ static void test_server_settings (void) {
 	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_BINARY, message, SERVER_TEST_SMALL_MESSAGE + 1);
 	server_test_read_frame (fd, &reader, &frame);
 	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CLOSE, NULL);
-	test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG, NULL);
+	test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG, NULL);
 	raw_frame_delete (&frame);
 
 	raw_reader_end (&reader);
@@ -2073,7 +2700,7 @@ static void test_server_settings (void) {
 	raw_send_frame (plain, true, HTTP_WEB_SOCKET_OPCODE_BINARY, message, size);
 	server_test_read_frame (plain, &reader, &frame);
 	test_check_int_eq (frame.opcode, HTTP_WEB_SOCKET_OPCODE_CLOSE, NULL);
-	test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG, NULL);
+	test_check_unsigned_eq (raw_close_code (&frame), HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG, NULL);
 	raw_frame_delete (&frame);
 
 	raw_reader_end (&reader);
@@ -2331,8 +2958,8 @@ static void test_server_metrics (void) {
 	test_check_unsigned_eq (stats.n_messages_received, 3, NULL);
 	test_check_unsigned_eq (stats.n_bytes_received, 21, NULL);
 	test_check_unsigned_eq (stats.n_bytes_sent, 35, NULL);
-	test_check_unsigned_eq (stats.n_closes[HTTP_WEB_SOCKET_CLOSE_NORMAL - HTTP_WEB_SOCKET_CLOSE_CODES_FIRST], 1, NULL);
-	test_check_unsigned_eq (stats.n_closes[HTTP_WEB_SOCKET_CLOSE_ABNORMAL - HTTP_WEB_SOCKET_CLOSE_CODES_FIRST], 1, NULL);
+	test_check_unsigned_eq (stats.n_closes[HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL - HTTP_WEB_SOCKET_CLOSE_CODES_FIRST], 1, NULL);
+	test_check_unsigned_eq (stats.n_closes[HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL - HTTP_WEB_SOCKET_CLOSE_CODES_FIRST], 1, NULL);
 	test_check_unsigned_eq (stats.n_closes_other, 0, NULL);
 
 	for (unsigned int i = 0; i < HTTP_WEB_SOCKET_REJECTIONS; i++) {
@@ -2367,6 +2994,11 @@ void web_socket_tests_server (void) {
 	test_run (test_server_abrupt);
 	test_run (test_server_ping);
 	test_run (test_server_concurrent_sends);
+	test_run (test_server_owner);
+	test_run (test_server_written_while_blocked);
+	test_run (test_server_queue_drop);
+	test_run (test_server_queue_close);
+	test_run (test_server_queue_drained_in_job);
 	test_run (test_server_rooms);
 	test_run (test_server_slow_reader);
 	test_run (test_server_limit);
