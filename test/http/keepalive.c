@@ -1111,7 +1111,8 @@ static void test_keepalive_idle_timeout (void) {
 
 }
 
-// a response without its length ends with its connection, that can not take another request
+// a response without its length ends with its connection, that can not take another request,
+// and it says so (its client reads until the close)
 static void test_keepalive_unframed (void) {
 
 	const KeepAliveOptions options = keepalive_options_default ();
@@ -1133,6 +1134,9 @@ static void test_keepalive_unframed (void) {
 	keepalive_client_expect (&client, "HTTP/1.1 200", keepalive_unframed_body, response);
 
 	test_check (client.closed, "the connection of a response without its length was not closed");
+	test_check (
+		keepalive_has (response, keepalive_connection_close), "a response without its length did not say the close"
+	);
 
 	keepalive_client_end (&client);
 

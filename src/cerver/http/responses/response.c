@@ -2155,10 +2155,26 @@ static void http_response_message_init (
 
 }
 
+// a body that is sent with the header and without its length is delimited by the close of the connection
+static bool http_response_message_ends_with_close (
+	const HttpReceive *http_receive, const HttpResponseMessage *message,
+	const unsigned int options
+) {
+
+	return !(options & (HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY | HTTP_RESPONSE_SEND_OPTION_STREAM))
+		&& !http_response_message_is_framed (http_receive, message, true);
+
+}
+
 static void http_response_message_extra (
 	const HttpReceive *http_receive, HttpResponseMessage *message,
 	const unsigned int options
 ) {
+
+	// the connection is closed after it anyway, so the response says it with its Connection header
+	if (http_response_message_ends_with_close (http_receive, message, options)) {
+		((HttpReceive *) http_receive)->keep_alive = false;
+	}
 
 	if (message->compressed) http_response_extra_compression (message);
 
