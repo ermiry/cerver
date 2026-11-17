@@ -5453,6 +5453,9 @@ static void test_receive_loop_followed_authorized (Cerver *cerver) {
 // the requests that a connection of these tests sends before its client leaves
 #define TEST_RECEIVE_READ_JOBS					3
 
+// the bytes of the body of a request that the thread that reads it gets with its head
+#define TEST_RECEIVE_READ_BODY_PIECE			16
+
 static void test_receive_read_start (Cerver *cerver, const unsigned int places) {
 
 	test_receive_kept_start (cerver, places);
@@ -5641,6 +5644,47 @@ static void test_receive_loop_read_authorized (Cerver *cerver) {
 	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
 	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
 
+	test_receive_read_wait_ended ();
+
+	test_receive_kept_end (cerver);
+
+}
+
+// the thread that authorizes the next request of an idle connection read a part of its body with its head:
+// the parser takes those bytes after the authorization, and the loop reads the rest without them again
+static void test_receive_loop_read_authorized_partial (Cerver *cerver) {
+
+	current_case = "loop: the pool authorizes the next request of an idle connection with a part of its body";
+	current_mode = "whole";
+
+	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
+
+	int server_fd = -1;
+	const int client_fd = test_receive_manual_client (&server_fd);
+
+	test_receive_manual_work (0);
+	test_receive_kept_response (client_fd, "200");
+
+	(void) memset (&observed, 0, sizeof (TestReceiveObserved));
+
+	const char *body = strstr (private_request, "\r\n\r\n") + strlen ("\r\n\r\n");
+	const size_t first = (size_t) (body - private_request) + TEST_RECEIVE_READ_BODY_PIECE;
+	test_check (send (client_fd, private_request, first, MSG_NOSIGNAL) == (ssize_t) first, "the request was not sent");
+
+	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
+	test_receive_manual_work (1);
+
+	// the loop reads the rest of the body and submits the request
+	test_receive_followed_send (client_fd, private_request + first);
+	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
+	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL);
+
+	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
+
+	test_receive_followed_responses (client_fd, 1);
+	test_receive_check_private ();
+
+	(void) close (client_fd);
 	test_receive_read_wait_ended ();
 
 	test_receive_kept_end (cerver);
@@ -6044,6 +6088,7 @@ static void test_receive_loop_kept (Cerver *cerver) {
 	test_receive_loop_read (cerver);
 	test_receive_loop_read_partial (cerver);
 	test_receive_loop_read_authorized (cerver);
+	test_receive_loop_read_authorized_partial (cerver);
 	test_receive_loop_read_failed (cerver);
 	test_receive_loop_read_no_place (cerver);
 	test_receive_loop_read_dropped (cerver);
