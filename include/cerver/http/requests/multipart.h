@@ -1,6 +1,6 @@
 /**
  * @file cerver/http/requests/multipart.h
- * @brief The parts of a multipart body, their files and their values, and the parser of the body.
+ * @brief The parts of a multipart body, their files and their values (cerver/http/parser/multipart.h reads the body).
  */
 
 #ifndef _CERVER_HTTP_MULTIPART_H_
@@ -418,127 +418,6 @@ CERVER_PUBLIC void http_multi_part_headers_print (
  */
 CERVER_PUBLIC void http_multi_part_print (
 	const MultiPart *mpart
-);
-
-/** @} */
-
-/**
- * @defgroup http_multipart_parser Multipart parser
- * @ingroup http_requests
- * @brief The parser of a multipart body, for the internal methods of cerver.
- * @{
- */
-
-struct multipart_parser;
-
-/**
- * @brief A callback of the parser with a piece of data.
- *
- * @return 0 to continue, not 0 to stop the parser
- */
-typedef int (*multipart_data_cb) (
-	struct multipart_parser *,
-	const char *at,
-	size_t length
-);
-
-/**
- * @brief A callback of the parser that notifies an event.
- *
- * @return 0 to continue, not 0 to stop the parser
- */
-typedef int (*multipart_notify_cb) (
-	struct multipart_parser *
-);
-
-/**
- * @brief The callbacks of the parser.
- */
-struct multipart_parser_settings {
-
-	/** @brief A piece of the name of a header of a part. */
-	multipart_data_cb on_header_field;
-	/** @brief A piece of the value of a header of a part. */
-	multipart_data_cb on_header_value;
-	/** @brief A piece of the data of a part. */
-	multipart_data_cb on_part_data;
-
-	/** @brief A part begins. */
-	multipart_notify_cb on_part_data_begin;
-	/** @brief The headers of a part are complete. */
-	multipart_notify_cb on_headers_complete;
-	/** @brief The data of a part ends. */
-	multipart_notify_cb on_part_data_end;
-	/** @brief The body ends. */
-	multipart_notify_cb on_body_end;
-
-};
-
-/** @brief The callbacks of the parser, see struct multipart_parser_settings. */
-typedef struct multipart_parser_settings multipart_parser_settings;
-
-/**
- * @brief The parser of a multipart body.
- */
-struct multipart_parser {
-
-	/** @brief The data of its owner, the receive of the request. */
-	void *data;
-
-	/** @brief The index in the boundary that is being matched. */
-	size_t index;
-	/** @brief The length of the boundary. */
-	size_t boundary_length;
-
-	/** @brief The state of the parser. */
-	unsigned char state;
-
-	/** @brief The callbacks. */
-	const multipart_parser_settings *settings;
-
-	/** @brief The bytes that could be the boundary, after the boundary in the same allocation. */
-	char *lookbehind;
-	/** @brief The boundary, allocated with the parser. */
-	char multipart_boundary[1];
-
-};
-
-/** @brief The parser of a multipart body, see struct multipart_parser. */
-typedef struct multipart_parser multipart_parser;
-
-/**
- * @brief Creates a parser for a boundary.
- *
- * @param[in] boundary the boundary, with its leading "--"; it must not be NULL
- * @param[in] settings the callbacks, they must live as long as the parser
- * @return the new parser, released with multipart_parser_free (); NULL if it could not be allocated
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE multipart_parser *multipart_parser_init (
-	const char *boundary, const multipart_parser_settings *settings
-);
-
-/**
- * @brief Releases a parser.
- *
- * @param[in] p the parser
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE void multipart_parser_free (
-	multipart_parser *p
-);
-
-/**
- * @brief Parses a piece of a body and calls the callbacks.
- *
- * @param[in,out] p the parser
- * @param[in] buf the piece
- * @param[in] len its bytes
- * @return the bytes that were parsed, less than len when a callback stopped the parser or the body is invalid
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE size_t multipart_parser_execute (
-	multipart_parser *p, const char *buf, size_t len
 );
 
 /** @} */
