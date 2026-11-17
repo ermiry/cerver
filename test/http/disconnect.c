@@ -1424,10 +1424,12 @@ static DisconnectOptions disconnect_options_default (void) {
 
 }
 
+// a loaded machine (a sanitizer, or other suites at the same time) gives the clients that read a large response
+// less time to read it: the time of each response scales like the short timeouts of the tests
 static unsigned int disconnect_send_timeout (void) {
 
 	return disconnect_under_valgrind () ?
-		DISCONNECT_VALGRIND_SEND_TIMEOUT : DISCONNECT_SEND_TIMEOUT;
+		DISCONNECT_VALGRIND_SEND_TIMEOUT : (DISCONNECT_SEND_TIMEOUT * test_time_scale ());
 
 }
 

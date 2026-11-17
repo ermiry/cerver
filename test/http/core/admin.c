@@ -394,7 +394,7 @@ static void test_http_admin_json_stats (void) {
 		"\"n_rejected\": {\"Version\": 0, \"Bad Request\": 0, \"Upgrade\": 0, \"Origin\": 0, \"Limit\": 0, "
 		"\"Application\": 0}}, "
 		"\"pools\": [], "
-		"\"connections\": {\"n_reused\": 0, \"n_followed\": 0, \"n_ended\": 0, \"n_requests\": 0}, "
+		"\"connections\": {\"n_reused\": 0, \"n_followed\": 0, \"n_pool_read\": 0, \"n_ended\": 0, \"n_requests\": 0}, "
 		"\"n_health_requests\": 1, \"n_ready_requests\": 0, \"n_not_ready_requests\": 0, "
 		"\"uploads_write_microseconds\": 0, \"uploads_write_bytes\": 0}"
 	);

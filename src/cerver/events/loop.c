@@ -25,9 +25,8 @@
 
 #pragma region lifecycle
 
-static void event_loop_recycled_delete (EventLoop *loop) {
+static void event_loop_connections_delete (HttpConnection *connection) {
 
-	HttpConnection *connection = loop->recycled;
 	while (connection) {
 		HttpConnection *next = connection->list_next;
 
@@ -36,8 +35,18 @@ static void event_loop_recycled_delete (EventLoop *loop) {
 		connection = next;
 	}
 
+}
+
+static void event_loop_recycled_delete (EventLoop *loop) {
+
+	event_loop_connections_delete (loop->recycled);
+
 	loop->recycled = NULL;
 	loop->n_recycled = 0;
+
+	event_loop_connections_delete (loop->stripped);
+
+	loop->stripped = NULL;
 
 }
 
@@ -278,6 +287,21 @@ void event_loop_connection_detach (EventLoop *loop, struct HttpConnection *conne
 
 }
 
+// with the mutex of the recycled connections
+static HttpConnection *event_loop_stripped_pop (EventLoop *loop) {
+
+	HttpConnection *connection = loop->stripped;
+	if (connection) {
+		loop->stripped = connection->list_next;
+
+		connection->list_next = NULL;
+	}
+
+	return connection;
+
+}
+
+// a recycled connection, or one that was stripped with its arena and its buffers created again
 static HttpConnection *event_loop_recycled_pop (EventLoop *loop) {
 
 	(void) pthread_mutex_lock (&loop->recycled_mutex);
@@ -290,27 +314,47 @@ static HttpConnection *event_loop_recycled_pop (EventLoop *loop) {
 		connection->list_next = NULL;
 	}
 
+	else {
+		connection = event_loop_stripped_pop (loop);
+	}
+
 	(void) pthread_mutex_unlock (&loop->recycled_mutex);
+
+	if (connection && http_connection_restore (connection)) {
+		http_connection_strip (connection);
+
+		(void) pthread_mutex_lock (&loop->recycled_mutex);
+		connection->list_next = loop->stripped;
+		loop->stripped = connection;
+		(void) pthread_mutex_unlock (&loop->recycled_mutex);
+
+		connection = NULL;
+	}
 
 	return connection;
 
 }
 
-// returns true when the connection was kept
-static bool event_loop_recycled_push (EventLoop *loop, HttpConnection *connection) {
+// a connection that the recycled ones do not keep is stripped of its arena and its buffers, its memory stays:
+// a thread of a pool that waits for the idle connections can still have it
+static void event_loop_recycled_push (EventLoop *loop, HttpConnection *connection) {
 
 	(void) pthread_mutex_lock (&loop->recycled_mutex);
 
-	const bool kept = (loop->n_recycled < loop->recycle_limit);
-	if (kept) {
+	if (connection->arena && (loop->n_recycled < loop->recycle_limit)) {
 		connection->list_next = loop->recycled;
 		loop->recycled = connection;
 		loop->n_recycled += 1;
 	}
 
-	(void) pthread_mutex_unlock (&loop->recycled_mutex);
+	else {
+		http_connection_strip (connection);
 
-	return kept;
+		connection->list_next = loop->stripped;
+		loop->stripped = connection;
+	}
+
+	(void) pthread_mutex_unlock (&loop->recycled_mutex);
 
 }
 
@@ -320,7 +364,8 @@ struct HttpConnection *event_loop_connection_take (EventLoop *loop) {
 	if (!connection) connection = http_connection_new ();
 
 	if (connection) {
-		connection->loop = loop;
+		// a thread that still has a connection that ended reads its loop: it is only written once
+		if (connection->loop != loop) connection->loop = loop;
 
 		event_loop_connection_attach (loop, connection);
 
@@ -331,14 +376,12 @@ struct HttpConnection *event_loop_connection_take (EventLoop *loop) {
 
 }
 
-// a connection whose arena could not be created again is not kept
+// a connection whose arena could not be created again is stripped like one that the recycled ones do not keep
 // the thread that ends the last connection of a loop that is stopping wakes it up:
 // the loop waits in its poller for nothing else
 void event_loop_connection_release (EventLoop *loop, struct HttpConnection *connection) {
 
-	if (!connection->arena || !event_loop_recycled_push (loop, connection)) {
-		http_connection_delete (connection);
-	}
+	event_loop_recycled_push (loop, connection);
 
 	event_loop_connections_remove (loop);
 
@@ -390,15 +433,24 @@ static void event_loop_idle_unlink (EventLoop *loop, HttpConnection *connection)
 
 }
 
+// where the socket of an idle connection waits: in the poller of the pool of its last request when the threads of
+// that pool wait for it (events/idle.c), in the one of its loop otherwise
+static EventPoller *event_loop_idle_poller (const EventLoop *loop, const HttpConnection *connection) {
+
+	const EventIdle *idle = (connection->lane < loop->n_lanes) ? loop->lanes[connection->lane].idle : NULL;
+
+	return idle ? idle->poller : loop->poller;
+
+}
+
 // the socket of an idle connection is reported once: the loop gives a connection that was reported
 // to the pool without a system call, and the thread that gives it back arms its socket again
 static unsigned int event_loop_idle_arm (EventLoop *loop, HttpConnection *connection) {
 
-	EventSource *source = &connection->source;
-
-	return source->registered ?
-		event_poller_modify (loop->poller, source, EVENT_LOOP_IDLE_INTEREST) :
-		event_poller_add (loop->poller, source, connection->peer->socket->sock_fd, EVENT_LOOP_IDLE_INTEREST);
+	return event_poller_watch (
+		event_loop_idle_poller (loop, connection), &connection->source,
+		connection->peer->socket->sock_fd, EVENT_LOOP_IDLE_INTEREST
+	);
 
 }
 
@@ -485,6 +537,16 @@ static void event_loop_idle_rest (EventLoop *loop) {
 
 }
 
+// the idle connections whose socket is ready in the poller of a pool whose threads are all busy
+// are read by their loops, so their requests wait for a place in the pool like any other
+static void event_loop_idle_rescue (EventLoop *loop) {
+
+	for (unsigned int idx = 0; idx < loop->n_lanes; idx++) {
+		if (loop->lanes[idx].idle) event_idle_rescue (loop->lanes[idx].idle, loop);
+	}
+
+}
+
 // ends the idle connections whose time ended
 static void event_loop_idle_sweep (EventLoop *loop) {
 
@@ -492,6 +554,8 @@ static void event_loop_idle_sweep (EventLoop *loop) {
 	while ((connection = event_loop_idle_take (loop, true))) {
 		http_connection_idle_expired (connection);
 	}
+
+	event_loop_idle_rescue (loop);
 
 	event_loop_idle_rest (loop);
 
@@ -750,16 +814,18 @@ static bool event_loop_is_stopping (const EventLoop *loop) {
 }
 
 // stops accepting for a while: the listening socket leaves the poller (it would be reported in every step)
-// and a timer brings it back
+// and the loop brings it back when its time comes, a tick of its timers would be too long
 static void event_loop_accept_pause (EventLoop *loop) {
 
 	(void) event_poller_remove (loop->poller, &loop->listen);
 
-	event_wheel_add (&loop->wheel, &loop->accept_timer, loop->now + EVENT_LOOP_ACCEPT_BACKOFF);
+	loop->accept_resume = loop->now + EVENT_LOOP_ACCEPT_BACKOFF;
 
 }
 
 static void event_loop_accept_resume (EventLoop *loop) {
+
+	loop->accept_resume = 0;
 
 	if (!event_loop_is_stopping (loop) && (loop->listen_fd > -1) && !loop->listen.registered) {
 		if (event_poller_add (loop->poller, &loop->listen, loop->listen_fd, EVENT_INTEREST_READ)) {
@@ -769,12 +835,19 @@ static void event_loop_accept_resume (EventLoop *loop) {
 
 }
 
+// the pause of the accept ended
+static void event_loop_accept_check (EventLoop *loop) {
+
+	if (loop->accept_resume && (loop->now >= loop->accept_resume)) event_loop_accept_resume (loop);
+
+}
+
 // a loop that stops does not accept anymore
 static void event_loop_accept_end (EventLoop *loop) {
 
 	(void) event_poller_remove (loop->poller, &loop->listen);
 
-	event_wheel_remove (&loop->wheel, &loop->accept_timer);
+	loop->accept_resume = 0;
 
 	if (loop->listen_owned && (loop->listen_fd > -1)) (void) close (loop->listen_fd);
 
@@ -1051,8 +1124,7 @@ static void event_loop_timer_expired (EventTimer *timer, void *loop_ptr) {
 
 	EventLoop *loop = (EventLoop *) loop_ptr;
 
-	if (timer == &loop->accept_timer) event_loop_accept_resume (loop);
-	else if (timer == &loop->idle_timer) event_loop_idle_sweep (loop);
+	if (timer == &loop->idle_timer) event_loop_idle_sweep (loop);
 	else http_connection_timeout ((HttpConnection *) timer->owner);
 
 }
@@ -1100,17 +1172,35 @@ static bool event_loop_parked_has_place (const EventLoop *loop) {
 
 }
 
+// the milliseconds until the pause of the accept ends, EVENT_WHEEL_NEXT_NONE while the loop accepts
+static int event_loop_accept_wait (const EventLoop *loop) {
+
+	int wait = EVENT_WHEEL_NEXT_NONE;
+
+	if (loop->accept_resume) {
+		wait = (loop->accept_resume > loop->now) ? (int) (loop->accept_resume - loop->now) : 0;
+	}
+
+	return wait;
+
+}
+
+// the shortest of a wait and a time until something is due, EVENT_WHEEL_NEXT_NONE is nothing
+static int event_loop_wait_shortest (const int wait, const int due) {
+
+	return ((due != EVENT_WHEEL_NEXT_NONE) && ((wait < 0) || (due < wait))) ? due : wait;
+
+}
+
 // how long the poller waits: nothing when a connection completed or a parked one has a place,
-// and never past the next tick of the timers
+// and never past the next tick of the timers nor the end of the pause of the accept
 static int event_loop_wait_time (EventLoop *loop, const int timeout) {
 
 	int wait = 0;
 
 	if (event_loop_completed_wait (loop) && !event_loop_parked_has_place (loop)) {
-		wait = timeout;
-
-		const int next = event_wheel_next (&loop->wheel, loop->now);
-		if ((next != EVENT_WHEEL_NEXT_NONE) && ((wait < 0) || (next < wait))) wait = next;
+		wait = event_loop_wait_shortest (timeout, event_wheel_next (&loop->wheel, loop->now));
+		wait = event_loop_wait_shortest (wait, event_loop_accept_wait (loop));
 	}
 
 	return wait;
@@ -1137,6 +1227,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 		handled += event_loop_completed_handle (loop);
 
 		handled += (int) event_wheel_advance (&loop->wheel, loop->now, event_loop_timer_expired, loop);
+
+		event_loop_accept_check (loop);
 
 		event_loop_idle_watch (loop);
 

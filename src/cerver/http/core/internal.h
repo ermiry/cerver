@@ -167,6 +167,18 @@ struct HttpPool {
 	/** @internal @brief Every request that was answered with 503 because the pool had no place for it, at once or when its wait ended; atomic. */
 	u64 n_unavailable;
 
+	/**
+	 * @internal
+	 * @brief The requests that stopped waiting in their event loop for a place in the pool (they got it, their wait
+	 * ended, or the cerver stopped) by the time that they waited, in buckets of up to 2^i ms like the histograms of
+	 * a thpool; atomic.
+	 *
+	 * @since 3.0b-10
+	 */
+	u64 parked_histogram[THPOOL_HISTOGRAM_BUCKETS];
+	/** @internal @brief The microseconds that those requests waited; atomic. */
+	u64 parked_total_microseconds;
+
 };
 
 /**
@@ -273,6 +285,61 @@ CERVER_PRIVATE CerverOverloadPolicy http_pool_overload_policy (
 CERVER_PRIVATE unsigned int http_pool_wait_timeout (
 	const struct _Cerver *cerver, const struct HttpPool *pool
 );
+
+/**
+ * @internal
+ * @brief Counts a request that stopped waiting in its event loop for a place in a pool, with the time that it waited.
+ *
+ * @param[in,out] pool the pool, nothing is done with NULL
+ * @param[in] milliseconds the time that it waited
+ * @threadsafety Safe from any thread, it only uses atomic operations.
+ * @since 3.0b-10
+ */
+CERVER_HIDDEN void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds);
+
+struct Arena;
+struct KeyValuePair;
+
+/**
+ * @internal
+ * @brief Parses the query of an url into an array of key value pairs in an arena, like
+ * http_parse_query_into_pairs () does into a list: the pairs, their keys and their values are released with it.
+ *
+ * @param[in,out] arena the arena
+ * @param[in] first the first character of the query
+ * @param[in] last the character after the last one of the query
+ * @param[out] n_pairs the pairs
+ * @return the pairs, NULL without them or without memory
+ * @since 3.0b-10
+ */
+CERVER_HIDDEN struct KeyValuePair *http_query_pairs_arena (
+	struct Arena *arena, const char *first, const char *last, size_t *n_pairs
+);
+
+/**
+ * @internal
+ * @brief Returns the value of the first pair of an array with a key.
+ *
+ * @param[in] pairs the pairs, from http_query_pairs_arena ()
+ * @param[in] n_pairs the pairs
+ * @param[in] key the key
+ * @return the value, that belongs to the pair; NULL for a NULL argument or a missing key
+ * @since 3.0b-10
+ */
+CERVER_HIDDEN const String *http_query_pairs_find (
+	const struct KeyValuePair *pairs, const size_t n_pairs, const char *key
+);
+
+/**
+ * @internal
+ * @brief Creates a list of KeyValuePair with a copy of each pair of an array.
+ *
+ * @param[in] pairs the pairs, from http_query_pairs_arena ()
+ * @param[in] n_pairs the pairs
+ * @return the list, released with dlist_delete (); NULL without pairs or without memory
+ * @since 3.0b-10
+ */
+CERVER_HIDDEN DoubleList *http_query_pairs_list (const struct KeyValuePair *pairs, const size_t n_pairs);
 
 /**
  * @internal
@@ -566,7 +633,7 @@ CERVER_HIDDEN int http_receive_head_complete (HttpReceive *http_receive);
 /**
  * @internal
  * @brief Answers a request that the parser rejected: 414 for a target too long, 431 for headers too large, 505 for
- * a version that is not served and 400 for anything else.
+ * a version that is not served, 501 for a method that is not implemented and 400 for anything else.
  *
  * @param[in,out] http_receive the receive
  */

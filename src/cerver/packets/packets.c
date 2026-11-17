@@ -1045,13 +1045,18 @@ static inline u8 packet_send_tcp_actual (
 	u8 header[PACKET_HEADER_SIZE];
 
 	// every byte that was sent, send () can send the packet in many parts
-	return socket_send_buffer (
+	int error = 0;
+	const u8 retval = socket_send_buffer (
 		connection->socket,
 		raw ? packet->data : packet_send_buffer (packet, header),
 		raw ? packet->data_size : packet->packet_size,
 		flags, (time_t) connection->send_timeout,
-		total_sent, NULL
+		total_sent, &error
 	);
+
+	if (retval) (void) socket_end_on_send_timeout (connection->socket, error);
+
+	return retval;
 
 }
 
@@ -1099,12 +1104,15 @@ static u8 packet_send_split_tcp (
 
 		(void) pthread_mutex_lock (connection->socket->write_mutex);
 
+		int error = 0;
 		retval = socket_send_vector (
 			connection->socket,
 			parts, (packet->data && packet->data_size) ? PACKET_SPLIT_PARTS : 1,
 			flags, (time_t) connection->send_timeout,
-			total_sent, NULL
+			total_sent, &error
 		);
+
+		if (retval) (void) socket_end_on_send_timeout (connection->socket, error);
 
 		(void) pthread_mutex_unlock (connection->socket->write_mutex);
 	}
@@ -1658,12 +1666,15 @@ static u8 packet_send_pieces_actual (
 ) {
 
 	size_t sent = 0;
+	int error = 0;
 
 	const u8 retval = socket_send_buffer (
 		connection->socket, data, data_size,
 		flags, (time_t) connection->send_timeout,
-		&sent, NULL
+		&sent, &error
 	);
+
+	if (retval) (void) socket_end_on_send_timeout (connection->socket, error);
 
 	*actual_sent += sent;
 
@@ -1741,13 +1752,16 @@ u8 packet_send_to_socket (
 		(void) pthread_mutex_lock (socket->write_mutex);
 
 		// a socket without its connection waits the default send timeout
+		int error = 0;
 		retval = socket_send_buffer (
 			socket,
 			raw ? packet->data : packet_send_buffer (packet, header),
 			raw ? packet->data_size : packet->packet_size,
 			flags, (time_t) CERVER_DEFAULT_SEND_TIMEOUT,
-			total_sent, NULL
+			total_sent, &error
 		);
+
+		if (retval) (void) socket_end_on_send_timeout (socket, error);
 
 		(void) pthread_mutex_unlock (socket->write_mutex);
 	}

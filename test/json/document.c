@@ -237,10 +237,19 @@ static void test_document_nul_bytes (void) {
 	static const char inside[] = { '[', '1', ',', '\0', '2', ']' };
 	static const char string[] = { '"', 'a', '\0', 'b', '"' };
 
+	// a NUL right after a number or a literal inside a container (the copy of Jansson skipped it)
+	static const char number[] = { '[', '1', '\0', ',', ' ', '2', ']' };
+	static const char literal[] = { '[', 't', 'r', 'u', 'e', '\0', ',', ' ', '2', ']' };
+	static const char member[] = { '{', '"', 'a', '"', ':', ' ', '1', '\0', '}' };
+
 	json_test_rejects (only, sizeof (only), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CHARACTER, 0);
 	json_test_rejects (after, sizeof (after), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_TRAILING, 1);
 	json_test_rejects (inside, sizeof (inside), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CHARACTER, 3);
 	json_test_rejects (string, sizeof (string), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CONTROL, 2);
+
+	json_test_rejects (number, sizeof (number), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CHARACTER, 2);
+	json_test_rejects (literal, sizeof (literal), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CHARACTER, 5);
+	json_test_rejects (member, sizeof (member), CERVER_JSON_FLAGS_NONE, CERVER_JSON_ERROR_CHARACTER, 7);
 
 }
 

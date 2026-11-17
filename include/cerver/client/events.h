@@ -83,15 +83,27 @@ struct _ClientEvent {
 
 	/** @brief The data that came with the response, set by client_event_set_response (). */
 	void *response_data;
-	/** @brief Releases #response_data when the event is deleted, NULL to keep it. */
+	/** @brief Releases #response_data once the event and every trigger are done with it, NULL to keep it. */
 	Action delete_response_data;
 
 	/** @brief The action, it gets a ClientEventData. */
 	Work work;
 	/** @brief The arguments of the action. */
 	void *work_args;
-	/** @brief Releases the arguments of the action when the event is deleted, NULL to keep them. */
+	/** @brief Releases the arguments once the event and every trigger are done with them, NULL to keep them. */
 	Action delete_action_args;
+
+	/**
+	 * @brief The arguments shared with the data of each trigger, for the internal methods of cerver: the last one
+	 * that releases them deletes them.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_args;
+	/**
+	 * @brief The response data shared with the data of each trigger, like #shared_args.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_response;
 
 };
 
@@ -122,7 +134,8 @@ CERVER_EXPORT u8 client_event_register (
 );
 
 /**
- * @brief Unregisters the action of an event, deleting its arguments with its delete_action_args () if it has one.
+ * @brief Unregisters the action of an event; its arguments and its response are deleted with their delete actions
+ * once every trigger that still runs is done with them.
  *
  * @param[in,out] client the client
  * @param[in] event_type the event
@@ -136,10 +149,12 @@ CERVER_EXPORT u8 client_event_unregister (
 /**
  * @brief Sets the response data of the action of an event, that the event owns from now on.
  *
+ * The response that it replaces is released once every trigger that still runs is done with it.
+ *
  * @param[in,out] client the client
  * @param[in] event_type the event, one without an action is ignored
  * @param[in] response_data the data
- * @param[in] delete_response_data releases the data when the event is deleted
+ * @param[in] delete_response_data releases the data when the event and every trigger are done with it
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE void client_event_set_response (
@@ -203,14 +218,26 @@ typedef struct ClientEventData {
 
 	/** @brief The arguments of the action. */
 	void *action_args;
-	/** @brief Releases #action_args when #owns_action_args. */
+	/** @brief What releases #action_args, once the event and every trigger are done with them. */
 	Action delete_action_args;
 
 	/**
-	 * @brief The event was dropped after this trigger, so client_event_data_delete () releases the action
-	 * arguments with #delete_action_args.
+	 * @brief The event was dropped after this trigger: the reference of this data is the last one to the
+	 * arguments, so client_event_data_delete () releases them.
 	 */
 	bool owns_action_args;
+
+	/**
+	 * @brief The reference of this trigger to the arguments of the action, for the internal methods of cerver:
+	 * client_event_data_delete () releases it.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_args;
+	/**
+	 * @brief The reference of this trigger to the response data of the event, like #shared_args.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_response;
 
 } ClientEventData;
 
@@ -290,8 +317,15 @@ struct _ClientError {
 	Work work;
 	/** @brief The arguments of the action. */
 	void *work_args;
-	/** @brief Releases the arguments of the action when the error is deleted, NULL to keep them. */
+	/** @brief Releases the arguments once the error and every trigger are done with them, NULL to keep them. */
 	Action delete_action_args;
+
+	/**
+	 * @brief The arguments shared with the data of each trigger, for the internal methods of cerver: the last one
+	 * that releases them deletes them.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_args;
 
 };
 
@@ -322,7 +356,8 @@ CERVER_EXPORT u8 client_error_register (
 );
 
 /**
- * @brief Unregisters the action of an error, deleting its arguments with its delete_action_args () if it has one.
+ * @brief Unregisters the action of an error; its arguments are deleted with its delete_action_args () once every
+ * trigger that still runs is done with them.
  *
  * @param[in,out] client the client
  * @param[in] error_type the error
@@ -363,16 +398,23 @@ typedef struct ClientErrorData {
 	/** @brief The arguments of the action. */
 	void *action_args;
 
-	/**
-	 * @brief Releases #action_args when #owns_action_args: the error was dropped after this trigger, so
-	 * client_error_data_delete () releases the arguments.
-	 */
+	/** @brief What releases #action_args, once the error and every trigger are done with them. */
 	Action delete_action_args;
-	/** @brief The data owns the arguments of the action. */
+	/**
+	 * @brief The error was dropped after this trigger: the reference of this data is the last one to the
+	 * arguments, so client_error_data_delete () releases them.
+	 */
 	bool owns_action_args;
 
 	/** @brief The message of the error. */
 	String *error_message;
+
+	/**
+	 * @brief The reference of this trigger to the arguments of the action, for the internal methods of cerver:
+	 * client_error_data_delete () releases it.
+	 * @since 3.0b-10
+	 */
+	struct _CerverActionArgs *shared_args;
 
 } ClientErrorData;
 

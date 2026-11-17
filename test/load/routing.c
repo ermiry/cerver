@@ -592,7 +592,12 @@ static void test_routing_round_robin (void) {
 	}
 
 	test_check_unsigned_eq (CERVER_STATS_GET (routing.balancer->stats->n_packets_routed), ROUTING_PACKETS, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (routing.balancer->stats->n_packets_sent), ROUTING_PACKETS, NULL);
+
+	// the balancer counts a packet that it sent after its send returns: the client can have its echo before
+	test_check_unsigned_eq (
+		test_wait_counter_64 (&routing.balancer->stats->n_packets_sent, ROUTING_PACKETS, TEST_WAIT_SECONDS),
+		ROUTING_PACKETS, NULL
+	);
 
 	routing_client_end (&client);
 	routing_stop (&routing);

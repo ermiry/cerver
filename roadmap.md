@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); sigue L3, el parser HTTP/1.1 propio (§4.3) |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); sigue L4, el I/O sobre io_uring (§4.4), en la 3.0b-11 |
 
 **Las citas `archivo:línea`:**
 
@@ -159,12 +159,13 @@ puede ocupar varias.
 | **L1** | 3.0b-7 | El JSON propio: la migración de HTTP y Jansson fuera de la API pública | 3.0b-6 |
 | **L2** | 3.0b-8 | El JWT propio | L1 |
 | **L3** | 3.0b-9 | El parser HTTP/1.1 propio | L0.2 |
-| **L4** | 3.0b-10 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L3 |
-| **L5** | 3.0b-11 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-12 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-13 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-14 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-15 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **L0.5** | 3.0b-10 | La sincronía antes de L4: F4b y la 2.1b-20 de `nightly` (con el Release 1.9 y la 2.0b-77), la política de versiones y métodos de HTTP Garden | L3 |
+| **L4** | 3.0b-11 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L0.5 |
+| **L5** | 3.0b-12 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-13 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-14 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-15 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-16 | WebSocket sobre el I/O nuevo | L4, L5 |
 | **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
@@ -332,6 +333,31 @@ para que los ports entre líneas sigan siendo directos.
   `DEFINES` del `makefile`.
 - **El rendimiento:** `test/performance.sh` pide el 90 % de las req/s de THREADS con EVENTS y el 150 % con una conexión
   que se conserva; `nightly` todavía no llega al 150 % (su 2.1b-19), y L4 reemplaza este I/O.
+
+### 4.0.5 L0.5 — La sincronía antes de L4 (3.0b-10)
+
+La decisión del usuario (2026-11-16): antes del trabajo pesado (L4), `labs` se pone al día con lo que las otras líneas
+publicaron en el código que comparte, en una beta propia porque el port es grande. La numeración de las fases que
+siguen se corrió una beta.
+
+- **El port de la 2.1b-19 de `nightly`** (F4b, la forma completa del keep-alive) **sobre el parser de la 3.0b-9:** los
+  hilos de los pools leen la siguiente petición de una conexión ociosa (`events/idle.c`, el `ThpoolWaiter` del core),
+  con `http_receive_execute ()` y su `HttpReceiveParse` en lugar del errno de llhttp, y con `http_connection_strip ()`
+  / `_restore ()` sobre el `head_buffer`; los pares del query y del form en la arena de la petición, junto a las vistas
+  de la 3.0b-9 (`strings_in_arena`).
+- **El port de la 2.1b-20,** que trae el core del Release 1.9 de `core` y lo de HTTP de la 2.0b-77 de `http`: un envío
+  que agota su timeout termina su conexión, los argumentos compartidos de los eventos del cliente, los arreglos de
+  `files/` y de `auth/hold.c`, el static path sin memoria, `Connection: close` en una respuesta sin largo y la
+  documentación corregida del core. El NUL después de un valor de la copia de Jansson no aplica: el JSON propio ya lo
+  rechazaba, y sus casos entraron como regresión.
+- **La política de HTTP Garden** (la decisión del usuario): todo HTTP/1.x se sirve, con un menor arriba de 1 leído como
+  1 (RFC 9112 §2.3), y un token que no es un método de la tabla es 501 (RFC 9110 §9.1,
+  `CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN`).
+- **El test de un hilo que devuelve una conexión reportada** a su loop que rechaza (`test_keepalive_events_reported_rejecting ()`),
+  que mata el mutante que la 2.1b-20 dejó vivo.
+- Las decisiones que esperaban (el backlog del contexto): la verificación de cada firma de RSA se queda (§4.2), la
+  tolerancia de `iat` sigue en 0, las llaves de Ed25519 de orden chico se aceptan, y el parser de multipart no lleva
+  atribución.
 
 ### 4.1 L1 — El JSON propio
 
@@ -530,7 +556,8 @@ el árbol anterior al borrado:
 - **Una métrica pierde, por decisión: firmar con RSA es ~2 % más lento** (3 072 contra 3 131 con RS256; contra
   jwt-cpp, 2 % en RS256 y 3 % en PS256). Es lo que cuesta verificar cada firma de RSA antes de darla (una operación
   pública, ~3 % de la privada), la protección contra la firma inválida que OpenSSL 3.5 devolvió como éxito. Quitarla
-  recupera la cifra y deja pasar esa firma: se queda mientras el usuario no diga otra cosa.
+  recupera la cifra y deja pasar esa firma. **Decidido por el usuario (2026-11-16, la 3.0b-10): la verificación se
+  queda y el ~2 % es una pérdida aceptada de la meta.**
 - **ES384 al verificar empata** (4 995 y 5 012 en dos corridas, contra 5 006 del que reemplaza): la curva es de
   OpenSSL en los dos y la diferencia está dentro del ruido.
 - **Contra los competidores:** cerver le gana a libjwt y a l8w8jwt en todas las filas, y a jwt-cpp en todas menos
@@ -795,7 +822,8 @@ nunca en producción.
   - lo que `labs` ya reemplazó no recibe ports, pero el arreglo se revisa contra el código nuevo y, si aplica, su
     test entra a la suite;
   - desde la 3.0b-2 las rutas de `labs` son otras: cada archivo se traduce con la tabla de §11;
-  - el port no tiene beta propia.
+  - el port no tiene beta propia, salvo cuando es grande: la 3.0b-5 (F3, F4 y F5) y la 3.0b-10 (F4b, la 2.1b-20 y
+    con ella el Release 1.9 y la 2.0b-77).
 - **De `labs` a `nightly`:**
   - un módulo propio **madura** cuando pasa el gate de `labs` y no pierde en ninguna métrica contra el que
     reemplaza;

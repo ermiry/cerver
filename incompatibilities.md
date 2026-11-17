@@ -3,6 +3,74 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-10 (from 3.0b-9)
+
+The sync of `labs` before L4 (L0.5 of `roadmap.md`): the whole form of keep-alive of `nightly` (its 2.1b-19, F4b, over
+the parser of the 3.0b-9), its 2.1b-20 and with it the Release 1.9 of `core` and the 2.0b-77 of `http`, and the policy
+of the versions and the methods that HTTP Garden showed. Some structs grow or change their fields (a binary that
+allocates them itself is built again), and some functions change what they do.
+
+**HTTP**
+
+- **Every HTTP/1.x is served:** a minor above 1 is read as 1 (RFC 9112 section 2.3), so `HTTP/1.2` gets the response
+  of an `HTTP/1.1` request (it was 400); `HTTP/0.9` and `HTTP/2.0` are still 505, another major still 400
+- **A method that cerver does not implement is 501** (RFC 9110 section 9.1): a token that is not one of
+  `REQUEST_METHOD_MAP` (the methods of RTSP, a method in lower case) is the new error
+  `CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN` (19) of the parser, that was `CERVER_HTTP_PARSER_ERROR_METHOD` and 400; what
+  is not a token or is longer than the longest method is still `METHOD` and 400
+- **A response without its length says `Connection: close`:** its body ends with the close of the connection, that
+  was already closed after it; now the response announces it
+- **`http_cerver_static_path_add ()` returns NULL** when its path, its characters or its place in the list can not
+  be allocated (it returned a static path with a NULL path, or one that was not in the list)
+- **The query params and the values of a form live in the arena of the request:** `HttpRequest::query_params` and
+  `body_values` are NULL until `http_request_get_query_params ()` and `http_request_get_body_values ()` create them (a
+  copy of each pair), so code that read the fields reads the getters; `http_request_query_params_get_value ()` and
+  `http_request_body_get_value ()` read the pairs of the arena without allocating (`HttpRequest::query_pairs`,
+  `n_query_pairs`, `body_pairs` and `n_body_pairs` at its end)
+- `HttpCerver` has `keep_alive_pool_read` and `n_pool_read_requests` at its end; `n_pool_read` in the `connections`
+  and `parked_microseconds` in the pools of the admin stats, the metrics `cerver_http_pool_read_requests_total` and
+  `cerver_http_pool_parked_seconds{pool}`
+
+**Keep-alive and the event loops**
+
+- **The threads of the pools read the next request of an idle connection:** with `CERVER_HANDLER_TYPE_EVENTS` and
+  connections that are kept (the default), the threads of each pool wait for the sockets of the idle connections whose
+  last request was of the pool when the queue of the pool is empty, and the one that gets a socket reads, parses and
+  handles its request without the event loop. The loop reads it when no thread of its pool waits, when requests of
+  that pool wait in the loop or when the loop rejects them. `http_cerver_set_keep_alive_pool_read (false)` gives back
+  the reads of the 3.0b-9
+- **The authentication before the body of the next request of a kept connection runs in the thread that reads it**
+  (or that follows its connection), when the request is of the pool of that thread
+- **A thpool can wait on something else than its queue:** `Thpool` has `waiter`, `num_threads_waiting` and
+  `waiter_wakes` at its end (`ThpoolWaiter`, `ThpoolWaited`, `thpool_set_waiter ()`,
+  `thpool_get_num_threads_waiting ()`, `CERVER_PRIVATE`)
+- **The memory of a connection of an event loop is released with its loop:** one that its recycled connections do not
+  keep loses its arena and its head buffer but keeps its struct
+- **The pause of the accept is 2^4 ms** (`EVENT_LOOP_ACCEPT_BACKOFF`); `EventLoop` has `accept_resume` instead of
+  `accept_timer`, and `EventSource` has `poller`
+
+**The core (the Release 1.9)**
+
+- **A send that times out ends its connection:** a send to a peer that does not read in all its send timeout (or the
+  deadline of an HTTP response) shuts down its socket, so the next sends fail at once (EPIPE) instead of waiting each
+  one for its own timeout. **New:** `socket_end_on_send_timeout ()` (`CERVER_PRIVATE`)
+- **The events and errors of a client share their arguments** like the ones of the cerver: `ClientEvent` and
+  `ClientEventData` have `shared_args` and `shared_response` at their end, `ClientError` and `ClientErrorData` have
+  `shared_args`; an event or an error that is replaced or unregistered while a trigger still runs keeps its arguments
+  (and its response) until that trigger releases its data
+- **`files_create_dir ()` of a directory that exists returns 0** (it returned 1); `file_n_read ()` sets `n_read` (it
+  added to it) and takes a NULL one; `file_receive_actual ()` removes a file that fails after it was opened; a BMP is
+  found by its bytes
+
+**The tests**
+
+- The macros `test_check_ptr_eq`, `_ptr_ne`, `_unsigned_ne`, `_unsigned_gt`, `_int_ne` and `_int_gt` of `test/test.h`
+  put their arguments in parentheses
+- The send timeout of `test/http/disconnect.c` scales with `test_time_scale ()`, and the routing test of the balancer
+  waits for the counter of the packets that it sent
+- The oracle of the comparisons with llhttp (`test/conformance/outcome.h`) gives llhttp any version and applies the
+  policy of cerver in its callbacks
+
 ## 3.0b-9 (from 3.0b-8)
 
 The parsers of cerver (L3 of `roadmap.md`): `cerver/http/parser/` reads HTTP/1.1 and the multipart bodies with code

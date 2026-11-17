@@ -266,6 +266,26 @@ CERVER_EXPORT void http_cerver_set_keep_alive_follow (
 );
 
 /**
+ * @brief Sets whether the threads of the pools read the next request of a connection that is kept.
+ *
+ * With it the next request of an idle connection is read, parsed and handled by a thread of the pool of the
+ * request before it, without its event loop, the way a thread of CERVER_HANDLER_TYPE_THREADS handles its own
+ * connection. The event loop still reads it when that pool has no place for it (it is full, or requests already
+ * wait for it in the loop) or the cerver rejects its requests, so a request waits and is refused like any other.
+ * A request that is not complete in what the thread read goes back to the event loop with the time of any
+ * request, and one of another pool goes to that pool.
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] pool_read true for the threads of the pools to read it, the default
+ * (#HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ); false for the event loop to read every request
+ * @note Only with CERVER_HANDLER_TYPE_EVENTS and connections that are kept (http_cerver_set_keep_alive ()).
+ * @since 3.0b-10
+ */
+CERVER_EXPORT void http_cerver_set_keep_alive_pool_read (
+	HttpCerver *http_cerver, const bool pool_read
+);
+
+/**
  * @brief Sets whether http_receive_is_client_gone () takes a client that closed its side of the connection
  * (HTTP_CLIENT_STATE_CLOSED) as gone.
  *

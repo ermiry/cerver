@@ -183,6 +183,20 @@ unsigned int http_pool_wait_timeout (
 
 }
 
+void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds) {
+
+	if (pool) {
+		const u64 microseconds = milliseconds * THPOOL_MICROSECONDS_PER_MILLISECOND;
+
+		(void) __atomic_add_fetch (
+			&pool->parked_histogram[thpool_histogram_bucket (microseconds)], 1, __ATOMIC_RELAXED
+		);
+
+		(void) __atomic_add_fetch (&pool->parked_total_microseconds, microseconds, __ATOMIC_RELAXED);
+	}
+
+}
+
 #pragma endregion
 
 #pragma region lifecycle
