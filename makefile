@@ -499,6 +499,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/auth.o -o $(INTWEBOUT)/auth $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/disconnect.o -o $(INTWEBOUT)/disconnect $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/features.o -o $(INTWEBOUT)/features $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/garden.o -o $(INTWEBOUT)/garden $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/jobs.o -o $(INTWEBOUT)/jobs $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/json.o -o $(INTWEBOUT)/json $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/multi.o -o $(INTWEBOUT)/multi $(INTWEBLIBS)

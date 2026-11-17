@@ -1,0 +1,84 @@
+# the cases of the HTTP Garden for cerver (test/conformance/garden.sh): a name, the origins that cerver does not
+# agree with ("-" for none) and the payload, with the escapes of Python; a line that starts with # is a comment
+# (MODE=record writes the origins of a run and the kind of each discrepancy)
+# the origins: nginx, h2o (picohttpparser), libevent and gunicorn, at the versions of the Garden b417e806
+#
+# what every origin reads the same
+simple	-	GET / HTTP/1.1\r\nHost: a\r\n\r\n
+query	-	GET /path/to?key=value&other=1 HTTP/1.1\r\nHost: a\r\n\r\n
+old	-	GET / HTTP/1.0\r\n\r\n
+post	-	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\n\r\nhello
+chunked	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n
+chunked-pieces	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\n
+pipeline	-	GET /1 HTTP/1.1\r\nHost: a\r\n\r\nGET /2 HTTP/1.1\r\nHost: a\r\n\r\n
+pipeline-post	-	POST /1 HTTP/1.1\r\nHost: a\r\nContent-Length: 1\r\n\r\naGET /2 HTTP/1.1\r\nHost: a\r\n\r\n
+headers-many	-	GET / HTTP/1.1\r\nHost: a\r\nA: 1\r\nB: 2\r\nC: 3\r\nD: 4\r\n\r\n
+header-spaces	-	GET / HTTP/1.1\r\nHost: a\r\nA:    1   \r\n\r\n
+header-empty	-	GET / HTTP/1.1\r\nHost: a\r\nA:\r\n\r\n
+header-repeated	-	GET / HTTP/1.1\r\nHost: a\r\nA: 1\r\nA: 2\r\n\r\n
+header-obs-text	-	GET / HTTP/1.1\r\nHost: a\r\nA: \xe9\xff\r\n\r\n
+content-length-list	-	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 1, 1\r\n\r\na
+content-length-hexadecimal	-	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0x1\r\n\r\na
+content-length-big	-	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 99999999999999999999999\r\n\r\na
+chunked-case	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: CHUNKED\r\n\r\n5\r\nhello\r\n0\r\n\r\n
+chunk-size-overflow	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n10000000000000000\r\na\r\n0\r\n\r\n
+chunk-size-sign	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n+5\r\nhello\r\n0\r\n\r\n
+chunk-data-without-crlf	-	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloX0\r\n\r\n
+space-before-first-header	-	GET / HTTP/1.1\r\n Host: a\r\n\r\n
+bare-cr	-	GET / HTTP/1.1\r\nHost: a\rA: 1\r\n\r\n
+empty-name	-	GET / HTTP/1.1\r\nHost: a\r\n: 1\r\n\r\n
+version-lower	-	GET / http/1.1\r\nHost: a\r\n\r\n
+tab-in-line	-	GET\t/\tHTTP/1.1\r\nHost: a\r\n\r\n
+#
+# libevent takes what cerver and the others reject, or rejects what they take (the extensions and the trailers)
+chunk-extension	libevent	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;name=value\r\nhello\r\n0\r\n\r\n
+chunk-extension-quoted	libevent	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;name="a b"\r\nhello\r\n0\r\n\r\n
+chunk-trailer	libevent	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Trailer: 1\r\n\r\n
+content-length-sign	libevent	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: +1\r\n\r\na
+content-length-space-name	libevent	POST / HTTP/1.1\r\nHost: a\r\nContent-Length : 1\r\n\r\na
+chunk-lf	libevent	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\nhello\n0\n\n
+obs-fold	libevent	GET / HTTP/1.1\r\nHost: a\r\nA: 1\r\n 2\r\n\r\n
+space-before-colon	libevent	GET / HTTP/1.1\r\nHost: a\r\nA : 1\r\n\r\n
+nul-in-value	libevent	GET / HTTP/1.1\r\nHost: a\r\nA: 1\x002\r\n\r\n
+target-space	libevent	GET /a b HTTP/1.1\r\nHost: a\r\n\r\n
+#
+# cerver rejects what RFC 9112 rejects or lets reject, and a parser that smuggles takes: a Content-Length with a
+# Transfer-Encoding (section 6.1), two Content-Length that differ (section 6.3), chunked twice, a Content-Length in
+# the trailers, the spaces after a chunk size without an extension, the controls and DEL in a value and a target,
+# a delimiter in a name and a line without its colon (nginx and h2o ignore or take some of them)
+content-length-and-chunked	h2o,libevent	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n
+content-length-repeated	h2o,libevent	POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nab
+chunked-twice	h2o,libevent	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n
+trailer-content-length	h2o,libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nContent-Length: 5\r\n\r\n
+chunk-size-space	h2o,libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5 \r\nhello\r\n0\r\n\r\n
+control-in-value	libevent,nginx	GET / HTTP/1.1\r\nHost: a\r\nA: 1\x012\r\n\r\n
+delete-in-value	libevent,nginx	GET / HTTP/1.1\r\nHost: a\r\nA: 1\x7f2\r\n\r\n
+target-control	gunicorn,libevent	GET /a\x01b HTTP/1.1\r\nHost: a\r\n\r\n
+name-delimiter	libevent,nginx	GET / HTTP/1.1\r\nHost: a\r\nA(B: 1\r\n\r\n
+no-colon	nginx	GET / HTTP/1.1\r\nHost: a\r\nA\r\n\r\n
+#
+# the strict mode: a LF alone ends no line (RFC 9112 section 2.2 lets a recipient take it; the lenient flags of
+# cerver do), and a Transfer-Encoding that does not end with chunked or that is not one is 400 (nginx and gunicorn
+# answer 501)
+bare-lf	h2o,libevent,nginx	GET / HTTP/1.1\nHost: a\n\n
+chunked-not-last	libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n
+chunked-obfuscated	gunicorn,libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: xchunked\r\n\r\n0\r\n\r\n
+#
+# the policy of cerver since the 2.1b-13: only HTTP/1.0 and HTTP/1.1 are served (505 for the others, also for a
+# request line without a version since the 3.0b-9; HTTP_PARSER_LENIENT_VERSION serves any), and only the methods of
+# REQUEST_METHOD_MAP (400 for another one); the others take HTTP/1.2 as HTTP/1.1 and any token as a method
+version-two	gunicorn,h2o,libevent	GET / HTTP/2.0\r\nHost: a\r\n\r\n
+version-unknown	gunicorn,h2o,libevent,nginx	GET / HTTP/1.2\r\nHost: a\r\n\r\n
+version-none	gunicorn,h2o,libevent	GET /\r\n\r\n
+method-lower	h2o,libevent	get / HTTP/1.1\r\nHost: a\r\n\r\n
+method-unknown	gunicorn,h2o,libevent,nginx	FOO / HTTP/1.1\r\nHost: a\r\n\r\n
+#
+# what cerver takes like llhttp: the empty lines before a request (RFC 9112 section 2.2, nginx too), the spaces
+# around the target (nginx and h2o too), OPTIONS * (nginx rejects it), the tabs after a value are trimmed (libevent
+# and nginx keep them), and the origin of cerver answers the target of an absolute form as it arrived (cerver
+# routes it by its path; nginx, h2o and gunicorn answer the path)
+empty-lines-before	gunicorn,h2o,libevent	\r\n\r\nGET / HTTP/1.1\r\nHost: a\r\n\r\n
+spaces-in-line	gunicorn,libevent	GET  /  HTTP/1.1\r\nHost: a\r\n\r\n
+asterisk	nginx	OPTIONS * HTTP/1.1\r\nHost: a\r\n\r\n
+header-tab	libevent,nginx	GET / HTTP/1.1\r\nHost: a\r\nA:\t1\t2\t\r\n\r\n
+absolute	gunicorn,h2o,nginx	GET http://a/b?c HTTP/1.1\r\nHost: a\r\n\r\n
