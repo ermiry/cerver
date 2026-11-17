@@ -880,6 +880,212 @@ static void test_thpool_init_failure (void) {
 
 #pragma endregion
 
+#pragma region waiter
+
+// the works that a waiter gives in these tests
+#define THPOOL_WAITER_WORKS				8
+
+// a waiter that gives the works that the test asks for, and returns when it is woken up
+typedef struct ThpoolTestWorks {
+
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+
+	unsigned int works;
+	unsigned int wakes;
+
+	unsigned int ran;
+
+} ThpoolTestWorks;
+
+static void thpool_test_works_init (ThpoolTestWorks *waiter) {
+
+	(void) pthread_mutex_init (&waiter->mutex, NULL);
+	(void) pthread_cond_init (&waiter->cond, NULL);
+
+	waiter->works = 0;
+	waiter->wakes = 0;
+	waiter->ran = 0;
+
+}
+
+static void thpool_test_works_end (ThpoolTestWorks *waiter) {
+
+	(void) pthread_mutex_destroy (&waiter->mutex);
+	(void) pthread_cond_destroy (&waiter->cond);
+
+}
+
+static ThpoolWaited thpool_test_works_wait (void *waiter_ptr, ThpoolJob *job) {
+
+	ThpoolTestWorks *waiter = (ThpoolTestWorks *) waiter_ptr;
+
+	(void) pthread_mutex_lock (&waiter->mutex);
+
+	while (!waiter->works && !waiter->wakes) (void) pthread_cond_wait (&waiter->cond, &waiter->mutex);
+
+	ThpoolWaited waited = THPOOL_WAITED_WOKEN;
+	if (waiter->works) {
+		waiter->works -= 1;
+
+		job->work = thpool_test_counter_add;
+		job->reject = NULL;
+		job->args = &waiter->ran;
+
+		waited = THPOOL_WAITED_WORK;
+	}
+
+	else {
+		waiter->wakes -= 1;
+	}
+
+	(void) pthread_mutex_unlock (&waiter->mutex);
+
+	return waited;
+
+}
+
+static void thpool_test_works_wake (void *waiter_ptr, const unsigned int count) {
+
+	ThpoolTestWorks *waiter = (ThpoolTestWorks *) waiter_ptr;
+
+	(void) pthread_mutex_lock (&waiter->mutex);
+	waiter->wakes += count;
+	(void) pthread_cond_broadcast (&waiter->cond);
+	(void) pthread_mutex_unlock (&waiter->mutex);
+
+}
+
+static void thpool_test_works_give (ThpoolTestWorks *waiter, const unsigned int count) {
+
+	(void) pthread_mutex_lock (&waiter->mutex);
+	waiter->works += count;
+	(void) pthread_cond_broadcast (&waiter->cond);
+	(void) pthread_mutex_unlock (&waiter->mutex);
+
+}
+
+static void thpool_test_wait_waiting (const Thpool *thpool, const unsigned int waiting) {
+
+	while (thpool_get_num_threads_waiting (thpool) != waiting) {
+		thpool_test_sleep (THPOOL_TEST_SHORT_SLEEP);
+	}
+
+}
+
+static void thpool_test_wait_counter (unsigned int *counter, const unsigned int count) {
+
+	while (thpool_test_counter_get (counter) != count) {
+		thpool_test_sleep (THPOOL_TEST_SHORT_SLEEP);
+	}
+
+}
+
+// the threads wait on the waiter when the queue is empty: they run what it gives them, counted like the jobs of
+// the queue but not in the histogram of the wait, and the jobs of the queue still go first; once it is cleared,
+// none of them uses it and they wait for the jobs of the queue again
+static void test_thpool_waiter (void) {
+
+	Thpool *thpool = thpool_create (THPOOL_N_THREADS);
+	test_check_ptr (thpool);
+	test_check_unsigned_eq (thpool_init (thpool), 0, NULL);
+
+	test_check_unsigned_eq (thpool_get_num_threads_waiting (thpool), 0, NULL);
+
+	ThpoolTestWorks test_waiter;
+	thpool_test_works_init (&test_waiter);
+
+	const ThpoolWaiter waiter = { thpool_test_works_wait, thpool_test_works_wake, &test_waiter };
+	test_check_unsigned_eq (thpool_set_waiter (thpool, &waiter), 0, NULL);
+
+	// the threads that waited on the condition of the queue wait on the waiter now
+	thpool_test_wait_waiting (thpool, THPOOL_N_THREADS);
+
+	ThpoolStats before;
+	thpool_get_stats (thpool, &before);
+
+	thpool_test_works_give (&test_waiter, THPOOL_WAITER_WORKS);
+	thpool_test_wait_counter (&test_waiter.ran, THPOOL_WAITER_WORKS);
+
+	// a job of the queue wakes a thread up from the waiter
+	unsigned int queued = 0;
+	for (unsigned int idx = 0; idx < THPOOL_WAITER_WORKS; idx++) {
+		test_check_int_eq (thpool_add_work (thpool, thpool_test_counter_add, &queued), 0, NULL);
+	}
+
+	thpool_test_wait_counter (&queued, THPOOL_WAITER_WORKS);
+	thpool_wait (thpool);
+
+	ThpoolStats after;
+	thpool_get_stats (thpool, &after);
+
+	test_check_unsigned_eq (after.total_jobs - before.total_jobs, 2 * THPOOL_WAITER_WORKS, NULL);
+	test_check_unsigned_eq (after.completed_jobs - before.completed_jobs, 2 * THPOOL_WAITER_WORKS, NULL);
+
+	u64 waited = 0;
+	for (unsigned int idx = 0; idx < THPOOL_HISTOGRAM_BUCKETS; idx++) {
+		waited += after.wait_histogram[idx] - before.wait_histogram[idx];
+	}
+
+	test_check_unsigned_eq (waited, THPOOL_WAITER_WORKS, NULL);
+
+	// cleared: none of the threads waits on it after the call
+	test_check_unsigned_eq (thpool_set_waiter (thpool, NULL), 0, NULL);
+	test_check_unsigned_eq (thpool_get_num_threads_waiting (thpool), 0, NULL);
+
+	queued = 0;
+	test_check_int_eq (thpool_add_work (thpool, thpool_test_counter_add, &queued), 0, NULL);
+	thpool_test_wait_counter (&queued, 1);
+
+	thpool_destroy (thpool);
+
+	test_check_unsigned_eq (test_waiter.works, 0, NULL);
+
+	thpool_test_works_end (&test_waiter);
+
+}
+
+// a thpool whose threads wait on a waiter is destroyed without clearing it: its wake makes them return
+static void test_thpool_waiter_destroy (void) {
+
+	Thpool *thpool = thpool_create (THPOOL_N_THREADS);
+	test_check_ptr (thpool);
+	test_check_unsigned_eq (thpool_init (thpool), 0, NULL);
+
+	ThpoolTestWorks test_waiter;
+	thpool_test_works_init (&test_waiter);
+
+	const ThpoolWaiter waiter = { thpool_test_works_wait, thpool_test_works_wake, &test_waiter };
+	test_check_unsigned_eq (thpool_set_waiter (thpool, &waiter), 0, NULL);
+
+	thpool_test_wait_waiting (thpool, THPOOL_N_THREADS);
+
+	thpool_destroy (thpool);
+
+	thpool_test_works_end (&test_waiter);
+
+}
+
+static void test_thpool_waiter_invalid (void) {
+
+	const ThpoolWaiter waiter = { thpool_test_works_wait, NULL, NULL };
+
+	test_check_unsigned_eq (thpool_set_waiter (NULL, NULL), 1, NULL);
+	test_check_unsigned_eq (thpool_get_num_threads_waiting (NULL), 0, NULL);
+
+	Thpool *thpool = thpool_create (THPOOL_SMALL_THREADS);
+	test_check_ptr (thpool);
+
+	// a waiter that can not be woken up would keep the threads forever
+	test_check_unsigned_eq (thpool_set_waiter (thpool, &waiter), 1, NULL);
+	test_check (!thpool->waiter.wait, "a waiter without wake was set");
+
+	thpool_destroy (thpool);
+
+}
+
+#pragma endregion
+
 void threads_tests_thpool (void) {
 
 	(void) printf ("Testing THREADS thpool...\n");
@@ -903,6 +1109,9 @@ void threads_tests_thpool (void) {
 	test_thpool_destroy_full ();
 	test_thpool_signals ();
 	test_thpool_init_failure ();
+	test_thpool_waiter ();
+	test_thpool_waiter_destroy ();
+	test_thpool_waiter_invalid ();
 
 	(void) printf ("Done!\n");
 

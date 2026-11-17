@@ -1600,6 +1600,46 @@ static void test_core_admin_max_admins (void) {
 
 }
 
+#define CORE_ADMIN_MANY_MAX_ADMINS		4
+#define CORE_ADMIN_MANY_ADMINS			2
+
+// an admin cerver below its max admins registers every admin that authenticates, not only the first one
+static void test_core_admin_many (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	test_check_unsigned_eq (cerver_set_auth (cerver, CORE_AUTH_MAX_TRIES, app_auth_method), 0, NULL);
+
+	test_check_unsigned_eq (cerver_set_admin_enable (cerver), 0, NULL);
+	admin_cerver_set_authenticate (cerver->admin, app_auth_method);
+	admin_cerver_set_max_admins (cerver->admin, CORE_ADMIN_MANY_MAX_ADMINS);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient first = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], 1, TEST_WAIT_SECONDS),
+		1, "the first admin did not connect"
+	);
+
+	CoreClient second = core_admin_connect (port);
+	test_check_unsigned_eq (
+		test_wait_counter (&events[CERVER_EVENT_ADMIN_CONNECTED], CORE_ADMIN_MANY_ADMINS, TEST_WAIT_SECONDS),
+		CORE_ADMIN_MANY_ADMINS, "the second admin was not registered"
+	);
+
+	test_check_unsigned_eq (admin_cerver_get_current_admins (cerver->admin), CORE_ADMIN_MANY_ADMINS, NULL);
+
+	core_client_end (&second);
+	core_client_end (&first);
+
+	core_cerver_stop (&core);
+
+}
+
 // the bad packets of an admin get errors, and the admin is dropped at the admin cerver limit
 static void test_core_admin_bad_packets (void) {
 
@@ -3034,6 +3074,7 @@ int main (int argc, char **argv) {
 	test_core_thpool_handler_types ();
 	test_core_admin ();
 	test_core_admin_max_admins ();
+	test_core_admin_many ();
 	test_core_admin_bad_packets ();
 	test_core_admin_check_packets ();
 	test_core_check_packets ();

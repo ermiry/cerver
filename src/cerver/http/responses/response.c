@@ -25,6 +25,7 @@
 #include "cerver/core/start.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
+#include "cerver/network/socket.h"
 
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
@@ -897,6 +898,9 @@ static void http_response_send_failed (
 		strerror_r (error, error_description, sizeof (error_description)),
 		pending
 	);
+
+	// a client that did not read in all the time of the response is taken as gone
+	(void) socket_end_on_send_timeout (http_receive->cr->connection->socket, error);
 
 	http_receive_response_failed (http_receive, error);
 

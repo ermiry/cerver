@@ -41,11 +41,39 @@ static void start (void) {
 	}
 }
 
+// a NUL byte after a number or a literal is not valid JSON:
+// it was put back after the number and lost, so [1\0, 2] was read as [1, 2]
+#define LOADB_NUL_TEXTS		4
+
+static void nul_after_value (void) {
+
+	static const char nul_number[] = "[1\0, 2]";
+	static const char nul_literal[] = "[true\0, 2]";
+	static const char nul_member[] = "{\"a\": 1\0}";
+	static const char nul_last[] = "1\0";
+
+	const char *texts[LOADB_NUL_TEXTS] = { nul_number, nul_literal, nul_member, nul_last };
+	const size_t lengths[LOADB_NUL_TEXTS] = {
+		sizeof (nul_number) - 1, sizeof (nul_literal) - 1, sizeof (nul_member) - 1, sizeof (nul_last) - 1
+	};
+
+	for (unsigned int i = 0; i < LOADB_NUL_TEXTS; i++) {
+		json_error_t error;
+		json_t *json = json_loadb (texts[i], lengths[i], JSON_DECODE_ANY | JSON_ALLOW_NUL, &error);
+		if (json) {
+			json_decref (json);
+			fail ("json_loadb accepted a NUL byte after a value");
+		}
+	}
+}
+
 void json_tests_loadb (void) {
 
 	(void) printf ("Testing JSON loadb...\n");
 
 	start ();
+
+	nul_after_value ();
 
 	(void) printf ("Done!\n");
 

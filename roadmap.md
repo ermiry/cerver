@@ -5,8 +5,8 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-04 |
-> | **Rama base** | `http`: idéntica al tag `2.0b-56` más los arreglos sin commitear de §3 |
+> | **Fecha** | 2026-11-04; el estado (§3), al día con la 2.0b-77 (2026-11-16) |
+> | **Rama base** | `http`: desde el tag `2.0b-56`; hoy la 2.0b-77 |
 > | **Contexto** | `percepthor-backend/docs/context/cerver-module-context.md` (el estado del módulo, las fases, las versiones y el 502 de gepp) |
 > | **Alcance** | cerver (`/Users/ermiry/Documents/cerver`), pycerver (`/Users/ermiry/Documents/py-cerver`), la imagen devel (`percepthor-devops`) y los servicios de validación (gepp, balance, payloads) |
 
@@ -90,6 +90,24 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
     (`backlog/payloads-service-tests-findings.md` §2–3).
 
 ## 3. Estado actual (rama `http`)
+
+**2026-11-16: la Beta 2.0b-77.** Las fases 0–3b están hechas; la Fase 4 es la línea 2.1 (`nightly`). De la 2.0b-62
+a la 2.0b-77 la línea recibió:
+- los ports del core de la 1.8 y de la 1.9: el protocolo portable, UDP, IPv6, los pools, la estructura de la 3.0 con
+  Doxygen y Apache-2.0, la auditoría con los analizadores, `thpool_has_queued ()` y el waiter del thpool;
+- la desconexión del cliente HTTP (2.0b-65);
+- la seguridad de JWT y JSON (2.0b-67);
+- los objetos calientes reciclados (2.0b-68: GET 0 y POST JSON 14 asignaciones por petición);
+- los arreglos de la auditoría (2.0b-71, 2.0b-72);
+- un envío que agota su timeout, que termina su conexión (2.0b-77).
+
+El detalle de cada beta, en su `CHANGELOG.md` y en `incompatibilities.md`.
+
+**Lo que queda para la 2.0:**
+- las betas estables en producción;
+- la integración de la 2.1 después de la 2.0.
+
+Lo de abajo es el estado como se escribió en cada fase.
 
 **2026-11-06: la Fase 3 y la suite de tests se publicaron en la Beta 2.0b-59**, con la migración de gepp, balance,
 payloads y tickets validada en test (§4.3.4). La Beta 2.0b-60 publicó la Fase 3b (§4.3.5), sin WebSocket, y los
@@ -622,7 +640,8 @@ Lo que entró en la Fase 3:
 - Las suites se construyen con `PERCEPTHOR_IMAGE=itpercepthor/percepthor:devel ./tests/build.sh` (ARG en
   `tests/Dockerfile`) hasta publicar pypercepthor 0.7.0 y reconstruir `percepthor:latest`.
 - Los otros 41 servicios corren con la capa de compatibilidad.
-- Contexto completo: `percepthor-backend/docs/context/cerver-services-migration-session-context.md`.
+- Contexto completo: `percepthor-backend/docs/changelog/cerver-http-history.md` §2 (antes un documento de sesión, ya
+  consolidado).
 
 #### 4.3.5 Fase 3b — Capacidades HTTP restantes (Beta 2.0b-60)
 

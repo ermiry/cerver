@@ -17,10 +17,24 @@
 
 // the stream that a cerver sends to a client, read with client_connection_get_next_packet ():
 // it is written to a socket pair and every packet is read until the stream ends,
-// a packet can end its own connection (a close request), so it is not read after it
+// a packet can end its own connection (a close request), so it is not read after it;
+// what the client answers is read from the other end after every piece of the stream
 
 #define FUZZ_CLIENT_MAX_PACKET_SIZE		(1 << 16)
 #define FUZZ_CLIENT_MAX_PACKETS			(1 << 10)
+#define FUZZ_CLIENT_DRAIN_SIZE			4096
+
+// the seconds that an answer waits for space in a full socket, instead of the ones of the default
+#define FUZZ_CLIENT_SEND_TIMEOUT		1
+
+// the answers of the client are read and dropped: when nobody reads them the socket fills up,
+// and every answer after that waits for the send timeout of its connection
+static void fuzz_client_drain (const int sock_fd) {
+
+	char buffer[FUZZ_CLIENT_DRAIN_SIZE];
+	while (recv (sock_fd, buffer, FUZZ_CLIENT_DRAIN_SIZE, MSG_DONTWAIT) > 0) {}
+
+}
 
 static bool fuzz_client_has_connection (Client *client, const Connection *connection) {
 
@@ -75,6 +89,8 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 			// like after client_connect (), so its end closes the socket
 			connection->active = true;
 
+			connection_set_send_timeout (connection, FUZZ_CLIENT_SEND_TIMEOUT);
+
 			(void) connection_register_to_client (client, connection);
 
 			unsigned int packets = 0;
@@ -84,6 +100,8 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 				&& !client_connection_get_next_packet (client, connection)
 			) {
 				packets += 1;
+
+				fuzz_client_drain (sock_fds[1]);
 			}
 		}
 

@@ -1408,10 +1408,11 @@ static DisconnectOptions disconnect_options_default (void) {
 
 }
 
+// a sanitizer or a loaded machine makes the reads of a half-close client slower, the timeout grows with the scale
 static unsigned int disconnect_send_timeout (void) {
 
 	return disconnect_under_valgrind () ?
-		DISCONNECT_VALGRIND_SEND_TIMEOUT : DISCONNECT_SEND_TIMEOUT;
+		DISCONNECT_VALGRIND_SEND_TIMEOUT : (DISCONNECT_SEND_TIMEOUT * test_time_scale ());
 
 }
 

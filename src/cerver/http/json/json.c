@@ -1004,6 +1004,8 @@ typedef struct {
 	void *data;
 	char buffer[5];
 	size_t buffer_position;
+	// the bytes of the character in the buffer: a NUL byte of the text is a character, not the end of the buffer
+	size_t buffer_length;
 	int state;
 	int line;
 	int column, last_column;
@@ -1106,6 +1108,7 @@ static void stream_init (
 	stream->data = data;
 	stream->buffer[0] = '\0';
 	stream->buffer_position = 0;
+	stream->buffer_length = 0;
 
 	stream->state = STREAM_STATE_OK;
 	stream->line = 1;
@@ -1150,6 +1153,7 @@ static bool stream_read_multi_byte (stream_t *stream, const int character) {
 	if (!utf8_check_full (stream->buffer, count, NULL)) return false;
 
 	stream->buffer[count] = '\0';
+	stream->buffer_length = count;
 
 	return true;
 
@@ -1179,7 +1183,8 @@ static int stream_get (
 
 	if (stream->state != STREAM_STATE_OK) return stream->state;
 
-	if (!stream->buffer[stream->buffer_position]) {
+	// a NUL byte that was put back with stream_unget () is read again, it is not the end of the buffer
+	if (stream->buffer_position >= stream->buffer_length) {
 		const int character = stream->get (stream->data);
 		if (character == EOF) {
 			stream->state = STREAM_STATE_EOF;
@@ -1197,6 +1202,7 @@ static int stream_get (
 
 		else {
 			stream->buffer[1] = '\0';
+			stream->buffer_length = 1;
 		}
 	}
 
@@ -1272,7 +1278,7 @@ static void lex_unget_unsave (lex_t *lexer, int character) {
 
 static void lex_save_cached (lex_t *lexer) {
 
-	while (lexer->stream.buffer[lexer->stream.buffer_position] != '\0') {
+	while (lexer->stream.buffer_position < lexer->stream.buffer_length) {
 		lex_save (lexer, lexer->stream.buffer[lexer->stream.buffer_position]);
 		lexer->stream.buffer_position++;
 		lexer->stream.position++;
