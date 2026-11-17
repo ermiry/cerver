@@ -98,14 +98,15 @@
 
 #define TEST_RECEIVE_ALLOWED_ORIGIN			"http://allowed.com"
 
-#define TEST_RECEIVE_URL_BUFFER				0
-#define TEST_RECEIVE_FIELD_BUFFER			1
-#define TEST_RECEIVE_VALUE_BUFFER			2
-#define TEST_RECEIVE_BUFFERS				3
+#define TEST_RECEIVE_HEAD_BUFFER			0
+#define TEST_RECEIVE_BUFFERS				1
+
+// the flag of llhttp 9.4.3 for the relaxed values of the headers, that looped forever with a NUL in a value
+#define TEST_RECEIVE_LENIENT_RELAXED		0x400
 
 // when it is set, the requests are created like a worker thread does, in its arena
 static Arena *receive_arena = NULL;
-static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL, NULL, NULL };
+static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL };
 
 // the receive that uses the arena and the buffers, it is not in the arena of its request
 static HttpReceive receive_storage;
@@ -890,10 +891,7 @@ static HttpReceive *test_receive_create (CerverReceive *cerver_receive) {
 
 	if (receive_arena) {
 		const HttpReceiveResources resources = {
-			receive_arena,
-			receive_buffers[TEST_RECEIVE_URL_BUFFER],
-			receive_buffers[TEST_RECEIVE_FIELD_BUFFER],
-			receive_buffers[TEST_RECEIVE_VALUE_BUFFER]
+			receive_arena, receive_buffers[TEST_RECEIVE_HEAD_BUFFER]
 		};
 
 		test_check_unsigned_eq (http_receive_prepare (&receive_storage, cerver_receive, &resources), 0, NULL);
@@ -3323,7 +3321,7 @@ static void test_receive_parser_strict (Cerver *cerver) {
 	// that loops forever with a NUL in a header value
 	http_cerver_set_parser_lenient (http_cerver, ~0u);
 	test_check_unsigned_eq (http_cerver->parser_lenient, HTTP_PARSER_LENIENT_ALL, NULL);
-	test_check_false (http_cerver->parser_lenient & LLHTTP_LENIENT_HEADER_VALUE_RELAXED);
+	test_check_false (http_cerver->parser_lenient & TEST_RECEIVE_LENIENT_RELAXED);
 
 	// some requests are rejected even with every flag: a NUL in a header value was accepted
 	// by the headers lenient flag, and the value that cerver compares ends in it:
@@ -3658,6 +3656,122 @@ static void test_receive_parser_header_limit (Cerver *cerver) {
 	test_receive_limit_case (cerver, "headers bigger than the default limit", request, "431");
 
 	free (request);
+
+}
+
+#pragma endregion
+
+#pragma region smuggling
+
+// the requests that a proxy in front of cerver can read with another length (request smuggling) or that a parser
+// can take two ways: each one is rejected, or read only one way (its body is the one that the echo route answers);
+// every one was answered the same by llhttp 9.4.3 and by the parser of cerver, in every split
+typedef struct TestReceiveSmugglingCase {
+
+	const char *name;
+	const char *request;
+
+	const char *status;
+	const char *body;
+
+} TestReceiveSmugglingCase;
+
+#define TEST_RECEIVE_SMUGGLING_HEAD			"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
+
+#define test_receive_smuggling_bad			"400"
+#define test_receive_smuggling_ok			"200"
+
+static const TestReceiveSmugglingCase smuggling_cases[] = {
+	// CL.TE and TE.CL: a length and a coding, in any order (RFC 9112 section 6.1)
+	{ "Content-Length and Transfer-Encoding", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 6\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nX", test_receive_smuggling_bad, NULL },
+	{ "Transfer-Encoding and Content-Length", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\nContent-Length: 6\r\n\r\n0\r\n\r\nX", test_receive_smuggling_bad, NULL },
+	// TE.TE: a coding that one parser takes as chunked and another one does not
+	{ "chunked and another coding", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\nTransfer-Encoding: x\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a coding after chunked", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked, identity\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "chunked as part of a word", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: xchunked\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "chunked with a word after it", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunkedx\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a space before the colon of Transfer-Encoding", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding : chunked\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "Transfer-Encoding folded", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding:\r\n chunked\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a space before the first field", "POST /test/echo HTTP/1.1\r\n Transfer-Encoding: chunked\r\nHost: localhost:8080\r\n\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "an empty Transfer-Encoding", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding:\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "chunked in capitals", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: CHUNKED\r\n\r\n5\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_ok, "first" },
+	{ "a coding and chunked", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: identity, chunked\r\n\r\n5\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_ok, "first" },
+	{ "chunked after a tab", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding:\tchunked\r\n\r\n5\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_ok, "first" },
+	// the digits of a Content-Length and nothing else (RFC 9110 section 8.6)
+	{ "a Content-Length with a sign", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: +5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a negative Content-Length", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: -5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length in hexadecimal", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 0x5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a list of Content-Length", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 5, 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "two numbers in a Content-Length", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 5 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length repeated", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 5\r\nContent-Length: 6\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "an empty Content-Length", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length:\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length that does not fit", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 18446744073709551616\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length folded", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length:\r\n 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length with spaces around it", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length:  5  \r\n\r\nfirst", test_receive_smuggling_ok, "first" },
+	// the line breaks and the bytes of a field
+	{ "a CR alone in a value", TEST_RECEIVE_SMUGGLING_HEAD "X-Custom: a\rb\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a LF alone after a field", TEST_RECEIVE_SMUGGLING_HEAD "X-Custom: a\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a CR alone after the headers", TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 5\r\n\rfirst", test_receive_smuggling_bad, NULL },
+	{ "a control character in a name", TEST_RECEIVE_SMUGGLING_HEAD "X-Cus\x01tom: a\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a field without a colon", TEST_RECEIVE_SMUGGLING_HEAD "X-Custom\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a field without a name", TEST_RECEIVE_SMUGGLING_HEAD ": a\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a DEL in a value", TEST_RECEIVE_SMUGGLING_HEAD "X-Custom: a\x7f" "b\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a Host repeated", "POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nHost: other\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	// the chunks: their size, their extensions, the CRLF after their data and the trailers
+	{ "a chunk size that does not fit", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n10000000000000000\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a chunk size in hexadecimal with its prefix", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n0x5\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a negative chunk size", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n-5\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a space after a chunk size", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5 \r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a LF alone after a chunk size", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a chunk without its CRLF", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5\r\nfirstX\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a chunk extension with a space", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5; a=b\r\nfirst\r\n0\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a Content-Length in the trailers", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5\r\nfirst\r\n0\r\nContent-Length: 5\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "a Transfer-Encoding in the trailers", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5\r\nfirst\r\n0\r\nTransfer-Encoding: chunked\r\n\r\n", test_receive_smuggling_bad, NULL },
+	{ "chunk extensions", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5;a=b;c=\"d e\"\r\nfirst\r\n0;f\r\n\r\n", test_receive_smuggling_ok, "first" },
+	{ "a trailer", TEST_RECEIVE_SMUGGLING_HEAD "Transfer-Encoding: chunked\r\n\r\n5\r\nfirst\r\n0\r\nX-Trailer: a\r\n\r\n", test_receive_smuggling_ok, "first" },
+	// the request line: its spaces, its target and its version
+	{ "a space after the version", "POST /test/echo HTTP/1.1 \r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a tab in the target", "POST /test/ec\tho HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a byte that is not ASCII in the target", "POST /test/\xc3\xa9 HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a version with two digits", "POST /test/echo HTTP/1.10\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "a lower case protocol", "POST /test/echo http/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_bad, NULL },
+	{ "an absolute target", "POST http://localhost:8080/test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_ok, "first" },
+	{ "two spaces around the target", "POST  /test/echo  HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst", test_receive_smuggling_ok, "first" },
+	{ "empty lines before the request line", "\r\n\r\n" TEST_RECEIVE_SMUGGLING_HEAD "Content-Length: 5\r\n\r\nfirst", test_receive_smuggling_ok, "first" }
+};
+
+#define TEST_RECEIVE_SMUGGLING_CASES		(sizeof (smuggling_cases) / sizeof (smuggling_cases[0]))
+
+// the case that every split checks
+static const TestReceiveSmugglingCase *smuggling_case = NULL;
+
+static void test_receive_check_smuggling (void) {
+
+	test_receive_expect (test_receive_status_is (smuggling_case->status));
+
+	if (smuggling_case->body) {
+		test_receive_expect (observed.n_handled == 1);
+		test_receive_expect (!strcmp (observed.body, smuggling_case->body));
+	}
+
+	else {
+		test_receive_expect (observed.n_handled == 0);
+	}
+
+}
+
+static void test_receive_smuggling (Cerver *cerver) {
+
+	for (size_t i = 0; i < TEST_RECEIVE_SMUGGLING_CASES; i++) {
+		smuggling_case = &smuggling_cases[i];
+
+		test_receive_every_split (
+			cerver, smuggling_case->name,
+			smuggling_case->request, strlen (smuggling_case->request), test_receive_check_smuggling
+		);
+	}
+
+	smuggling_case = NULL;
 
 }
 
@@ -5498,8 +5612,8 @@ typedef struct TestReceiveSession {
 
 	HttpReceive *http_receive;
 
-	// the callback of the body of a request that has not started
-	llhttp_data_cb on_body;
+	// the handler of the body of a request that has not started
+	int (*body_handler)(HttpReceive *, const char *, size_t);
 
 	// what a request that has not started uses of the arena that was lent
 	size_t arena_used;
@@ -5531,7 +5645,7 @@ static void test_receive_session_start (TestReceiveSession *session, Cerver *cer
 
 	session->http_receive = test_receive_create (&session->cerver_receive);
 
-	session->on_body = session->http_receive->settings.on_body;
+	session->body_handler = session->http_receive->body_handler;
 
 	session->arena_used = receive_arena ? receive_arena->used : 0;
 	session->arena_allocations = receive_arena ? receive_arena->n_allocations : 0;
@@ -5627,8 +5741,8 @@ static void test_receive_reset_check (
 	test_receive_expect (!http_receive->is_multi_part);
 	test_receive_expect (http_receive->upload_sequence == 0);
 	test_receive_expect (!http_receive->upload_directory_created);
-	test_receive_expect (http_receive->header_size == 0);
-	test_receive_expect (http_receive->n_headers == 0);
+	test_receive_expect (http_receive->parser.head.fields_size == 0);
+	test_receive_expect (http_receive->parser.head.fields_counted == 0);
 	test_receive_expect (http_receive->body_size == 0);
 	test_receive_expect (http_receive->n_parts == 0);
 	test_receive_expect (!http_receive->responded);
@@ -5642,11 +5756,11 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->web_socket == NULL);
 	test_receive_expect (http_receive->start_time > 0);
 
-	// the parser is ready for a new request with the callbacks of a new one
-	test_receive_expect (http_receive->parser.error == HPE_OK);
-	test_receive_expect (http_receive->parser.data == http_receive);
-	test_receive_expect (http_receive->parser.settings == &http_receive->settings);
-	test_receive_expect (http_receive->settings.on_body == session->on_body);
+	// the parser is ready for a new request with the body handler of a new one
+	test_receive_expect (http_receive->parser.error == CERVER_HTTP_PARSER_ERROR_NONE);
+	test_receive_expect (!cerver_http_parser_started (&http_receive->parser));
+	test_receive_expect (http_receive->parser.head.fields == http_receive->fields);
+	test_receive_expect (http_receive->body_handler == session->body_handler);
 
 	// the request is a new one, without what the one before received
 	const HttpRequest *request = http_receive->request;
@@ -5683,9 +5797,8 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->upgraded == before->upgraded);
 
 	if (before->borrowed_buffers) {
-		test_receive_expect (http_receive->url_buffer == before->url_buffer);
-		test_receive_expect (http_receive->field_buffer == before->field_buffer);
-		test_receive_expect (http_receive->value_buffer == before->value_buffer);
+		test_receive_expect (http_receive->head_buffer == before->head_buffer);
+		test_receive_expect (http_receive->head_buffer->len == 0);
 	}
 
 }
@@ -6185,6 +6298,7 @@ void http_tests_receive (void) {
 	test_receive_parser_upgrade (cerver);
 	test_receive_parser_keep_alive (cerver);
 	test_receive_parser_header_limit (cerver);
+	test_receive_smuggling (cerver);
 
 	test_receive_framed (cerver);
 	test_receive_preflight_long_headers (cerver);
