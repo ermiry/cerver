@@ -76,6 +76,57 @@ typedef struct ThpoolJob {
 } ThpoolJob;
 
 /**
+ * @brief How the wait of a thread on the waiter of its thpool ended.
+ *
+ * @since 3.0b-10
+ */
+typedef enum ThpoolWaited {
+
+	/** @brief It was interrupted, or what it got was not for it: the thread waits again. */
+	THPOOL_WAITED_NOTHING		= 0,
+	/** @brief It has a work for the thread. */
+	THPOOL_WAITED_WORK			= 1,
+	/** @brief One of the wake ups of the thpool made it return (ThpoolWaiter::wake). */
+	THPOOL_WAITED_WOKEN			= 2
+
+} ThpoolWaited;
+
+/**
+ * @brief What a thread of a thpool waits on when its queue has no job, instead of the condition of the queue: a
+ * thpool whose threads also wait for other work, like the sockets of the connections that wait for their next
+ * request.
+ *
+ * The queue always goes first: a thread only waits on it when the queue is empty, and a job that is pushed wakes
+ * one of the threads that wait on it.
+ *
+ * @threadsafety wait runs in the threads of the thpool at the same time, without the mutex of the thpool; wake
+ * runs with that mutex.
+ * @since 3.0b-10
+ */
+typedef struct ThpoolWaiter {
+
+	/**
+	 * @brief Waits until it has a work for the thread, or until it is woken up.
+	 *
+	 * Returns #THPOOL_WAITED_WORK with the work in job (its work and its args): the thread runs it like a job of the
+	 * queue, it is counted as one that entered and completed (not in the histogram of the wait, it never waited in
+	 * the queue). Returns #THPOOL_WAITED_WOKEN when one wake up made it return, and #THPOOL_WAITED_NOTHING when it was
+	 * interrupted: the thread checks its queue and waits again.
+	 */
+	ThpoolWaited (*wait) (void *args, ThpoolJob *job);
+
+	/**
+	 * @brief Wakes up count threads that wait on it: each wake up makes one wait return #THPOOL_WAITED_WOKEN, once,
+	 * so the thpool only asks for the ones that it needs.
+	 */
+	void (*wake) (void *args, const unsigned int count);
+
+	/** @brief The argument of wait and of wake. */
+	void *args;
+
+} ThpoolWaiter;
+
+/**
  * @brief The values that a thpool counts since it was created.
  */
 typedef struct ThpoolStats {
@@ -169,6 +220,28 @@ typedef struct Thpool {
 	 */
 	unsigned int queue_awaited;
 
+	/**
+	 * @brief What the threads wait on when the queue is empty, without wait they wait for the jobs of the queue
+	 * (thpool_set_waiter ()).
+	 *
+	 * @since 3.0b-10
+	 */
+	ThpoolWaiter waiter;
+	/**
+	 * @brief The threads that wait on the waiter, written with the mutex and with atomic operations:
+	 * thpool_get_num_threads_waiting () reads it without the mutex.
+	 *
+	 * @since 3.0b-10
+	 */
+	unsigned int num_threads_waiting;
+	/**
+	 * @brief The wake ups of the waiter that no thread consumed yet, with the mutex: a job only asks for one when more
+	 * threads wait than wake ups there are, so they never pile up behind the jobs that the busy threads take.
+	 *
+	 * @since 3.0b-10
+	 */
+	unsigned int waiter_wakes;
+
 } Thpool;
 
 /**
@@ -252,6 +325,35 @@ CERVER_EXPORT unsigned int thpool_get_queued (Thpool *thpool);
  * @since 3.0b-5
  */
 CERVER_EXPORT bool thpool_has_queued (const Thpool *thpool);
+
+/**
+ * @brief Sets what the threads of the thpool wait on when its queue is empty, or clears it.
+ *
+ * The threads that wait on the condition of the queue are woken up to wait on the new waiter; with NULL, the ones
+ * that wait on the waiter that is cleared are woken up with its wake, and the call returns once none of them uses
+ * it anymore, so its args can be released after it.
+ *
+ * @param[in,out] thpool the thpool
+ * @param[in] waiter what the threads wait on, it is copied; NULL (or one without wait) clears it, the threads
+ * wait for the jobs of the queue again
+ * @retval 0 it was set
+ * @retval 1 a NULL thpool, or a waiter without wake
+ * @threadsafety Safe from any thread but the ones of the thpool, that it waits for when it clears the waiter.
+ * @note For the internal methods of cerver.
+ * @since 3.0b-10
+ */
+CERVER_PRIVATE unsigned int thpool_set_waiter (Thpool *thpool, const ThpoolWaiter *waiter);
+
+/**
+ * @brief Returns how many threads wait on the waiter of the thpool, without taking its mutex.
+ *
+ * @param[in] thpool the thpool
+ * @return the threads, 0 for a NULL thpool or one without a waiter
+ * @threadsafety Safe from any thread, it reads an atomic value.
+ * @note For the internal methods of cerver.
+ * @since 3.0b-10
+ */
+CERVER_PRIVATE unsigned int thpool_get_num_threads_waiting (const Thpool *thpool);
 
 /**
  * @brief Returns how many jobs can wait in the queue.
