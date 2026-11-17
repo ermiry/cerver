@@ -42,8 +42,7 @@
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
 #include "cerver/http/headers/header.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
@@ -389,7 +388,7 @@ static int http_receive_mpart_value_append (
 }
 
 int http_receive_handle_mpart_part_data_begin (
-	multipart_parser *parser
+	CerverHttpMultipart *parser
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -429,7 +428,7 @@ static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (
 }
 
 int http_receive_handle_mpart_header_field (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 ) {
 
 	MultiPart *mpart = (((HttpReceive *) parser->data)->request)->current_part;
@@ -461,7 +460,7 @@ int http_receive_handle_mpart_header_field (
 }
 
 int http_receive_handle_mpart_header_value (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 ) {
 
 	#ifdef HTTP_MPART_DEBUG
@@ -573,7 +572,7 @@ static int http_receive_mpart_saved_filename (
 
 }
 
-int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
+int http_receive_handle_mpart_headers_completed (CerverHttpMultipart *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = (http_receive)->request->current_part;
@@ -667,7 +666,7 @@ int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 }
 
 int http_receive_handle_mpart_data (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -681,7 +680,7 @@ int http_receive_handle_mpart_data (
 
 }
 
-int http_receive_handle_mpart_data_end (multipart_parser *parser) {
+int http_receive_handle_mpart_data_end (CerverHttpMultipart *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
@@ -707,14 +706,12 @@ int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 }
 
 int http_receive_handle_mpart_body (
-	llhttp_t *parser, const char *at, size_t length
+	HttpReceive *http_receive, const char *at, size_t length
 ) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
 	if (http_receive_check_body_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
 
-	const size_t parsed = multipart_parser_execute (
+	const size_t parsed = cerver_http_multipart_execute (
 		http_receive->mpart_parser, at, length
 	);
 

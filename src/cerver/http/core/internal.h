@@ -25,7 +25,7 @@
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/pool.h"
-#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/response.h"
@@ -465,10 +465,12 @@ static inline void http_receive_buffer_reset (String *buffer) {
 
 }
 
+/** @internal @brief What a part of the receive returns when it stops the request, because it rejected it or because its client is gone. */
+#define HTTP_RECEIVE_PARSER_STOP			1
+
 /**
  * @internal
- * @brief The value that a parser callback returns: the parser stops when the request was rejected or its client is
- * gone.
+ * @brief The value that a part of the receive returns: the request stops when it was rejected or its client is gone.
  *
  * @param[in] rejected not 0 when the request was rejected or its client is gone
  * @return #HTTP_RECEIVE_PARSER_STOP or 0
@@ -478,6 +480,26 @@ static inline int http_receive_parser_result (const int rejected) {
 	return rejected ? HTTP_RECEIVE_PARSER_STOP : 0;
 
 }
+
+/**
+ * @internal
+ * @brief What the bytes that a receive read did to its request.
+ */
+typedef enum HttpReceiveParse {
+
+	/** @internal @brief Every byte was read, the request is not complete. */
+	HTTP_RECEIVE_PARSE_MORE			= 0,
+	/** @internal @brief The request stopped: it was complete and handled, or it waits for a thread of the pool. */
+	HTTP_RECEIVE_PARSE_PAUSED		= 1,
+	/** @internal @brief The request was an upgrade: the bytes after it belong to its new protocol. */
+	HTTP_RECEIVE_PARSE_UPGRADE		= 2,
+	/** @internal @brief The request was not valid, it was rejected or its client is gone. */
+	HTTP_RECEIVE_PARSE_ERROR		= 3
+
+} HttpReceiveParse;
+
+/** @internal @brief How the array of the fields of a receive grows for a request with more of them than it takes. */
+#define HTTP_RECEIVE_FIELDS_GROWTH			2
 
 /**
  * @internal
@@ -533,117 +555,34 @@ CERVER_HIDDEN int http_receive_check_body_size (
 
 /**
  * @internal
- * @brief The callback of the parser for the pieces of the headers that are not kept, only counted for the limit of
- * the headers.
+ * @brief Makes the request of a head that the parser completed: the head is copied once to the memory of the
+ * request, and its target and its fields are the strings of the request over that copy.
  *
- * @param[in] parser the parser, its data is the receive
+ * @param[in,out] http_receive the receive
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP when the request was rejected
+ */
+CERVER_HIDDEN int http_receive_head_complete (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Answers a request that the parser rejected: 414 for a target too long, 431 for headers too large, 505 for
+ * a version that is not served and 400 for anything else.
+ *
+ * @param[in,out] http_receive the receive
+ */
+CERVER_HIDDEN void http_receive_parser_rejected (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Takes a piece of a body that is not multipart: it is saved in the body of the request.
+ *
+ * @param[in,out] http_receive the receive
  * @param[in] at the piece
  * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP when the headers exceed their limit
- */
-CERVER_HIDDEN int http_receive_handle_discarded (
-	llhttp_t *parser, const char *at, size_t length
-);
-
-/**
- * @internal
- * @brief The callback of the parser for a piece of the url.
- *
- * @param[in] parser the parser, its data is the receive
- * @param[in] at the piece
- * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_url (
-	llhttp_t *parser, const char *at, size_t length
-);
-
-/**
- * @internal
- * @brief The callback of the parser when the url is complete.
- *
- * @param[in] parser the parser, its data is the receive
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_url_complete (llhttp_t *parser);
-
-/**
- * @internal
- * @brief The callback of the parser for a piece of the protocol of the request line.
- *
- * @param[in] parser the parser, its data is the receive
- * @param[in] at the piece
- * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_protocol (
-	llhttp_t *parser, const char *at, size_t length
-);
-
-/**
- * @internal
- * @brief The callback of the parser when the protocol of the request line is complete.
- *
- * @param[in] parser the parser, its data is the receive
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_protocol_complete (llhttp_t *parser);
-
-/**
- * @internal
- * @brief The callback of the parser when the version of the request line is complete.
- *
- * @param[in] parser the parser, its data is the receive
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_version_complete (llhttp_t *parser);
-
-/**
- * @internal
- * @brief The callback of the parser for a piece of the name of a header.
- *
- * @param[in] parser the parser, its data is the receive
- * @param[in] at the piece
- * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_header_field (
-	llhttp_t *parser, const char *at, size_t length
-);
-
-/**
- * @internal
- * @brief The callback of the parser for a piece of the value of a header.
- *
- * @param[in] parser the parser, its data is the receive
- * @param[in] at the piece
- * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_header_value (
-	llhttp_t *parser, const char *at, size_t length
-);
-
-/**
- * @internal
- * @brief The callback of the parser when the value of a header is complete.
- *
- * @param[in] parser the parser, its data is the receive
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
- */
-CERVER_HIDDEN int http_receive_handle_header_value_complete (llhttp_t *parser);
-
-/**
- * @internal
- * @brief The callback of the parser for a piece of a body that is not multipart.
- *
- * @param[in] parser the parser, its data is the receive
- * @param[in] at the piece
- * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the request
  */
 CERVER_HIDDEN int http_receive_handle_body (
-	llhttp_t *parser, const char *at, size_t length
+	HttpReceive *http_receive, const char *at, size_t length
 );
 
 /**
@@ -702,7 +641,7 @@ CERVER_HIDDEN unsigned int http_mpart_get_boundary (
  * @return 0 to continue, not 0 to stop the parser
  */
 CERVER_HIDDEN int http_receive_handle_mpart_part_data_begin (
-	multipart_parser *parser
+	CerverHttpMultipart *parser
 );
 
 /**
@@ -715,7 +654,7 @@ CERVER_HIDDEN int http_receive_handle_mpart_part_data_begin (
  * @return 0 to continue, not 0 to stop the parser
  */
 CERVER_HIDDEN int http_receive_handle_mpart_header_field (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 );
 
 /**
@@ -728,7 +667,7 @@ CERVER_HIDDEN int http_receive_handle_mpart_header_field (
  * @return 0 to continue, not 0 to stop the parser
  */
 CERVER_HIDDEN int http_receive_handle_mpart_header_value (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 );
 
 /**
@@ -739,7 +678,7 @@ CERVER_HIDDEN int http_receive_handle_mpart_header_value (
  * @return 0 to continue, not 0 to stop the parser
  */
 CERVER_HIDDEN int http_receive_handle_mpart_headers_completed (
-	multipart_parser *parser
+	CerverHttpMultipart *parser
 );
 
 /**
@@ -752,7 +691,7 @@ CERVER_HIDDEN int http_receive_handle_mpart_headers_completed (
  * @return 0 to continue, not 0 to stop the parser
  */
 CERVER_HIDDEN int http_receive_handle_mpart_data (
-	multipart_parser *parser, const char *at, size_t length
+	CerverHttpMultipart *parser, const char *at, size_t length
 );
 
 /**
@@ -762,19 +701,19 @@ CERVER_HIDDEN int http_receive_handle_mpart_data (
  * @param[in] parser the multipart parser, its data is the receive
  * @return 0 to continue, not 0 to stop the parser
  */
-CERVER_HIDDEN int http_receive_handle_mpart_data_end (multipart_parser *parser);
+CERVER_HIDDEN int http_receive_handle_mpart_data_end (CerverHttpMultipart *parser);
 
 /**
  * @internal
- * @brief The callback of the parser for a piece of a multipart body, that goes to the multipart parser.
+ * @brief Takes a piece of a multipart body, that goes to the multipart parser.
  *
- * @param[in] parser the parser, its data is the receive
+ * @param[in,out] http_receive the receive
  * @param[in] at the piece
  * @param[in] length the bytes of the piece
- * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the parser
+ * @return 0, or #HTTP_RECEIVE_PARSER_STOP to stop the request
  */
 CERVER_HIDDEN int http_receive_handle_mpart_body (
-	llhttp_t *parser, const char *at, size_t length
+	HttpReceive *http_receive, const char *at, size_t length
 );
 
 /**
@@ -830,16 +769,17 @@ CERVER_HIDDEN void http_receive_handle (
  * @brief Gives a buffer to the parser of the receive, without closing its connection: what
  * http_receive_handle () does before it handles the result of the parser.
  *
- * The request of an event loop (HttpReceive::connection) is not handled by the parser: it stops with
- * HPE_PAUSED and HttpReceive::pause tells why.
+ * The request of an event loop (HttpReceive::connection) is not handled in the parse: it stops with
+ * #HTTP_RECEIVE_PARSE_PAUSED and HttpReceive::pause tells why.
  *
  * @param[in,out] http_receive the receive
  * @param[in] buffer the bytes, a valid pointer also when length is 0
  * @param[in] length the bytes of the buffer
- * @param[out] n_parsed the bytes of the buffer that the parser consumed
- * @return the result of the parser: HPE_OK when it needs more bytes, HPE_PAUSED after a pause, or its error
+ * @param[out] n_parsed the bytes of the buffer that were consumed
+ * @return #HTTP_RECEIVE_PARSE_MORE when it needs more bytes, #HTTP_RECEIVE_PARSE_PAUSED or
+ * #HTTP_RECEIVE_PARSE_UPGRADE after a pause, #HTTP_RECEIVE_PARSE_ERROR when the request stopped
  */
-CERVER_HIDDEN llhttp_errno_t http_receive_execute (
+CERVER_HIDDEN HttpReceiveParse http_receive_execute (
 	HttpReceive *http_receive,
 	const char *buffer, const size_t length, size_t *n_parsed
 );
@@ -855,15 +795,15 @@ CERVER_HIDDEN void http_receive_resume (HttpReceive *http_receive);
 
 /**
  * @internal
- * @brief Answers with 400 a request that the parser could not parse, unless it was answered or its client is gone.
+ * @brief Answers a request that the parser could not parse (http_receive_parser_rejected ()), unless it was
+ * answered or its client is gone.
  *
  * @param[in,out] http_receive the receive
- * @param[in] parser_errno the error of the parser
- * @param[in] n_parsed the bytes that the parser consumed
+ * @param[in] n_parsed the bytes that were consumed
  * @param[in] received the bytes that it was given
  */
 CERVER_HIDDEN void http_receive_parser_failed (
-	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
+	HttpReceive *http_receive,
 	const size_t n_parsed, const ssize_t received
 );
 
@@ -1000,7 +940,7 @@ CERVER_HIDDEN void http_receive_web_socket_release (HttpReceive *http_receive);
  * @return 0 to continue, not 0 when the request was rejected
  */
 CERVER_HIDDEN int http_receive_handle_headers_web_socket (
-	HttpReceive *http_receive, const llhttp_t *parser
+	HttpReceive *http_receive, const CerverHttpParser *parser
 );
 
 /**

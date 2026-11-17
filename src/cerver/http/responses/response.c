@@ -1508,8 +1508,8 @@ static void http_response_extra_vary (
 // an HTTP/1.0 client only keeps its connection when the response says so
 static bool http_response_client_needs_keep_alive (const HttpReceive *http_receive) {
 
-	return (http_receive->parser.http_major == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
-		&& (http_receive->parser.http_minor == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
+	return (http_receive->parser.head.major == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR)
+		&& (http_receive->parser.head.minor == HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR);
 
 }
 

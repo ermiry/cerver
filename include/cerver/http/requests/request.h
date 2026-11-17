@@ -187,6 +187,14 @@ struct _HttpRequest {
 	/** @brief The arena of a request that was not created in an arena: it holds its params, its custom headers and their strings. */
 	struct Arena *own_arena;
 
+	/**
+	 * @brief Its url, its query and its headers are views of the copy of its head, in its arena (HttpRequest::arena or
+	 * HttpRequest::own_arena): they are released with it.
+	 *
+	 * @since 3.0b-9
+	 */
+	bool strings_in_arena;
+
 };
 
 /** @brief A request, see struct _HttpRequest. */

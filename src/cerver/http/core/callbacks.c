@@ -40,8 +40,8 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/head.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
@@ -64,10 +64,6 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-// the optional whitespace after the value of a header
-static const char http_header_value_space = ' ';
-static const char http_header_value_tab = '\t';
-
 // the parts of the target of a request
 static const char http_target_scheme_symbols[] = { "+-." };
 static const char http_target_authority_start[] = { "://" };
@@ -78,14 +74,6 @@ static const char http_target_fragment_start = '#';
 static const char http_target_root[] = { "/" };
 static const size_t http_target_root_len = 1;
 
-// the only protocol of a request line that is served, and its versions: 1.0 and 1.1
-static const char http_receive_protocol[] = { "HTTP" };
-
-#define HTTP_RECEIVE_PROTOCOL_LENGTH			(sizeof (http_receive_protocol) - 1)
-
-#define HTTP_RECEIVE_VERSION_MAJOR				1
-#define HTTP_RECEIVE_VERSION_MINOR_MAX			1
-
 #pragma region parser
 
 // sends a response before the request was completed
@@ -94,7 +82,7 @@ static const char http_receive_protocol[] = { "HTTP" };
 // its response is sent, because a complete request that is rejected later (an authentication that runs with
 // its handler) was already going to keep its connection, and a connection that is closed after a response
 // that did not say it is a 502 behind a proxy
-// returns 1, a parser callback answers it with HTTP_RECEIVE_PARSER_STOP
+// returns 1, a part of the receive answers it with HTTP_RECEIVE_PARSER_STOP
 int http_receive_reject (
 	HttpReceive *http_receive,
 	HttpResponse *response, const HttpReceiveStatus status
@@ -118,27 +106,52 @@ int http_receive_reject (
 
 }
 
-// adds a piece of a token to its buffer
-// returns 0 on success, 1 on error
-static inline int http_receive_buffer_append (
-	String **buffer, const char *at, const size_t length
-) {
+// the limits answer with their own status, a version that cerver does not serve with 505 (RFC 9110 section
+// 15.6.6), and anything else that the parser rejects with 400
+void http_receive_parser_rejected (HttpReceive *http_receive) {
 
-	if (!*buffer) *buffer = str_new (NULL);
+	switch (cerver_http_parser_get_error (&http_receive->parser)) {
+		case CERVER_HTTP_PARSER_ERROR_TARGET_SIZE:
+			(void) http_receive_reject (http_receive, uri_too_long_error, HTTP_RECEIVE_STATUS_LIMIT);
+			break;
 
-	return *buffer ? str_append_bytes (*buffer, at, length) : 1;
+		case CERVER_HTTP_PARSER_ERROR_HEADERS_SIZE:
+			(void) http_receive_reject (http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT);
+			break;
+
+		case CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED:
+			(void) http_receive_reject (http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED);
+			break;
+
+		default:
+			(void) http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+			break;
+	}
 
 }
 
-// splits the url that was received into the request's path and query
-// the url, the query and the headers of a request in an arena are created in it
-static String *http_receive_string_create (
-	const HttpReceive *http_receive, const char *bytes, const size_t length
+#pragma endregion
+
+#pragma region target
+
+// a string of the request over the copy of its head: its bytes stay where they are, with a '\0' written after them
+// (the byte after a token of the head is never part of another one: a '?', a '#', a space, a colon or a CR)
+static String *http_receive_string_view (
+	HttpReceive *http_receive, char *bytes, const size_t length
 ) {
 
-	return http_receive->request->arena ?
-		str_create_from_bytes_arena (http_receive->request->arena, bytes, length) :
-		str_create_from_bytes (bytes, length);
+	Arena *arena = http_request_get_arena (http_receive->request);
+	String *string = arena ? (String *) arena_alloc (arena, sizeof (String)) : NULL;
+
+	if (string) {
+		bytes[length] = '\0';
+
+		string->str = bytes;
+		string->len = length;
+		string->max_len = length;
+	}
+
+	return string;
 
 }
 
@@ -177,40 +190,41 @@ static size_t http_receive_target_origin_length (const char *target, const size_
 
 }
 
-static void http_receive_close_url (HttpReceive *http_receive) {
+// splits the target of the request into its path and its query, views of the copy of its head
+// returns 0 on success, 1 when their strings could not be created
+static int http_receive_close_url (HttpReceive *http_receive, char *target, const size_t target_len) {
 
 	HttpRequest *request = http_receive->request;
 
-	if (!request->url) {
-		const String *url = http_receive->url_buffer;
-		const char *target = (url && url->str) ? url->str : "";
-		const size_t target_len = url ? url->len : 0;
+	const size_t origin_len = http_receive_target_origin_length (target, target_len);
+	char *start = target + origin_len;
+	size_t url_len = target_len - origin_len;
 
-		const size_t origin_len = http_receive_target_origin_length (target, target_len);
-		const char *start = target + origin_len;
-		size_t url_len = target_len - origin_len;
+	// a fragment is never part of the path nor of the query
+	const char *fragment = (const char *) memchr (start, http_target_fragment_start, url_len);
+	if (fragment) url_len = (size_t) (fragment - start);
 
-		// a fragment is never part of the path nor of the query
-		const char *fragment = (const char *) memchr (start, http_target_fragment_start, url_len);
-		if (fragment) url_len = (size_t) (fragment - start);
+	char *question = (char *) memchr (start, http_target_query_start, url_len);
+	const size_t path_len = question ? (size_t) (question - start) : url_len;
 
-		const char *question = (const char *) memchr (start, http_target_query_start, url_len);
-		const size_t path_len = question ? (size_t) (question - start) : url_len;
-
-		// an absolute target without a path is the root
-		request->url = (origin_len && !path_len) ?
-			http_receive_string_create (http_receive, http_target_root, http_target_root_len) :
-			http_receive_string_create (http_receive, start, path_len);
-
-		// the query does not include the '?'
-		if (question) {
-			request->query = http_receive_string_create (
-				http_receive, question + 1, url_len - path_len - 1
-			);
-		}
+	// the query does not include the '?', its view is made first: the one of the path ends where it starts
+	if (question) {
+		request->query = http_receive_string_view (http_receive, question + 1, url_len - path_len - 1);
+		if (!request->query) return 1;
 	}
 
+	// an absolute target without a path is the root
+	request->url = (origin_len && !path_len) ?
+		str_create_from_bytes_arena (http_request_get_arena (request), http_target_root, http_target_root_len) :
+		http_receive_string_view (http_receive, start, path_len);
+
+	return request->url ? 0 : 1;
+
 }
+
+#pragma endregion
+
+#pragma region headers
 
 // these headers must appear only once (RFC 9110 section 5.3, RFC 6455 section 11.3)
 static inline bool http_header_is_unique (const http_header type) {
@@ -302,17 +316,6 @@ static int http_receive_close_custom_header (
 
 }
 
-// joins a new value to a header that was already received
-// returns 0 on success, 1 on error
-static inline int http_header_values_join (
-	String *header, const char *value, const size_t value_len
-) {
-
-	return str_append_bytes (header, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN)
-		|| str_append_bytes (header, value, value_len);
-
-}
-
 // writes the separator and the value after the header, that has room for them
 static void http_header_values_write (
 	String *header, const char *value, const size_t value_len
@@ -368,23 +371,12 @@ static int http_header_values_join_arena (
 
 }
 
-static int http_receive_header_join (
-	HttpRequest *request, const http_header type,
-	const char *value, const size_t value_len
-) {
-
-	return request->arena ?
-		http_header_values_join_arena (request->arena, &request->headers[type], value, value_len) :
-		http_header_values_join (request->headers[type], value, value_len);
-
-}
-
 // saves a header of the HTTP headers map
 // a repeated header is joined with HTTP_HEADER_VALUES_SEPARATOR, unless it must be unique
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_close_known_header (
 	HttpReceive *http_receive, const http_header type,
-	const char *value, const size_t value_len
+	char *value, const size_t value_len
 ) {
 
 	int retval = 0;
@@ -392,7 +384,10 @@ static int http_receive_close_known_header (
 	HttpRequest *request = http_receive->request;
 
 	if (!request->headers[type]) {
-		request->headers[type] = http_receive_string_create (http_receive, value, value_len);
+		request->headers[type] = http_receive_string_view (http_receive, value, value_len);
+		if (!request->headers[type]) {
+			retval = http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+		}
 	}
 
 	else if (http_header_is_unique (type)) {
@@ -401,67 +396,69 @@ static int http_receive_close_known_header (
 		);
 	}
 
-	else if (http_receive_header_join (request, type, value, value_len)) {
-		retval = http_receive_reject (
-			http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
-		);
+	else {
+		Arena *arena = http_request_get_arena (request);
+		if (!arena || http_header_values_join_arena (arena, &request->headers[type], value, value_len)) {
+			retval = http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+		}
 	}
 
 	return retval;
 
 }
 
-// the length of the value of a header without the spaces and tabs after it,
-// that are not part of the value (RFC 9110 section 5.5): the parser gives them
-static size_t http_header_value_length (const char *value, const size_t value_len) {
+// the value of a folded field (only with the lenient flag of the headers) is joined in its place,
+// without its line breaks, like the pieces that the parser of before gave
+static size_t http_receive_value_unfold (char *value, const size_t length) {
 
-	size_t length = value_len;
-
-	while (
-		length
-		&& ((value[length - 1] == http_header_value_space) || (value[length - 1] == http_header_value_tab))
-	) {
-		length -= 1;
+	size_t written = 0;
+	for (size_t i = 0; i < length; i++) {
+		if ((value[i] != '\r') && (value[i] != '\n')) value[written++] = value[i];
 	}
 
-	return length;
+	return written;
 
 }
 
-// counts a header of the request, or a trailer of its chunked body
-// returns 0 on success, 1 if the request was rejected
-static int http_receive_count_header (HttpReceive *http_receive) {
-
-	http_receive->n_headers += 1;
-
-	const unsigned int max_headers = http_receive->http_cerver->max_headers;
-
-	return (max_headers && (http_receive->n_headers > max_headers)) ?
-		http_receive_reject (
-			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
-		) : 0;
-
-}
-
-// saves a complete header in the request
-// returns 0 on success, 1 if the request was rejected
-static int http_receive_save_header (
-	HttpReceive *http_receive, const String *field
+// the lenient flag of the headers takes a NUL in a value, but the values are C strings for whoever reads them:
+// a value of the whitelist of origins followed by a NUL and anything else was the value of the whitelist,
+// and a proxy saw another one
+static bool http_receive_value_has_nul (
+	const HttpReceive *http_receive, const char *value, const size_t length
 ) {
 
-	const String *value_buffer = http_receive->value_buffer;
-	const char *value = (value_buffer && value_buffer->str) ? value_buffer->str : "";
-	const size_t value_len = http_header_value_length (value, value_buffer ? value_buffer->len : 0);
+	return (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_HEADERS)
+		&& (memchr (value, '\0', length) != NULL);
 
-	if (http_receive_count_header (http_receive)) return 1;
+}
 
-	const http_header type = http_header_type_with_string (field->str);
-	if (type != HTTP_HEADER_UNDEFINED) {
-		return http_receive_close_known_header (http_receive, type, value, value_len);
+// saves a field of the head in the request, its name and its value are views of the copy of the head
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_save_header (
+	HttpReceive *http_receive, char *head, const CerverHttpField *field
+) {
+
+	char *value = head + field->value.offset;
+	size_t value_len = field->value.length;
+
+	if (field->flags & CERVER_HTTP_FIELD_FOLDED) value_len = http_receive_value_unfold (value, value_len);
+
+	if (http_receive_value_has_nul (http_receive, value, value_len)) {
+		return http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
 	}
 
+	if (field->type != HTTP_HEADER_UNDEFINED) {
+		return http_receive_close_known_header (http_receive, field->type, value, value_len);
+	}
+
+	// the value ends with its own '\0', so the name is made after it
+	value[value_len] = '\0';
+
+	const String *name = http_receive_string_view (http_receive, head + field->name.offset, field->name.length);
+	if (!name) return http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+
 	return http_receive_close_custom_header (
-		http_receive->request, field, value, value_len,
+		http_receive->request, name, value, value_len,
 		http_receive->http_cerver->max_custom_header_size
 	) ?
 		http_receive_reject (
@@ -470,23 +467,40 @@ static int http_receive_save_header (
 
 }
 
-// closes the header that was received in pieces
-// returns 0 on success, 1 if the request was rejected
-static int http_receive_close_header (HttpReceive *http_receive) {
+// the head is copied once to the memory of the request, where its views live as long as it
+int http_receive_head_complete (HttpReceive *http_receive) {
 
-	int retval = 0;
+	CerverHttpParser *parser = &http_receive->parser;
+	const CerverHttpHead *head = &parser->head;
 
-	const String *field = http_receive->field_buffer;
-	if (field && field->len) {
-		retval = http_receive_save_header (http_receive, field);
+	Arena *arena = http_request_get_arena (http_receive->request);
+
+	// a '\0' after the last byte, the one of a token at the end of a head of HTTP/0.9
+	char *copy = arena ? (char *) arena_alloc (arena, head->length + 1) : NULL;
+	if (!copy) return http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+
+	(void) memcpy (copy, head->base, head->length);
+	copy[head->length] = '\0';
+	cerver_http_parser_rebase (parser, copy);
+
+	http_receive->request->strings_in_arena = true;
+
+	if (http_receive_close_url (http_receive, copy + head->target.offset, head->target.length)) {
+		return http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
 	}
 
-	http_receive_buffer_reset (http_receive->field_buffer);
-	http_receive_buffer_reset (http_receive->value_buffer);
+	int rejected = 0;
+	for (unsigned int i = 0; !rejected && (i < head->fields_count); i++) {
+		rejected = http_receive_save_header (http_receive, copy, &head->fields[i]);
+	}
 
-	return retval;
+	return rejected;
 
 }
+
+#pragma endregion
+
+#pragma region body
 
 // marks that the body is being received and checks its size
 // returns 0 on success, 1 if the request was rejected
@@ -509,17 +523,18 @@ int http_receive_check_body_size (
 }
 
 // the bytes to reserve for the body when its first part arrives,
-// the parser has already discounted the part from its content length
+// the parser has already discounted the part from what is left of its content length
 // a chunked body or one without Content-Length is not reserved
 static size_t http_request_body_reserve_size (
 	const HttpReceive *http_receive, const size_t length
 ) {
 
-	const llhttp_t *parser = &http_receive->parser;
+	const CerverHttpParser *parser = &http_receive->parser;
+	const unsigned int flags = parser->head.flags;
 
-	if ((parser->flags & F_CHUNKED) || !(parser->flags & F_CONTENT_LENGTH)) return 0;
+	if ((flags & CERVER_HTTP_HEAD_CHUNKED) || !(flags & CERVER_HTTP_HEAD_CONTENT_LENGTH)) return 0;
 
-	uint64_t reserve = (uint64_t) length + parser->content_length;
+	uint64_t reserve = (uint64_t) length + parser->remaining;
 
 	if (reserve > HTTP_REQUEST_BODY_RESERVE_LIMIT) reserve = HTTP_REQUEST_BODY_RESERVE_LIMIT;
 
@@ -581,223 +596,9 @@ static int http_request_body_append (
 
 }
 
-// checks the size of all the headers that have been received
-static inline int http_receive_check_header_size (
-	HttpReceive *http_receive, const size_t length
-) {
-
-	http_receive->header_size += length;
-
-	const size_t max_header_size = http_receive->http_cerver->max_header_size;
-
-	return (max_header_size && (http_receive->header_size > max_header_size)) ?
-		http_receive_reject (
-			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
-		) : 0;
-
-}
-
-// the url can arrive in many pieces, it is closed in on_url_complete
-int http_receive_handle_url (
-	llhttp_t *parser, const char *at, size_t length
-) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	const size_t current_len = http_receive->url_buffer ? http_receive->url_buffer->len : 0;
-	const size_t max_url_size = http_receive->http_cerver->max_url_size;
-	if (max_url_size && ((current_len + length) > max_url_size)) {
-		return http_receive_parser_result (http_receive_reject (
-			http_receive, uri_too_long_error, HTTP_RECEIVE_STATUS_LIMIT
-		));
-	}
-
-	return http_receive_parser_result (
-		http_receive_buffer_append (&http_receive->url_buffer, at, length) ?
-			http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0
-	);
-
-}
-
-// the url is complete, it is split into the request's path and query
-int http_receive_handle_url_complete (llhttp_t *parser) {
-
-	http_receive_close_url ((HttpReceive *) parser->data);
-
-	return 0;
-
-}
-
-// the protocol of the request line can arrive in many pieces, it is checked when it is complete
-int http_receive_handle_protocol (
-	llhttp_t *parser, const char *at, size_t length
-) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	const size_t matched = http_receive->protocol_length;
-	if (
-		!http_receive->protocol_other
-		&& (length <= (HTTP_RECEIVE_PROTOCOL_LENGTH - matched))
-		&& !memcmp (at, http_receive_protocol + matched, length)
-	) {
-		http_receive->protocol_length += length;
-	}
-
-	else {
-		http_receive->protocol_other = true;
-	}
-
-	return 0;
-
-}
-
-// only HTTP is served: the parser also takes the request lines of RTSP and ICE,
-// and their requests with a method that HTTP has reached the handlers
-int http_receive_handle_protocol_complete (llhttp_t *parser) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	const bool served = !http_receive->protocol_other
-		&& (http_receive->protocol_length == HTTP_RECEIVE_PROTOCOL_LENGTH);
-
-	return http_receive_parser_result (
-		served ? 0 : http_receive_reject (
-			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
-		)
-	);
-
-}
-
-// cerver speaks HTTP/1.0 and HTTP/1.1: the other versions that the parser takes (0.9 and 2.0)
-// are answered with 505 (RFC 9110 section 15.6.6) and not served as if they were 1.1,
-// the lenient flag of the version is the choice of serving any of them
-int http_receive_handle_version_complete (llhttp_t *parser) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	const bool served = (
-		(llhttp_get_http_major (parser) == HTTP_RECEIVE_VERSION_MAJOR)
-		&& (llhttp_get_http_minor (parser) <= HTTP_RECEIVE_VERSION_MINOR_MAX)
-	) || (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_VERSION);
-
-	return http_receive_parser_result (
-		served ? 0 : http_receive_reject (
-			http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED
-		)
-	);
-
-}
-
-// the fields that the parser finds after on_headers_complete are the trailers of a chunked body
-static inline bool http_receive_headers_are_complete (const HttpReceive *http_receive) {
-
-	return http_receive->receive_status != HTTP_RECEIVE_STATUS_NONE;
-
-}
-
-// the trailers of a chunked body and the extensions of its chunks are not kept,
-// but their bytes count for the size of the headers:
-// a body can not be followed by trailers without an end, nor a chunk have an extension without one
-int http_receive_handle_discarded (
-	llhttp_t *parser, const char *at, size_t length
-) {
-
-	(void) at;
-
-	return http_receive_check_header_size ((HttpReceive *) parser->data, length) ?
-		HTTP_RECEIVE_PARSER_STOP : 0;
-
-}
-
-// a header field can arrive in many pieces, it is closed with its value
-int http_receive_handle_header_field (
-	llhttp_t *parser, const char *at, size_t length
-) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	if (http_receive_headers_are_complete (http_receive)) {
-		return http_receive_handle_discarded (parser, at, length);
-	}
-
-	// the first field ends the request line
-	http_receive->stage = HTTP_STAGE_HEADERS;
-
-	if (http_receive_check_header_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
-
-	return http_receive_parser_result (
-		http_receive_buffer_append (&http_receive->field_buffer, at, length) ?
-			http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0
-	);
-
-}
-
-// a header value can arrive in many pieces, it is closed in on_header_value_complete
-// the parser rejects a NUL in the value of a header, but not with its lenient flag of the headers:
-// the values are C strings for whoever reads them, so a value of the whitelist of origins
-// followed by a NUL and anything else was the value of the whitelist, and a proxy saw another one
-static bool http_receive_header_value_has_nul (
-	const HttpReceive *http_receive, const char *at, const size_t length
-) {
-
-	return (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_HEADERS)
-		&& (memchr (at, '\0', length) != NULL);
-
-}
-
-int http_receive_handle_header_value (
-	llhttp_t *parser, const char *at, size_t length
-) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	if (http_receive_headers_are_complete (http_receive)) {
-		return http_receive_handle_discarded (parser, at, length);
-	}
-
-	if (http_receive_check_header_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
-
-	if (http_receive_header_value_has_nul (http_receive, at, length)) {
-		return http_receive_parser_result (
-			http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR)
-		);
-	}
-
-	return http_receive_parser_result (
-		http_receive_buffer_append (&http_receive->value_buffer, at, length) ?
-			http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0
-	);
-
-}
-
-// the field and the value are complete, the header is saved in the request
-// the trailers of a chunked body are discarded, each one counts as a header
-int http_receive_handle_header_value_complete (llhttp_t *parser) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
-
-	int rejected = 0;
-	if (http_receive_headers_are_complete (http_receive)) {
-		http_receive_buffer_reset (http_receive->field_buffer);
-		http_receive_buffer_reset (http_receive->value_buffer);
-
-		rejected = http_receive_count_header (http_receive);
-	}
-
-	else {
-		rejected = http_receive_close_header (http_receive);
-	}
-
-	return http_receive_parser_result (rejected);
-
-}
-
 int http_receive_handle_body (
-	llhttp_t *parser, const char *at, size_t length
+	HttpReceive *http_receive, const char *at, size_t length
 ) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
 	if (http_receive_check_body_size (http_receive, length)) return HTTP_RECEIVE_PARSER_STOP;
 

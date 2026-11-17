@@ -39,8 +39,7 @@
 #include "cerver/http/core/limits.h"
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
@@ -309,7 +308,7 @@ void http_cerver_set_parser_lenient (
 
 		#define XX(num, name, string, description) \
 			http_cerver_parser_lenient_warning (http_cerver, HTTP_PARSER_LENIENT_##name);
-		LLHTTP_LENIENT_MAP(XX)
+		HTTP_PARSER_LENIENT_MAP(XX)
 		#undef XX
 	}
 

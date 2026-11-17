@@ -111,8 +111,8 @@ typedef enum HttpReceiveDispatch {
 } HttpReceiveDispatch;
 
 /**
- * @brief What the owner of a receive lends to it: the arena where the data of each request lives and the buffers
- * of the tokens that the parser gives in pieces.
+ * @brief What the owner of a receive lends to it: the arena where the data of each request lives and the buffer
+ * where the head of a request that arrives in pieces is gathered.
  *
  * They are used by one request at a time and they are never released by the receive.
  */
@@ -121,12 +121,12 @@ struct _HttpReceiveResources {
 	/** @brief The arena of the data of each request. */
 	struct Arena *arena;
 
-	/** @brief The buffer of the pieces of the url. */
-	String *url_buffer;
-	/** @brief The buffer of the pieces of the name of a header. */
-	String *field_buffer;
-	/** @brief The buffer of the pieces of the value of a header. */
-	String *value_buffer;
+	/**
+	 * @brief The buffer of the head of a request that does not arrive in one piece.
+	 *
+	 * @since 3.0b-9
+	 */
+	String *head_buffer;
 
 };
 
@@ -152,6 +152,13 @@ struct _HttpReceiveDiagnostics {
 
 /** @brief The recv () calls of a request, see struct _HttpReceiveDiagnostics. */
 typedef struct _HttpReceiveDiagnostics HttpReceiveDiagnostics;
+
+/**
+ * @brief The fields of a request that a receive takes without an allocation.
+ *
+ * @since 3.0b-9
+ */
+#define HTTP_RECEIVE_FIELDS_INLINE			(1 << 5)
 
 /**
  * @brief Where the parser of a request of an event loop stopped to give the request to a thread of the pool.
@@ -201,26 +208,65 @@ struct _HttpReceive {
 	/** @brief The HttpCerver of the connection. */
 	HttpCerver *http_cerver;
 
-	/** @brief The parser of the request, embedded in the receive with its own settings, so the body callback can change for each request. */
-	llhttp_t parser;
-	/** @brief The callbacks of the parser. */
-	llhttp_settings_t settings;
+	/**
+	 * @brief The parser of the requests of the connection (cerver/http/parser).
+	 *
+	 * @since 3.0b-9
+	 */
+	CerverHttpParser parser;
 
-	/** @brief What the client asked when its request was completed (llhttp_should_keep_alive ()): HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
+	/**
+	 * @brief The fields of the head of the request: #fields_inline, or an array of the receive for a request with
+	 * more fields than it takes, that stays for the next requests of the connection.
+	 *
+	 * @since 3.0b-9
+	 */
+	CerverHttpField *fields;
+	/**
+	 * @brief The fields that #fields takes.
+	 *
+	 * @since 3.0b-9
+	 */
+	unsigned int fields_capacity;
+	/**
+	 * @brief The fields of most requests, without an allocation.
+	 *
+	 * @since 3.0b-9
+	 */
+	CerverHttpField fields_inline[HTTP_RECEIVE_FIELDS_INLINE];
+
+	/**
+	 * @brief The head of a request that did not arrive in one piece, gathered until it is complete; lent by the
+	 * owner of the receive or its own.
+	 *
+	 * @since 3.0b-9
+	 */
+	String *head_buffer;
+
+	/**
+	 * @brief What takes each piece of the body of the request: it is saved, it is discarded (a request that no
+	 * endpoint handles) or it is a multipart body; it returns 0, or 1 when the request was rejected.
+	 *
+	 * @since 3.0b-9
+	 */
+	int (*body_handler)(
+		struct _HttpReceive *, const char *, size_t
+	);
+
+	/** @brief What the client asked when its request was completed (cerver_http_parser_keep_alive ()): HTTP/1.1 without "Connection: close" or HTTP/1.0 with "Connection: keep-alive". */
 	bool keep_alive_requested;
 
 	/** @brief The bytes of the last buffer that were not parsed after the request was completed (a pipelined request). */
 	size_t unparsed;
 
-	/** @brief The bytes of the protocol of the request line that are the ones of HTTP; the protocol arrives in pieces. */
-	size_t protocol_length;
-	/** @brief The request line had another protocol (llhttp also parses the request lines of RTSP and ICE). */
-	bool protocol_other;
-
-	/** @brief The parser of a multipart body. */
-	multipart_parser *mpart_parser;
-	/** @brief The callbacks of the multipart parser. */
-	multipart_parser_settings mpart_settings;
+	/** @brief The parser of a multipart body: #multipart while the request is multipart, NULL otherwise. */
+	CerverHttpMultipart *mpart_parser;
+	/**
+	 * @brief The memory of the parser of a multipart body, without an allocation.
+	 *
+	 * @since 3.0b-9
+	 */
+	CerverHttpMultipart multipart;
 
 	/** @brief The request that is being received. */
 	HttpRequest *request;
@@ -262,17 +308,6 @@ struct _HttpReceive {
 	/** @brief The request created the directory of its uploads, it is removed if it ends empty. */
 	bool upload_directory_created;
 
-	/** @brief The pieces of the url that are being received, closed by its complete callback of the parser. */
-	String *url_buffer;
-	/** @brief The pieces of the name of a header that are being received. */
-	String *field_buffer;
-	/** @brief The pieces of the value of a header that are being received. */
-	String *value_buffer;
-
-	/** @brief The bytes of the headers, for the limits. */
-	size_t header_size;
-	/** @brief The headers, for the limits. */
-	unsigned int n_headers;
 	/** @brief The bytes of the body, for the limits. */
 	size_t body_size;
 	/** @brief The parts of a multipart body, for the limits. */
@@ -303,7 +338,7 @@ struct _HttpReceive {
 	 */
 	struct Arena *arena;
 
-	/** @brief The token buffers belong to the owner of the receive and they are reused between requests. */
+	/** @brief The buffer of the head belongs to the owner of the receive and it is reused between requests. */
 	bool borrowed_buffers;
 
 	/** @brief The fd of the connection when the receive was created, for the log after it is closed. */

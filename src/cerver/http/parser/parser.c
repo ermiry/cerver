@@ -25,6 +25,36 @@ static const char *http_parser_error_reasons[] = {
 
 #define HTTP_PARSER_ERRORS		(sizeof (http_parser_error_strings) / sizeof (http_parser_error_strings[0]))
 
+static const char *http_parser_lenient_none = { "none" };
+
+const char *http_parser_lenient_string (const HttpParserLenient lenient) {
+
+	switch (lenient) {
+		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #string;
+		HTTP_PARSER_LENIENT_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_parser_lenient_none;
+
+}
+
+const char *http_parser_lenient_description (const HttpParserLenient lenient) {
+
+	switch (lenient) {
+		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #description;
+		HTTP_PARSER_LENIENT_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return http_parser_lenient_none;
+
+}
+
 const char *cerver_http_parser_error_string (const CerverHttpParserError error) {
 
 	return ((unsigned int) error < HTTP_PARSER_ERRORS) ?

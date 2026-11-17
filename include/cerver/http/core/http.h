@@ -19,8 +19,8 @@
 #include "cerver/handler/handler.h"
 
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/multipart.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/status.h"
@@ -253,62 +253,6 @@ struct _HttpResponse;
 
 struct _HttpWebSocketRegistry;
 struct HttpWebSocketHandshake;
-
-/**
- * @defgroup http_parser Parser
- * @ingroup http_core
- * @brief The lenient flags of the parser (llhttp).
- * @{
- */
-
-/**
- * @brief The lenient flags of the parser, the values of LLHTTP_LENIENT_MAP, one `HTTP_PARSER_LENIENT_<name>` for
- * each row.
- *
- * All of them are disabled by default (the strict mode).
- *
- * @warning Each one can open the cerver to request smuggling or cache poisoning attacks.
- */
-typedef enum HttpParserLenient {
-
-	/** @brief No lenient flag: the strict mode. */
-	HTTP_PARSER_LENIENT_NONE = 0,
-
-	#define XX(num, name, string, description) HTTP_PARSER_LENIENT_##name = num,
-	LLHTTP_LENIENT_MAP(XX)
-	#undef XX
-
-} HttpParserLenient;
-
-/** @brief Every lenient flag of LLHTTP_LENIENT_MAP. */
-#define HTTP_PARSER_LENIENT_ALL				LLHTTP_LENIENT_ALL
-
-/** @brief The value that a parser callback returns when it stops the parser, because it rejected the request or because its client is gone. */
-#define HTTP_RECEIVE_PARSER_STOP			HPE_USER
-
-/**
- * @brief Returns the name of a lenient flag ("headers", "chunked_length", ...).
- *
- * @param[in] lenient a single flag
- * @return the name of its row in LLHTTP_LENIENT_MAP, or "none" for any other value; a static string that must not
- * be freed
- */
-CERVER_PUBLIC const char *http_parser_lenient_string (
-	const HttpParserLenient lenient
-);
-
-/**
- * @brief Returns what a lenient flag accepts.
- *
- * @param[in] lenient a single flag
- * @return the description of its row in LLHTTP_LENIENT_MAP, or "none" for any other value; a static string that
- * must not be freed
- */
-CERVER_PUBLIC const char *http_parser_lenient_description (
-	const HttpParserLenient lenient
-);
-
-/** @} */
 
 /**
  * @defgroup http_stages Stages

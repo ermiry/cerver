@@ -28,7 +28,7 @@
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/internal.h"
-#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/responses/internal.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/websockets/internal.h"
@@ -116,9 +116,7 @@ void http_connection_delete (HttpConnection *connection) {
 	if (connection) {
 		arena_delete (connection->arena);
 
-		str_delete (connection->url_buffer);
-		str_delete (connection->field_buffer);
-		str_delete (connection->value_buffer);
+		str_delete (connection->head_buffer);
 
 		free (connection->pending.data);
 		free (connection->output.data);
@@ -134,17 +132,12 @@ HttpConnection *http_connection_new (void) {
 	if (connection) {
 		connection->arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
 
-		connection->url_buffer = str_new (NULL);
-		connection->field_buffer = str_new (NULL);
-		connection->value_buffer = str_new (NULL);
+		connection->head_buffer = str_new (NULL);
 
 		event_source_init (&connection->source, EVENT_SOURCE_TYPE_CONNECTION, connection);
 		connection->timer.owner = connection;
 
-		if (
-			!connection->arena
-			|| !connection->url_buffer || !connection->field_buffer || !connection->value_buffer
-		) {
+		if (!connection->arena || !connection->head_buffer) {
 			http_connection_delete (connection);
 			connection = NULL;
 		}
@@ -1035,12 +1028,12 @@ static void http_connection_parse (
 	HttpReceive *receive = &connection->receive;
 
 	size_t n_parsed = 0;
-	const llhttp_errno_t result = http_receive_execute (receive, buffer, length, &n_parsed);
+	const HttpReceiveParse result = http_receive_execute (receive, buffer, length, &n_parsed);
 
 	switch (result) {
 		// the request is not complete; a "100 Continue" can be waiting to be written
 		// the bytes that were kept from the request before were all parsed
-		case HPE_OK:
+		case HTTP_RECEIVE_PARSE_MORE:
 			if (http_connection_buffer_contains (&connection->pending, buffer)) {
 				http_connection_buffer_clear (&connection->pending);
 			}
@@ -1048,13 +1041,13 @@ static void http_connection_parse (
 			http_connection_settle (connection, HTTP_CONNECTION_NEXT_READ);
 			break;
 
-		case HPE_PAUSED:
-		case HPE_PAUSED_UPGRADE:
+		case HTTP_RECEIVE_PARSE_PAUSED:
+		case HTTP_RECEIVE_PARSE_UPGRADE:
 			http_connection_paused (connection, buffer + n_parsed, length - n_parsed);
 			break;
 
 		default:
-			http_receive_parser_failed (receive, result, n_parsed, (ssize_t) length);
+			http_receive_parser_failed (receive, n_parsed, (ssize_t) length);
 
 			http_connection_rejected (connection);
 			break;
@@ -1336,10 +1329,7 @@ static unsigned int http_connection_start (HttpConnection *connection, Connectio
 
 	http_connection_cerver_receive_set (connection, peer);
 
-	const HttpReceiveResources resources = {
-		connection->arena,
-		connection->url_buffer, connection->field_buffer, connection->value_buffer
-	};
+	const HttpReceiveResources resources = { connection->arena, connection->head_buffer };
 
 	unsigned int retval = http_receive_prepare (&connection->receive, &connection->cerver_receive, &resources);
 	if (!retval) {
@@ -1632,18 +1622,18 @@ static HttpConnectionFollow http_connection_follow_parse (
 	HttpReceive *receive = &connection->receive;
 
 	size_t n_parsed = 0;
-	const llhttp_errno_t result = http_receive_execute (receive, buffer, length, &n_parsed);
+	const HttpReceiveParse result = http_receive_execute (receive, buffer, length, &n_parsed);
 
 	switch (result) {
-		case HPE_OK:
+		case HTTP_RECEIVE_PARSE_MORE:
 			return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_READING);
 
-		case HPE_PAUSED:
-		case HPE_PAUSED_UPGRADE:
+		case HTTP_RECEIVE_PARSE_PAUSED:
+		case HTTP_RECEIVE_PARSE_UPGRADE:
 			return http_connection_follow_paused (connection, buffer + n_parsed, length - n_parsed, lane);
 
 		default:
-			http_receive_parser_failed (receive, result, n_parsed, (ssize_t) length);
+			http_receive_parser_failed (receive, n_parsed, (ssize_t) length);
 
 			return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_FAILED);
 	}

@@ -31,10 +31,10 @@ extern "C" {
 #endif
 
 /**
- * @brief The X-macro table of the methods, the only one, with the values of the parser (llhttp): the number, the
- * name and the string of each one.
+ * @brief The X-macro table of the methods, the only one, with the values of the parser (the ones of llhttp, that it
+ * replaced in the 3.0b-9): the number, the name and the string of each one.
  *
- * They are the HTTP methods that llhttp accepts in a request, and all of them can be registered in a route; the
+ * They are the HTTP methods that the parser accepts in a request, and all of them can be registered in a route; the
  * values 34 to 45 are PRI (the preface of HTTP/2) and the RTSP methods, that the parser rejects.
  */
 #define REQUEST_METHOD_MAP(XX)			\
