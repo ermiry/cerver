@@ -1,12 +1,25 @@
 FROM debian:trixie
 
-RUN apt-get update && apt-get install -y clang libclang-rt-dev libssl-dev zlib1g-dev libjwt-dev make && apt-get clean
+RUN apt-get update && apt-get install -y clang libclang-rt-dev libssl-dev zlib1g-dev libjwt-dev make curl ca-certificates && apt-get clean
 
 ARG WERROR=1
+
+ENV LLHTTP_VERSION=9.4.3
+ENV MULTIPART_PARSER_COMMIT=772639cf10db6d9f5a655ee9b7eb20b815fab396
+
+ENV REFERENCES=/opt/references
+
+WORKDIR ${REFERENCES}
+
+RUN curl -fsSL https://github.com/nodejs/llhttp/archive/refs/tags/release/v${LLHTTP_VERSION}.tar.gz | tar xz \
+	&& mv llhttp-release-v${LLHTTP_VERSION} llhttp \
+	&& curl -fsSL https://github.com/iafonov/multipart-parser-c/archive/${MULTIPART_PARSER_COMMIT}.tar.gz | tar xz \
+	&& mv multipart-parser-c-${MULTIPART_PARSER_COMMIT} multipart
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} -j4 fuzz && make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} differential
+RUN make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} REFERENCES=${REFERENCES} -j4 fuzz \
+	&& make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} differential
 
 CMD ["bash", "test/fuzz.sh"]

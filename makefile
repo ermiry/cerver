@@ -674,12 +674,20 @@ ifeq ($(ZLIB), 1)
 	FUZZLIBS += $(ZLIBLIB)
 endif
 
-FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name '*.$(SRCEXT)' 2> /dev/null)
+# the differential fuzzers of the parsers are built only with the code of the ones that they replaced (REFERENCES)
+FUZZREFERENCED	:= $(FUZZDIR)/llhttp.$(SRCEXT) $(FUZZDIR)/parts.$(SRCEXT)
+FUZZERS			:= $(filter-out $(FUZZREFERENCED),$(shell find $(FUZZDIR) -maxdepth 1 -type f -name '*.$(SRCEXT)' 2> /dev/null))
 FUZZLIBOBJS		:= $(patsubst $(SRCDIR)/%,$(FUZZBUILD)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 fuzz: $(FUZZLIBOBJS)
 	@mkdir -p ./$(FUZZTARGET)
 	$(foreach fuzzer,$(FUZZERS),$(CC) $(FUZZFLAGS) $(FUZZINC) $(fuzzer) $(FUZZLIBOBJS) -o ./$(FUZZTARGET)/$(basename $(notdir $(fuzzer))) $(FUZZLIBS) || exit 1;)
+ifneq ($(REFERENCES),)
+	@mkdir -p ./$(FUZZBUILD)/references
+	$(foreach source,$(REFERENCESSRC),$(CC) $(FUZZLIBFLAGS) $(REFERENCESFLAGS) $(REFERENCESINC) -c $(source) -o ./$(FUZZBUILD)/references/$(basename $(notdir $(source))).$(OBJEXT) || exit 1;)
+	$(foreach fuzzer,$(FUZZREFERENCED),$(CC) $(FUZZFLAGS) $(FUZZINC) $(REFERENCESINC) $(fuzzer) ./$(FUZZBUILD)/references/*.$(OBJEXT) $(FUZZLIBOBJS) \
+		-o ./$(FUZZTARGET)/$(basename $(notdir $(fuzzer))) $(FUZZLIBS) || exit 1;)
+endif
 
 # the target that gives every token to the JWT of cerver and to the libjwt of the system,
 # built only where it is installed: make TYPE=test CC=clang differential
