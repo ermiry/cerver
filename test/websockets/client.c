@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -47,6 +48,11 @@
 // milliseconds of the reconnections of the test
 #define CLIENT_TEST_RECONNECT_MIN			(1 << 5)
 #define CLIENT_TEST_RECONNECT_MAX			(1 << 7)
+
+// nanoseconds between two looks of a test that waits for the cerver
+#define CLIENT_TEST_WAIT_INTERVAL			(1L << 20)
+
+#define CLIENT_TEST_MILLISECONDS_PER_SECOND	1000
 
 // the short timeouts of the clients of the fake servers, with the scale of the run
 #define CLIENT_TEST_TIMEOUT					(test_milliseconds (1 << 10))
@@ -777,6 +783,22 @@ static void test_client_concurrent (void) {
 
 }
 
+// the connect of a client returns with the 101 of its handshake, maybe before the cerver registered the connection:
+// a stop in that moment does not know it, and it does not send it its 1001
+static void client_test_server_wait_connections (const ClientTestServer *server, const unsigned int expected) {
+
+	HttpCerver *http_cerver = (HttpCerver *) server->cerver->cerver_data;
+
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while ((http_cerver_web_socket_count (http_cerver, NULL) != expected) && (test_wait_now () < deadline)) {
+		struct timespec interval = { 0, CLIENT_TEST_WAIT_INTERVAL };
+		(void) nanosleep (&interval, NULL);
+	}
+
+	test_check_unsigned_eq (http_cerver_web_socket_count (http_cerver, NULL), expected, NULL);
+
+}
+
 // the client reconnects when the cerver goes away and comes back in the same port
 static void test_client_reconnect (void) {
 
@@ -787,6 +809,8 @@ static void test_client_reconnect (void) {
 	HttpWebSocketClient *client = client_test_create (port, "/ws/echo");
 	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
 	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
+
+	client_test_server_wait_connections (server, 1);
 
 	client_test_server_stop (server);
 	test_check_unsigned_eq (test_wait_counter (&state.going_away, 1, TEST_WAIT_SECONDS), 1, NULL);
@@ -871,6 +895,75 @@ static void test_client_reconnect_ends (void) {
 	test_check ((test_wait_now () - start) < CLIENT_TEST_STOP_SECONDS, "the delete waited for the next attempt");
 
 	test_check_unsigned_eq (__atomic_load_n (&state.errors, __ATOMIC_SEQ_CST), 1, NULL);
+
+}
+
+// the milliseconds of each connect of the client of the test of a host that does not answer,
+// and the part of them that an attempt waits at least
+#define CLIENT_TEST_CONNECT_TIMEOUT			(1 << 8)
+#define CLIENT_TEST_CONNECT_WAIT_DIVISOR	2
+
+// a socket that listens in the loopback with a queue that is full: Linux drops the next SYN that it gets,
+// like a host that does not answer, so a connect to it waits until its timeout
+static int client_test_silent_listen (const u16 port, int *queued_fd) {
+
+	const int listen_fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (listen_fd > -1, "socket () failed");
+
+	struct sockaddr_in address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_in));
+	address.sin_family = AF_INET;
+	address.sin_port = htons (port);
+	address.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+
+	test_check_int_eq (bind (listen_fd, (const struct sockaddr *) &address, sizeof (struct sockaddr_in)), 0, NULL);
+	test_check_int_eq (listen (listen_fd, 0), 0, NULL);
+
+	// the only place of its queue: nobody accepts it
+	*queued_fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (*queued_fd > -1, "socket () failed");
+	test_check_int_eq (
+		connect (*queued_fd, (const struct sockaddr *) &address, sizeof (struct sockaddr_in)), 0, NULL
+	);
+
+	return listen_fd;
+
+}
+
+// T11: a host that does not answer the connect: each attempt ends with its timeout as a connect error,
+// and the client tries again
+static void test_client_reconnect_connect_timeout (void) {
+
+	client_test_state_reset ();
+	const u16 port = client_test_port++;
+
+	int queued_fd = -1;
+	const int listen_fd = client_test_silent_listen (port, &queued_fd);
+
+	HttpWebSocketClient *client = client_test_create (port, "/");
+	http_web_socket_client_set_timeouts_milliseconds (client, CLIENT_TEST_CONNECT_TIMEOUT, 0);
+	http_web_socket_client_set_reconnect_milliseconds (client, true, CLIENT_TEST_RECONNECT_MIN, CLIENT_TEST_RECONNECT_MAX);
+
+	const double start = test_wait_now ();
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+
+	// a refused connect ends in microseconds; the deadline of the client ends with less than a millisecond left,
+	// so the attempt that waits takes about its timeout, compared with half of it
+	test_check_unsigned_eq (test_wait_counter (&state.errors, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check (
+		(test_wait_now () - start) >= ((double) CLIENT_TEST_CONNECT_TIMEOUT / CLIENT_TEST_CONNECT_WAIT_DIVISOR / CLIENT_TEST_MILLISECONDS_PER_SECOND),
+		"the attempt did not wait for its connect timeout"
+	);
+
+	test_check_unsigned_eq (__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_CONNECT, NULL);
+
+	test_check (test_wait_counter (&state.errors, 2, TEST_WAIT_SECONDS) >= 2, "the client did not try again");
+	test_check_unsigned_eq (__atomic_load_n (&state.opened, __ATOMIC_SEQ_CST), 0, NULL);
+
+	http_web_socket_client_delete (client);
+
+	(void) close (queued_fd);
+	(void) close (listen_fd);
 
 }
 
@@ -1297,6 +1390,7 @@ void web_socket_tests_client (void) {
 	test_run (test_client_concurrent);
 	test_run (test_client_reconnect);
 	test_run (test_client_reconnect_ends);
+	test_run (test_client_reconnect_connect_timeout);
 	test_run (test_client_reconnect_unstable);
 	test_run (test_client_own_thread);
 	test_run (test_client_refused);
