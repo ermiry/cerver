@@ -130,6 +130,12 @@ static void http_request_init (HttpRequest *http_request) {
 		http_request->own_arena = NULL;
 
 		http_request->strings_in_arena = false;
+
+		http_request->query_pairs = NULL;
+		http_request->n_query_pairs = 0;
+
+		http_request->body_pairs = NULL;
+		http_request->n_body_pairs = 0;
 	}
 
 }
@@ -380,9 +386,17 @@ const String *http_request_get_query (
 
 }
 
+// the list of the query params is created from its pairs the first time that it is asked for:
+// the getter takes a const request, the thread that handles the request is the only one that uses it
 const DoubleList *http_request_get_query_params (
 	const HttpRequest *http_request
 ) {
+
+	if (!http_request->query_params && http_request->n_query_pairs) {
+		((HttpRequest *) http_request)->query_params = http_query_pairs_list (
+			http_request->query_pairs, http_request->n_query_pairs
+		);
+	}
 
 	return http_request->query_params;
 
@@ -885,9 +899,16 @@ void http_request_set_dirname (
 
 }
 
+// created from its pairs the first time that it is asked for, like the list of the query params
 const DoubleList *http_request_get_body_values (
 	const HttpRequest *http_request
 ) {
+
+	if (!http_request->body_values && http_request->n_body_pairs) {
+		((HttpRequest *) http_request)->body_values = http_query_pairs_list (
+			http_request->body_pairs, http_request->n_body_pairs
+		);
+	}
 
 	return http_request->body_values;
 
@@ -928,18 +949,18 @@ void http_request_query_params_print (
 	const HttpRequest *http_request
 ) {
 
-	if (http_request) key_value_pairs_print (http_request->query_params);
+	if (http_request) key_value_pairs_print (http_request_get_query_params (http_request));
 
 }
 
-// returns the matching query param value for the specified key
+// returns the matching query param value for the specified key, from the pairs in the arena of the request
 // returns NULL if no match or no query params
 const String *http_request_query_params_get_value (
 	const HttpRequest *http_request, const char *key
 ) {
 
 	return http_request ?
-		key_value_pairs_get_value (http_request->query_params, key) : NULL;
+		http_query_pairs_find (http_request->query_pairs, http_request->n_query_pairs, key) : NULL;
 
 }
 
@@ -1251,6 +1272,6 @@ const String *http_request_body_get_value (
 	const HttpRequest *http_request, const char *key
 ) {
 
-	return key_value_pairs_get_value (http_request->body_values, key);
+	return http_query_pairs_find (http_request->body_pairs, http_request->n_body_pairs, key);
 
 }
