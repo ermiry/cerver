@@ -109,6 +109,12 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 	HttpStaticPath *http_static_path = http_static_path_new ();
 	if (http_static_path) {
 		http_static_path->path = str_new (path);
+
+		// a static path without its path, or without its characters, would be dereferenced when it is resolved
+		if (!http_static_path->path || !http_static_path->path->str) {
+			http_static_path_delete (http_static_path);
+			http_static_path = NULL;
+		}
 	}
 
 	return http_static_path;
@@ -158,7 +164,11 @@ HttpStaticPath *http_cerver_static_path_add (
 	if (http_cerver && static_path) {
 		http_static_path = http_static_path_create (static_path);
 
-		(void) dlist_insert_at_end (http_cerver->static_paths, http_static_path);
+		// a path that the list could not take is not returned as added
+		if (http_static_path && dlist_insert_at_end (http_cerver->static_paths, http_static_path)) {
+			http_static_path_delete (http_static_path);
+			http_static_path = NULL;
+		}
 	}
 
 	return http_static_path;
