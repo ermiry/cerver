@@ -337,6 +337,12 @@ typedef struct HttpWebSocketHandlers {
  * @since 2.1b-21
  */
 #define HTTP_WEB_SOCKET_SETTING_QUEUE				(1 << 8)
+/**
+ * @brief A setting that a group passes to its subgroups and endpoints: the methods run in the event loop.
+ *
+ * @since 2.1b-22
+ */
+#define HTTP_WEB_SOCKET_SETTING_LOOP_CALLBACKS		(1 << 9)
 
 /**
  * @brief The settings of the WebSocket connections of a group, an endpoint or a client.
@@ -389,6 +395,14 @@ typedef struct HttpWebSocketSettings {
 	size_t max_queue;
 	/** @brief What a send does when its message does not fit in the queue. */
 	HttpWebSocketOverflow overflow;
+
+	/**
+	 * @brief With CERVER_HANDLER_TYPE_EVENTS, the methods of the connections run in the event loop, without a job
+	 * of the pool (see http_web_socket_settings_set_loop_callbacks ()).
+	 *
+	 * @since 2.1b-22
+	 */
+	bool loop_callbacks;
 
 } HttpWebSocketSettings;
 
@@ -465,6 +479,24 @@ CERVER_EXPORT void http_web_socket_settings_enable_compression (
  */
 CERVER_EXPORT void http_web_socket_settings_set_origin_check (
 	HttpWebSocketSettings *settings, const HttpWebSocketOriginCheck origin_check
+);
+
+/**
+ * @brief Runs the methods of the connections in the event loop that reads them, without a job of the pool, with
+ * CERVER_HANDLER_TYPE_EVENTS; off by default.
+ *
+ * A job costs a hand off to a thread of the pool and back: with more connections than threads, short methods (a
+ * relay, a counter, a broadcast to a room) are faster in the loop. Its connection is not read while its method
+ * runs, and neither is any other connection of the loop.
+ *
+ * @param[in,out] settings the settings of a group or an endpoint
+ * @param[in] loop_callbacks true to run them in the loop
+ * @warning A method that waits (I/O, a lock held long, a sleep) stops every connection of its loop: only methods
+ * that end at once.
+ * @since 2.1b-22
+ */
+CERVER_EXPORT void http_web_socket_settings_set_loop_callbacks (
+	HttpWebSocketSettings *settings, const bool loop_callbacks
 );
 
 /**

@@ -312,12 +312,14 @@ static void http_web_socket_loop_wait (HttpWebSocket *web_socket) {
 
 }
 
-// a dispatcher without jobs of its own (the one of a test) runs the methods in the loop
+// a dispatcher without jobs of its own (the one of a test) runs the methods in the loop,
+// and so does an endpoint whose methods are short (http_web_socket_settings_set_loop_callbacks ())
 static bool http_web_socket_loop_runs_inline (const HttpWebSocket *web_socket) {
 
 	const EventDispatcher *dispatcher = web_socket->loop->lanes[web_socket->lane].dispatcher;
 
-	return !dispatcher || !dispatcher->submit_work || http_web_socket_loop_is_stopping (web_socket->loop);
+	return web_socket->settings.loop_callbacks
+		|| !dispatcher || !dispatcher->submit_work || http_web_socket_loop_is_stopping (web_socket->loop);
 
 }
 
