@@ -8,7 +8,7 @@
 > | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1; los arreglos de la revisión, §4.12); 2026-11-14 (la estructura y la documentación; F3, el event loop) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70. Desde la 2.1b-15 `nightly` no mergea `http`: sus arreglos se portan a mano |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3); F4, el keep-alive, la 2.1b-16 (§4.4); F5, los pools, health y las métricas, la 2.1b-17 (§4.5); los arreglos de la auditoría de las otras líneas, la 2.1b-18 (§4.13) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3); F4, el keep-alive, la 2.1b-16 (§4.4); F5, los pools, health y las métricas, la 2.1b-17 (§4.5); los arreglos de la auditoría de las otras líneas, la 2.1b-18 (§4.13); F4b, la 2.1b-19; la sincronía, la 2.1b-20; F6b, la 2.1b-21 (§4.6); F8a, TLS sobre hilos y en los clientes, la 2.1b-22 (§4.8.11) |
 
 **Las citas `archivo:línea`:**
 
@@ -1216,6 +1216,34 @@ CERVER_EXPORT void cerver_tls_set_reload_watch (Cerver *cerver, bool enable, uns
   handshake y de un registro); `performance.sh` con handshakes por segundo (con y sin reanudación) y req/s con TLS.
 - **Gate:** el de §5 más testssl.sh, la recarga bajo carga (0 errores en las conexiones vivas) y los handshakes que
   fallan contados por motivo.
+
+#### 4.8.11 Lo que hizo F8a (2.1b-22)
+
+El diseño de arriba, con lo que la implementación cambió (las decisiones se tomaron con el usuario al planear la beta):
+
+- **La frontera con el proveedor, como en `labs`:** la interfaz de TLS del proveedor de la criptografía está en
+  `src/cerver/crypto/provider.h` (`CryptoTlsContext`, `CryptoTlsSession`), y OpenSSL vive solo en
+  `src/cerver/tls/openssl.c` (y el `crypto/openssl.c` de antes). La API no tiene nombres de OpenSSL: los cifrados van
+  por su nombre IANA, las llaves por una ruta o una URI de un almacén (`tls_settings_set_key_store ()` en lugar de
+  `tls_settings_load_provider ()`), y `tls_settings_set_ca ()` sirve a los dos lados.
+- **El motor es un BIO propio sobre dos búferes** de cada `TlsConnection`, en lugar del BIO de socket de §4.8.2:
+  OpenSSL solo cifra y descifra, y cerver hace las syscalls. El mismo motor sirve a F8b y a la L8 de `labs`, donde el
+  anillo hace el I/O. No hay una tabla de funciones del transporte: `socket.c` pregunta por `Socket.tls`, y lo plano
+  no cambia.
+- **kTLS por el mismo BIO:** OpenSSL le da la llave con su ctrl de kTLS y el BIO la pone en el socket (solo para lo
+  que se envía; lo que se recibe sigue en el proveedor), los mensajes de control salen con un cmsg, y los archivos con
+  `sendfile ()` directo (sin `SSL_sendfile ()`).
+- **La cola de WebSocket guarda lo cifrado** que el socket no tomó: el envío directo cifra todo y lo que queda cuenta
+  en el tope de la cola.
+- **El handshake de los cervers que no son web** corre en un thpool propio de su TLS (no en un thpool de recepción,
+  que el modelo POLL no tiene), y el paquete de info sale después de él; el de web corre en el hilo del thpool que
+  recibe. Un cerver web lleno cierra sin handshake.
+- **La primera respuesta de OCSP** la pide el hilo de mantenimiento cuando arranca, con una deadline de 2^2 s: un
+  responder caído nunca atrasa `cerver_start ()`.
+- **Las pruebas** usan sockets reales en el mismo proceso en lugar de un par de BIOs (`test/tls/`), con los
+  certificados hechos en cada corrida; el fuzzer alimenta el búfer de entrada de una conexión sin socket.
+- **Lo que queda para la medición** (ninguna corrida de rendimiento en la sesión de la 2.1b-22): los handshakes por
+  segundo, el req/s con TLS, el costo cero de lo plano y la recarga bajo carga.
 
 ### 4.9 F9 — HTTP/2
 
