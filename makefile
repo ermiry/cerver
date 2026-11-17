@@ -513,6 +513,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/multiple.o -o $(INTWEBOUT)/multiple $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/pools.o -o $(INTWEBOUT)/pools $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/router.o -o $(INTWEBOUT)/router $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/tls.o -o $(INTWEBOUT)/tls $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/websocket.o -o $(INTWEBOUT)/websocket $(INTWEBLIBS)

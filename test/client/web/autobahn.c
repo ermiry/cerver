@@ -10,6 +10,8 @@
 #include <cerver/http/websockets/client.h>
 #include <cerver/http/websockets/websocket.h>
 
+#include <cerver/tls/tls.h>
+
 #include <cerver/utils/log.h>
 
 // the client of autobahn-testsuite (fuzzingserver): it asks for the number of cases,
@@ -17,6 +19,9 @@
 
 #define AUTOBAHN_URL_VARIABLE			"AUTOBAHN_URL"
 #define AUTOBAHN_DEFAULT_URL			"ws://autobahn:9001"
+
+// the authority of the certificate of a wss:// fuzzingserver, instead of the store of the system
+#define AUTOBAHN_AUTHORITY_VARIABLE		"TLS_AUTHORITY"
 
 #define AUTOBAHN_AGENT					"cerver"
 
@@ -62,6 +67,24 @@ static const HttpWebSocketHandlers autobahn_count_handlers = {
 	NULL, NULL, autobahn_count, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
+// returns 0 without the variable or when the client takes its TLS
+static u8 autobahn_tls (HttpWebSocketClient *client) {
+
+	const char *authority = getenv (AUTOBAHN_AUTHORITY_VARIABLE);
+	if (!authority) return 0;
+
+	TlsSettings *settings = tls_settings_create ();
+	if (!settings) return 1;
+
+	if (tls_settings_set_ca (settings, authority, NULL)) {
+		tls_settings_delete (settings);
+		return 1;
+	}
+
+	return http_web_socket_client_set_tls (client, settings);
+
+}
+
 // runs a connection until the server closes it
 // returns 0 on success, 1 if it could not connect
 static unsigned int autobahn_run (const char *url, const HttpWebSocketHandlers *handlers) {
@@ -69,7 +92,7 @@ static unsigned int autobahn_run (const char *url, const HttpWebSocketHandlers *
 	unsigned int retval = 1;
 
 	HttpWebSocketClient *client = http_web_socket_client_create ();
-	if (client && !http_web_socket_client_set_url (client, url)) {
+	if (client && !http_web_socket_client_set_url (client, url) && !autobahn_tls (client)) {
 		http_web_socket_client_set_handlers (client, handlers);
 
 		HttpWebSocketSettings *settings = http_web_socket_client_get_settings (client);

@@ -1,5 +1,6 @@
 .git
 .vscode
+autobahn-certificates
 autobahn-reports
 benchmarks/bin
 benchmarks/objs
@@ -10,8 +11,10 @@ docs
 examples/bin
 examples/objs
 fuzz-artifacts
+nginx-tls-certificates
 objs
 repeat-artifacts
 test/bin
 test/objs
+testssl-reports
 uploads

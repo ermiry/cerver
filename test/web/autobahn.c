@@ -14,14 +14,21 @@
 #include <cerver/http/websockets/registry.h>
 #include <cerver/http/websockets/websocket.h>
 
+#include <cerver/tls/cerver.h>
+#include <cerver/tls/tls.h>
+
 #include <cerver/utils/log.h>
 
 #include "../address.h"
 #include "../handler.h"
 
-// the echo server of autobahn-testsuite (fuzzingclient), ws://cerver:9001/ws/echo
+// the echo server of autobahn-testsuite (fuzzingclient), ws://cerver:9001/ws/echo,
+// or wss:// with the chain and the key of TLS_CERTIFICATE and TLS_KEY (THREADS only)
 #define AUTOBAHN_PORT					9001
 #define AUTOBAHN_THREADS				4
+
+#define AUTOBAHN_CERTIFICATE_VARIABLE	"TLS_CERTIFICATE"
+#define AUTOBAHN_KEY_VARIABLE			"TLS_KEY"
 
 // the largest messages of autobahn are 16 MiB (cases 9.1.6 and 9.2.6)
 #define AUTOBAHN_MAX_MESSAGE			(1 << 25)
@@ -62,6 +69,25 @@ static void autobahn_configure (HttpCerver *http_cerver) {
 
 }
 
+// returns 0 without the variables (ws://) or when the cerver takes its TLS
+static u8 autobahn_tls (Cerver *cerver) {
+
+	const char *certificate = getenv (AUTOBAHN_CERTIFICATE_VARIABLE);
+	const char *key = getenv (AUTOBAHN_KEY_VARIABLE);
+	if (!certificate || !key) return 0;
+
+	TlsSettings *settings = tls_settings_create ();
+	if (!settings) return 1;
+
+	if (tls_settings_add_certificate (settings, certificate, key)) {
+		tls_settings_delete (settings);
+		return 1;
+	}
+
+	return cerver_set_tls (cerver, settings);
+
+}
+
 int main (int argc, char **argv) {
 
 	(void) argc;
@@ -85,7 +111,7 @@ int main (int argc, char **argv) {
 
 		autobahn_configure ((HttpCerver *) autobahn_cerver->cerver_data);
 
-		if (!cerver_start (autobahn_cerver)) {
+		if (!autobahn_tls (autobahn_cerver) && !cerver_start (autobahn_cerver)) {
 			(void) cerver_teardown (autobahn_cerver);
 		}
 
