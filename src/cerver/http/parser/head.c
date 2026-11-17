@@ -252,13 +252,25 @@ static unsigned int http_parser_method_find (const char *name, const size_t leng
 
 }
 
+// a method that is not one of the table: a token not longer than the longest method is one that cerver does not
+// implement (RFC 9110 section 9.1), anything else is not a method; a longer token is decided like the line that
+// is not complete yet, that stops at that length (http_parser_partial_start ())
+static CerverHttpParserError http_parser_method_error (const char *name, const size_t length) {
+
+	const bool token = length && (length <= HTTP_PARSER_METHOD_LONGEST)
+		&& (http_parser_scan_token (name, length) == length);
+
+	return token ? CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN : CERVER_HTTP_PARSER_ERROR_METHOD;
+
+}
+
 static inline bool http_parser_is_digit (const char byte) {
 
 	return (byte >= '0') && (byte <= '9');
 
 }
 
-// HTTP/1.0 and HTTP/1.1 are served, 0.9 and 2.0 are valid versions that are not,
+// every HTTP/1.x is served, 0.9 and 2.0 are valid versions that are not,
 // and the lenient flag of the version takes any one
 static CerverHttpParserError http_parser_version_check (
 	const CerverHttpParser *parser, const unsigned int major, const unsigned int minor
@@ -267,7 +279,7 @@ static CerverHttpParserError http_parser_version_check (
 	CerverHttpParserError error = CERVER_HTTP_PARSER_ERROR_NONE;
 
 	if (!http_parser_has (parser, HTTP_PARSER_LENIENT_VERSION)) {
-		const bool served = (major == HTTP_PARSER_VERSION_MAJOR) && (minor <= HTTP_PARSER_VERSION_MINOR_MAX);
+		const bool served = (major == HTTP_PARSER_VERSION_MAJOR);
 
 		const bool known = ((major == HTTP_PARSER_VERSION_OLD_MAJOR) && (minor == HTTP_PARSER_VERSION_OLD_MINOR))
 			|| ((major == HTTP_PARSER_VERSION_TWO_MAJOR) && (minor == HTTP_PARSER_VERSION_TWO_MINOR));
@@ -276,6 +288,16 @@ static CerverHttpParserError http_parser_version_check (
 	}
 
 	return error;
+
+}
+
+// a minor version above the one that cerver implements is the highest one of its major (RFC 9112 section 2.3):
+// HTTP/1.2 is read as HTTP/1.1
+static void http_parser_version_settle (CerverHttpHead *head) {
+
+	if ((head->major == HTTP_PARSER_VERSION_MAJOR) && (head->minor > HTTP_PARSER_VERSION_MINOR_MAX)) {
+		head->minor = HTTP_PARSER_VERSION_MINOR_MAX;
+	}
 
 }
 
@@ -369,7 +391,8 @@ static CerverHttpParserError http_parser_request_line (
 	while ((p < end) && (buffer[p] != ' ')) p++;
 
 	head->method = http_parser_method_find (buffer + line->start, p - line->start);
-	if ((p == end) || (head->method == REQUEST_METHOD_UNDEFINED)) return CERVER_HTTP_PARSER_ERROR_METHOD;
+	if (p == end) return CERVER_HTTP_PARSER_ERROR_METHOD;
+	if (head->method == REQUEST_METHOD_UNDEFINED) return http_parser_method_error (buffer + line->start, p - line->start);
 
 	p = http_parser_skip_spaces (buffer, p, end);
 
@@ -391,6 +414,7 @@ static CerverHttpParserError http_parser_request_line (
 	error = http_parser_version_read (parser, buffer, p, end, &after);
 	if (!error && (after != end)) error = CERVER_HTTP_PARSER_ERROR_VERSION;
 	if (!error) error = http_parser_version_check (parser, head->major, head->minor);
+	if (!error) http_parser_version_settle (head);
 
 	// the preface of HTTP/2 is not a request of HTTP/1.1
 	if (!error && (head->method == CERVER_HTTP_PARSER_METHOD_PRI)) error = CERVER_HTTP_PARSER_ERROR_METHOD;
@@ -414,6 +438,8 @@ static CerverHttpParserError http_parser_status_line (
 	CerverHttpParserError error = http_parser_version_read (parser, buffer, line->start, end, &p);
 	if (!error) error = http_parser_version_check (parser, head->major, head->minor);
 	if (error) return error;
+
+	http_parser_version_settle (head);
 
 	if ((p == end) || (buffer[p] != ' ')) return CERVER_HTTP_PARSER_ERROR_VERSION;
 	p += 1;

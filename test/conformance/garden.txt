@@ -64,14 +64,16 @@ bare-lf	h2o,libevent,nginx	GET / HTTP/1.1\nHost: a\n\n
 chunked-not-last	libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n
 chunked-obfuscated	gunicorn,libevent,nginx	POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: xchunked\r\n\r\n0\r\n\r\n
 #
-# the policy of cerver since the 2.1b-13: only HTTP/1.0 and HTTP/1.1 are served (505 for the others, also for a
-# request line without a version since the 3.0b-9; HTTP_PARSER_LENIENT_VERSION serves any), and only the methods of
-# REQUEST_METHOD_MAP (400 for another one); the others take HTTP/1.2 as HTTP/1.1 and any token as a method
+# the policy of cerver since the 3.0b-10 (RFC 9112 section 2.3 and RFC 9110 section 9.1): every HTTP/1.x is served,
+# a minor above 1 read as HTTP/1.1 (gunicorn, libevent and nginx keep the 1.2 that they read, h2o reads 1.1);
+# HTTP/0.9 and HTTP/2.0 are 505 (also a request line without a version, since the 3.0b-9;
+# HTTP_PARSER_LENIENT_VERSION serves any), and a token that is not a method of REQUEST_METHOD_MAP is 501 like
+# libevent, where gunicorn and nginx answer a method in lower case with 400 and the others take any token
 version-two	gunicorn,h2o,libevent	GET / HTTP/2.0\r\nHost: a\r\n\r\n
-version-unknown	gunicorn,h2o,libevent,nginx	GET / HTTP/1.2\r\nHost: a\r\n\r\n
+version-unknown	gunicorn,libevent,nginx	GET / HTTP/1.2\r\nHost: a\r\n\r\n
 version-none	gunicorn,h2o,libevent	GET /\r\n\r\n
-method-lower	h2o,libevent	get / HTTP/1.1\r\nHost: a\r\n\r\n
-method-unknown	gunicorn,h2o,libevent,nginx	FOO / HTTP/1.1\r\nHost: a\r\n\r\n
+method-lower	gunicorn,h2o,nginx	get / HTTP/1.1\r\nHost: a\r\n\r\n
+method-unknown	gunicorn,h2o,nginx	FOO / HTTP/1.1\r\nHost: a\r\n\r\n
 #
 # what cerver takes like llhttp: the empty lines before a request (RFC 9112 section 2.2, nginx too), the spaces
 # around the target (nginx and h2o too), OPTIONS * (nginx rejects it), the tabs after a value are trimmed (libevent

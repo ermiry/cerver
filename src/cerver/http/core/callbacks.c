@@ -107,7 +107,8 @@ int http_receive_reject (
 }
 
 // the limits answer with their own status, a version that cerver does not serve with 505 (RFC 9110 section
-// 15.6.6), and anything else that the parser rejects with 400
+// 15.6.6), a method that it does not implement with 501 (RFC 9110 section 9.1), and anything else that the parser
+// rejects with 400
 void http_receive_parser_rejected (HttpReceive *http_receive) {
 
 	switch (cerver_http_parser_get_error (&http_receive->parser)) {
@@ -121,6 +122,10 @@ void http_receive_parser_rejected (HttpReceive *http_receive) {
 
 		case CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED:
 			(void) http_receive_reject (http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED);
+			break;
+
+		case CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN:
+			(void) http_receive_reject (http_receive, not_implemented_error, HTTP_RECEIVE_STATUS_REJECTED);
 			break;
 
 		default:

@@ -1661,7 +1661,7 @@ static void test_receive_bad_requests (Cerver *cerver) {
 	test_receive_expect (test_receive_status_is ("400"));
 	test_receive_expect (observed.n_handled == 0);
 
-	test_receive_whole_case (cerver, "malformed request", "NOT AN HTTP REQUEST\r\n\r\n");
+	test_receive_whole_case (cerver, "malformed request", "(NOT) AN HTTP REQUEST\r\n\r\n");
 
 	test_receive_expect (test_receive_status_is ("400"));
 	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_PARSER_ERROR);
@@ -3165,7 +3165,7 @@ static const TestReceiveStrictCase strict_cases[] = {
 	},
 	{
 		"an unknown version",
-		"POST /test/echo HTTP/1.5\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
+		"POST /test/echo HTTP/4.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
 		HTTP_PARSER_LENIENT_VERSION, "first"
 	},
 	{
@@ -3247,8 +3247,22 @@ static void test_receive_version_rejected (void) {
 
 }
 
-// the methods of llhttp: WebDAV and QUERY can be registered,
-// the RTSP methods are rejected by the parser and the preface of HTTP/2 by its version
+// a method that is a token but not one of the table is one that cerver does not implement:
+// a 501 (RFC 9110 section 9.1)
+static void test_receive_method_rejected (void) {
+
+	test_receive_expect (test_receive_status_is ("501"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_REJECTED);
+	test_receive_expect (observed.n_handled == 0);
+
+}
+
+static const char *unknown_method_request = {
+	"FOO /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+// the methods of llhttp: WebDAV and QUERY can be registered, the methods of RTSP and any other token are
+// not implemented (501), and the preface of HTTP/2 is rejected by its version
 static void test_receive_parser_methods (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
@@ -3271,13 +3285,23 @@ static void test_receive_parser_methods (Cerver *cerver) {
 	http_cerver_set_method_not_allowed (http_cerver, false);
 
 	test_receive_whole_case (cerver, "an RTSP method", "DESCRIBE /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
-	test_receive_parser_rejected ();
+	test_receive_method_rejected ();
+
+	test_receive_every_split (
+		cerver, "an unknown method", unknown_method_request, strlen (unknown_method_request),
+		test_receive_method_rejected
+	);
 
 	// its version is not one that cerver speaks
 	test_receive_whole_case (cerver, "the preface of HTTP/2", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
 	test_receive_version_rejected ();
 
+	// the methods are case-sensitive (RFC 9110 section 9.1)
 	test_receive_whole_case (cerver, "a lower case method", "post /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_method_rejected ();
+
+	// what is not a token is not a method
+	test_receive_whole_case (cerver, "a method that is not a token", "P@ST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
 
 }
@@ -3290,7 +3314,21 @@ static const char *second_version_request = {
 	"POST /test/echo HTTP/2.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
 };
 
-// only HTTP/1.0 and HTTP/1.1 are served: llhttp also takes the request lines of RTSP and ICE
+static const char *higher_minor_request = {
+	"POST /test/echo HTTP/1.2\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+// a request of HTTP/1.x with a minor above 1 is answered as one of HTTP/1.1 (RFC 9112 section 2.3)
+static void test_receive_check_higher_minor (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strncmp (result.response, "HTTP/1.1 ", strlen ("HTTP/1.1 ")));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+
+}
+
+// only HTTP/1.x is served: llhttp also takes the request lines of RTSP and ICE
 // and the versions 0.9 and 2.0, and their requests with a method of HTTP reached the handlers
 static void test_receive_parser_protocols (Cerver *cerver) {
 
@@ -3304,10 +3342,15 @@ static void test_receive_parser_protocols (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 1);
 	test_receive_expect (!strcmp (observed.body, "first"));
 
+	test_receive_every_split (
+		cerver, "HTTP/1.2", higher_minor_request, strlen (higher_minor_request), test_receive_check_higher_minor
+	);
+
 	test_receive_every_split (cerver, "a request of RTSP", rtsp_request, strlen (rtsp_request), test_receive_parser_rejected);
 
+	// its method is read first: one that cerver does not implement
 	test_receive_whole_case (cerver, "a method of RTSP in a request of RTSP", "DESCRIBE /v2/dav RTSP/1.0\r\nHost: localhost:8080\r\n\r\n");
-	test_receive_parser_rejected ();
+	test_receive_method_rejected ();
 
 	test_receive_whole_case (cerver, "a request of ICE", "SOURCE /test/echo ICE/1.0\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_parser_rejected ();
@@ -5181,7 +5224,8 @@ static void test_receive_loop_kept_pipelined (Cerver *cerver) {
 static const char *followed_start = { "GET /v2/render HTTP/1.1\r\nHost: local" };
 static const char *followed_end = { "host:8080\r\n\r\n" };
 
-static const char *followed_bad_request = { "NOT A REQUEST\r\n\r\n" };
+// a method that is not a token, not one that cerver does not implement (501)
+static const char *followed_bad_request = { "(NOT) A REQUEST\r\n\r\n" };
 
 static void test_receive_followed_start (Cerver *cerver) {
 

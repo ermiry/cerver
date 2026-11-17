@@ -19,8 +19,9 @@
 // what a parser read from a text, written the same way for llhttp and for the parser of cerver:
 // the head of each message (its start line and its fields), the bytes of its body (their count and their hash),
 // whether its connection is kept and whether it is an upgrade, and the error that ended it
-// the policy of cerver is applied to llhttp like its callbacks do: only HTTP/1.0 and HTTP/1.1 are served
-// (the other versions are an error of the version), and only the protocol of HTTP
+// the policy of cerver is applied to llhttp like its callbacks do: llhttp reads any version, every HTTP/1.x is
+// served with a minor above 1 read as 1 (RFC 9112 section 2.3), HTTP/0.9 and HTTP/2.0 are an error of the version
+// and any other one an error, and only the protocol of HTTP
 
 #define OUTCOME_SIZE				(1 << 17)
 #define OUTCOME_PIECE_SIZE			(1 << 16)
@@ -37,6 +38,10 @@
 
 #define OUTCOME_VERSION_MAJOR		1
 #define OUTCOME_VERSION_MINOR_MAX	1
+#define OUTCOME_VERSION_OLD_MAJOR	0
+#define OUTCOME_VERSION_OLD_MINOR	9
+#define OUTCOME_VERSION_TWO_MAJOR	2
+#define OUTCOME_VERSION_TWO_MINOR	0
 
 typedef struct Outcome {
 
@@ -234,6 +239,24 @@ static int outcome_llhttp_value_complete (llhttp_t *parser) {
 
 static const char outcome_http_protocol[] = { "HTTP" };
 
+// HTTP/0.9 and HTTP/2.0 are versions that cerver knows and does not serve
+static bool outcome_version_known (const llhttp_t *parser) {
+
+	return ((parser->http_major == OUTCOME_VERSION_OLD_MAJOR) && (parser->http_minor == OUTCOME_VERSION_OLD_MINOR))
+		|| ((parser->http_major == OUTCOME_VERSION_TWO_MAJOR) && (parser->http_minor == OUTCOME_VERSION_TWO_MINOR));
+
+}
+
+// the minor that cerver reads: one above 1 of HTTP/1.x is 1
+static unsigned int outcome_version_minor (const llhttp_t *parser) {
+
+	const bool higher = (parser->http_major == OUTCOME_VERSION_MAJOR)
+		&& (parser->http_minor > OUTCOME_VERSION_MINOR_MAX);
+
+	return higher ? OUTCOME_VERSION_MINOR_MAX : (unsigned int) parser->http_minor;
+
+}
+
 // the callbacks of cerver: another protocol and a version that it does not serve are errors
 static int outcome_llhttp_headers (llhttp_t *parser) {
 
@@ -250,9 +273,9 @@ static int outcome_llhttp_headers (llhttp_t *parser) {
 	// a request of HTTP/0.9 takes any method of llhttp, cerver only the ones of its table
 	if ((parser->type == HTTP_REQUEST) && !http_request_method_is_valid ((RequestMethod) parser->method)) return -1;
 
-	const bool served = (parser->http_major == OUTCOME_VERSION_MAJOR) && (parser->http_minor <= OUTCOME_VERSION_MINOR_MAX);
+	const bool served = (parser->http_major == OUTCOME_VERSION_MAJOR);
 	if (!served && !(state->lenient & HTTP_PARSER_LENIENT_VERSION)) {
-		state->unsupported = true;
+		state->unsupported = outcome_version_known (parser);
 		return -1;
 	}
 
@@ -266,7 +289,7 @@ static int outcome_llhttp_headers (llhttp_t *parser) {
 		outcome_add_bytes (outcome, state->reason, state->reason_length);
 	}
 
-	outcome_add (outcome, " version=%u.%u\n", (unsigned int) parser->http_major, (unsigned int) parser->http_minor);
+	outcome_add (outcome, " version=%u.%u\n", (unsigned int) parser->http_major, outcome_version_minor (parser));
 	outcome_add (outcome, "%s", state->fields.text);
 
 	// a body is counted from here, the trailers that follow it are not fields
@@ -335,8 +358,9 @@ static void outcome_llhttp (
 	llhttp_t parser;
 	llhttp_init (&parser, response ? HTTP_RESPONSE : HTTP_REQUEST, &settings);
 	parser.data = &state;
-	// the flags of cerver have the values of the ones of llhttp, that only has a setter for each one
-	parser.lenient_flags = (uint16_t) lenient;
+	// the flags of cerver have the values of the ones of llhttp, that only has a setter for each one;
+	// llhttp reads any version and its callbacks apply the policy of cerver
+	parser.lenient_flags = (uint16_t) (lenient | HTTP_PARSER_LENIENT_VERSION);
 
 	llhttp_errno_t result = llhttp_execute (&parser, text, length);
 	if (result == HPE_OK) result = llhttp_finish (&parser);

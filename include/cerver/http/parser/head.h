@@ -33,9 +33,11 @@ extern "C" {
  * when they are complete, and a line that is not yet complete is checked against the limits.
  *
  * A request accepts the empty lines before its request line (RFC 9112 section 2.2), the methods of
- * #REQUEST_METHOD_MAP and PRI, the four forms of its target (RFC 9112 section 3.2) and the versions HTTP/1.0 and
- * HTTP/1.1; HTTP/0.9 and HTTP/2.0 are `CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED`, and any other version needs
- * `HTTP_PARSER_LENIENT_VERSION`.
+ * #REQUEST_METHOD_MAP and PRI, the four forms of its target (RFC 9112 section 3.2) and every version HTTP/1.x, with
+ * a minor above 1 read as HTTP/1.1 (RFC 9112 section 2.3); HTTP/0.9 and HTTP/2.0 are
+ * `CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED`, and any other version needs `HTTP_PARSER_LENIENT_VERSION`. A
+ * method that is a token, not longer than the longest one of the table, is
+ * `CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN` (since the 3.0b-10); any other one is `CERVER_HTTP_PARSER_ERROR_METHOD`.
  *
  * @param[in,out] parser the parser
  * @param[in] buffer the bytes of the head from its first one, they can be followed by others

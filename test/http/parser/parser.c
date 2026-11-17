@@ -431,15 +431,27 @@ static void test_parser_start_versions (void) {
 	test_parser_rejected ("GET / HTTP/0.9\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED);
 	test_parser_rejected ("GET / HTTP/2.0\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED);
 	test_parser_rejected ("GET /\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED);
-	test_parser_rejected ("GET / HTTP/1.5\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION);
+	test_parser_rejected ("GET / HTTP/3.0\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION);
 	test_parser_rejected ("GET / HTTP/1.\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION);
 	test_parser_rejected ("GET / HTTP/11\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION);
 	test_parser_rejected ("GET / RTSP/1.0\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_PROTOCOL);
 	test_parser_rejected ("GET / http/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_PROTOCOL);
 
-	// the lenient flag of the version takes any one, and the request line without a version
+	// a minor above 1 is read as HTTP/1.1 (RFC 9112 section 2.3), with its keep-alive, also with the lenient flag
+	test_parser_accepted ("GET / HTTP/1.2\r\n\r\n", HTTP_PARSER_LENIENT_NONE);
+	test_check_unsigned_eq (test_parser.head.major, 1, NULL);
+	test_check_unsigned_eq (test_parser.head.minor, 1, NULL);
+	test_check_true (cerver_http_parser_keep_alive (&test_parser));
+	test_parser_accepted ("GET / HTTP/1.9\r\nConnection: close\r\n\r\n", HTTP_PARSER_LENIENT_NONE);
+	test_check_unsigned_eq (test_parser.head.minor, 1, NULL);
+	test_check_false (cerver_http_parser_keep_alive (&test_parser));
 	test_parser_accepted ("GET / HTTP/1.5\r\n\r\n", HTTP_PARSER_LENIENT_VERSION);
-	test_check_unsigned_eq (test_parser.head.minor, 5, NULL);
+	test_check_unsigned_eq (test_parser.head.minor, 1, NULL);
+
+	// the lenient flag of the version takes any one, and the request line without a version
+	test_parser_accepted ("GET / HTTP/3.4\r\n\r\n", HTTP_PARSER_LENIENT_VERSION);
+	test_check_unsigned_eq (test_parser.head.major, 3, NULL);
+	test_check_unsigned_eq (test_parser.head.minor, 4, NULL);
 	test_parser_accepted ("GET / HTTP/2.0\r\n\r\n", HTTP_PARSER_LENIENT_VERSION);
 	test_parser_accepted ("GET /\r\n\r\n", HTTP_PARSER_LENIENT_VERSION);
 	test_check_unsigned_eq (test_parser.head.major, 0, NULL);
@@ -459,9 +471,20 @@ static void test_parser_start_methods (void) {
 	REQUEST_METHOD_MAP(XX)
 	#undef XX
 
-	test_parser_rejected ("get / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
-	test_parser_rejected ("DESCRIBE / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
+	// a token that is not a method of the table is one that is not implemented (RFC 9110 section 9.1),
+	// the methods are case-sensitive
+	test_parser_rejected ("get / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN);
+	test_parser_rejected ("DESCRIBE / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN);
+	test_parser_rejected ("FOO / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN);
+	test_parser_rejected ("ABCDEFGHIJK / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD_UNKNOWN);
+
+	// what is not a token, a token longer than the longest method, and a line without a space after its method
+	test_parser_rejected ("G@T / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
+	test_parser_rejected ("ABCDEFGHIJKL / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
 	test_parser_rejected ("GET\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
+
+	// a line that starts with a space has an empty method, that is not a token
+	test_parser_rejected (" GET / HTTP/1.1\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_METHOD);
 
 	// the preface of HTTP/2 is a version that is not served, and never a request
 	test_parser_rejected ("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", HTTP_PARSER_LENIENT_NONE, CERVER_HTTP_PARSER_ERROR_VERSION_UNSUPPORTED);
@@ -888,7 +911,7 @@ static const TestParserLenientCase test_parser_lenient_cases[] = {
 	{ "GET / HTTP/1.1\r\nContent-Length : 0\r\n\r\n", HTTP_PARSER_LENIENT_HEADERS },
 	{ "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n0\r\n\r\n", HTTP_PARSER_LENIENT_CHUNKED_LENGTH },
 	{ "POST / HTTP/1.1\r\nTransfer-Encoding: chunked, gzip\r\n\r\n", HTTP_PARSER_LENIENT_TRANSFER_ENCODING },
-	{ "GET / HTTP/1.4\r\n\r\n", HTTP_PARSER_LENIENT_VERSION },
+	{ "GET / HTTP/4.1\r\n\r\n", HTTP_PARSER_LENIENT_VERSION },
 	{ "GET / HTTP/1.1\rA: b\r\n\r\n", HTTP_PARSER_LENIENT_OPTIONAL_LF_AFTER_CR },
 	{ "GET / HTTP/1.1\r\nA: b\n\n", HTTP_PARSER_LENIENT_OPTIONAL_CR_BEFORE_LF },
 	{ "GET / HTTP/1.1\nA: b\n\n", HTTP_PARSER_LENIENT_OPTIONAL_CR_BEFORE_LF | HTTP_PARSER_LENIENT_OPTIONAL_LF_AFTER_CR },

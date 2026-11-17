@@ -111,6 +111,9 @@ CERVER_PUBLIC const char *http_parser_lenient_description (
  * @brief The X-macro table of the errors of the parser: the number, the name, the string and the reason of each
  * one.
  *
+ * `METHOD_UNKNOWN` is a method that is a token but not one of #REQUEST_METHOD_MAP, that cerver answers with 501
+ * (since the 3.0b-10; before, `METHOD` and 400).
+ *
  * @since 3.0b-9
  */
 #define CERVER_HTTP_PARSER_ERROR_MAP(XX)																	\
@@ -132,7 +135,8 @@ CERVER_PUBLIC const char *http_parser_lenient_description (
 	XX(15,	TARGET_SIZE,			target_size,			The request target is too long)					\
 	XX(16,	HEADERS_SIZE,			headers_size,			The headers are too large)						\
 	XX(17,	CLOSED,					closed,					Data after Connection close)					\
-	XX(18,	INCOMPLETE,				incomplete,				The message is not complete)
+	XX(18,	INCOMPLETE,				incomplete,				The message is not complete)					\
+	XX(19,	METHOD_UNKNOWN,			method_unknown,			A method that is not implemented)
 
 /**
  * @brief An error of the parser, one `CERVER_HTTP_PARSER_ERROR_<name>` for each row of

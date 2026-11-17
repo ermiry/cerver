@@ -633,7 +633,7 @@ CERVER_HIDDEN int http_receive_head_complete (HttpReceive *http_receive);
 /**
  * @internal
  * @brief Answers a request that the parser rejected: 414 for a target too long, 431 for headers too large, 505 for
- * a version that is not served and 400 for anything else.
+ * a version that is not served, 501 for a method that is not implemented and 400 for anything else.
  *
  * @param[in,out] http_receive the receive
  */
