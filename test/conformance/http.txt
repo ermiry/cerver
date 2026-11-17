@@ -1,0 +1,5 @@
+# the verdicts of the cases of the tests of llhttp where the parser of cerver is not the same, decided
+# <folder>/<file>#<case>	<verdict>
+request/transfer-encoding.md#Ignoring `pigeons`	decided: a request with a Transfer-Encoding that does not end with chunked is rejected with its head (400 as before)
+request/transfer-encoding.md#POST with `chunkedchunked` as transfer-encoding	decided: a request with a Transfer-Encoding that does not end with chunked is rejected with its head (400 as before)
+request/transfer-encoding.md#Invalid OBS fold after chunked value	decided: a request with a Transfer-Encoding that does not end with chunked is rejected with its head (400 as before)

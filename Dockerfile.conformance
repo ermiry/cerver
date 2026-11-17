@@ -8,8 +8,11 @@ RUN apt-get update && apt-get install -y libssl-dev zlib1g-dev && apt-get clean
 
 ENV JSON_TEST_SUITE_COMMIT=1ef36fa01286573e846ac449e8683f8833c5b26a
 ENV WYCHEPROOF_COMMIT=65ca494727a52944c204441c860b039e6786b99b
+ENV LLHTTP_VERSION=9.4.3
+ENV MULTIPART_PARSER_COMMIT=772639cf10db6d9f5a655ee9b7eb20b815fab396
 
 ENV CONFORMANCE=/opt/conformance
+ENV REFERENCES=/opt/references
 
 WORKDIR ${CONFORMANCE}
 
@@ -17,11 +20,22 @@ RUN curl -fsSL https://github.com/nst/JSONTestSuite/archive/${JSON_TEST_SUITE_CO
 	&& mv JSONTestSuite-${JSON_TEST_SUITE_COMMIT} json
 RUN curl -fsSL https://github.com/C2SP/wycheproof/archive/${WYCHEPROOF_COMMIT}.tar.gz | tar xz \
 	&& mv wycheproof-${WYCHEPROOF_COMMIT} wycheproof
+RUN curl -fsSL https://github.com/nodejs/llhttp/archive/refs/tags/v${LLHTTP_VERSION}.tar.gz | tar xz \
+	&& mv llhttp-${LLHTTP_VERSION}/test http \
+	&& rm -rf llhttp-${LLHTTP_VERSION}
+
+WORKDIR ${REFERENCES}
+
+RUN curl -fsSL https://github.com/nodejs/llhttp/archive/refs/tags/release/v${LLHTTP_VERSION}.tar.gz | tar xz \
+	&& mv llhttp-release-v${LLHTTP_VERSION} llhttp \
+	&& curl -fsSL https://github.com/iafonov/multipart-parser-c/archive/${MULTIPART_PARSER_COMMIT}.tar.gz | tar xz \
+	&& mv multipart-parser-c-${MULTIPART_PARSER_COMMIT} multipart
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make clean && make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} -j4 && make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} conformance
+RUN make clean && make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} -j4 \
+	&& make TYPE=test SANITIZER=${SANITIZER} ZLIB=${ZLIB} WERROR=${WERROR} REFERENCES=${REFERENCES} conformance
 
 ENV LD_LIBRARY_PATH=/opt/cerver/bin
 

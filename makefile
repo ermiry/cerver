@@ -369,7 +369,7 @@ endif
 
 TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
-TESTS		:= $(shell find $(TESTDIR) -type f -name '*.$(SRCEXT)' -not -path '$(TESTDIR)/fuzz/*')
+TESTS		:= $(shell find $(TESTDIR) -type f -name '*.$(SRCEXT)' -not -path '$(TESTDIR)/fuzz/*' -not -path '$(TESTDIR)/conformance/http.$(SRCEXT)')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a test is compiled again when a header that it includes changes
@@ -551,11 +551,27 @@ test: testout
 	$(MAKE) units
 	$(MAKE) integration
 
+# the code of the parsers that the ones of cerver replaced (llhttp and multipart-parser-c), only for the
+# conformance of HTTP and the differential fuzzers, downloaded by Dockerfile.conformance and Dockerfile.fuzz:
+# make REFERENCES=<the folder with llhttp/ and multipart/>
+REFERENCES		?=
+REFERENCESINC	:= -I $(REFERENCES)/llhttp/include -I $(REFERENCES)/multipart
+REFERENCESSRC	:= $(REFERENCES)/llhttp/src/api.c $(REFERENCES)/llhttp/src/http.c $(REFERENCES)/llhttp/src/llhttp.c \
+	$(REFERENCES)/multipart/multipart_parser.c
+# their code is C, also when the tests are built with CC=g++
+REFERENCESFLAGS	:= -x c -w
+
 conformance:
 	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT)
 	@mkdir -p ./$(TESTTARGET)/conformance
 	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/json.$(OBJEXT) -o ./$(TESTTARGET)/conformance/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT) -o ./$(TESTTARGET)/conformance/jwt $(TESTLIBS)
+ifneq ($(REFERENCES),)
+	@mkdir -p ./$(TESTBUILD)/references
+	$(foreach source,$(REFERENCESSRC),$(CC) -O2 -g $(REFERENCESFLAGS) $(REFERENCESINC) -c $(source) -o ./$(TESTBUILD)/references/$(basename $(notdir $(source))).$(OBJEXT) || exit 1;)
+	$(CC) $(TESTFLAGS) $(TESTINC) $(REFERENCESINC) ./$(TESTDIR)/conformance/http.$(SRCEXT) ./$(TESTBUILD)/references/*.$(OBJEXT) \
+		-o ./$(TESTTARGET)/conformance/http $(TESTLIBS)
+endif
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
