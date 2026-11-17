@@ -38,6 +38,9 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+#include "cerver/tls/tls.h"
+
 #include "cerver/utils/log.h"
 
 #define HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH			(sizeof (HTTP_WEB_SOCKET_CLIENT_SCHEME) - 1)
@@ -444,6 +447,8 @@ HttpWebSocketClient *http_web_socket_client_create (void) {
 // releases the client, its thread already ended
 static void http_web_socket_client_release (HttpWebSocketClient *client) {
 
+	client_tls_delete (client->tls);
+
 	dlist_delete (client->headers);
 
 	http_web_socket_settings_end (&client->settings);
@@ -531,7 +536,7 @@ static size_t http_web_socket_client_url_port (
 ) {
 
 	size_t next = position;
-	client->port = HTTP_WEB_SOCKET_CLIENT_DEFAULT_PORT;
+	client->port = client->secure ? HTTP_WEB_SOCKET_CLIENT_SECURE_DEFAULT_PORT : HTTP_WEB_SOCKET_CLIENT_DEFAULT_PORT;
 
 	if ((position < length) && (url[position] == http_web_socket_client_port_separator)) {
 		unsigned long port = 0;
@@ -603,6 +608,7 @@ static bool http_web_socket_client_url_is_visible (const char *url) {
 // the host, the port and the path of the url that a client connects to
 typedef struct HttpWebSocketClientTarget {
 
+	bool secure;
 	char host[HTTP_WEB_SOCKET_CLIENT_HOST_SIZE];
 	u16 port;
 	char path[HTTP_WEB_SOCKET_CLIENT_PATH_SIZE];
@@ -613,6 +619,7 @@ static void http_web_socket_client_target_get (
 	const HttpWebSocketClient *client, HttpWebSocketClientTarget *target
 ) {
 
+	target->secure = client->secure;
 	(void) memcpy (target->host, client->host, HTTP_WEB_SOCKET_CLIENT_HOST_SIZE);
 	target->port = client->port;
 	(void) memcpy (target->path, client->path, HTTP_WEB_SOCKET_CLIENT_PATH_SIZE);
@@ -623,9 +630,29 @@ static void http_web_socket_client_target_set (
 	HttpWebSocketClient *client, const HttpWebSocketClientTarget *target
 ) {
 
+	client->secure = target->secure;
 	(void) memcpy (client->host, target->host, HTTP_WEB_SOCKET_CLIENT_HOST_SIZE);
 	client->port = target->port;
 	(void) memcpy (client->path, target->path, HTTP_WEB_SOCKET_CLIENT_PATH_SIZE);
+
+}
+
+// the size of the scheme of the url, ws:// or wss://, 0 for any other
+static size_t http_web_socket_client_url_scheme (const char *url, bool *secure) {
+
+	size_t scheme = 0;
+
+	if (!strncasecmp (url, HTTP_WEB_SOCKET_CLIENT_SCHEME, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH)) {
+		scheme = HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH;
+		*secure = false;
+	}
+
+	else if (!strncasecmp (url, HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME, HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME_LENGTH)) {
+		scheme = HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME_LENGTH;
+		*secure = true;
+	}
+
+	return scheme;
 
 }
 
@@ -635,17 +662,19 @@ u8 http_web_socket_client_set_url (
 
 	u8 retval = 1;
 
-	if (
-		client && url && http_web_socket_client_url_is_visible (url)
-		&& !strncasecmp (url, HTTP_WEB_SOCKET_CLIENT_SCHEME, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH)
-	) {
+	bool secure = false;
+	const size_t scheme = (client && url) ? http_web_socket_client_url_scheme (url, &secure) : 0;
+
+	if (scheme && http_web_socket_client_url_is_visible (url)) {
 		const size_t length = strlen (url);
 
 		// a url that is rejected in any of its parts does not change the client
 		HttpWebSocketClientTarget previous;
 		http_web_socket_client_target_get (client, &previous);
 
-		size_t position = http_web_socket_client_url_host (client, url, HTTP_WEB_SOCKET_CLIENT_SCHEME_LENGTH, length);
+		client->secure = secure;
+
+		size_t position = http_web_socket_client_url_host (client, url, scheme, length);
 		if (position) position = http_web_socket_client_url_port (client, url, position, length);
 		if (position) retval = http_web_socket_client_url_path (client, url, position, length);
 
@@ -902,7 +931,9 @@ static void http_web_socket_client_host_header (
 ) {
 
 	const bool ipv6 = strchr (client->host, http_web_socket_client_port_separator) != NULL;
-	const bool default_port = (client->port == HTTP_WEB_SOCKET_CLIENT_DEFAULT_PORT);
+	const bool default_port = (client->port == (
+		client->secure ? HTTP_WEB_SOCKET_CLIENT_SECURE_DEFAULT_PORT : HTTP_WEB_SOCKET_CLIENT_DEFAULT_PORT
+	));
 
 	if (ipv6) {
 		(void) (default_port ?
@@ -1013,10 +1044,11 @@ static u8 http_web_socket_client_read_response (
 	HttpWebSocketClientResponseResult result = HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL;
 
 	while (result == HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL) {
-		if (!http_web_socket_client_wait_socket (client, socket->sock_fd, POLLIN, deadline)) break;
+		// with TLS a part of the response can be decrypted already without the fd being readable
+		if (!socket_pending (socket) && !http_web_socket_client_wait_socket (client, socket->sock_fd, POLLIN, deadline)) break;
 
-		const ssize_t received = recv (
-			socket->sock_fd, response + *size, HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE - *size, MSG_DONTWAIT
+		const ssize_t received = socket_receive (
+			socket, response + *size, HTTP_WEB_SOCKET_CLIENT_RESPONSE_SIZE - *size, MSG_DONTWAIT
 		);
 
 		if (received > 0) {
@@ -1177,6 +1209,61 @@ static void http_web_socket_client_socket_end (HttpWebSocket *web_socket) {
 
 }
 
+// the hook of the tests, read and written with __atomic
+static HttpWebSocketClientOpenHook http_web_socket_client_open_hook = NULL;
+
+void http_web_socket_client_set_open_hook (const HttpWebSocketClientOpenHook hook) {
+
+	__atomic_store_n (&http_web_socket_client_open_hook, hook, __ATOMIC_SEQ_CST);
+
+}
+
+static void http_web_socket_client_open_hook_run (HttpWebSocketClient *client) {
+
+	const HttpWebSocketClientOpenHook hook = __atomic_load_n (&http_web_socket_client_open_hook, __ATOMIC_SEQ_CST);
+	if (hook) hook (client);
+
+}
+
+// the handshake of TLS of a wss:// url, with the settings of the client or the default ones (the store of the
+// system), the host of the url as the name that it asks for and verifies
+static HttpWebSocketError http_web_socket_client_secure (HttpWebSocketClient *client, Socket *socket) {
+
+	HttpWebSocketError error = HTTP_WEB_SOCKET_ERROR_NONE;
+
+	if (client->secure) {
+		if (!client->tls) client->tls = client_tls_create (tls_settings_create ());
+
+		TlsFailure failure = TLS_FAILURE_NONE;
+		socket->tls = client->tls ?
+			client_tls_connect (client->tls, socket->sock_fd, client->host, client->port, &failure) : NULL;
+
+		if (!socket->tls) error = HTTP_WEB_SOCKET_ERROR_TLS;
+	}
+
+	return error;
+
+}
+
+u8 http_web_socket_client_set_tls (HttpWebSocketClient *client, TlsSettings *settings) {
+
+	u8 retval = 1;
+
+	ClientTls *client_tls = (client && settings) ? client_tls_create (settings) : NULL;
+	if (client_tls) {
+		client_tls_delete (client->tls);
+		client->tls = client_tls;
+		retval = 0;
+	}
+
+	else {
+		tls_settings_delete (settings);
+	}
+
+	return retval;
+
+}
+
 // a new connection: the connect (), the handshake and its settings
 // returns the open connection, NULL on error (its methods reported it)
 static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *client) {
@@ -1198,11 +1285,17 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 			(void) snprintf (web_socket->ip, CONNECTION_IP_SIZE, HTTP_WEB_SOCKET_CLIENT_HOST_FORMAT, client->ip);
 			web_socket->path = str_new (client->path);
 
+			// a wss:// url runs the handshake of TLS before the stream, so the stream uses its transport
+			const HttpWebSocketError secured = socket ? http_web_socket_client_secure (client, socket) : HTTP_WEB_SOCKET_ERROR_MEMORY;
+
 			// the socket is the one of the connection also when it could not have its stream: it is closed with it
-			const bool streaming = socket && !http_web_socket_stream_set (web_socket, socket, true);
+			const bool streaming = socket && (secured == HTTP_WEB_SOCKET_ERROR_NONE)
+				&& !http_web_socket_stream_set (web_socket, socket, true);
 			if (socket && !streaming) web_socket->socket = socket;
 
-			error = streaming ? http_web_socket_client_handshake (client, web_socket) : HTTP_WEB_SOCKET_ERROR_MEMORY;
+			error = streaming ? http_web_socket_client_handshake (client, web_socket) : (
+				(secured != HTTP_WEB_SOCKET_ERROR_NONE) ? secured : HTTP_WEB_SOCKET_ERROR_MEMORY
+			);
 		}
 
 		if (error != HTTP_WEB_SOCKET_ERROR_NONE) {
@@ -1222,6 +1315,9 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 			// a server that accepts and closes at once is not reconnected without a wait
 			socket_deadline_create_milliseconds (&client->stable_deadline, client->reconnect_max);
 			(void) __atomic_add_fetch (&client->n_connections, 1, __ATOMIC_SEQ_CST);
+
+			// a test holds the attempt here, where a close of the client does not find the connection yet
+			http_web_socket_client_open_hook_run (client);
 
 			// a close of the client before this point did not find the connection: its thread closes it
 			(void) pthread_mutex_lock (&client->mutex);

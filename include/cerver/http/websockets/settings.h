@@ -71,7 +71,8 @@ struct _HttpWebSocket;
 	XX(5,	CLOSE_TIMEOUT,	Close Timeout,	The peer did not answer the close frame in time)			\
 	XX(6,	MEMORY,			Memory,			There was not enough memory)								\
 	XX(7,	HANDSHAKE,		Handshake,		The response of the server was not a valid upgrade)		\
-	XX(8,	CONNECT,		Connect,		The client could not connect to the server)
+	XX(8,	CONNECT,		Connect,		The client could not connect to the server)					\
+	XX(9,	TLS,			TLS,			The handshake of TLS of the client failed)
 
 /**
  * @brief The error of a WebSocket connection, one `HTTP_WEB_SOCKET_ERROR_<name>` for each row of

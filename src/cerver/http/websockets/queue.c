@@ -80,10 +80,20 @@ static size_t http_web_socket_queue_used (const HttpWebSocket *web_socket) {
 
 }
 
+// what waits to be sent: the queue and what its transport keeps (with TLS, the encrypted bytes that the socket
+// did not take), so the limit, the backpressure and the end of the queue count them
+static size_t http_web_socket_queue_waiting (const HttpWebSocket *web_socket) {
+
+	const size_t kept = web_socket->transport ? web_socket->transport->waiting (web_socket) : 0;
+
+	return http_web_socket_queue_used (web_socket) + kept;
+
+}
+
 // the size that other threads read without the send mutex
 static void http_web_socket_queue_publish (HttpWebSocket *web_socket) {
 
-	__atomic_store_n (&web_socket->queue_size, http_web_socket_queue_used (web_socket), __ATOMIC_SEQ_CST);
+	__atomic_store_n (&web_socket->queue_size, http_web_socket_queue_waiting (web_socket), __ATOMIC_SEQ_CST);
 
 }
 
@@ -210,7 +220,7 @@ void http_web_socket_queue_shrink (HttpWebSocket *web_socket) {
 // a data frame fits when the queue has a place for it; one larger than the queue fits only when nothing waits
 static bool http_web_socket_queue_fits (const HttpWebSocket *web_socket, const size_t frame_size) {
 
-	const size_t used = http_web_socket_queue_used (web_socket);
+	const size_t used = http_web_socket_queue_waiting (web_socket);
 
 	return !used || ((used + frame_size) <= web_socket->queue_max);
 
@@ -279,7 +289,7 @@ static HttpWebSocketSendResult http_web_socket_queue_taken (HttpWebSocket *web_s
 
 	if (
 		!http_web_socket_opcode_is_control (opcode)
-		&& (http_web_socket_queue_used (web_socket) > (web_socket->queue_max / HTTP_WEB_SOCKET_QUEUE_MARK_DIVISOR))
+		&& (http_web_socket_queue_waiting (web_socket) > (web_socket->queue_max / HTTP_WEB_SOCKET_QUEUE_MARK_DIVISOR))
 	) {
 		web_socket->queue_backpressure = true;
 		result = HTTP_WEB_SOCKET_SEND_BACKPRESSURE;
@@ -307,7 +317,7 @@ static HttpWebSocketSendResult http_web_socket_queue_take (
 
 	HttpWebSocketSendResult result = HTTP_WEB_SOCKET_SEND_QUEUED;
 
-	const bool was_empty = !http_web_socket_queue_used (web_socket);
+	const bool was_empty = !http_web_socket_queue_waiting (web_socket);
 
 	ssize_t written = 0;
 	if (was_empty && !mask) written = http_web_socket_queue_write_direct (web_socket, header, header_size, payload, size);
@@ -327,7 +337,7 @@ static HttpWebSocketSendResult http_web_socket_queue_take (
 		}
 
 		else {
-			if (was_empty && http_web_socket_queue_used (web_socket)) {
+			if (was_empty && http_web_socket_queue_waiting (web_socket)) {
 				http_web_socket_queue_progress (web_socket);
 				http_web_socket_notify (web_socket, HTTP_WEB_SOCKET_REQUEST_OUTPUT);
 			}
@@ -387,12 +397,31 @@ static void http_web_socket_queue_emptied (HttpWebSocket *web_socket) {
 
 }
 
+// what the transport keeps (with TLS, encrypted bytes) is sent once the queue is empty
+// returns true while it can go on, false when the socket is full; failed tells an error of the socket
+static bool http_web_socket_queue_flush_kept (HttpWebSocket *web_socket, u8 *failed) {
+
+	const size_t before = web_socket->transport->waiting (web_socket);
+	const ssize_t waiting = web_socket->transport->flush (web_socket);
+
+	if (waiting < 0) *failed = 1;
+	else if ((size_t) waiting < before) http_web_socket_queue_progress (web_socket);
+
+	return (waiting == 0);
+
+}
+
 u8 http_web_socket_queue_flush (HttpWebSocket *web_socket) {
 
 	u8 retval = 0;
 
 	bool writing = (web_socket->transport != NULL);
-	while (!retval && writing && http_web_socket_queue_used (web_socket)) {
+	while (!retval && writing && http_web_socket_queue_waiting (web_socket)) {
+		if (!http_web_socket_queue_used (web_socket)) {
+			writing = http_web_socket_queue_flush_kept (web_socket, &retval);
+			continue;
+		}
+
 		struct iovec part = {
 			web_socket->queue + web_socket->queue_start, http_web_socket_queue_used (web_socket)
 		};
@@ -409,7 +438,7 @@ u8 http_web_socket_queue_flush (HttpWebSocket *web_socket) {
 		else retval = 1;
 	}
 
-	if (!http_web_socket_queue_used (web_socket)) http_web_socket_queue_emptied (web_socket);
+	if (!http_web_socket_queue_waiting (web_socket)) http_web_socket_queue_emptied (web_socket);
 
 	http_web_socket_queue_publish (web_socket);
 
