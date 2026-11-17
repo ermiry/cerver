@@ -10,7 +10,7 @@
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
-#include <cerver/http/parser/api.h>
+#include <cerver/http/parser/parser.h>
 
 #include "fuzz.h"
 
@@ -22,13 +22,11 @@
 
 #define PIPELINE_REQUESTS_MAX			64
 
-#define PIPELINE_BUFFERS				3
-#define PIPELINE_URL_BUFFER				0
-#define PIPELINE_FIELD_BUFFER			1
-#define PIPELINE_VALUE_BUFFER			2
+#define PIPELINE_BUFFERS				1
+#define PIPELINE_HEAD_BUFFER			0
 
 static Arena *pipeline_arena = NULL;
-static String *pipeline_buffers[PIPELINE_BUFFERS] = { NULL, NULL, NULL };
+static String *pipeline_buffers[PIPELINE_BUFFERS] = { NULL };
 
 // the receive is not in the arena of its requests
 static HttpReceive pipeline_receive;
@@ -55,10 +53,14 @@ static void pipeline_drain_available (const int fd) {
 
 }
 
-// the parser stopped: the request was completed (it is paused) or it was rejected
+// the request stopped: it was completed (it is paused), it was rejected or the parser failed
 static bool pipeline_request_ended (const HttpReceive *http_receive) {
 
-	return llhttp_get_errno (&http_receive->parser) != HPE_OK;
+	const HttpReceiveStatus status = http_receive->receive_status;
+
+	return http_receive->responded
+		|| (cerver_http_parser_get_error (&http_receive->parser) != CERVER_HTTP_PARSER_ERROR_NONE)
+		|| ((status != HTTP_RECEIVE_STATUS_NONE) && (status != HTTP_RECEIVE_STATUS_HEADERS) && (status != HTTP_RECEIVE_STATUS_BODY));
 
 }
 
@@ -78,10 +80,7 @@ static void pipeline_feed (
 	cerver_receive.connection = connection;
 
 	const HttpReceiveResources resources = {
-		pipeline_arena,
-		pipeline_buffers[PIPELINE_URL_BUFFER],
-		pipeline_buffers[PIPELINE_FIELD_BUFFER],
-		pipeline_buffers[PIPELINE_VALUE_BUFFER]
+		pipeline_arena, pipeline_buffers[PIPELINE_HEAD_BUFFER]
 	};
 
 	HttpReceive *http_receive = &pipeline_receive;
