@@ -186,9 +186,9 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
-# the parser is internal, its objects never export their symbols:
+# the objects of llhttp never export their symbols:
 # llhttp.c is generated and it defines its methods without a visibility
-PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS))
+PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/api.o $(BUILDDIR)/cerver/http/parser/http.o $(BUILDDIR)/cerver/http/parser/llhttp.o,$(OBJECTS))
 
 $(PARSEROBJS): CFLAGS += -fvisibility=hidden
 
