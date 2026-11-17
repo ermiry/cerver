@@ -223,6 +223,16 @@ static u8 file_receive_write_all (
 
 }
 
+// a file that was not received complete is removed, so no partial file is left with its name
+static void file_receive_discard (char **saved_filename) {
+
+	(void) unlink (*saved_filename);
+
+	free (*saved_filename);
+	*saved_filename = NULL;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -286,19 +296,11 @@ u8 file_receive_actual (
 
 				retval = 0;
 			}
-
-			else {
-				free (*saved_filename);
-				*saved_filename = NULL;
-			}
 		}
 
 		(void) close (file_fd);
 
-		if (failed) {
-			free (*saved_filename);
-			*saved_filename = NULL;
-		}
+		if (retval) file_receive_discard (saved_filename);
 	}
 
 	else {
