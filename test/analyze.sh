@@ -20,13 +20,13 @@ scan_build () {
 
 clang_tidy () {
 	find src -name '*.c' | sort \
-		| xargs -P "$JOBS" -n 4 bash -c 'clang-tidy --quiet "$@" -- -std=c11 -D_GNU_SOURCE -Iinclude -Isrc 2> /dev/null' tidy \
+		| xargs -P "$JOBS" -n 4 bash -c 'clang-tidy --quiet "$@" -- -std=c11 -D_GNU_SOURCE -DCERVER_CRYPTO_OPENSSL -Iinclude -Isrc 2> /dev/null' tidy \
 		| sed -n 's|^/*\(.*/\)\{0,1\}\(src/[^:]*\):[0-9]*:[0-9]*: warning: .*\[\([a-z0-9.,-]*\)\]$|clang-tidy \2 \3|p'
 }
 
 cppcheck_run () {
 	cppcheck -q --enable=warning,portability --inline-suppr --suppress=normalCheckLevelMaxBranches \
-		-D_GNU_SOURCE -D__GNUC__ -I include -I src --template='cppcheck {file} {id}' src 2>&1
+		-D_GNU_SOURCE -D__GNUC__ -D CERVER_CRYPTO_OPENSSL -I include -I src --template='cppcheck {file} {id}' src 2>&1
 }
 
 {

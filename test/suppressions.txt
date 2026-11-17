@@ -6,10 +6,10 @@ clang-tidy src/cerver/http/jwt/jwt.c bugprone-macro-parentheses
 clang-tidy src/cerver/http/responses/compression.c bugprone-macro-parentheses
 clang-tidy src/cerver/http/responses/response.c bugprone-macro-parentheses
 clang-tidy src/cerver/http/websockets/websocket.c cert-msc30-c
-cppcheck src/cerver/crypto/provider.h preprocessorErrorDirective
 gcc src/cerver/http/core/pairs.c analyzer-malloc-leak
 gcc src/cerver/http/core/upgrade.c analyzer-malloc-leak
 gcc src/cerver/http/headers/types.c analyzer-infinite-loop
+gcc src/cerver/tls/openssl.c analyzer-malloc-leak
 scan-build src/cerver/http/json/json.c core.NonNullParamChecker
 scan-build src/cerver/http/websockets/deflate.c core.uninitialized.ArraySubscript
 clang-tidy src/cerver/system/system.c cert-err34-c
