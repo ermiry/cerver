@@ -67,6 +67,7 @@ extern "C" {
 	XX(422, UNPROCESSABLE_ENTITY,            Unprocessable Entity)            \
 	XX(423, LOCKED,                          Locked)                          \
 	XX(424, FAILED_DEPENDENCY,               Failed Dependency)               \
+	XX(425, TOO_EARLY,                       Too Early)                       \
 	XX(426, UPGRADE_REQUIRED,                Upgrade Required)                \
 	XX(428, PRECONDITION_REQUIRED,           Precondition Required)           \
 	XX(429, TOO_MANY_REQUESTS,               Too Many Requests)               \

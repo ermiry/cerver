@@ -81,7 +81,8 @@ CERVER_PUBLIC const char *http_route_modifier_description (
 #define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
 	XX(0,	NONE, 			None,		Undefined)													\
 	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)		\
-	XX(2,	CUSTOM, 		Custom,		A custom method is used to handle authentication)
+	XX(2,	CUSTOM, 		Custom,		A custom method is used to handle authentication)			\
+	XX(3,	CERTIFICATE, 	Certificate,	The client presents a certificate of TLS that verifies)
 
 /**
  * @brief The authentication type of a route, one `HTTP_ROUTE_AUTH_TYPE_<name>` for each row of

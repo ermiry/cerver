@@ -72,6 +72,8 @@
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/worker.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -1138,6 +1140,79 @@ static bool http_receive_handle_select_auth_custom (
 
 }
 
+#pragma region tls
+
+static bool http_receive_has_body (const llhttp_t *parser);
+
+// the TLS of the connection of a request that a thread reads; a connection of an event loop never has it
+static TlsConnection *http_receive_tls (const HttpReceive *http_receive) {
+
+	const CerverReceive *cr = http_receive->cr;
+
+	return (cr && cr->connection && cr->connection->socket) ? cr->connection->socket->tls : NULL;
+
+}
+
+// what the TLS of the connection tells of the request: SNI, the early data (only the first request of the
+// connection can come in it) and the certificate of the client
+static void http_receive_tls_request (const HttpReceive *http_receive, HttpRequest *request) {
+
+	TlsConnection *tls = http_receive_tls (http_receive);
+	if (tls) {
+		request->tls.secure = true;
+		request->tls.server_name = tls_connection_server_name (tls);
+		request->tls.early_data = tls->early_data && !http_receive->n_requests;
+		request->tls.client_certificate = tls_connection_peer_certificate (tls);
+	}
+
+}
+
+// a GET, a HEAD or an OPTIONS without a body
+static bool http_receive_early_data_allowed (const HttpRequest *request, const llhttp_t *parser) {
+
+	const bool idempotent = (request->method == REQUEST_METHOD_GET)
+		|| (request->method == REQUEST_METHOD_HEAD)
+		|| (request->method == REQUEST_METHOD_OPTIONS);
+
+	return idempotent && !http_receive_has_body (parser);
+
+}
+
+static void http_receive_tls_count_early (const HttpReceive *http_receive, const bool accepted) {
+
+	TlsConnection *tls = http_receive_tls (http_receive);
+	if (tls && tls->counters) {
+		tls_counter_add (
+			accepted ? &tls->counters->stats.early_data_accepted : &tls->counters->stats.early_data_rejected, 1
+		);
+	}
+
+}
+
+// returns true if the client presented a certificate that verified
+static bool http_receive_handle_select_auth_certificate (
+	HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	const bool authenticated = (request->tls.client_certificate != NULL);
+	if (!authenticated) http_receive_handle_select_failed_auth (http_receive);
+
+	return authenticated;
+
+}
+
+// an endpoint that requires the certificate of the client answers 403 without one
+static bool http_receive_client_certificate_missing (
+	const HttpEndpoint *endpoint, const HttpRequest *request
+) {
+
+	return (endpoint->resolved.client_certificate == HTTP_CLIENT_CERTIFICATE_REQUIRED)
+		&& !request->tls.client_certificate;
+
+}
+
+#pragma endregion
+
 // authenticates the request with the found route's method
 // a failed authentication is answered here
 // returns true if the request can be handled by the route
@@ -1167,6 +1242,11 @@ static bool http_receive_handle_authenticate (
 			authenticated = http_receive_handle_select_auth_custom (
 				http_receive, found, request
 			);
+		} break;
+
+		// the client presented a certificate of TLS that verified
+		case HTTP_ROUTE_AUTH_TYPE_CERTIFICATE: {
+			authenticated = http_receive_handle_select_auth_certificate (http_receive, request);
 		} break;
 
 		default: {
@@ -1448,11 +1528,14 @@ static ssize_t http_receive_send_continue (HttpReceive *http_receive) {
 
 	ssize_t sent = -1;
 
+	// with TLS the interim response goes encrypted, through the socket
 	if (!http_receive->connection) {
-		sent = send (
-			http_receive->cr->connection->socket->sock_fd,
-			continue_response, continue_response_len, MSG_NOSIGNAL
+		const u8 failed = socket_send_buffer (
+			http_receive->cr->connection->socket,
+			continue_response, continue_response_len, 0, 0, NULL, NULL
 		);
+
+		if (!failed) sent = (ssize_t) continue_response_len;
 	}
 
 	else if (!http_response_send_interim (http_receive, continue_response, continue_response_len)) {
@@ -1605,6 +1688,19 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 		);
 	}
 
+	http_receive_tls_request (http_receive, request);
+
+	// early data can be a replay: only an idempotent request without a body is answered from it (RFC 8470)
+	if (request->tls.early_data && !http_receive_early_data_allowed (request, parser)) {
+		http_receive_tls_count_early (http_receive, false);
+
+		return http_receive_reject (
+			http_receive, too_early_error, HTTP_RECEIVE_STATUS_REJECTED
+		);
+	}
+
+	if (request->tls.early_data) http_receive_tls_count_early (http_receive, true);
+
 	#ifdef HTTP_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
@@ -1648,6 +1744,10 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 	http_receive->authorize_pending = false;
 
 	if (endpoint) {
+		if (http_receive_client_certificate_missing (endpoint, request)) {
+			return http_receive_reject (http_receive, forbidden_error, HTTP_RECEIVE_STATUS_REJECTED);
+		}
+
 		// the authentication handler can use the request's endpoint
 		if (
 			!endpoint->resolved.authentication_with_body
@@ -2284,7 +2384,7 @@ void http_receive_close (
 	const int sock_fd = connection->socket->sock_fd;
 
 	if (!http_receive->keep_alive && (sock_fd > -1)) {
-		(void) shutdown (sock_fd, SHUT_WR);
+		socket_end_writes (connection->socket);
 
 		if (rejected) {
 			(void) sock_set_timeout (sock_fd, HTTP_RECEIVE_DRAIN_TIMEOUT);

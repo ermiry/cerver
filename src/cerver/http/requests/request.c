@@ -65,10 +65,20 @@ HttpRequest *http_request_new_arena (Arena *arena) {
 
 }
 
+const struct TlsCertificate *http_request_get_client_certificate (
+	const HttpRequest *http_request
+) {
+
+	return http_request ? http_request->tls.client_certificate : NULL;
+
+}
+
 static void http_request_init (HttpRequest *http_request) {
 
 	if (http_request) {
 		http_request->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+
+		(void) memset (&http_request->tls, 0, sizeof (HttpRequestTls));
 
 		http_request->url = NULL;
 		http_request->query = NULL;

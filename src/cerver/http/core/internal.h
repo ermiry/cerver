@@ -427,6 +427,8 @@ CERVER_HIDDEN HttpResponse *http_version_not_supported_error;
 CERVER_HIDDEN HttpResponse *upgrade_required_error;
 /** @internal @brief The 403 response. */
 CERVER_HIDDEN HttpResponse *forbidden_error;
+/** @internal @brief The 425 response of a request that came as early data and is not idempotent (RFC 8470). */
+CERVER_HIDDEN HttpResponse *too_early_error;
 /** @internal @brief The 503 response of a WebSocket that the cerver can not take. */
 CERVER_HIDDEN HttpResponse *web_socket_unavailable_error;
 
