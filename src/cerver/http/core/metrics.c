@@ -976,12 +976,16 @@ static const HttpMetricsWebSocket http_metrics_web_socket_counters[] = {
 	{ "cerver_websocket_received_bytes_total", "The bytes of the messages that were received, after they were decompressed.", offsetof (HttpWebSocketRegistry, n_bytes_received) },
 	{ "cerver_websocket_sent_bytes_total", "The bytes of the messages that were sent, before they were compressed.", offsetof (HttpWebSocketRegistry, n_bytes_sent) },
 	{ "cerver_websocket_failed_sends_total", "The WebSocket connections that failed because a send did not end in time.", offsetof (HttpWebSocketRegistry, n_slow) },
+	{ "cerver_websocket_dropped_messages_total", "The messages that the queue of a WebSocket connection did not take.", offsetof (HttpWebSocketRegistry, n_dropped) },
+	{ "cerver_websocket_drains_total", "The times that the queue of a WebSocket connection was empty again after its backpressure.", offsetof (HttpWebSocketRegistry, n_drains) },
 	{ "cerver_websocket_errors_total", "The WebSocket connections that ended with an error.", offsetof (HttpWebSocketRegistry, n_errors) }
 };
 
 #define HTTP_METRICS_WEB_SOCKET_COUNTERS		(sizeof (http_metrics_web_socket_counters) / sizeof (HttpMetricsWebSocket))
 
 #define HTTP_METRICS_WEB_SOCKET_CONNECTIONS_NAME		"cerver_websocket_connections"
+
+#define HTTP_METRICS_WEB_SOCKET_QUEUED_NAME				"cerver_websocket_queued_bytes"
 
 #define HTTP_METRICS_WEB_SOCKET_REJECTED_NAME			"cerver_websocket_rejected_total"
 #define HTTP_METRICS_WEB_SOCKET_REJECTED_FORMAT			HTTP_METRICS_WEB_SOCKET_REJECTED_NAME "{reason=\"%s\"} %zu\n"
@@ -1055,6 +1059,13 @@ static void http_metrics_web_sockets (String *metrics, const HttpCerver *http_ce
 	);
 
 	http_metrics_value (metrics, HTTP_METRICS_WEB_SOCKET_CONNECTIONS_NAME, connections);
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_WEB_SOCKET_QUEUED_NAME,
+		"The bytes that the queues of the WebSocket connections have now.", http_metrics_type_gauge
+	);
+
+	http_metrics_value (metrics, HTTP_METRICS_WEB_SOCKET_QUEUED_NAME, http_web_socket_registry_queued (registry));
 
 	for (size_t i = 0; i < HTTP_METRICS_WEB_SOCKET_COUNTERS; i++) {
 		const HttpMetricsWebSocket *counter = &http_metrics_web_socket_counters[i];

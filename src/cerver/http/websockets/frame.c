@@ -47,6 +47,9 @@
 
 #pragma region strings
 
+// the string of a value out of the table of its enum
+static const char *http_web_socket_frame_undefined = { "Undefined" };
+
 const char *http_web_socket_opcode_to_string (
 	const HttpWebSocketOpcode opcode
 ) {
@@ -57,7 +60,31 @@ const char *http_web_socket_opcode_to_string (
 		#undef XX
 	}
 
-	return "Undefined";
+	return http_web_socket_frame_undefined;
+
+}
+
+const char *http_web_socket_role_to_string (const HttpWebSocketRole role) {
+
+	switch (role) {
+		#define XX(num, name, string) case HTTP_WEB_SOCKET_ROLE_##name: return #string;
+		HTTP_WEB_SOCKET_ROLE_MAP(XX)
+		#undef XX
+	}
+
+	return http_web_socket_frame_undefined;
+
+}
+
+const char *http_web_socket_parser_state_to_string (const HttpWebSocketParserState state) {
+
+	switch (state) {
+		#define XX(num, name, string) case HTTP_WEB_SOCKET_PARSER_STATE_##name: return #string;
+		HTTP_WEB_SOCKET_PARSER_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return http_web_socket_frame_undefined;
 
 }
 
@@ -88,28 +115,28 @@ bool http_web_socket_opcode_is_control (const u8 opcode) {
 const char *http_web_socket_close_code_to_string (const u16 code) {
 
 	switch (code) {
-		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_CLOSE_##name: return #string;
-		HTTP_WEB_SOCKET_CLOSE_MAP(XX)
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_CLOSE_CODE_##name: return #string;
+		HTTP_WEB_SOCKET_CLOSE_CODE_MAP(XX)
 		#undef XX
 
 		default: break;
 	}
 
-	return "Undefined";
+	return http_web_socket_frame_undefined;
 
 }
 
 const char *http_web_socket_close_code_description (const u16 code) {
 
 	switch (code) {
-		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_CLOSE_##name: return #description;
-		HTTP_WEB_SOCKET_CLOSE_MAP(XX)
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_CLOSE_CODE_##name: return #description;
+		HTTP_WEB_SOCKET_CLOSE_CODE_MAP(XX)
 		#undef XX
 
 		default: break;
 	}
 
-	return "Undefined";
+	return http_web_socket_frame_undefined;
 
 }
 
@@ -118,18 +145,18 @@ bool http_web_socket_close_code_is_valid (const u16 code) {
 	bool valid = false;
 
 	switch (code) {
-		case HTTP_WEB_SOCKET_CLOSE_NORMAL:
-		case HTTP_WEB_SOCKET_CLOSE_GOING_AWAY:
-		case HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR:
-		case HTTP_WEB_SOCKET_CLOSE_UNSUPPORTED_DATA:
-		case HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD:
-		case HTTP_WEB_SOCKET_CLOSE_POLICY_VIOLATION:
-		case HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG:
-		case HTTP_WEB_SOCKET_CLOSE_MANDATORY_EXTENSION:
-		case HTTP_WEB_SOCKET_CLOSE_INTERNAL_ERROR:
-		case HTTP_WEB_SOCKET_CLOSE_SERVICE_RESTART:
-		case HTTP_WEB_SOCKET_CLOSE_TRY_AGAIN_LATER:
-		case HTTP_WEB_SOCKET_CLOSE_BAD_GATEWAY:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_GOING_AWAY:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_UNSUPPORTED_DATA:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_POLICY_VIOLATION:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_MANDATORY_EXTENSION:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_INTERNAL_ERROR:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_SERVICE_RESTART:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_TRY_AGAIN_LATER:
+		case HTTP_WEB_SOCKET_CLOSE_CODE_BAD_GATEWAY:
 			valid = true;
 			break;
 
@@ -153,7 +180,7 @@ const char *http_web_socket_frame_error_to_string (
 		#undef XX
 	}
 
-	return http_web_socket_frame_error_to_string (HTTP_WEB_SOCKET_FRAME_ERROR_NONE);
+	return http_web_socket_frame_undefined;
 
 }
 
@@ -167,7 +194,7 @@ const char *http_web_socket_frame_error_description (
 		#undef XX
 	}
 
-	return http_web_socket_frame_error_description (HTTP_WEB_SOCKET_FRAME_ERROR_NONE);
+	return http_web_socket_frame_undefined;
 
 }
 
@@ -176,7 +203,7 @@ u16 http_web_socket_frame_error_close_code (
 ) {
 
 	return (error == HTTP_WEB_SOCKET_FRAME_ERROR_TOO_BIG) ?
-		HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG : HTTP_WEB_SOCKET_CLOSE_PROTOCOL_ERROR;
+		HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG : HTTP_WEB_SOCKET_CLOSE_CODE_PROTOCOL_ERROR;
 
 }
 

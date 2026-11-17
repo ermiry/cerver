@@ -128,19 +128,6 @@ CERVER_EXPORT u8 http_web_socket_client_add_header (
 );
 
 /**
- * @brief Sets the subprotocols that are offered, in order of preference.
- *
- * @param[in,out] client the client
- * @param[in] protocols the subprotocols, copied
- * @param[in] n_protocols the number of subprotocols, up to #HTTP_WEB_SOCKET_MAX_PROTOCOLS
- * @retval 0 the subprotocols were set
- * @retval 1 a NULL client or a list that is not valid (then the settings do not change)
- */
-CERVER_EXPORT u8 http_web_socket_client_set_protocols (
-	HttpWebSocketClient *client, const char * const *protocols, const unsigned int n_protocols
-);
-
-/**
  * @brief Sets the methods of the connections of the client (on_upgrade is not used).
  *
  * @param[in,out] client the client
@@ -151,13 +138,31 @@ CERVER_EXPORT void http_web_socket_client_set_handlers (
 );
 
 /**
+ * @brief Returns the settings of the connections of the client: its limits, its timeouts, the subprotocols that it
+ * offers in order of preference and its compression.
+ *
+ * They are set with the http_web_socket_settings_set_* () methods and they take effect in the next connection; the
+ * check of the Origin is of a server and the client does not use it.
+ *
+ * @param[in] client the client
+ * @return its settings, or NULL without a client
+ * @since 2.1b-21 (it replaces the http_web_socket_client_set_* () methods of each setting)
+ */
+CERVER_EXPORT HttpWebSocketSettings *http_web_socket_client_get_settings (HttpWebSocketClient *client);
+
+/**
  * @brief Sets the data that every connection of the client has (http_web_socket_get_data ()), already before the
  * connection exists.
  *
  * @param[in,out] client the client
- * @param[in] data the data, the client does not own it
+ * @param[in] data the data
+ * @param[in] delete_data releases the data when the client is deleted or when another data takes its place, NULL
+ * when the client does not own it
+ * @since 2.1b-21 (it takes its deleter)
  */
-CERVER_EXPORT void http_web_socket_client_set_data (HttpWebSocketClient *client, void *data);
+CERVER_EXPORT void http_web_socket_client_set_data (
+	HttpWebSocketClient *client, void *data, void (*delete_data)(void *)
+);
 
 /**
  * @brief Returns the data of a client.
@@ -168,75 +173,25 @@ CERVER_EXPORT void http_web_socket_client_set_data (HttpWebSocketClient *client,
 CERVER_EXPORT void *http_web_socket_client_get_data (const HttpWebSocketClient *client);
 
 /**
- * @brief Offers permessage-deflate with the default options, or stops offering it.
+ * @brief Sets the milliseconds of the connect () of each address.
  *
  * @param[in,out] client the client
- * @param[in] compression true to offer it
+ * @param[in] connect_timeout the milliseconds, 0 for #HTTP_WEB_SOCKET_CLIENT_CONNECT_TIMEOUT
+ * @since 2.1b-21 (with the handshake, it was http_web_socket_client_set_timeouts_milliseconds ())
  */
-CERVER_EXPORT void http_web_socket_client_set_compression (
-	HttpWebSocketClient *client, const bool compression
+CERVER_EXPORT void http_web_socket_client_set_connect_timeout_milliseconds (
+	HttpWebSocketClient *client, const unsigned int connect_timeout
 );
 
 /**
- * @brief Sets the options of permessage-deflate of the client.
+ * @brief Sets the milliseconds of the handshake, from the request until the whole response.
  *
  * @param[in,out] client the client
- * @param[in] options the options, copied
+ * @param[in] handshake_timeout the milliseconds, 0 for #HTTP_WEB_SOCKET_CLIENT_HANDSHAKE_TIMEOUT
+ * @since 2.1b-21 (with the connect, it was http_web_socket_client_set_timeouts_milliseconds ())
  */
-CERVER_EXPORT void http_web_socket_client_set_compression_options (
-	HttpWebSocketClient *client, const HttpWebSocketDeflateOptions *options
-);
-
-/**
- * @brief Sets the most bytes of a message (and of each frame) that the client receives.
- *
- * @param[in,out] client the client
- * @param[in] max_message the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE
- */
-CERVER_EXPORT void http_web_socket_client_set_max_message (
-	HttpWebSocketClient *client, const size_t max_message
-);
-
-/**
- * @brief Sets the milliseconds without receiving anything before a ping, and the ones to wait for its pong.
- *
- * @param[in,out] client the client
- * @param[in] ping_interval the milliseconds before a ping, 0 disables them
- * @param[in] pong_timeout the milliseconds to wait for the pong
- */
-CERVER_EXPORT void http_web_socket_client_set_ping_milliseconds (
-	HttpWebSocketClient *client, const unsigned int ping_interval, const unsigned int pong_timeout
-);
-
-/**
- * @brief Sets the milliseconds that the closing handshake waits for the server.
- *
- * @param[in,out] client the client
- * @param[in] close_timeout the milliseconds
- */
-CERVER_EXPORT void http_web_socket_client_set_close_timeout_milliseconds (
-	HttpWebSocketClient *client, const unsigned int close_timeout
-);
-
-/**
- * @brief Sets the milliseconds of each send of the client.
- *
- * @param[in,out] client the client
- * @param[in] send_timeout the milliseconds
- */
-CERVER_EXPORT void http_web_socket_client_set_send_timeout_milliseconds (
-	HttpWebSocketClient *client, const unsigned int send_timeout
-);
-
-/**
- * @brief Sets the milliseconds of the connect () of each address and of the handshake.
- *
- * @param[in,out] client the client
- * @param[in] connect_timeout the milliseconds of each connect (), 0 for #HTTP_WEB_SOCKET_CLIENT_CONNECT_TIMEOUT
- * @param[in] handshake_timeout the milliseconds of the handshake, 0 for #HTTP_WEB_SOCKET_CLIENT_HANDSHAKE_TIMEOUT
- */
-CERVER_EXPORT void http_web_socket_client_set_timeouts_milliseconds (
-	HttpWebSocketClient *client, const unsigned int connect_timeout, const unsigned int handshake_timeout
+CERVER_EXPORT void http_web_socket_client_set_handshake_timeout_milliseconds (
+	HttpWebSocketClient *client, const unsigned int handshake_timeout
 );
 
 /**
@@ -292,10 +247,10 @@ CERVER_EXPORT HttpWebSocket *http_web_socket_client_get_web_socket (HttpWebSocke
  * @param[in] type HTTP_WEB_SOCKET_OPCODE_TEXT or HTTP_WEB_SOCKET_OPCODE_BINARY
  * @param[in] data the payload
  * @param[in] size the bytes of the payload
- * @retval 0 the message was sent
- * @retval 1 there is no connection now, or it was not sent
+ * @return the result of http_web_socket_send (), HTTP_WEB_SOCKET_SEND_CLOSED when there is no connection now
+ * @since 2.1b-21 (it returned u8)
  */
-CERVER_EXPORT u8 http_web_socket_client_send (
+CERVER_EXPORT HttpWebSocketSendResult http_web_socket_client_send (
 	HttpWebSocketClient *client,
 	const HttpWebSocketOpcode type, const void *data, const size_t size
 );
@@ -306,10 +261,10 @@ CERVER_EXPORT u8 http_web_socket_client_send (
  * @param[in,out] client the client
  * @param[in] text the text, in UTF-8
  * @param[in] length the bytes of the text
- * @retval 0 the message was sent
- * @retval 1 it was not sent
+ * @return the result of the send
+ * @since 2.1b-21 (it returned u8)
  */
-CERVER_EXPORT u8 http_web_socket_client_send_text (
+CERVER_EXPORT HttpWebSocketSendResult http_web_socket_client_send_text (
 	HttpWebSocketClient *client, const char *text, const size_t length
 );
 
@@ -319,12 +274,36 @@ CERVER_EXPORT u8 http_web_socket_client_send_text (
  * @param[in,out] client the client
  * @param[in] data the payload
  * @param[in] size the bytes of the payload
- * @retval 0 the message was sent
- * @retval 1 it was not sent
+ * @return the result of the send
+ * @since 2.1b-21 (it returned u8)
  */
-CERVER_EXPORT u8 http_web_socket_client_send_binary (
+CERVER_EXPORT HttpWebSocketSendResult http_web_socket_client_send_binary (
 	HttpWebSocketClient *client, const void *data, const size_t size
 );
+
+/**
+ * @brief Sends a ping with the connection of now, like http_web_socket_ping ().
+ *
+ * @param[in,out] client the client
+ * @param[in] data the payload, it can be NULL with 0
+ * @param[in] size the bytes of the payload, up to 125
+ * @retval 0 the ping was sent
+ * @retval 1 there is no connection now, or it was not sent
+ * @since 2.1b-21
+ */
+CERVER_EXPORT u8 http_web_socket_client_ping (
+	HttpWebSocketClient *client, const void *data, const size_t size
+);
+
+/**
+ * @brief Returns the state of the connection of now.
+ *
+ * @param[in] client the client
+ * @return the state of its connection, HTTP_WEB_SOCKET_STATE_CLOSED between connections or for a NULL client
+ * @threadsafety Safe from any thread, with the mutex of the client.
+ * @since 2.1b-21
+ */
+CERVER_EXPORT HttpWebSocketState http_web_socket_client_get_state (HttpWebSocketClient *client);
 
 /**
  * @brief Stops the reconnections and starts the closing handshake of the connection of now.
@@ -353,12 +332,14 @@ CERVER_EXPORT u8 http_web_socket_client_close (
 CERVER_EXPORT void http_web_socket_client_wait (HttpWebSocketClient *client);
 
 /**
- * @brief Returns the connections that the client opened.
+ * @brief Returns how many connections the client opened since it was created, not the ones that are open now (the
+ * client has one connection at a time).
  *
  * @param[in] client the client
- * @return the number of connections, 0 for a NULL client
+ * @return the number of connections that it opened, 0 for a NULL client
+ * @since 2.1b-21 (it was http_web_socket_client_get_connections ())
  */
-CERVER_EXPORT unsigned int http_web_socket_client_get_connections (const HttpWebSocketClient *client);
+CERVER_EXPORT unsigned int http_web_socket_client_get_connections_count (const HttpWebSocketClient *client);
 
 /** @} */
 

@@ -508,7 +508,7 @@ u8 http_endpoint_add_after (
 
 #pragma region websocket
 
-void http_endpoint_set_web_socket (
+void http_endpoint_set_web_socket_handlers (
 	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
 ) {
 
@@ -519,72 +519,9 @@ void http_endpoint_set_web_socket (
 
 }
 
-void http_endpoint_set_web_socket_max_message (
-	HttpEndpoint *endpoint, const size_t max_message
-) {
+HttpWebSocketSettings *http_endpoint_get_web_socket_settings (HttpEndpoint *endpoint) {
 
-	if (endpoint) http_web_socket_settings_set_max_message (&endpoint->settings.web_socket, max_message);
-
-}
-
-u8 http_endpoint_set_web_socket_protocols (
-	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
-) {
-
-	return endpoint ?
-		http_web_socket_settings_set_protocols (&endpoint->settings.web_socket, protocols, n_protocols) : 1;
-
-}
-
-void http_endpoint_set_web_socket_compression (
-	HttpEndpoint *endpoint, const bool compression
-) {
-
-	HttpWebSocketDeflateOptions options;
-	http_web_socket_deflate_options_init (&options);
-	options.enabled = compression;
-
-	http_endpoint_set_web_socket_compression_options (endpoint, &options);
-
-}
-
-void http_endpoint_set_web_socket_compression_options (
-	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
-) {
-
-	if (endpoint) http_web_socket_settings_set_compression (&endpoint->settings.web_socket, options);
-
-}
-
-void http_endpoint_set_web_socket_origin_check (
-	HttpEndpoint *endpoint, const bool origin_check
-) {
-
-	if (endpoint) http_web_socket_settings_set_origin_check (&endpoint->settings.web_socket, origin_check);
-
-}
-
-void http_endpoint_set_web_socket_ping_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_ping_milliseconds (&endpoint->settings.web_socket, ping_interval, pong_timeout);
-
-}
-
-void http_endpoint_set_web_socket_close_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int close_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_close_timeout_milliseconds (&endpoint->settings.web_socket, close_timeout);
-
-}
-
-void http_endpoint_set_web_socket_send_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int send_timeout
-) {
-
-	if (endpoint) http_web_socket_settings_set_send_timeout_milliseconds (&endpoint->settings.web_socket, send_timeout);
+	return endpoint ? &endpoint->settings.web_socket : NULL;
 
 }
 
@@ -1155,7 +1092,7 @@ HttpEndpoint *http_group_web_socket_add (
 
 }
 
-void http_group_set_web_socket (
+void http_group_set_web_socket_handlers (
 	HttpGroup *group, const HttpWebSocketHandlers *handlers
 ) {
 
@@ -1163,72 +1100,9 @@ void http_group_set_web_socket (
 
 }
 
-void http_group_set_web_socket_max_message (
-	HttpGroup *group, const size_t max_message
-) {
+HttpWebSocketSettings *http_group_get_web_socket_settings (HttpGroup *group) {
 
-	if (group) http_web_socket_settings_set_max_message (&group->settings.web_socket, max_message);
-
-}
-
-u8 http_group_set_web_socket_protocols (
-	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
-) {
-
-	return group ?
-		http_web_socket_settings_set_protocols (&group->settings.web_socket, protocols, n_protocols) : 1;
-
-}
-
-void http_group_set_web_socket_compression (
-	HttpGroup *group, const bool compression
-) {
-
-	HttpWebSocketDeflateOptions options;
-	http_web_socket_deflate_options_init (&options);
-	options.enabled = compression;
-
-	http_group_set_web_socket_compression_options (group, &options);
-
-}
-
-void http_group_set_web_socket_compression_options (
-	HttpGroup *group, const HttpWebSocketDeflateOptions *options
-) {
-
-	if (group) http_web_socket_settings_set_compression (&group->settings.web_socket, options);
-
-}
-
-void http_group_set_web_socket_origin_check (
-	HttpGroup *group, const bool origin_check
-) {
-
-	if (group) http_web_socket_settings_set_origin_check (&group->settings.web_socket, origin_check);
-
-}
-
-void http_group_set_web_socket_ping_milliseconds (
-	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
-) {
-
-	if (group) http_web_socket_settings_set_ping_milliseconds (&group->settings.web_socket, ping_interval, pong_timeout);
-
-}
-
-void http_group_set_web_socket_close_timeout_milliseconds (
-	HttpGroup *group, const unsigned int close_timeout
-) {
-
-	if (group) http_web_socket_settings_set_close_timeout_milliseconds (&group->settings.web_socket, close_timeout);
-
-}
-
-void http_group_set_web_socket_send_timeout_milliseconds (
-	HttpGroup *group, const unsigned int send_timeout
-) {
-
-	if (group) http_web_socket_settings_set_send_timeout_milliseconds (&group->settings.web_socket, send_timeout);
+	return group ? &group->settings.web_socket : NULL;
 
 }
 

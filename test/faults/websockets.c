@@ -47,6 +47,10 @@
 #define FAULTS_TEST_EARLY_FRAME				(FAULTS_TEST_EARLY_PAYLOAD + 2)
 #define FAULTS_TEST_EARLY_CHARACTER			'e'
 
+// A5: a message larger than the first buffer of the queue (2^12), that grows it to 2^13
+#define FAULTS_TEST_QUEUE_MESSAGE			((1 << 12) + (1 << 10))
+#define FAULTS_TEST_QUEUE_CAPACITY			(1 << 13)
+
 static const char *faults_test_key_header = { "Sec-WebSocket-Key: " };
 
 static u16 faults_test_port = FAULTS_TEST_PORT_BASE;
@@ -95,7 +99,7 @@ static void faults_test_on_error (HttpWebSocket *web_socket, HttpWebSocketError 
 
 static const HttpWebSocketHandlers faults_test_handlers = {
 	NULL, faults_test_on_open, NULL, NULL,
-	NULL, NULL, faults_test_on_close, faults_test_on_error
+	NULL, NULL, faults_test_on_close, faults_test_on_error, NULL
 };
 
 #pragma region fake
@@ -253,7 +257,8 @@ static HttpWebSocketClient *faults_test_client (const u16 port) {
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, url), 0, NULL);
 
 	http_web_socket_client_set_handlers (client, &faults_test_handlers);
-	http_web_socket_client_set_timeouts_milliseconds (client, FAULTS_TEST_TIMEOUT, FAULTS_TEST_TIMEOUT);
+	http_web_socket_client_set_connect_timeout_milliseconds (client, FAULTS_TEST_TIMEOUT);
+	http_web_socket_client_set_handshake_timeout_milliseconds (client, FAULTS_TEST_TIMEOUT);
 
 	return client;
 
@@ -285,7 +290,7 @@ static void test_client_early_frames_without_memory (void) {
 		__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_MEMORY, NULL
 	);
 
-	test_check_unsigned_eq (http_web_socket_client_get_connections (client), 0, NULL);
+	test_check_unsigned_eq (http_web_socket_client_get_connections_count (client), 0, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&state.opened, __ATOMIC_SEQ_CST), 0, NULL);
 
 	http_web_socket_client_delete (client);
@@ -315,8 +320,42 @@ static void test_client_thread_not_created (void) {
 		__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_MEMORY, NULL
 	);
 
-	test_check_unsigned_eq (http_web_socket_client_get_connections (client), 0, "the abandoned connection was counted");
+	test_check_unsigned_eq (http_web_socket_client_get_connections_count (client), 0, "the abandoned connection was counted");
 	test_check_unsigned_eq (__atomic_load_n (&state.closed, __ATOMIC_SEQ_CST), 1, NULL);
+
+	http_web_socket_client_delete (client);
+	faults_test_fake_stop (&fake);
+
+}
+
+// A5: a frame that the queue has no memory for is not lost in silence: the send fails, and the connection ends
+// with the memory error (a client masks every frame in its queue)
+static void test_client_queue_without_memory (void) {
+
+	(void) memset (&state, 0, sizeof (FaultsTestState));
+
+	FaultsTestFake fake;
+	faults_test_fake_start (&fake, false);
+
+	HttpWebSocketClient *client = faults_test_client (fake.port);
+	test_check_unsigned_eq (http_web_socket_client_connect (client), 0, NULL);
+
+	u8 *data = (u8 *) calloc (1, FAULTS_TEST_QUEUE_MESSAGE);
+	test_check_ptr (data);
+
+	const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_REALLOC);
+	faults_arm (FAULTS_FUNCTION_REALLOC, true, FAULTS_TEST_QUEUE_CAPACITY);
+	const HttpWebSocketSendResult result = http_web_socket_client_send_binary (client, data, FAULTS_TEST_QUEUE_MESSAGE);
+	faults_disarm (FAULTS_FUNCTION_REALLOC);
+
+	test_check_unsigned_eq (faults_triggered (FAULTS_FUNCTION_REALLOC), triggered + 1, NULL);
+	test_check_unsigned_eq (result, HTTP_WEB_SOCKET_SEND_FAILED, NULL);
+	test_check_unsigned_eq (test_wait_counter (&state.closed, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_unsigned_eq (
+		__atomic_load_n (&state.last_error, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_ERROR_MEMORY, NULL
+	);
+
+	free (data);
 
 	http_web_socket_client_delete (client);
 	faults_test_fake_stop (&fake);
@@ -424,9 +463,42 @@ static u64 faults_test_server_wait_connections (const FaultsTestServer *server, 
 
 }
 
+// F6b: with the event loop the connection is its loop's, no thread is created for it
+static void test_server_thread_not_created_events (void) {
+
+	const unsigned int fds = faults_test_server_fds ();
+
+	(void) memset (&state, 0, sizeof (FaultsTestState));
+
+	FaultsTestServer server;
+	faults_test_server_start (&server);
+
+	const int fd = raw_connect (server.port);
+
+	const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_THREAD);
+	faults_arm (FAULTS_FUNCTION_THREAD, false, FAULTS_ANY_SIZE);
+
+	char response[RAW_RESPONSE_SIZE];
+	test_check_int_eq (raw_upgrade (fd, "/ws/echo", "", response), 101, NULL);
+	test_check_unsigned_eq (test_wait_counter (&state.opened, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	faults_disarm (FAULTS_FUNCTION_THREAD);
+	test_check_unsigned_eq (faults_triggered (FAULTS_FUNCTION_THREAD), triggered, "a thread was created for the connection");
+
+	raw_send_close (fd, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
+	test_check_unsigned_eq (test_wait_counter (&state.closed, 1, TEST_WAIT_SECONDS), 1, NULL);
+	(void) close (fd);
+
+	faults_test_server_stop (&server);
+
+	if (raw_open_fds () != fds) raw_print_fds ();
+	test_check_unsigned_eq (raw_open_fds (), fds, NULL);
+
+}
+
 // S4: a connection whose thread can not be created ends: it is not left open in the registry,
 // its place goes back, its socket goes back to its connection, and the cerver takes the next one
-static void test_server_thread_not_created (void) {
+static void test_server_thread_not_created_threads (void) {
 
 	const unsigned int fds = faults_test_server_fds ();
 
@@ -461,7 +533,7 @@ static void test_server_thread_not_created (void) {
 	test_check_unsigned_eq (test_wait_counter (&state.opened, 1, TEST_WAIT_SECONDS), 1, NULL);
 	test_check_unsigned_eq (faults_test_server_wait_connections (&server, 1), 1, NULL);
 
-	raw_send_close (next, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+	raw_send_close (next, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
 	test_check_unsigned_eq (test_wait_counter (&state.closed, 1, TEST_WAIT_SECONDS), 1, NULL);
 	(void) close (next);
 
@@ -473,6 +545,13 @@ static void test_server_thread_not_created (void) {
 
 }
 
+static void test_server_thread_not_created (void) {
+
+	if (test_handler_type () == CERVER_HANDLER_TYPE_EVENTS) test_server_thread_not_created_events ();
+	else test_server_thread_not_created_threads ();
+
+}
+
 #pragma endregion
 
 void faults_tests_websockets (void) {
@@ -481,6 +560,7 @@ void faults_tests_websockets (void) {
 
 	test_run (test_client_early_frames_without_memory);
 	test_run (test_client_thread_not_created);
+	test_run (test_client_queue_without_memory);
 	test_run (test_server_thread_not_created);
 
 	(void) printf ("Done!\n");

@@ -20,6 +20,7 @@
 #include "cerver/handler/internal.h"
 
 #include "cerver/http/core/connection.h"
+#include "cerver/http/websockets/internal.h"
 
 #include "cerver/utils/log.h"
 
@@ -54,6 +55,14 @@ void event_loop_delete (EventLoop *loop) {
 
 	if (loop) {
 		event_loop_recycled_delete (loop);
+
+		// the requests of the WebSocket connections that the loop did not take hold their references
+		http_web_socket_loop_discard (loop->web_sockets_head);
+		loop->web_sockets_head = NULL;
+		loop->web_sockets_tail = NULL;
+
+		// the threads of its pools already ended, no report of a park is left
+		http_web_socket_parks_delete (loop);
 
 		if (loop->listen_owned && (loop->listen_fd > -1)) (void) close (loop->listen_fd);
 
@@ -787,6 +796,64 @@ static int event_loop_completed_handle (EventLoop *loop) {
 
 }
 
+// a WebSocket connection with requests, from any thread: the same queue and the same wake up as the
+// connections that complete
+void event_loop_web_socket_push (EventLoop *loop, struct _HttpWebSocket *web_socket) {
+
+	web_socket->loop_next = NULL;
+
+	(void) pthread_mutex_lock (&loop->completed_mutex);
+
+	if (loop->web_sockets_tail) loop->web_sockets_tail->loop_next = web_socket;
+	else loop->web_sockets_head = web_socket;
+
+	loop->web_sockets_tail = web_socket;
+
+	const bool wake = loop->waiting;
+	loop->waiting = false;
+
+	(void) pthread_mutex_unlock (&loop->completed_mutex);
+
+	if (wake) event_poller_wake (loop->poller);
+
+}
+
+static struct _HttpWebSocket *event_loop_web_sockets_take (EventLoop *loop) {
+
+	(void) pthread_mutex_lock (&loop->completed_mutex);
+
+	struct _HttpWebSocket *web_sockets = loop->web_sockets_head;
+
+	loop->web_sockets_head = NULL;
+	loop->web_sockets_tail = NULL;
+
+	(void) pthread_mutex_unlock (&loop->completed_mutex);
+
+	return web_sockets;
+
+}
+
+// each connection leaves the list before its requests are taken: a request that comes later puts it back
+static int event_loop_web_sockets_handle (EventLoop *loop) {
+
+	int handled = 0;
+
+	struct _HttpWebSocket *web_socket = event_loop_web_sockets_take (loop);
+	while (web_socket) {
+		struct _HttpWebSocket *next = web_socket->loop_next;
+		web_socket->loop_next = NULL;
+
+		http_web_socket_loop_requests (web_socket);
+
+		handled += 1;
+
+		web_socket = next;
+	}
+
+	return handled;
+
+}
+
 // the loop tells that it is going to wait only when there is nothing to take,
 // under the mutex of the queue: a connection that completes after it wakes the poller up
 // returns true when the loop can wait
@@ -794,7 +861,7 @@ static bool event_loop_completed_wait (EventLoop *loop) {
 
 	(void) pthread_mutex_lock (&loop->completed_mutex);
 
-	const bool empty = (loop->completed_head == NULL);
+	const bool empty = (loop->completed_head == NULL) && (loop->web_sockets_head == NULL);
 	loop->waiting = empty;
 
 	(void) pthread_mutex_unlock (&loop->completed_mutex);
@@ -1125,6 +1192,7 @@ static void event_loop_timer_expired (EventTimer *timer, void *loop_ptr) {
 	EventLoop *loop = (EventLoop *) loop_ptr;
 
 	if (timer == &loop->idle_timer) event_loop_idle_sweep (loop);
+	else if (timer->owner_type == EVENT_TIMER_OWNER_WEB_SOCKET) http_web_socket_loop_timeout ((struct _HttpWebSocket *) timer->owner);
 	else http_connection_timeout ((HttpConnection *) timer->owner);
 
 }
@@ -1141,6 +1209,10 @@ static void event_loop_ready_handle (EventLoop *loop, const int n_ready) {
 
 		if (ready->source->type == EVENT_SOURCE_TYPE_CONNECTION) {
 			http_connection_ready ((HttpConnection *) ready->source->owner, ready->ready);
+		}
+
+		else if (ready->source->type == EVENT_SOURCE_TYPE_WEB_SOCKET) {
+			http_web_socket_loop_ready ((struct _HttpWebSocket *) ready->source->owner, ready->ready);
 		}
 
 		else if (ready->source->type == EVENT_SOURCE_TYPE_LISTEN) {
@@ -1192,6 +1264,14 @@ static int event_loop_wait_shortest (const int wait, const int due) {
 
 }
 
+// the milliseconds until the jobs of the WebSocket connections that wait for a place try again,
+// EVENT_WHEEL_NEXT_NONE without one
+static int event_loop_web_sockets_wait (const EventLoop *loop) {
+
+	return loop->web_sockets_waiting ? (int) EVENT_LOOP_WEB_SOCKET_RETRY : EVENT_WHEEL_NEXT_NONE;
+
+}
+
 // how long the poller waits: nothing when a connection completed or a parked one has a place,
 // and never past the next tick of the timers nor the end of the pause of the accept
 static int event_loop_wait_time (EventLoop *loop, const int timeout) {
@@ -1201,6 +1281,7 @@ static int event_loop_wait_time (EventLoop *loop, const int timeout) {
 	if (event_loop_completed_wait (loop) && !event_loop_parked_has_place (loop)) {
 		wait = event_loop_wait_shortest (timeout, event_wheel_next (&loop->wheel, loop->now));
 		wait = event_loop_wait_shortest (wait, event_loop_accept_wait (loop));
+		wait = event_loop_wait_shortest (wait, event_loop_web_sockets_wait (loop));
 	}
 
 	return wait;
@@ -1226,6 +1307,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 
 		handled += event_loop_completed_handle (loop);
 
+		handled += event_loop_web_sockets_handle (loop);
+
 		handled += (int) event_wheel_advance (&loop->wheel, loop->now, event_loop_timer_expired, loop);
 
 		event_loop_accept_check (loop);
@@ -1235,6 +1318,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 		event_loop_stop_check (loop);
 
 		event_loop_parked_retry (loop);
+
+		http_web_socket_loop_retry (loop);
 
 		if (n_ready < 0) handled = -1;
 	}
@@ -1246,7 +1331,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 static bool event_loop_is_finished (const EventLoop *loop) {
 
 	return __atomic_load_n (&loop->finishing, __ATOMIC_ACQUIRE)
-		&& !__atomic_load_n (&loop->n_connections, __ATOMIC_ACQUIRE);
+		&& !__atomic_load_n (&loop->n_connections, __ATOMIC_ACQUIRE)
+		&& !__atomic_load_n (&loop->n_web_sockets, __ATOMIC_ACQUIRE);
 
 }
 

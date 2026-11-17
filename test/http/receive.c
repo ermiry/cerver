@@ -761,7 +761,7 @@ static unsigned int test_receive_uploads_count (void) {
 
 // the methods of the WebSocket endpoints, a socket pair never starts their connections
 static const HttpWebSocketHandlers test_receive_web_socket_handlers = {
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static HttpRoute *test_receive_child_route (
@@ -798,7 +798,7 @@ static void test_receive_groups_create (HttpCerver *http_cerver) {
 
 	// a request without an upgrade goes to its handler
 	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
-	http_endpoint_set_web_socket (socket, &test_receive_web_socket_handlers);
+	http_endpoint_set_web_socket_handlers (socket, &test_receive_web_socket_handlers);
 
 	// a request without an upgrade is answered with 426
 	test_check_ptr (http_group_web_socket_add (v2, "only", &test_receive_web_socket_handlers));

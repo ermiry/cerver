@@ -284,12 +284,28 @@ static int http_web_socket_client_on_headers_complete (llhttp_t *parser) {
 
 }
 
-u8 http_web_socket_client_response_parse (
+static const char http_web_socket_client_response_undefined[] = "Undefined";
+
+const char *http_web_socket_client_response_result_to_string (
+	const HttpWebSocketClientResponseResult result
+) {
+
+	switch (result) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_CLIENT_RESPONSE_##name: return #string;
+		HTTP_WEB_SOCKET_CLIENT_RESPONSE_MAP(XX)
+		#undef XX
+	}
+
+	return http_web_socket_client_response_undefined;
+
+}
+
+HttpWebSocketClientResponseResult http_web_socket_client_response_parse (
 	const char *data, const size_t size,
 	HttpWebSocketClientResponse *response
 ) {
 
-	u8 retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID;
+	HttpWebSocketClientResponseResult retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_INVALID;
 
 	if (data && response) {
 		(void) memset (response, 0, sizeof (HttpWebSocketClientResponse));
@@ -434,6 +450,8 @@ static void http_web_socket_client_release (HttpWebSocketClient *client) {
 
 	if (client->wake_fd >= 0) (void) close (client->wake_fd);
 
+	if (client->data && client->delete_data) client->delete_data (client->data);
+
 	(void) pthread_mutex_destroy (&client->join_mutex);
 	(void) pthread_mutex_destroy (&client->mutex);
 
@@ -444,7 +462,7 @@ static void http_web_socket_client_release (HttpWebSocketClient *client) {
 void http_web_socket_client_delete (HttpWebSocketClient *client) {
 
 	if (client) {
-		(void) http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+		(void) http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
 
 		// a method of the client runs in the thread that still uses the client:
 		// it is closed, and it is deleted from another thread
@@ -688,14 +706,6 @@ u8 http_web_socket_client_add_header (
 
 }
 
-u8 http_web_socket_client_set_protocols (
-	HttpWebSocketClient *client, const char * const *protocols, const unsigned int n_protocols
-) {
-
-	return client ? http_web_socket_settings_set_protocols (&client->settings, protocols, n_protocols) : 1;
-
-}
-
 void http_web_socket_client_set_handlers (
 	HttpWebSocketClient *client, const HttpWebSocketHandlers *handlers
 ) {
@@ -704,9 +714,23 @@ void http_web_socket_client_set_handlers (
 
 }
 
-void http_web_socket_client_set_data (HttpWebSocketClient *client, void *data) {
+HttpWebSocketSettings *http_web_socket_client_get_settings (HttpWebSocketClient *client) {
 
-	if (client) client->data = data;
+	return client ? &client->settings : NULL;
+
+}
+
+// the data that the client had is released when another one takes its place
+void http_web_socket_client_set_data (
+	HttpWebSocketClient *client, void *data, void (*delete_data)(void *)
+) {
+
+	if (client) {
+		if (client->data && client->delete_data && (client->data != data)) client->delete_data (client->data);
+
+		client->data = data;
+		client->delete_data = delete_data;
+	}
 
 }
 
@@ -716,64 +740,19 @@ void *http_web_socket_client_get_data (const HttpWebSocketClient *client) {
 
 }
 
-void http_web_socket_client_set_compression (
-	HttpWebSocketClient *client, const bool compression
+void http_web_socket_client_set_connect_timeout_milliseconds (
+	HttpWebSocketClient *client, const unsigned int connect_timeout
 ) {
 
-	HttpWebSocketDeflateOptions options;
-	http_web_socket_deflate_options_init (&options);
-	options.enabled = compression;
-
-	http_web_socket_client_set_compression_options (client, &options);
+	if (client) client->connect_timeout = connect_timeout ? connect_timeout : HTTP_WEB_SOCKET_CLIENT_CONNECT_TIMEOUT;
 
 }
 
-void http_web_socket_client_set_compression_options (
-	HttpWebSocketClient *client, const HttpWebSocketDeflateOptions *options
-) {
-
-	if (client) http_web_socket_settings_set_compression (&client->settings, options);
-
-}
-
-void http_web_socket_client_set_max_message (
-	HttpWebSocketClient *client, const size_t max_message
-) {
-
-	if (client) http_web_socket_settings_set_max_message (&client->settings, max_message);
-
-}
-
-void http_web_socket_client_set_ping_milliseconds (
-	HttpWebSocketClient *client, const unsigned int ping_interval, const unsigned int pong_timeout
-) {
-
-	if (client) http_web_socket_settings_set_ping_milliseconds (&client->settings, ping_interval, pong_timeout);
-
-}
-
-void http_web_socket_client_set_close_timeout_milliseconds (
-	HttpWebSocketClient *client, const unsigned int close_timeout
-) {
-
-	if (client) http_web_socket_settings_set_close_timeout_milliseconds (&client->settings, close_timeout);
-
-}
-
-void http_web_socket_client_set_send_timeout_milliseconds (
-	HttpWebSocketClient *client, const unsigned int send_timeout
-) {
-
-	if (client) http_web_socket_settings_set_send_timeout_milliseconds (&client->settings, send_timeout);
-
-}
-
-void http_web_socket_client_set_timeouts_milliseconds (
-	HttpWebSocketClient *client, const unsigned int connect_timeout, const unsigned int handshake_timeout
+void http_web_socket_client_set_handshake_timeout_milliseconds (
+	HttpWebSocketClient *client, const unsigned int handshake_timeout
 ) {
 
 	if (client) {
-		client->connect_timeout = connect_timeout ? connect_timeout : HTTP_WEB_SOCKET_CLIENT_CONNECT_TIMEOUT;
 		client->handshake_timeout = handshake_timeout ? handshake_timeout : HTTP_WEB_SOCKET_CLIENT_HANDSHAKE_TIMEOUT;
 	}
 
@@ -792,7 +771,7 @@ void http_web_socket_client_set_reconnect_milliseconds (
 
 }
 
-unsigned int http_web_socket_client_get_connections (const HttpWebSocketClient *client) {
+unsigned int http_web_socket_client_get_connections_count (const HttpWebSocketClient *client) {
 
 	return client ? __atomic_load_n (&client->n_connections, __ATOMIC_SEQ_CST) : 0;
 
@@ -1031,7 +1010,7 @@ static u8 http_web_socket_client_read_response (
 	char *response, size_t *size, HttpWebSocketClientResponse *parsed
 ) {
 
-	u8 result = HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL;
+	HttpWebSocketClientResponseResult result = HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL;
 
 	while (result == HTTP_WEB_SOCKET_CLIENT_RESPONSE_PARTIAL) {
 		if (!http_web_socket_client_wait_socket (client, socket->sock_fd, POLLIN, deadline)) break;
@@ -1178,7 +1157,7 @@ static void http_web_socket_client_failed (
 	if (web_socket->settings.handlers.on_error) web_socket->settings.handlers.on_error (web_socket, error);
 
 	if (web_socket->settings.handlers.on_close) {
-		web_socket->settings.handlers.on_close (web_socket, HTTP_WEB_SOCKET_CLOSE_ABNORMAL, NULL, 0);
+		web_socket->settings.handlers.on_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_ABNORMAL, NULL, 0);
 	}
 
 }
@@ -1213,14 +1192,17 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 
 		const int fd = http_web_socket_client_connect_host (client);
 		if (fd >= 0) {
-			web_socket->socket = socket_create (fd);
-			if (!web_socket->socket) (void) close (fd);
+			Socket *socket = socket_create (fd);
+			if (!socket) (void) close (fd);
 
 			(void) snprintf (web_socket->ip, CONNECTION_IP_SIZE, HTTP_WEB_SOCKET_CLIENT_HOST_FORMAT, client->ip);
 			web_socket->path = str_new (client->path);
 
-			error = web_socket->socket ?
-				http_web_socket_client_handshake (client, web_socket) : HTTP_WEB_SOCKET_ERROR_MEMORY;
+			// the socket is the one of the connection also when it could not have its stream: it is closed with it
+			const bool streaming = socket && !http_web_socket_stream_set (web_socket, socket, true);
+			if (socket && !streaming) web_socket->socket = socket;
+
+			error = streaming ? http_web_socket_client_handshake (client, web_socket) : HTTP_WEB_SOCKET_ERROR_MEMORY;
 		}
 
 		if (error != HTTP_WEB_SOCKET_ERROR_NONE) {
@@ -1241,8 +1223,10 @@ static HttpWebSocket *http_web_socket_client_attempt (HttpWebSocketClient *clien
 			socket_deadline_create_milliseconds (&client->stable_deadline, client->reconnect_max);
 			(void) __atomic_add_fetch (&client->n_connections, 1, __ATOMIC_SEQ_CST);
 
+			// a close of the client before this point did not find the connection: its thread closes it
 			(void) pthread_mutex_lock (&client->mutex);
 			client->web_socket = web_socket;
+			client->stopped_before_open = http_web_socket_client_is_stopping (client);
 			(void) pthread_mutex_unlock (&client->mutex);
 		}
 	}
@@ -1260,9 +1244,9 @@ static bool http_web_socket_client_is_stopping (HttpWebSocketClient *client) {
 // runs the connection until it ends, and releases it
 static void http_web_socket_client_run (HttpWebSocketClient *client, HttpWebSocket *web_socket) {
 
-	// a close of the client before the connection opened
-	if (http_web_socket_client_is_stopping (client)) {
-		(void) http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_NORMAL, NULL);
+	// a close of the client before the connection opened, that did not find it
+	if (client->stopped_before_open) {
+		(void) http_web_socket_close (web_socket, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
 	}
 
 	http_web_socket_run (web_socket);
@@ -1448,24 +1432,24 @@ HttpWebSocket *http_web_socket_client_get_web_socket (HttpWebSocketClient *clien
 
 }
 
-u8 http_web_socket_client_send (
+HttpWebSocketSendResult http_web_socket_client_send (
 	HttpWebSocketClient *client,
 	const HttpWebSocketOpcode type, const void *data, const size_t size
 ) {
 
-	u8 retval = 1;
+	HttpWebSocketSendResult result = HTTP_WEB_SOCKET_SEND_CLOSED;
 
 	HttpWebSocket *web_socket = http_web_socket_client_get_web_socket (client);
 	if (web_socket) {
-		retval = http_web_socket_send (web_socket, type, data, size);
+		result = http_web_socket_send (web_socket, type, data, size);
 		http_web_socket_release (web_socket);
 	}
 
-	return retval;
+	return result;
 
 }
 
-u8 http_web_socket_client_send_text (
+HttpWebSocketSendResult http_web_socket_client_send_text (
 	HttpWebSocketClient *client, const char *text, const size_t length
 ) {
 
@@ -1473,11 +1457,41 @@ u8 http_web_socket_client_send_text (
 
 }
 
-u8 http_web_socket_client_send_binary (
+HttpWebSocketSendResult http_web_socket_client_send_binary (
 	HttpWebSocketClient *client, const void *data, const size_t size
 ) {
 
 	return http_web_socket_client_send (client, HTTP_WEB_SOCKET_OPCODE_BINARY, data, size);
+
+}
+
+u8 http_web_socket_client_ping (
+	HttpWebSocketClient *client, const void *data, const size_t size
+) {
+
+	u8 retval = 1;
+
+	HttpWebSocket *web_socket = http_web_socket_client_get_web_socket (client);
+	if (web_socket) {
+		retval = http_web_socket_ping (web_socket, data, size);
+		http_web_socket_release (web_socket);
+	}
+
+	return retval;
+
+}
+
+HttpWebSocketState http_web_socket_client_get_state (HttpWebSocketClient *client) {
+
+	HttpWebSocketState state = HTTP_WEB_SOCKET_STATE_CLOSED;
+
+	HttpWebSocket *web_socket = http_web_socket_client_get_web_socket (client);
+	if (web_socket) {
+		state = http_web_socket_get_state (web_socket);
+		http_web_socket_release (web_socket);
+	}
+
+	return state;
 
 }
 
@@ -1489,14 +1503,19 @@ u8 http_web_socket_client_close (
 
 	// a close that can not be sent does not stop the client nor its reconnections
 	if (client && http_web_socket_close_is_valid (code, reason)) {
+		// the stop and the connection of now are taken at once: this close is the one of a connection that it finds,
+		// and the thread of the client closes the one that opens after it (its close returned 1 when that thread
+		// closed first)
+		(void) pthread_mutex_lock (&client->mutex);
 		__atomic_store_n (&client->stopping, true, __ATOMIC_SEQ_CST);
+		HttpWebSocket *web_socket = http_web_socket_retain (client->web_socket);
+		(void) pthread_mutex_unlock (&client->mutex);
 
 		// the wait between reconnections ends now
 		const u64 value = HTTP_WEB_SOCKET_CLIENT_WAKE_VALUE;
 		const ssize_t written = write (client->wake_fd, &value, sizeof (u64));
 		(void) written;
 
-		HttpWebSocket *web_socket = http_web_socket_client_get_web_socket (client);
 		retval = web_socket ? http_web_socket_close (web_socket, code, reason) : 0;
 		http_web_socket_release (web_socket);
 	}

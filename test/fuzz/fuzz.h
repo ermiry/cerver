@@ -67,7 +67,7 @@ static void fuzz_ok_handler (
 }
 
 static const HttpWebSocketHandlers fuzz_web_socket_handlers = {
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 // a target whose connections would start their WebSocket (the ones of an event loop)
@@ -115,9 +115,10 @@ static void fuzz_routes_web_socket (HttpGroup *api) {
 
 	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
 	const char *protocols[] = { "chat", "superchat" };
-	(void) http_endpoint_set_web_socket_protocols (socket, protocols, 2);
-	http_endpoint_set_web_socket_compression (socket, true);
-	http_endpoint_set_web_socket_origin_check (socket, true);
+	HttpWebSocketSettings *settings = http_endpoint_get_web_socket_settings (socket);
+	(void) http_web_socket_settings_set_protocols (settings, protocols, 2);
+	http_web_socket_settings_enable_compression (settings, true);
+	http_web_socket_settings_set_origin_check (settings, HTTP_WEB_SOCKET_ORIGIN_CHECK_REQUIRED);
 
 }
 

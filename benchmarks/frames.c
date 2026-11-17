@@ -121,7 +121,7 @@ static int frames_receiver (const char *name, const size_t payload_size, const s
 		const HttpWebSocketReceiveResult result = http_web_socket_receiver_execute (&receiver, copy, round_size, NULL);
 		elapsed += frames_now () - start;
 
-		if (result != HTTP_WEB_SOCKET_RECEIVE_CONTINUE) stopped += 1;
+		if (result != HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE) stopped += 1;
 
 		parsed += round_size;
 		rounds += 1;

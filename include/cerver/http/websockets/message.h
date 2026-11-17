@@ -35,21 +35,25 @@ extern "C" {
 /**
  * @brief The X-macro table of the results of a receive: the number, the name, the string and the description of
  * each one.
+ *
+ * @since 2.1b-21 (it was HTTP_WEB_SOCKET_RECEIVE_MAP)
  */
-#define HTTP_WEB_SOCKET_RECEIVE_MAP(XX)																	\
+#define HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP(XX)															\
 	XX(0,	CONTINUE,	Continue,	Every byte was parsed and the connection goes on)					\
 	XX(1,	CLOSED,		Closed,		A close frame was received and the bytes after it were ignored)	\
 	XX(2,	FAILED,		Failed,		The peer broke the protocol and the connection must be closed)		\
 	XX(3,	STOPPED,	Stopped,	A method asked to stop)
 
 /**
- * @brief The result of a receive, one `HTTP_WEB_SOCKET_RECEIVE_<name>` for each row of
- * #HTTP_WEB_SOCKET_RECEIVE_MAP.
+ * @brief The result of a receive, one `HTTP_WEB_SOCKET_RECEIVE_RESULT_<name>` for each row of
+ * #HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP.
+ *
+ * @since 2.1b-21 (the enumerators were `HTTP_WEB_SOCKET_RECEIVE_<name>`)
  */
 typedef enum HttpWebSocketReceiveResult {
 
-	#define XX(num, name, string, description) HTTP_WEB_SOCKET_RECEIVE_##name = num,
-	HTTP_WEB_SOCKET_RECEIVE_MAP (XX)
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_RECEIVE_RESULT_##name = num,
+	HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP (XX)
 	#undef XX
 
 } HttpWebSocketReceiveResult;
@@ -58,8 +62,8 @@ typedef enum HttpWebSocketReceiveResult {
  * @brief Returns the string of a result.
  *
  * @param[in] result the result
- * @return the string of its row in #HTTP_WEB_SOCKET_RECEIVE_MAP, or the one of HTTP_WEB_SOCKET_RECEIVE_CONTINUE for
- * a value out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_WEB_SOCKET_RECEIVE_RESULT_MAP, or "Undefined" for a value out of the
+ * table; a static string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_receive_result_to_string (
 	const HttpWebSocketReceiveResult result
@@ -124,6 +128,13 @@ typedef struct HttpWebSocketReceiver {
 	bool first_piece;
 	/** @brief The bytes of the message in progress that were received. */
 	size_t message_received;
+	/**
+	 * @brief The end of the message in progress was stopped in its decompression, the next call goes on with it
+	 * before it parses (W4).
+	 *
+	 * @since 2.1b-21
+	 */
+	bool ending;
 	/** @brief The UTF-8 validation of a text message in progress. */
 	HttpWebSocketText text;
 
@@ -184,7 +195,7 @@ CERVER_PUBLIC void http_web_socket_receiver_end (HttpWebSocketReceiver *receiver
  * @param[in,out] data the bytes
  * @param[in] size the number of bytes
  * @param[out] parsed the bytes that were taken, it can be NULL
- * @return the result; HTTP_WEB_SOCKET_RECEIVE_FAILED for a NULL receiver or one without methods
+ * @return the result; HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED for a NULL receiver or one without methods
  */
 CERVER_PUBLIC HttpWebSocketReceiveResult http_web_socket_receiver_execute (
 	HttpWebSocketReceiver *receiver,

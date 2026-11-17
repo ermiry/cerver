@@ -360,6 +360,12 @@ int event_poller_wait (
 
 }
 
+int event_poller_fd (const EventPoller *poller) {
+
+	return poller ? poller->epoll_fd : -1;
+
+}
+
 int event_poller_wait_one (const EventPoller *poller, EventReady *ready, const int timeout) {
 
 	int result = EVENT_POLLER_WAITED_NOTHING;

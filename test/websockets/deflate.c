@@ -23,6 +23,19 @@
 #define DEFLATE_TEST_MESSAGES				8
 #define DEFLATE_TEST_MESSAGE_SIZE			(1 << 14)
 
+// W11: the period of the repetitions of the messages for a window of 2^8, longer than it, and the multiplier of
+// its bytes
+#define DEFLATE_TEST_EIGHT_PERIOD			300
+#define DEFLATE_TEST_EIGHT_PRIME			31
+
+// W7: a message that does not compress, larger than the size that the output keeps, made by a linear generator
+#define DEFLATE_TEST_LARGE_SIZE				(1 << 17)
+#define DEFLATE_TEST_SHRINK_SIZE			(1 << 16)
+#define DEFLATE_TEST_SEED					2463534242u
+#define DEFLATE_TEST_MULTIPLIER				1664525u
+#define DEFLATE_TEST_INCREMENT				1013904223u
+#define DEFLATE_TEST_SHIFT					24
+
 // the most bytes of a message in the test of the decompression bomb
 #define DEFLATE_TEST_BOMB_LIMIT				(1 << 12)
 #define DEFLATE_TEST_BOMB_SIZE				(1 << 20)
@@ -92,17 +105,20 @@ static void test_deflate_negotiate (void) {
 	test_check_true (parameters.server_no_context_takeover);
 	test_check_true (parameters.client_no_context_takeover);
 
-	// zlib can not compress with a window of 2^8, the next offer is taken
+	// W11: a window of 2^8 is accepted, cerver compresses it with 2^9 (its distances fit in 2^8)
 	test_check_str_eq (
-		deflate_test_negotiate ("permessage-deflate; server_max_window_bits=8", &options, &parameters), "", NULL
+		deflate_test_negotiate ("permessage-deflate; server_max_window_bits=8", &options, &parameters),
+		"permessage-deflate; server_max_window_bits=8", NULL
 	);
+
+	test_check_unsigned_eq (parameters.server_max_window_bits, HTTP_WEB_SOCKET_DEFLATE_MIN_WINDOW_BITS, NULL);
 
 	test_check_str_eq (
 		deflate_test_negotiate (
 			"permessage-deflate; server_max_window_bits=8, permessage-deflate; server_max_window_bits=9",
 			&options, &parameters
 		),
-		"permessage-deflate; server_max_window_bits=9", NULL
+		"permessage-deflate; server_max_window_bits=8", NULL
 	);
 
 	// the options of the server
@@ -141,8 +157,7 @@ static void test_deflate_declined (void) {
 		"permessage-deflate; =10",
 		"permessage-deflate;",
 		"permessage-deflate x",
-		"permessage-deflate; server_max_window_bits=10; server_max_window_bits=10",
-		"permessage-deflate; server_max_window_bits=8"
+		"permessage-deflate; server_max_window_bits=10; server_max_window_bits=10"
 	};
 
 	for (size_t i = 0; i < (sizeof (declined) / sizeof (declined[0])); i++) {
@@ -200,8 +215,11 @@ static void test_deflate_client (void) {
 	test_check_false (deflate_test_accept ("permessage-deflate, permessage-deflate", &parameters));
 	test_check_false (deflate_test_accept ("x-unknown", &parameters));
 	test_check_false (deflate_test_accept ("permessage-deflate; client_max_window_bits", &parameters));
-	test_check_false (deflate_test_accept ("permessage-deflate; client_max_window_bits=8", &parameters));
 	test_check_false (deflate_test_accept ("permessage-deflate; unknown", &parameters));
+
+	// W11: the offer took any window, 2^8 too (its compressor uses 2^9)
+	test_check_true (deflate_test_accept ("permessage-deflate; client_max_window_bits=8", &parameters));
+	test_check_unsigned_eq (parameters.client_max_window_bits, HTTP_WEB_SOCKET_DEFLATE_MIN_WINDOW_BITS, NULL);
 
 }
 
@@ -399,6 +417,116 @@ static void test_deflate_round_trip (void) {
 
 }
 
+// a peer with a window of 2^8 inflates a message, with the tail that its sender removed
+static void deflate_test_inflate_eight (
+	z_stream *inflater, const u8 *compressed, const size_t size, u8 *output, const size_t expected
+) {
+
+	static const u8 tail[] = { 0x00, 0x00, 0xFF, 0xFF };
+
+	inflater->next_out = output;
+	inflater->avail_out = (uInt) DEFLATE_TEST_OUTPUT_SIZE;
+
+	inflater->next_in = (Bytef *) compressed;
+	inflater->avail_in = (uInt) size;
+	const int body = inflate (inflater, Z_SYNC_FLUSH);
+	test_check ((body == Z_OK) || (body == Z_BUF_ERROR), "a distance did not fit in the window of 2^8");
+
+	inflater->next_in = (Bytef *) tail;
+	inflater->avail_in = (uInt) sizeof (tail);
+	const int end = inflate (inflater, Z_SYNC_FLUSH);
+	test_check ((end == Z_OK) || (end == Z_BUF_ERROR), "the end of the message did not inflate");
+
+	test_check_unsigned_eq ((size_t) (DEFLATE_TEST_OUTPUT_SIZE - inflater->avail_out), expected, NULL);
+
+}
+
+// W11: the compressor of a peer that asked for 2^8 is the one of 2^9, the peer inflates its messages with its
+// window of 2^8, also with repetitions further than 2^8 and with the context of the messages before
+static void test_deflate_window_eight (void) {
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MIN_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	HttpWebSocketDeflate *server = deflate_test_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters);
+
+	z_stream inflater;
+	(void) memset (&inflater, 0, sizeof (z_stream));
+	test_check_int_eq (inflateInit2 (&inflater, -HTTP_WEB_SOCKET_DEFLATE_MIN_WINDOW_BITS), Z_OK, NULL);
+
+	u8 *message = (u8 *) malloc (DEFLATE_TEST_MESSAGE_SIZE);
+	u8 *output = (u8 *) malloc (DEFLATE_TEST_OUTPUT_SIZE);
+	test_check_ptr (message);
+	test_check_ptr (output);
+
+	for (unsigned int n = 0; n < DEFLATE_TEST_MESSAGES; n++) {
+		// a block of the period repeats, further than the window of the peer
+		for (size_t i = 0; i < DEFLATE_TEST_MESSAGE_SIZE; i++) {
+			message[i] = (u8) ((((i % DEFLATE_TEST_EIGHT_PERIOD) * DEFLATE_TEST_EIGHT_PRIME) + n) & UINT8_MAX);
+		}
+
+		const u8 *compressed = NULL;
+		size_t compressed_size = 0;
+		test_check_unsigned_eq (
+			http_web_socket_deflate_compress (server, message, DEFLATE_TEST_MESSAGE_SIZE, true, &compressed, &compressed_size),
+			0, NULL
+		);
+
+		deflate_test_inflate_eight (&inflater, compressed, compressed_size, output, DEFLATE_TEST_MESSAGE_SIZE);
+		test_check (!memcmp (output, message, DEFLATE_TEST_MESSAGE_SIZE), "the message changed");
+	}
+
+	(void) inflateEnd (&inflater);
+	free (output);
+	free (message);
+
+	http_web_socket_deflate_delete (server);
+
+}
+
+// W7: the output of a message that does not compress, larger than 2^16, goes back to its first size with the next
+// message, and its bytes were valid until then
+static void test_deflate_output_shrinks (void) {
+
+	HttpWebSocketDeflateParameters parameters;
+	(void) memset (&parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	parameters.server_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters.client_max_window_bits = HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+
+	HttpWebSocketDeflate *server = deflate_test_create (HTTP_WEB_SOCKET_ROLE_SERVER, &parameters);
+
+	u8 *message = (u8 *) malloc (DEFLATE_TEST_LARGE_SIZE);
+	test_check_ptr (message);
+
+	// bytes of a generator that do not repeat in the window
+	u32 state = DEFLATE_TEST_SEED;
+	for (size_t i = 0; i < DEFLATE_TEST_LARGE_SIZE; i++) {
+		state = (state * DEFLATE_TEST_MULTIPLIER) + DEFLATE_TEST_INCREMENT;
+		message[i] = (u8) (state >> DEFLATE_TEST_SHIFT);
+	}
+
+	const u8 *compressed = NULL;
+	size_t compressed_size = 0;
+	test_check_unsigned_eq (
+		http_web_socket_deflate_compress (server, message, DEFLATE_TEST_LARGE_SIZE, true, &compressed, &compressed_size), 0, NULL
+	);
+
+	test_check (compressed_size > DEFLATE_TEST_SHRINK_SIZE, "the message compressed");
+	test_check (server->output_capacity > DEFLATE_TEST_SHRINK_SIZE, "the output did not grow");
+
+	test_check_unsigned_eq (
+		http_web_socket_deflate_compress (server, "small", 5, true, &compressed, &compressed_size), 0, NULL
+	);
+
+	test_check (server->output_capacity <= DEFLATE_TEST_SHRINK_SIZE, "the output of the large message was kept");
+
+	free (message);
+	http_web_socket_deflate_delete (server);
+
+}
+
 // a message compressed in pieces, as http_web_socket_send_write () does
 static void test_deflate_stream (void) {
 
@@ -498,8 +626,8 @@ static void test_deflate_bomb (void) {
 		server, &deflate_test_handlers, &n_messages
 	);
 
-	test_check_int_eq (http_web_socket_receiver_execute (&receiver, frame, size, NULL), HTTP_WEB_SOCKET_RECEIVE_FAILED, NULL);
-	test_check_unsigned_eq (receiver.close_code, HTTP_WEB_SOCKET_CLOSE_MESSAGE_TOO_BIG, NULL);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, frame, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED, NULL);
+	test_check_unsigned_eq (receiver.close_code, HTTP_WEB_SOCKET_CLOSE_CODE_MESSAGE_TOO_BIG, NULL);
 	test_check_unsigned_eq (n_messages, 0, NULL);
 	test_check (receiver.message_capacity <= DEFLATE_TEST_BOMB_LIMIT, "the bomb was kept in memory");
 
@@ -607,8 +735,8 @@ static void test_deflate_truncated (void) {
 		server, &deflate_test_handlers, &n_messages
 	);
 
-	test_check_int_eq (http_web_socket_receiver_execute (&receiver, frame, size, NULL), HTTP_WEB_SOCKET_RECEIVE_FAILED, NULL);
-	test_check_unsigned_eq (receiver.close_code, HTTP_WEB_SOCKET_CLOSE_INVALID_PAYLOAD, NULL);
+	test_check_int_eq (http_web_socket_receiver_execute (&receiver, frame, size, NULL), HTTP_WEB_SOCKET_RECEIVE_RESULT_FAILED, NULL);
+	test_check_unsigned_eq (receiver.close_code, HTTP_WEB_SOCKET_CLOSE_CODE_INVALID_PAYLOAD, NULL);
 	test_check_unsigned_eq (n_messages, 0, NULL);
 
 	http_web_socket_receiver_end (&receiver);
@@ -678,6 +806,8 @@ void web_socket_tests_deflate (void) {
 		test_run (test_deflate_examples);
 		test_run (test_deflate_empty_messages);
 		test_run (test_deflate_round_trip);
+		test_run (test_deflate_window_eight);
+		test_run (test_deflate_output_shrinks);
 		test_run (test_deflate_stream);
 		test_run (test_deflate_bomb);
 		test_run (test_deflate_final_block);

@@ -131,8 +131,8 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 
 	// each piece is copied to a buffer of its exact size, the receiver unmasks it in place
 	size_t position = FUZZ_FRAME_HEADER_SIZE;
-	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_CONTINUE;
-	while ((position < size) && (result == HTTP_WEB_SOCKET_RECEIVE_CONTINUE)) {
+	HttpWebSocketReceiveResult result = HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE;
+	while ((position < size) && (result == HTTP_WEB_SOCKET_RECEIVE_RESULT_CONTINUE)) {
 		const size_t length = ((size - position) < piece) ? (size - position) : piece;
 
 		u8 *buffer = (u8 *) malloc (length);

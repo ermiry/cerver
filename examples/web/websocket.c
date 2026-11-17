@@ -68,7 +68,7 @@ static void echo_on_message (
 }
 
 static const HttpWebSocketHandlers echo_handlers = {
-	NULL, NULL, echo_on_message, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, echo_on_message, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 #pragma endregion
@@ -123,8 +123,9 @@ static void chat_say (HttpWebSocket *web_socket, const ChatMember *member, const
 	char text[WEBSOCKET_TEXT_SIZE];
 	const int written = snprintf (text, WEBSOCKET_TEXT_SIZE, "%lu: %s", http_web_socket_get_id (web_socket), message);
 
+	const HttpWebSocketTarget others = { member->room, NULL, web_socket };
 	(void) http_cerver_web_socket_broadcast (
-		http_web_socket_get_http_cerver (web_socket), member->room, web_socket,
+		http_web_socket_get_http_cerver (web_socket), &others,
 		HTTP_WEB_SOCKET_OPCODE_TEXT, text, chat_text_length (written)
 	);
 
@@ -161,7 +162,7 @@ static void chat_on_close (HttpWebSocket *web_socket, u16 code, const char *reas
 }
 
 static const HttpWebSocketHandlers chat_handlers = {
-	NULL, chat_on_open, chat_on_message, NULL, NULL, NULL, chat_on_close, NULL
+	NULL, chat_on_open, chat_on_message, NULL, NULL, NULL, chat_on_close, NULL, NULL
 };
 
 #pragma endregion
@@ -192,7 +193,7 @@ static void private_on_open (HttpWebSocket *web_socket) {
 }
 
 static const HttpWebSocketHandlers private_handlers = {
-	private_on_upgrade, private_on_open, echo_on_message, NULL, NULL, NULL, NULL, NULL
+	private_on_upgrade, private_on_open, echo_on_message, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 #pragma endregion
@@ -216,7 +217,7 @@ static void websocket_routes (HttpCerver *http_cerver) {
 	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
 
 	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &echo_handlers);
-	http_endpoint_set_web_socket_compression (echo, true);
+	http_web_socket_settings_enable_compression (http_endpoint_get_web_socket_settings (echo), true);
 
 	(void) http_group_web_socket_add (ws, "chat", &chat_handlers);
 

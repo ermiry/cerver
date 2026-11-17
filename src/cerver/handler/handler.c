@@ -2575,8 +2575,8 @@ static void cerver_receive_http_end (CerverReceive *cr, HttpReceive *http_receiv
 
 	http_cerver_connection_ended (http_receive->http_cerver, http_receive->n_requests);
 
-	// the connection has ended, or it belongs to its WebSocket now
-	if (!http_web_socket_start (cr, http_receive)) {
+	// the connection has ended, or it belongs to its WebSocket now, that runs in its own thread
+	if (!http_web_socket_start (cr, http_receive, NULL)) {
 		connection_drop (cr->cerver, cr->connection);
 	}
 

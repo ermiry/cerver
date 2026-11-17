@@ -1444,11 +1444,12 @@ unsigned int http_connection_accepted (EventLoop *loop, Connection *peer) {
 
 #pragma region work
 
-// the connection of a request that a thread of the pool handled ended, or its WebSocket took it:
-// its data is released, and nothing is left for the loop to do: its memory goes back without waking it up
+// the connection of a request that a thread of the pool handled ended, or its WebSocket took it
+// (the WebSocket goes to the same loop, F6b): its data is released, and nothing is left for the loop to do:
+// its memory goes back without waking it up
 static void http_connection_work_release (HttpConnection *connection) {
 
-	if (!http_web_socket_start (&connection->cerver_receive, &connection->receive)) {
+	if (!http_web_socket_start (&connection->cerver_receive, &connection->receive, connection->loop)) {
 		connection_drop (connection->loop->cerver, connection->peer);
 	}
 

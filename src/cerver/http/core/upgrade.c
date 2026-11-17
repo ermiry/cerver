@@ -171,16 +171,39 @@ static bool http_receive_web_socket_validate (
 
 }
 
-// the Origin of the request is in the origins whitelist of the cerver
+// the Origin is in the origins whitelist of the cerver
+static bool http_receive_web_socket_origin_listed (
+	const HttpCerver *http_cerver, const String *origin
+) {
+
+	bool listed = false;
+	for (u8 idx = 0; !listed && (idx < http_cerver->n_origins); idx++) {
+		listed = !strcmp (http_cerver->origins_whitelist[idx].value, origin->str);
+	}
+
+	return listed;
+
+}
+
+// the Origin of the request passes the check of the endpoint
 static bool http_receive_web_socket_origin_allowed (
-	const HttpCerver *http_cerver, const HttpRequest *request
+	const HttpCerver *http_cerver, const HttpRequest *request,
+	const HttpWebSocketOriginCheck check
 ) {
 
 	const String *origin = request->headers[HTTP_HEADER_ORIGIN];
 
-	bool allowed = false;
-	for (u8 idx = 0; origin && !allowed && (idx < http_cerver->n_origins); idx++) {
-		allowed = !strcmp (http_cerver->origins_whitelist[idx].value, origin->str);
+	bool allowed = true;
+	switch (check) {
+		case HTTP_WEB_SOCKET_ORIGIN_CHECK_REQUIRED:
+			allowed = origin && http_receive_web_socket_origin_listed (http_cerver, origin);
+			break;
+
+		case HTTP_WEB_SOCKET_ORIGIN_CHECK_IF_PRESENT:
+			allowed = !origin || http_receive_web_socket_origin_listed (http_cerver, origin);
+			break;
+
+		default: break;
 	}
 
 	return allowed;
@@ -254,7 +277,7 @@ static int http_receive_web_socket_prepare (
 		);
 	}
 
-	else if (endpoint->resolved.web_socket.origin_check && !http_receive_web_socket_origin_allowed (http_cerver, request)) {
+	else if (!http_receive_web_socket_origin_allowed (http_cerver, request, endpoint->resolved.web_socket.origin_check)) {
 		retval = http_receive_web_socket_reject (http_receive, forbidden_error, HTTP_WEB_SOCKET_REJECTION_ORIGIN);
 	}
 

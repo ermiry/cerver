@@ -73,7 +73,14 @@ typedef enum EventSourceType {
 	/** @internal @brief A socket that accepts connections. */
 	EVENT_SOURCE_TYPE_LISTEN			= 1,
 	/** @internal @brief A connection. */
-	EVENT_SOURCE_TYPE_CONNECTION		= 2
+	EVENT_SOURCE_TYPE_CONNECTION		= 2,
+	/**
+	 * @internal
+	 * @brief A WebSocket connection of the server (http/websockets/loop.c).
+	 *
+	 * @since 2.1b-21
+	 */
+	EVENT_SOURCE_TYPE_WEB_SOCKET		= 3
 
 } EventSourceType;
 
@@ -302,6 +309,17 @@ CERVER_HIDDEN int event_poller_wait_one (const EventPoller *poller, EventReady *
 
 /**
  * @internal
+ * @brief Returns the file descriptor of a poller, that is readable while a source of it is ready or it was woken
+ * up: a thread can wait on it with poll () next to another file descriptor.
+ *
+ * @param[in] poller the poller
+ * @return the file descriptor, -1 for a NULL poller
+ * @since 2.1b-21
+ */
+CERVER_HIDDEN int event_poller_fd (const EventPoller *poller);
+
+/**
+ * @internal
  * @brief Takes the sources that are ready without waiting and without consuming its wake ups: they are left for
  * the threads that wait on the poller.
  *
@@ -332,6 +350,21 @@ CERVER_HIDDEN int event_poller_take (const EventPoller *poller, EventReady *read
 /** @internal @brief No timer is armed: nothing to wait for. */
 #define EVENT_WHEEL_NEXT_NONE			(-1)
 
+/** @internal @brief What owns a timer, the loop calls it when it expires. */
+typedef enum EventTimerOwner {
+
+	/** @internal @brief A connection, the owner of a zeroed timer. */
+	EVENT_TIMER_OWNER_CONNECTION		= 0,
+	/**
+	 * @internal
+	 * @brief A WebSocket connection of the server.
+	 *
+	 * @since 2.1b-21
+	 */
+	EVENT_TIMER_OWNER_WEB_SOCKET		= 1
+
+} EventTimerOwner;
+
 /**
  * @internal
  * @brief A timer, embedded in its owner; a zeroed timer is not armed.
@@ -348,6 +381,13 @@ typedef struct EventTimer {
 	bool armed;
 	/** @internal @brief The owner of the timer. */
 	void *owner;
+	/**
+	 * @internal
+	 * @brief What the owner is.
+	 *
+	 * @since 2.1b-21
+	 */
+	EventTimerOwner owner_type;
 
 } EventTimer;
 
@@ -460,11 +500,22 @@ CERVER_PRIVATE u64 event_clock_milliseconds (void);
  */
 #define EVENT_LOOP_IDLE_SWEEP				EVENT_WHEEL_TICK
 
+/**
+ * @internal
+ * @brief The milliseconds between the tries of the jobs of the WebSocket connections that found no place in their
+ * pools.
+ *
+ * @since 2.1b-21
+ */
+#define EVENT_LOOP_WEB_SOCKET_RETRY			(1u << 4)
+
 /** @internal @brief How the socket of an idle connection is watched: its next request, reported once. */
 #define EVENT_LOOP_IDLE_INTEREST			(EVENT_INTEREST_READ | EVENT_INTEREST_ONCE)
 
 struct _Cerver;
 struct _HttpReceive;
+struct _HttpWebSocket;
+struct HttpWebSocketPark;
 struct HttpConnection;
 struct EventLoopGroup;
 
@@ -497,6 +548,18 @@ struct EventDispatcher {
 	 * NULL for a dispatcher whose jobs never wait. Called from the threads that run the jobs.
 	 */
 	bool (*is_awaited) (const EventDispatcher *dispatcher);
+
+	/**
+	 * @internal
+	 * @brief Takes a job that is not of a connection (the methods of a WebSocket connection), without waiting.
+	 *
+	 * Returns 0 when it was taken: it ends with work () or with reject (), once; 1 when there is no place.
+	 *
+	 * @since 2.1b-21
+	 */
+	unsigned int (*submit_work) (
+		EventDispatcher *dispatcher, void (*work) (void *), void (*reject) (void *), void *args
+	);
 
 	/** @internal @brief The data of the dispatcher. */
 	void *data;
@@ -602,6 +665,30 @@ typedef struct EventLoop {
 	struct HttpConnection *completed_tail;
 	/** @internal @brief The loop is about to wait in its poller: a push, or a place for its parked connections, wakes it up. */
 	bool waiting;
+
+	/**
+	 * @internal
+	 * @brief The first WebSocket connection that other threads gave requests, with #completed_mutex
+	 * (http/websockets/loop.c).
+	 *
+	 * @since 2.1b-21
+	 */
+	struct _HttpWebSocket *web_sockets_head;
+	/** @internal @brief The last one. */
+	struct _HttpWebSocket *web_sockets_tail;
+	/** @internal @brief The WebSocket connections whose job waits for a place in their pool, only the loop uses it. */
+	struct _HttpWebSocket *web_sockets_waiting;
+	/**
+	 * @internal
+	 * @brief The WebSocket connections of the loop, atomic: the loop does not end while it has one.
+	 *
+	 * @since 2.1b-21
+	 */
+	unsigned int n_web_sockets;
+	/** @internal @brief The parks of its WebSocket connections that are free, only the loop uses it. */
+	struct HttpWebSocketPark *web_socket_parks_free;
+	/** @internal @brief Every park of the loop, released with it. */
+	struct HttpWebSocketPark *web_socket_parks_all;
 
 	/** @internal @brief The parked connections of all its lanes, atomic. */
 	unsigned int n_parked;
@@ -777,6 +864,16 @@ CERVER_PRIVATE void event_loop_run (EventLoop *loop);
  * @threadsafety Safe from any thread.
  */
 CERVER_HIDDEN void event_loop_complete (EventLoop *loop, struct HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Gives the loop a WebSocket connection with requests, from any thread; the loop wakes up if it waits.
+ *
+ * @param[in,out] loop the loop
+ * @param[in,out] web_socket the connection, with the reference of its request
+ * @since 2.1b-21
+ */
+CERVER_HIDDEN void event_loop_web_socket_push (EventLoop *loop, struct _HttpWebSocket *web_socket);
 
 /**
  * @internal

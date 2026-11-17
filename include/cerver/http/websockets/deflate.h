@@ -40,7 +40,10 @@
 
 /**
  * @brief The smallest window of the compressor of cerver: zlib does not compress raw deflate with a window of 2^8
- * (it takes 2^9), so a peer that asks for it to the compressor of cerver is declined.
+ * (it takes 2^9), so a peer that asks for 2^8 gets a compressor of 2^9, whose distances are never longer than 250
+ * bytes and fit in the window of the peer.
+ *
+ * @since 2.1b-21 (an offer or a response with 2^8 for the compressor of cerver was declined)
  */
 #define HTTP_WEB_SOCKET_DEFLATE_MIN_COMPRESSION_BITS	9
 
@@ -215,6 +218,13 @@ typedef struct HttpWebSocketDeflate {
 	size_t output_size;
 	/** @brief The size of the buffer of the output. */
 	size_t output_capacity;
+	/**
+	 * @brief The last call of the compressor ended its message: an output larger than 2^16 goes back to its first
+	 * size before the next one (W7).
+	 *
+	 * @since 2.1b-21
+	 */
+	bool output_ended;
 
 	/** @brief The output of the decompressor before it is given to the sink. */
 	u8 *chunk;
@@ -226,6 +236,17 @@ typedef struct HttpWebSocketDeflate {
 	 * a message can end there without its tail.
 	 */
 	bool ended;
+
+	/** @brief The compressed bytes that the inflater did not take before a stop of the sink (W4). @since 2.1b-21 */
+	u8 *pending;
+	/** @brief The bytes that are kept. @since 2.1b-21 */
+	size_t pending_size;
+	/** @brief The size of the buffer of the kept bytes. @since 2.1b-21 */
+	size_t pending_capacity;
+	/** @brief The inflater filled its output before the stop, it can have more of it. @since 2.1b-21 */
+	bool output_pending;
+	/** @brief The tail of the message in progress was given to the inflater. @since 2.1b-21 */
+	bool tail_given;
 
 } HttpWebSocketDeflate;
 
@@ -273,14 +294,41 @@ CERVER_PUBLIC u8 http_web_socket_deflate_compress (
 	const u8 **output, size_t *output_size
 );
 
-/** @brief A result of http_web_socket_deflate_decompress (): the stream is not valid. */
-#define HTTP_WEB_SOCKET_INFLATE_INVALID					1
+/**
+ * @brief The X-macro table of the results of http_web_socket_deflate_decompress (): the number, the name, the string
+ * and the description of each one.
+ *
+ * @since 2.1b-21 (they were three defines, without DONE)
+ */
+#define HTTP_WEB_SOCKET_INFLATE_MAP(XX)																			\
+	XX(0,	DONE,		Done,		The bytes were decompressed)													\
+	XX(1,	INVALID,	Invalid,	The stream is not valid)														\
+	XX(2,	STOPPED,	Stopped,	The sink stopped it and the next call goes on with what is left)				\
+	XX(3,	FAILED,		Failed,		The decompressor failed for its memory and it is not an error of the peer)
 
-/** @brief A result of http_web_socket_deflate_decompress (): the sink stopped it. */
-#define HTTP_WEB_SOCKET_INFLATE_STOPPED					2
+/**
+ * @brief The result of http_web_socket_deflate_decompress (), one `HTTP_WEB_SOCKET_INFLATE_<name>` for each row of
+ * #HTTP_WEB_SOCKET_INFLATE_MAP.
+ *
+ * @since 2.1b-21
+ */
+typedef enum HttpWebSocketInflateResult {
 
-/** @brief A result of http_web_socket_deflate_decompress (): the decompressor failed (its memory), it is not an error of the peer. */
-#define HTTP_WEB_SOCKET_INFLATE_FAILED					3
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_INFLATE_##name = num,
+	HTTP_WEB_SOCKET_INFLATE_MAP (XX)
+	#undef XX
+
+} HttpWebSocketInflateResult;
+
+/**
+ * @brief Returns the string of a result of http_web_socket_deflate_decompress ().
+ *
+ * @param[in] result the result
+ * @return the string of its row in #HTTP_WEB_SOCKET_INFLATE_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_inflate_result_to_string (const HttpWebSocketInflateResult result);
 
 /**
  * @brief Receives the decompressed bytes; it returns 0 to continue.
@@ -293,18 +341,23 @@ typedef int (*HttpWebSocketInflateSink)(void *data, const u8 *bytes, size_t size
  * A block with BFINAL does not end the message (RFC 7692 section 7.2.3.4), other blocks can follow it, and a
  * message that ends inside a block is not valid.
  *
+ * After a stop the decompression keeps what is left (W4): the bytes that the inflater did not take and the output
+ * that it still has. The next call gives them to the sink before its own bytes, and a call with end goes on with
+ * the end of the message (it is called with end until it is not stopped).
+ *
  * @param[in,out] deflate the compression
  * @param[in] data the compressed bytes
  * @param[in] size the number of bytes
  * @param[in] end true with the last bytes of the message
  * @param[in] sink the method that receives the decompressed bytes
  * @param[in] sink_data the data of the sink
- * @retval 0 the bytes were decompressed
+ * @retval HTTP_WEB_SOCKET_INFLATE_DONE the bytes were decompressed
  * @retval HTTP_WEB_SOCKET_INFLATE_INVALID the stream is not valid
- * @retval HTTP_WEB_SOCKET_INFLATE_STOPPED the sink stopped it
+ * @retval HTTP_WEB_SOCKET_INFLATE_STOPPED the sink stopped it, what is left is kept
  * @retval HTTP_WEB_SOCKET_INFLATE_FAILED the decompressor failed, or cerver was built without zlib
+ * @since 2.1b-21 (it returned u8, and the bytes after a stop were lost)
  */
-CERVER_PUBLIC u8 http_web_socket_deflate_decompress (
+CERVER_PUBLIC HttpWebSocketInflateResult http_web_socket_deflate_decompress (
 	HttpWebSocketDeflate *deflate,
 	const u8 *data, const size_t size, const bool end,
 	HttpWebSocketInflateSink sink, void *sink_data

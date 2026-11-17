@@ -50,7 +50,7 @@ static void websocket_echo (
 }
 
 static const HttpWebSocketHandlers websocket_echo_handlers = {
-	NULL, NULL, websocket_echo, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, websocket_echo, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 // "join:room" joins a room, "say:room:message" sends the message to the others of the room,
@@ -71,17 +71,19 @@ static void websocket_chat (
 		}
 
 		else if ((sscanf (text, "say:%63[^:]:%n", room, &offset) == 1) && offset) {
+			const HttpWebSocketTarget target = { room, NULL, web_socket };
 			(void) http_cerver_web_socket_broadcast (
-				http_web_socket_get_http_cerver (web_socket), room, web_socket,
+				http_web_socket_get_http_cerver (web_socket), &target,
 				HTTP_WEB_SOCKET_OPCODE_TEXT, text + offset, strlen (text + offset)
 			);
 		}
 
 		else if (sscanf (text, "count:%63s", room) == 1) {
+			const HttpWebSocketTarget target = { room, NULL, NULL };
 			char count[WEBSOCKET_ROOM_SIZE];
 			const int length = snprintf (
 				count, WEBSOCKET_ROOM_SIZE, "%u",
-				http_cerver_web_socket_count (http_web_socket_get_http_cerver (web_socket), room)
+				http_cerver_web_socket_count (http_web_socket_get_http_cerver (web_socket), &target)
 			);
 
 			(void) http_web_socket_send_text (web_socket, count, (size_t) length);
@@ -91,7 +93,7 @@ static void websocket_chat (
 }
 
 static const HttpWebSocketHandlers websocket_chat_handlers = {
-	NULL, NULL, websocket_chat, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, websocket_chat, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static unsigned int websocket_authenticate (
@@ -111,7 +113,7 @@ static void websocket_configure (HttpCerver *http_cerver) {
 	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
 
 	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &websocket_echo_handlers);
-	http_endpoint_set_web_socket_compression (echo, true);
+	http_web_socket_settings_enable_compression (http_endpoint_get_web_socket_settings (echo), true);
 
 	(void) http_group_web_socket_add (ws, "chat", &websocket_chat_handlers);
 

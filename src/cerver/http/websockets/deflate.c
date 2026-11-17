@@ -64,6 +64,26 @@ static const char *http_web_socket_deflate_delimiters = { "()<>@,;:\\\"/[]?={}" 
 // the end of a flushed block, that the sender removes and the receiver adds again (RFC 7692 section 7.2.1)
 #define HTTP_WEB_SOCKET_DEFLATE_TAIL_SIZE				4
 
+// the first size of the bytes that a stop of the sink leaves, that doubles when they do not fit (W4)
+#define HTTP_WEB_SOCKET_DEFLATE_PENDING_SIZE			(1 << 12)
+
+// a buffer larger than this goes back to its first size after its message (W7)
+#define HTTP_WEB_SOCKET_DEFLATE_SHRINK_SIZE				(1 << 16)
+
+static const char http_web_socket_inflate_result_undefined[] = "Undefined";
+
+const char *http_web_socket_inflate_result_to_string (const HttpWebSocketInflateResult result) {
+
+	switch (result) {
+		#define XX(num, name, string, description) case HTTP_WEB_SOCKET_INFLATE_##name: return #string;
+		HTTP_WEB_SOCKET_INFLATE_MAP(XX)
+		#undef XX
+	}
+
+	return http_web_socket_inflate_result_undefined;
+
+}
+
 #ifdef CERVER_ZLIB
 static const u8 http_web_socket_deflate_tail[HTTP_WEB_SOCKET_DEFLATE_TAIL_SIZE] = { 0x00, 0x00, 0xFF, 0xFF };
 
@@ -448,38 +468,30 @@ static u8 http_web_socket_deflate_options_bits (
 
 }
 
-// the server decides the parameters of an offer that it can accept
-// returns false when it has to decline it
-static bool http_web_socket_deflate_accept_offer (
+// the server decides the parameters of an offer, every valid offer is accepted:
+// a window of 2^8 is compressed with 2^9, whose distances fit in it (W11)
+static void http_web_socket_deflate_accept_offer (
 	const HttpWebSocketDeflateExtension *offer,
 	const HttpWebSocketDeflateOptions *options,
 	HttpWebSocketDeflateParameters *parameters
 ) {
 
-	bool accepted = false;
-
 	u8 bits = http_web_socket_deflate_options_bits (options);
 	const bool limited = (offer->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_SERVER_BITS) != 0;
-	if (!limited || (offer->server_max_window_bits >= HTTP_WEB_SOCKET_DEFLATE_MIN_COMPRESSION_BITS)) {
-		if (limited && (offer->server_max_window_bits < bits)) bits = offer->server_max_window_bits;
+	if (limited && (offer->server_max_window_bits < bits)) bits = offer->server_max_window_bits;
 
-		(void) memset (parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	(void) memset (parameters, 0, sizeof (HttpWebSocketDeflateParameters));
 
-		parameters->server_no_context_takeover = offer->server_no_context_takeover || options->no_context_takeover;
-		parameters->client_no_context_takeover = offer->client_no_context_takeover || options->no_context_takeover;
+	parameters->server_no_context_takeover = offer->server_no_context_takeover || options->no_context_takeover;
+	parameters->client_no_context_takeover = offer->client_no_context_takeover || options->no_context_takeover;
 
-		parameters->server_max_window_bits = bits;
-		parameters->server_max_window_bits_set = limited || (bits < HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS);
+	parameters->server_max_window_bits = bits;
+	parameters->server_max_window_bits_set = limited || (bits < HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS);
 
-		// the client keeps its window, the decompressor of cerver always takes 2^15
-		parameters->client_max_window_bits = (offer->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_CLIENT_BITS) ?
-			offer->client_max_window_bits : HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
-		parameters->client_max_window_bits_set = false;
-
-		accepted = true;
-	}
-
-	return accepted;
+	// the client keeps its window, the decompressor of cerver always takes 2^15
+	parameters->client_max_window_bits = (offer->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_CLIENT_BITS) ?
+		offer->client_max_window_bits : HTTP_WEB_SOCKET_DEFLATE_MAX_WINDOW_BITS;
+	parameters->client_max_window_bits_set = false;
 
 }
 
@@ -499,9 +511,8 @@ bool http_web_socket_deflate_negotiate (
 		HttpWebSocketDeflateExtension extension;
 
 		while (!accepted && http_web_socket_deflate_read_extension (&cursor, &extension, true)) {
-			if (extension.is_deflate && !extension.invalid) {
-				accepted = http_web_socket_deflate_accept_offer (&extension, options, parameters);
-			}
+			accepted = extension.is_deflate && !extension.invalid;
+			if (accepted) http_web_socket_deflate_accept_offer (&extension, options, parameters);
 		}
 	}
 
@@ -613,35 +624,28 @@ size_t http_web_socket_deflate_offer (
 
 }
 
-// the parameters of a valid response, from the side of the client
-static bool http_web_socket_deflate_accept_response (
+// the parameters of a valid response, from the side of the client: the offer said that it takes any
+// client_max_window_bits (RFC 7692 section 7.1.2.2), a window of 2^8 is compressed with 2^9 (W11)
+static void http_web_socket_deflate_accept_response (
 	const HttpWebSocketDeflateExtension *response,
 	const HttpWebSocketDeflateOptions *options,
 	HttpWebSocketDeflateParameters *parameters
 ) {
 
-	bool accepted = false;
-
 	u8 bits = http_web_socket_deflate_options_bits (options);
 	const bool limited = (response->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_CLIENT_BITS) != 0;
-	if (!limited || (response->client_max_window_bits >= HTTP_WEB_SOCKET_DEFLATE_MIN_COMPRESSION_BITS)) {
-		if (limited && (response->client_max_window_bits < bits)) bits = response->client_max_window_bits;
+	if (limited && (response->client_max_window_bits < bits)) bits = response->client_max_window_bits;
 
-		(void) memset (parameters, 0, sizeof (HttpWebSocketDeflateParameters));
+	(void) memset (parameters, 0, sizeof (HttpWebSocketDeflateParameters));
 
-		parameters->server_no_context_takeover = response->server_no_context_takeover;
-		parameters->client_no_context_takeover = response->client_no_context_takeover || options->no_context_takeover;
+	parameters->server_no_context_takeover = response->server_no_context_takeover;
+	parameters->client_no_context_takeover = response->client_no_context_takeover || options->no_context_takeover;
 
-		parameters->server_max_window_bits = response->server_max_window_bits;
-		parameters->server_max_window_bits_set = (response->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_SERVER_BITS) != 0;
+	parameters->server_max_window_bits = response->server_max_window_bits;
+	parameters->server_max_window_bits_set = (response->seen & HTTP_WEB_SOCKET_DEFLATE_SEEN_SERVER_BITS) != 0;
 
-		parameters->client_max_window_bits = bits;
-		parameters->client_max_window_bits_set = limited;
-
-		accepted = true;
-	}
-
-	return accepted;
+	parameters->client_max_window_bits = bits;
+	parameters->client_max_window_bits_set = limited;
 
 }
 
@@ -665,8 +669,8 @@ bool http_web_socket_deflate_accept (
 		bool valid = true;
 		while (valid && http_web_socket_deflate_read_extension (&cursor, &extension, false)) {
 			n_extensions += 1;
-			valid = extension.is_deflate && !extension.invalid && (n_extensions == 1)
-				&& http_web_socket_deflate_accept_response (&extension, options, parameters);
+			valid = extension.is_deflate && !extension.invalid && (n_extensions == 1);
+			if (valid) http_web_socket_deflate_accept_response (&extension, options, parameters);
 		}
 
 		accepted = valid && !cursor.broken && (n_extensions == 1);
@@ -780,6 +784,17 @@ static z_stream *http_web_socket_deflate_decompressor (HttpWebSocketDeflate *def
 
 }
 
+// the output of a large message goes back to nothing before the next message, it was valid until this call (W7)
+static void http_web_socket_deflate_output_shrink (HttpWebSocketDeflate *deflate) {
+
+	if (deflate->output_ended && (deflate->output_capacity > HTTP_WEB_SOCKET_DEFLATE_SHRINK_SIZE)) {
+		free (deflate->output);
+		deflate->output = NULL;
+		deflate->output_capacity = 0;
+	}
+
+}
+
 // doubles the output when it is full
 static bool http_web_socket_deflate_output_reserve (HttpWebSocketDeflate *deflate) {
 
@@ -865,6 +880,8 @@ u8 http_web_socket_deflate_compress (
 		stream && (data || !size) && output && output_size
 		&& (size <= HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX)
 	) {
+		http_web_socket_deflate_output_shrink (deflate);
+		deflate->output_ended = end;
 		deflate->output_size = 0;
 
 		stream->next_in = (Bytef *) data;
@@ -902,25 +919,24 @@ u8 http_web_socket_deflate_compress (
 // a block with BFINAL ends the stream of zlib, but not the message nor the context of the connection
 // (RFC 7692 section 7.2.3.4): the inflater starts again in the next byte and keeps its window,
 // inflateResetKeep () is the inflateReset () that does not forget it
-// returns 0 on success, 1 on error
-static u8 http_web_socket_deflate_decompress_restart (
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_restart (
 	HttpWebSocketDeflate *deflate, z_stream *stream
 ) {
 
-	u8 retval = HTTP_WEB_SOCKET_INFLATE_FAILED;
+	HttpWebSocketInflateResult result = HTTP_WEB_SOCKET_INFLATE_FAILED;
 
 	if (inflateResetKeep (stream) == Z_OK) {
 		deflate->ended = true;
 
-		retval = 0;
+		result = HTTP_WEB_SOCKET_INFLATE_DONE;
 	}
 
-	return retval;
+	return result;
 
 }
 
 // the memory of zlib is a failure of cerver, anything else is in the bytes of the peer
-static u8 http_web_socket_deflate_decompress_error (const int result) {
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_error (const int result) {
 
 	return (result == Z_MEM_ERROR) ?
 		HTTP_WEB_SOCKET_INFLATE_FAILED : HTTP_WEB_SOCKET_INFLATE_INVALID;
@@ -928,15 +944,15 @@ static u8 http_web_socket_deflate_decompress_error (const int result) {
 }
 
 // inflates the input that the stream has, giving each piece to the sink
-static u8 http_web_socket_deflate_decompress_run (
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_run (
 	HttpWebSocketDeflate *deflate, z_stream *stream,
 	HttpWebSocketInflateSink sink, void *sink_data
 ) {
 
-	u8 retval = 0;
+	HttpWebSocketInflateResult retval = HTTP_WEB_SOCKET_INFLATE_DONE;
 
 	bool running = true;
-	while (running && !retval) {
+	while (running && (retval == HTTP_WEB_SOCKET_INFLATE_DONE)) {
 		const uInt input = stream->avail_in;
 
 		stream->next_out = deflate->chunk;
@@ -950,15 +966,15 @@ static u8 http_web_socket_deflate_decompress_run (
 		if (produced && sink (sink_data, deflate->chunk, produced)) retval = HTTP_WEB_SOCKET_INFLATE_STOPPED;
 
 		if (result == Z_STREAM_END) {
-			const u8 restarted = http_web_socket_deflate_decompress_restart (deflate, stream);
-			if (!retval) retval = restarted;
+			const HttpWebSocketInflateResult restarted = http_web_socket_deflate_decompress_restart (deflate, stream);
+			if (retval == HTTP_WEB_SOCKET_INFLATE_DONE) retval = restarted;
 
 			// the blocks that follow the last one
 			running = (stream->avail_in != 0);
 		}
 
 		else if ((result != Z_OK) && (result != Z_BUF_ERROR)) {
-			if (!retval) retval = http_web_socket_deflate_decompress_error (result);
+			if (retval == HTTP_WEB_SOCKET_INFLATE_DONE) retval = http_web_socket_deflate_decompress_error (result);
 		}
 
 		else if (!produced && (input == stream->avail_in)) {
@@ -971,78 +987,188 @@ static u8 http_web_socket_deflate_decompress_run (
 		}
 	}
 
+	// a full output can hide more of it, that the next call gives after a stop
+	deflate->output_pending = (retval == HTTP_WEB_SOCKET_INFLATE_STOPPED) && !stream->avail_out;
+
 	return retval;
 
 }
 
-static u8 http_web_socket_deflate_decompress_input (
+// keeps bytes that the inflater did not take after a stop, after the ones that are already kept (W4)
+// returns false when they could not be kept
+static bool http_web_socket_deflate_pending_keep (
+	HttpWebSocketDeflate *deflate, const u8 *bytes, const size_t size
+) {
+
+	bool kept = true;
+
+	const size_t needed = deflate->pending_size + size;
+	if (needed > deflate->pending_capacity) {
+		size_t capacity = deflate->pending_capacity ? deflate->pending_capacity : HTTP_WEB_SOCKET_DEFLATE_PENDING_SIZE;
+		while (capacity < needed) capacity *= 2;
+
+		u8 *pending = (u8 *) realloc (deflate->pending, capacity);
+		kept = (pending != NULL);
+		if (kept) {
+			deflate->pending = pending;
+			deflate->pending_capacity = capacity;
+		}
+	}
+
+	if (kept && size) {
+		(void) memmove (deflate->pending + deflate->pending_size, bytes, size);
+		deflate->pending_size = needed;
+	}
+
+	return kept;
+
+}
+
+// the result of a run whose input was not all taken: a stop keeps the rest for the next call
+static HttpWebSocketInflateResult http_web_socket_deflate_pending_stopped (
+	HttpWebSocketDeflate *deflate, const HttpWebSocketInflateResult result, const u8 *rest, const size_t size
+) {
+
+	return ((result == HTTP_WEB_SOCKET_INFLATE_STOPPED) && !http_web_socket_deflate_pending_keep (deflate, rest, size)) ?
+		HTTP_WEB_SOCKET_INFLATE_FAILED : result;
+
+}
+
+// the buffer of the kept bytes goes back to nothing when it is empty after a large message (W7)
+static void http_web_socket_deflate_pending_shrink (HttpWebSocketDeflate *deflate) {
+
+	if (!deflate->pending_size && (deflate->pending_capacity > HTTP_WEB_SOCKET_DEFLATE_SHRINK_SIZE)) {
+		free (deflate->pending);
+		deflate->pending = NULL;
+		deflate->pending_capacity = 0;
+	}
+
+}
+
+// the bytes and the output that a stop left go to the sink before the next ones
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_resume (
+	HttpWebSocketDeflate *deflate, z_stream *stream,
+	HttpWebSocketInflateSink sink, void *sink_data
+) {
+
+	HttpWebSocketInflateResult result = HTTP_WEB_SOCKET_INFLATE_DONE;
+
+	if (deflate->pending_size || deflate->output_pending) {
+		const size_t kept = deflate->pending_size;
+		deflate->pending_size = 0;
+
+		stream->next_in = deflate->pending;
+		stream->avail_in = (uInt) kept;
+		result = http_web_socket_deflate_decompress_run (deflate, stream, sink, sink_data);
+
+		// what is still left moves to the start of the buffer
+		result = http_web_socket_deflate_pending_stopped (deflate, result, stream->next_in, stream->avail_in);
+
+		http_web_socket_deflate_pending_shrink (deflate);
+	}
+
+	return result;
+
+}
+
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_input (
 	HttpWebSocketDeflate *deflate, z_stream *stream,
 	const u8 *data, const size_t size,
 	HttpWebSocketInflateSink sink, void *sink_data
 ) {
 
-	u8 retval = 0;
+	HttpWebSocketInflateResult result = HTTP_WEB_SOCKET_INFLATE_DONE;
 
 	if (size) {
 		stream->next_in = (Bytef *) data;
 		stream->avail_in = (uInt) size;
-		retval = http_web_socket_deflate_decompress_run (deflate, stream, sink, sink_data);
+		result = http_web_socket_deflate_decompress_run (deflate, stream, sink, sink_data);
+
+		result = http_web_socket_deflate_pending_stopped (deflate, result, stream->next_in, stream->avail_in);
 	}
 
-	return retval;
+	return result;
 
 }
 
 // the end of a message: the tail that its sender removed completes the empty block of its flush,
 // and the inflater must be left between two blocks, a message that ends inside one was cut
 // a message that ends right after a block with BFINAL is complete without the tail
-// returns 0 on success, HTTP_WEB_SOCKET_INFLATE_INVALID on a message that is not complete
-static u8 http_web_socket_deflate_decompress_end (
+// the tail is given once, a stop in it goes on in the next call (W4)
+static HttpWebSocketInflateResult http_web_socket_deflate_decompress_end (
 	HttpWebSocketDeflate *deflate, z_stream *stream,
 	HttpWebSocketInflateSink sink, void *sink_data
 ) {
 
-	u8 retval = 0;
+	HttpWebSocketInflateResult result = HTTP_WEB_SOCKET_INFLATE_DONE;
 
-	if (!deflate->ended) {
+	if (!deflate->ended && !deflate->tail_given) {
+		deflate->tail_given = true;
+
 		stream->next_in = (Bytef *) http_web_socket_deflate_tail;
 		stream->avail_in = HTTP_WEB_SOCKET_DEFLATE_TAIL_SIZE;
-		retval = http_web_socket_deflate_decompress_run (deflate, stream, sink, sink_data);
+		result = http_web_socket_deflate_decompress_run (deflate, stream, sink, sink_data);
 
-		if (!retval && !(stream->data_type & HTTP_WEB_SOCKET_DEFLATE_BLOCK_BOUNDARY)) {
-			retval = HTTP_WEB_SOCKET_INFLATE_INVALID;
-		}
+		result = http_web_socket_deflate_pending_stopped (deflate, result, stream->next_in, stream->avail_in);
 	}
 
-	if (!retval && http_web_socket_deflate_decompressor_resets (deflate)) {
+	if (
+		(result == HTTP_WEB_SOCKET_INFLATE_DONE) && deflate->tail_given
+		&& !(stream->data_type & HTTP_WEB_SOCKET_DEFLATE_BLOCK_BOUNDARY)
+	) {
+		result = HTTP_WEB_SOCKET_INFLATE_INVALID;
+	}
+
+	if ((result == HTTP_WEB_SOCKET_INFLATE_DONE) && http_web_socket_deflate_decompressor_resets (deflate)) {
 		(void) inflateReset (stream);
 	}
 
-	return retval;
+	return result;
 
 }
 
-u8 http_web_socket_deflate_decompress (
+// the next message starts again, unless the end was stopped and goes on in the next call
+static void http_web_socket_deflate_decompress_ended (
+	HttpWebSocketDeflate *deflate, const HttpWebSocketInflateResult result
+) {
+
+	if (result != HTTP_WEB_SOCKET_INFLATE_STOPPED) {
+		deflate->ended = false;
+		deflate->tail_given = false;
+	}
+
+}
+
+HttpWebSocketInflateResult http_web_socket_deflate_decompress (
 	HttpWebSocketDeflate *deflate,
 	const u8 *data, const size_t size, const bool end,
 	HttpWebSocketInflateSink sink, void *sink_data
 ) {
 
 	// without its decompressor (its memory) or with a piece that zlib does not take
-	u8 retval = HTTP_WEB_SOCKET_INFLATE_FAILED;
+	HttpWebSocketInflateResult result = HTTP_WEB_SOCKET_INFLATE_FAILED;
 
 	z_stream *stream = deflate ? http_web_socket_deflate_decompressor (deflate) : NULL;
 	if (stream && (data || !size) && sink && (size <= HTTP_WEB_SOCKET_DEFLATE_INPUT_MAX)) {
-		retval = http_web_socket_deflate_decompress_input (deflate, stream, data, size, sink, sink_data);
+		result = http_web_socket_deflate_decompress_resume (deflate, stream, sink, sink_data);
 
-		if (!retval && end) {
-			retval = http_web_socket_deflate_decompress_end (deflate, stream, sink, sink_data);
+		// a sink that stopped again in what was left keeps these bytes after them
+		if (result == HTTP_WEB_SOCKET_INFLATE_DONE) {
+			result = http_web_socket_deflate_decompress_input (deflate, stream, data, size, sink, sink_data);
 		}
 
-		if (end) deflate->ended = false;
+		else {
+			result = http_web_socket_deflate_pending_stopped (deflate, result, data, size);
+		}
+
+		if ((result == HTTP_WEB_SOCKET_INFLATE_DONE) && end) {
+			result = http_web_socket_deflate_decompress_end (deflate, stream, sink, sink_data);
+		}
+
+		if (end) http_web_socket_deflate_decompress_ended (deflate, result);
 	}
 
-	return retval;
+	return result;
 
 }
 
@@ -1061,6 +1187,7 @@ void http_web_socket_deflate_delete (HttpWebSocketDeflate *deflate) {
 
 		free (deflate->output);
 		free (deflate->chunk);
+		free (deflate->pending);
 
 		free (deflate);
 	}
@@ -1086,7 +1213,7 @@ u8 http_web_socket_deflate_compress (
 
 }
 
-u8 http_web_socket_deflate_decompress (
+HttpWebSocketInflateResult http_web_socket_deflate_decompress (
 	HttpWebSocketDeflate *deflate,
 	const u8 *data, const size_t size, const bool end,
 	HttpWebSocketInflateSink sink, void *sink_data

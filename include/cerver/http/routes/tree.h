@@ -528,95 +528,23 @@ CERVER_EXPORT u8 http_endpoint_add_after (
  *
  * @param[in,out] endpoint the endpoint
  * @param[in] handlers the handlers, copied; NULL changes nothing
+ * @since 2.1b-21 (it was http_endpoint_set_web_socket ())
  */
-CERVER_EXPORT void http_endpoint_set_web_socket (
+CERVER_EXPORT void http_endpoint_set_web_socket_handlers (
 	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
 );
 
 /**
- * @brief Sets the most bytes of a message (and of each frame); a larger one closes the connection with 1009.
+ * @brief Returns the settings of the WebSocket connections of an endpoint, which take the ones of its groups that
+ * it does not set.
  *
- * @param[in,out] endpoint the endpoint
- * @param[in] max_message the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE (the default)
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_max_message (
-	HttpEndpoint *endpoint, const size_t max_message
-);
-
-/**
- * @brief Sets the subprotocols of an endpoint, in the order of preference of the server.
+ * They are set with the http_web_socket_settings_set_* () methods, before the cerver starts.
  *
- * @param[in,out] endpoint the endpoint
- * @param[in] protocols the subprotocols, copied
- * @param[in] n_protocols the number of subprotocols
- * @retval 0 the subprotocols were set
- * @retval 1 a NULL endpoint or they could not be set (see http_web_socket_settings_set_protocols ())
+ * @param[in] endpoint the endpoint
+ * @return its settings, or NULL without an endpoint
+ * @since 2.1b-21 (it replaces the http_endpoint_set_web_socket_* () methods of each setting)
  */
-CERVER_EXPORT u8 http_endpoint_set_web_socket_protocols (
-	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
-);
-
-/**
- * @brief Enables or disables permessage-deflate (RFC 7692) with the default options, when cerver was built with
- * zlib.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] compression true to enable it
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_compression (
-	HttpEndpoint *endpoint, const bool compression
-);
-
-/**
- * @brief Sets the options of permessage-deflate of an endpoint.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] options the options, copied
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_compression_options (
-	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
-);
-
-/**
- * @brief Sets whether the Origin of the upgrade must be in the origins whitelist; 403 if it is not.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] origin_check true to check it
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_origin_check (
-	HttpEndpoint *endpoint, const bool origin_check
-);
-
-/**
- * @brief Sets the milliseconds without receiving anything before a ping, and the ones to wait for its pong.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] ping_interval the milliseconds before a ping, 0 disables them
- * @param[in] pong_timeout the milliseconds to wait for the pong
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_ping_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
-);
-
-/**
- * @brief Sets the milliseconds that the closing handshake waits for the peer.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] close_timeout the milliseconds
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_close_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int close_timeout
-);
-
-/**
- * @brief Sets the milliseconds of each send of a WebSocket connection.
- *
- * @param[in,out] endpoint the endpoint
- * @param[in] send_timeout the milliseconds, 0 uses the send timeout of the HTTP cerver
- */
-CERVER_EXPORT void http_endpoint_set_web_socket_send_timeout_milliseconds (
-	HttpEndpoint *endpoint, const unsigned int send_timeout
-);
+CERVER_EXPORT HttpWebSocketSettings *http_endpoint_get_web_socket_settings (HttpEndpoint *endpoint);
 
 /** @} */
 
@@ -959,94 +887,23 @@ CERVER_EXPORT HttpEndpoint *http_group_web_socket_add (
  *
  * @param[in,out] group the group
  * @param[in] handlers the handlers, copied; NULL changes nothing
+ * @since 2.1b-21 (it was http_group_set_web_socket ())
  */
-CERVER_EXPORT void http_group_set_web_socket (
+CERVER_EXPORT void http_group_set_web_socket_handlers (
 	HttpGroup *group, const HttpWebSocketHandlers *handlers
 );
 
 /**
- * @brief Sets the max message that the WebSocket endpoints of a group inherit.
+ * @brief Returns the settings that the WebSocket endpoints of a group (and its subgroups) inherit; an endpoint or a
+ * subgroup keeps the ones that it sets.
  *
- * @param[in,out] group the group
- * @param[in] max_message the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE
- */
-CERVER_EXPORT void http_group_set_web_socket_max_message (
-	HttpGroup *group, const size_t max_message
-);
-
-/**
- * @brief Sets the subprotocols that the WebSocket endpoints of a group inherit.
+ * They are set with the http_web_socket_settings_set_* () methods, before the cerver starts.
  *
- * @param[in,out] group the group
- * @param[in] protocols the subprotocols, copied
- * @param[in] n_protocols the number of subprotocols
- * @retval 0 the subprotocols were set
- * @retval 1 a NULL group or they could not be set
+ * @param[in] group the group
+ * @return its settings, or NULL without a group
+ * @since 2.1b-21 (it replaces the http_group_set_web_socket_* () methods of each setting)
  */
-CERVER_EXPORT u8 http_group_set_web_socket_protocols (
-	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
-);
-
-/**
- * @brief Enables or disables permessage-deflate with the default options in the WebSocket endpoints of a group.
- *
- * @param[in,out] group the group
- * @param[in] compression true to enable it
- */
-CERVER_EXPORT void http_group_set_web_socket_compression (
-	HttpGroup *group, const bool compression
-);
-
-/**
- * @brief Sets the options of permessage-deflate that the WebSocket endpoints of a group inherit.
- *
- * @param[in,out] group the group
- * @param[in] options the options, copied
- */
-CERVER_EXPORT void http_group_set_web_socket_compression_options (
-	HttpGroup *group, const HttpWebSocketDeflateOptions *options
-);
-
-/**
- * @brief Sets the check of the Origin that the WebSocket endpoints of a group inherit.
- *
- * @param[in,out] group the group
- * @param[in] origin_check true to check it
- */
-CERVER_EXPORT void http_group_set_web_socket_origin_check (
-	HttpGroup *group, const bool origin_check
-);
-
-/**
- * @brief Sets the pings that the WebSocket endpoints of a group inherit.
- *
- * @param[in,out] group the group
- * @param[in] ping_interval the milliseconds before a ping, 0 disables them
- * @param[in] pong_timeout the milliseconds to wait for the pong
- */
-CERVER_EXPORT void http_group_set_web_socket_ping_milliseconds (
-	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
-);
-
-/**
- * @brief Sets the close timeout that the WebSocket endpoints of a group inherit.
- *
- * @param[in,out] group the group
- * @param[in] close_timeout the milliseconds
- */
-CERVER_EXPORT void http_group_set_web_socket_close_timeout_milliseconds (
-	HttpGroup *group, const unsigned int close_timeout
-);
-
-/**
- * @brief Sets the send timeout that the WebSocket endpoints of a group inherit.
- *
- * @param[in,out] group the group
- * @param[in] send_timeout the milliseconds, 0 uses the send timeout of the HTTP cerver
- */
-CERVER_EXPORT void http_group_set_web_socket_send_timeout_milliseconds (
-	HttpGroup *group, const unsigned int send_timeout
-);
+CERVER_EXPORT HttpWebSocketSettings *http_group_get_web_socket_settings (HttpGroup *group);
 
 /** @} */
 

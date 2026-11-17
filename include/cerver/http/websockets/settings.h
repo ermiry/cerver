@@ -42,6 +42,13 @@
 /** @brief The most subprotocols of an endpoint. */
 #define HTTP_WEB_SOCKET_MAX_PROTOCOLS						(1 << 4)
 
+/**
+ * @brief The default most bytes of the frames that wait in the queue of a connection to be sent.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_DEFAULT_MAX_QUEUE					(1 << 20)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,8 +89,8 @@ typedef enum HttpWebSocketError {
  * @brief Returns the string of an error.
  *
  * @param[in] error the error
- * @return the string of its row in #HTTP_WEB_SOCKET_ERROR_MAP, or the one of HTTP_WEB_SOCKET_ERROR_NONE for a value
- * out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_WEB_SOCKET_ERROR_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_error_to_string (const HttpWebSocketError error);
 
@@ -91,10 +98,101 @@ CERVER_PUBLIC const char *http_web_socket_error_to_string (const HttpWebSocketEr
  * @brief Returns the description of an error.
  *
  * @param[in] error the error
- * @return the description of its row in #HTTP_WEB_SOCKET_ERROR_MAP, or the one of HTTP_WEB_SOCKET_ERROR_NONE for a
- * value out of the table; a static string that must not be freed
+ * @return the description of its row in #HTTP_WEB_SOCKET_ERROR_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
  */
 CERVER_PUBLIC const char *http_web_socket_error_description (const HttpWebSocketError error);
+
+/**
+ * @brief The X-macro table of the checks of the Origin of an upgrade against the origins whitelist of the cerver:
+ * the number, the name, the string and the description of each one.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP(XX)																	\
+	XX(0,	NONE,			None,			Any Origin and a request without one)								\
+	XX(1,	REQUIRED,		Required,		The request must have an Origin of the whitelist)					\
+	XX(2,	IF_PRESENT,		IfPresent,		An Origin must be one of the whitelist and a request without one passes)
+
+/**
+ * @brief How an endpoint checks the Origin of an upgrade, one `HTTP_WEB_SOCKET_ORIGIN_CHECK_<name>` for each row of
+ * #HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP; a request that fails it is answered with 403.
+ *
+ * The Origin is compared byte by byte with each value of the whitelist.
+ *
+ * @since 2.1b-21 (it was a bool)
+ */
+typedef enum HttpWebSocketOriginCheck {
+
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_ORIGIN_CHECK_##name = num,
+	HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP (XX)
+	#undef XX
+
+} HttpWebSocketOriginCheck;
+
+/**
+ * @brief Returns the string of a check of the Origin.
+ *
+ * @param[in] check the check
+ * @return the string of its row in #HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP, or "Undefined" for a value out of the table;
+ * a static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_origin_check_to_string (const HttpWebSocketOriginCheck check);
+
+/**
+ * @brief Returns the description of a check of the Origin.
+ *
+ * @param[in] check the check
+ * @return the description of its row in #HTTP_WEB_SOCKET_ORIGIN_CHECK_MAP, or "Undefined" for a value out of the
+ * table; a static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_origin_check_description (const HttpWebSocketOriginCheck check);
+
+/**
+ * @brief The X-macro table of what a send does when its message does not fit in the queue of its connection: the
+ * number, the name, the string and the description of each one.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_OVERFLOW_MAP(XX)																		\
+	XX(0,	DROP,			Drop,			The message is not taken and the send returns that it was dropped)	\
+	XX(1,	CLOSE,			Close,			The message is not taken and the connection is closed with 1008)
+
+/**
+ * @brief What a send does when its message does not fit in the queue of its connection, one
+ * `HTTP_WEB_SOCKET_OVERFLOW_<name>` for each row of #HTTP_WEB_SOCKET_OVERFLOW_MAP.
+ *
+ * @since 2.1b-21
+ */
+typedef enum HttpWebSocketOverflow {
+
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_OVERFLOW_##name = num,
+	HTTP_WEB_SOCKET_OVERFLOW_MAP (XX)
+	#undef XX
+
+} HttpWebSocketOverflow;
+
+/**
+ * @brief Returns the string of a policy of the queue.
+ *
+ * @param[in] overflow the policy
+ * @return the string of its row in #HTTP_WEB_SOCKET_OVERFLOW_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_overflow_to_string (const HttpWebSocketOverflow overflow);
+
+/**
+ * @brief Returns the description of a policy of the queue.
+ *
+ * @param[in] overflow the policy
+ * @return the description of its row in #HTTP_WEB_SOCKET_OVERFLOW_MAP, or "Undefined" for a value out of the table;
+ * a static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_overflow_description (const HttpWebSocketOverflow overflow);
 
 /**
  * @brief What on_upgrade () decides about a connection, before its 101.
@@ -151,8 +249,9 @@ CERVER_EXPORT u8 http_web_socket_upgrade_add_header (
  *
  * @threadsafety All of them but on_upgrade are serialized by connection: in order and never two at the same time,
  * and the ones of different connections run at the same time. The thread that runs them is not part of the API
- * (today it is the one of the connection, with the event loop it is one of a pool), so nothing of a connection is
- * kept in the variables of a thread: its place is http_web_socket_set_data ().
+ * (with CERVER_HANDLER_TYPE_THREADS it is the one of the connection, with CERVER_HANDLER_TYPE_EVENTS one of the pool
+ * of its endpoint, and the event loop does not read the connection while one of them runs), so nothing of a
+ * connection is kept in the variables of a thread: its place is http_web_socket_set_data ().
  */
 typedef struct HttpWebSocketHandlers {
 
@@ -205,6 +304,14 @@ typedef struct HttpWebSocketHandlers {
 	/** @brief The connection failed, before its on_close. */
 	void (*on_error)(struct _HttpWebSocket *web_socket, HttpWebSocketError error);
 
+	/**
+	 * @brief The queue of the connection is empty again after a send returned HTTP_WEB_SOCKET_SEND_BACKPRESSURE:
+	 * once for each time that the queue went over half of its size.
+	 *
+	 * @since 2.1b-21
+	 */
+	void (*on_drain)(struct _HttpWebSocket *web_socket);
+
 } HttpWebSocketHandlers;
 
 /** @brief A setting that a group passes to its subgroups and endpoints: the handlers. */
@@ -223,9 +330,23 @@ typedef struct HttpWebSocketHandlers {
 #define HTTP_WEB_SOCKET_SETTING_CLOSE_TIMEOUT		(1 << 6)
 /** @brief A setting that a group passes to its subgroups and endpoints: the send timeout. */
 #define HTTP_WEB_SOCKET_SETTING_SEND_TIMEOUT		(1 << 7)
+/**
+ * @brief A setting that a group passes to its subgroups and endpoints: the size and the policy of the queue.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_SETTING_QUEUE				(1 << 8)
 
 /**
- * @brief The settings of the WebSocket connections of a group or an endpoint.
+ * @brief The settings of the WebSocket connections of a group, an endpoint or a client.
+ *
+ * They are set with the http_web_socket_settings_set_* () methods, which also mark each one as set: a group passes
+ * to its subgroups and endpoints only the settings that it set, and an endpoint keeps the ones that it set. The
+ * settings of an endpoint, a group or a client come from http_endpoint_get_web_socket_settings (),
+ * http_group_get_web_socket_settings () and http_web_socket_client_get_settings ().
+ *
+ * @warning A field that is written directly is not marked as set; the settings are read when the cerver or the
+ * client starts.
  */
 typedef struct HttpWebSocketSettings {
 
@@ -246,8 +367,8 @@ typedef struct HttpWebSocketSettings {
 	/** @brief The options of permessage-deflate. */
 	HttpWebSocketDeflateOptions compression;
 
-	/** @brief The Origin of the upgrade must be in the origins whitelist of the cerver (403 if not). */
-	bool origin_check;
+	/** @brief How the Origin of the upgrade is checked against the origins whitelist of the cerver (403 if it fails). */
+	HttpWebSocketOriginCheck origin_check;
 
 	/** @brief The milliseconds without receiving anything before a ping, 0 disables the pings. */
 	unsigned int ping_interval;
@@ -257,10 +378,147 @@ typedef struct HttpWebSocketSettings {
 	/** @brief The milliseconds that wait for the close frame of the peer. */
 	unsigned int close_timeout;
 
-	/** @brief The milliseconds of each send, 0 uses the send timeout of the HTTP cerver. */
+	/**
+	 * @brief The milliseconds of each send, 0 uses the send timeout of the HTTP cerver; with the event loop, the
+	 * milliseconds that the queue can wait without sending a byte.
+	 */
 	unsigned int send_timeout;
 
+	/** @brief The most bytes of the frames that wait in the queue of a connection, 0 uses the one of the cerver. */
+	size_t max_queue;
+	/** @brief What a send does when its message does not fit in the queue. */
+	HttpWebSocketOverflow overflow;
+
 } HttpWebSocketSettings;
+
+/**
+ * @brief Sets the handlers of the settings.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] handlers the handlers, copied; NULL changes nothing
+ * @note An endpoint takes WebSocket connections with http_endpoint_set_web_socket_handlers (), which also sets its
+ * modifier.
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_handlers (
+	HttpWebSocketSettings *settings, const HttpWebSocketHandlers *handlers
+);
+
+/**
+ * @brief Sets the most bytes of a message (and of each frame); a larger one closes the connection with 1009.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] max_message the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_MESSAGE (the default)
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_max_message (
+	HttpWebSocketSettings *settings, const size_t max_message
+);
+
+/**
+ * @brief Copies the subprotocols, in the order of preference of the server, at most
+ * #HTTP_WEB_SOCKET_MAX_PROTOCOLS; a list that is rejected does not change the settings.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] protocols the subprotocols, tokens
+ * @param[in] n_protocols the number of subprotocols
+ * @retval 0 the subprotocols were set
+ * @retval 1 a NULL argument, a list that is not valid or no memory
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT u8 http_web_socket_settings_set_protocols (
+	HttpWebSocketSettings *settings,
+	const char * const *protocols, const unsigned int n_protocols
+);
+
+/**
+ * @brief Sets the options of permessage-deflate (RFC 7692), used when cerver was built with zlib.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] compression the options, copied (http_web_socket_deflate_options_init () sets the defaults, and its
+ * enabled field enables it); NULL changes nothing
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_compression (
+	HttpWebSocketSettings *settings, const HttpWebSocketDeflateOptions *compression
+);
+
+/**
+ * @brief Enables or disables permessage-deflate (RFC 7692) with the default options, used when cerver was built
+ * with zlib.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] enabled true to enable it
+ * @since 2.1b-21
+ */
+CERVER_EXPORT void http_web_socket_settings_enable_compression (
+	HttpWebSocketSettings *settings, const bool enabled
+);
+
+/**
+ * @brief Sets how the Origin of the upgrade is checked.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] origin_check the check, HTTP_WEB_SOCKET_ORIGIN_CHECK_NONE by default
+ * @since 2.1b-21 (it was internal and a bool)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_origin_check (
+	HttpWebSocketSettings *settings, const HttpWebSocketOriginCheck origin_check
+);
+
+/**
+ * @brief Sets the milliseconds without receiving anything before a ping, and the ones to wait for its pong.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] ping_interval the milliseconds before a ping, 0 disables them
+ * @param[in] pong_timeout the milliseconds to wait for the pong
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_ping_milliseconds (
+	HttpWebSocketSettings *settings,
+	const unsigned int ping_interval, const unsigned int pong_timeout
+);
+
+/**
+ * @brief Sets the milliseconds that the closing handshake waits for the peer.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] close_timeout the milliseconds
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_close_timeout_milliseconds (
+	HttpWebSocketSettings *settings, const unsigned int close_timeout
+);
+
+/**
+ * @brief Sets the milliseconds of each send; with the event loop, the ones that the queue can wait without sending
+ * a byte before the connection fails.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] send_timeout the milliseconds, 0 uses the send timeout of the HTTP cerver
+ * @since 2.1b-21 (it was internal)
+ */
+CERVER_EXPORT void http_web_socket_settings_set_send_timeout_milliseconds (
+	HttpWebSocketSettings *settings, const unsigned int send_timeout
+);
+
+/**
+ * @brief Sets the most bytes of the frames that wait in the queue of a connection, and what a send does with a
+ * message that does not fit.
+ *
+ * A send writes what the socket takes at once and leaves the rest in the queue, which the owner of the connection
+ * writes (its event loop, or its thread). Over half of the queue a send returns HTTP_WEB_SOCKET_SEND_BACKPRESSURE
+ * and on_drain () runs when the queue is empty again.
+ *
+ * @param[in,out] settings the settings
+ * @param[in] max_queue the bytes, 0 uses the one of the cerver (http_cerver_set_web_socket_queue (),
+ * #HTTP_WEB_SOCKET_DEFAULT_MAX_QUEUE by default)
+ * @param[in] overflow what a send does with a message that does not fit, HTTP_WEB_SOCKET_OVERFLOW_DROP by default
+ * @since 2.1b-21
+ */
+CERVER_EXPORT void http_web_socket_settings_set_queue (
+	HttpWebSocketSettings *settings, const size_t max_queue, const HttpWebSocketOverflow overflow
+);
 
 /** @} */
 

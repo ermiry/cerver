@@ -31,9 +31,6 @@
 /** @brief The default most WebSocket connections of an HTTP cerver; an upgrade above it is answered with 503. */
 #define HTTP_WEB_SOCKET_DEFAULT_MAX_CONNECTIONS			(1 << 10)
 
-/** @brief The default milliseconds that a broadcast waits for each connection; a slower one fails. */
-#define HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT		(1 << 8)
-
 /** @brief The first close code that is counted on its own; the codes from 1000 to 1015 are counted one by one, the others together. */
 #define HTTP_WEB_SOCKET_CLOSE_CODES_FIRST				1000
 
@@ -71,8 +68,15 @@ typedef enum HttpWebSocketRejection {
 
 } HttpWebSocketRejection;
 
-/** @brief The number of rejection reasons. */
-#define HTTP_WEB_SOCKET_REJECTIONS		6
+/** @brief Counts a row of #HTTP_WEB_SOCKET_REJECTION_MAP. */
+#define HTTP_WEB_SOCKET_REJECTION_COUNT(num, name, string, description)		+ 1
+
+/**
+ * @brief The number of rejection reasons, the rows of #HTTP_WEB_SOCKET_REJECTION_MAP.
+ *
+ * @since 2.1b-21 (it is counted from the table)
+ */
+#define HTTP_WEB_SOCKET_REJECTIONS		(0 HTTP_WEB_SOCKET_REJECTION_MAP (HTTP_WEB_SOCKET_REJECTION_COUNT))
 
 /**
  * @brief Returns the string of a rejection reason.
@@ -94,24 +98,49 @@ CERVER_EXPORT void http_cerver_set_web_socket_max_connections (
 );
 
 /**
- * @brief Sets the milliseconds that a broadcast waits for each connection.
+ * @brief Sets the size and the policy of the queue of the connections whose endpoint (and its groups) did not set
+ * them with http_web_socket_settings_set_queue ().
  *
  * @param[in,out] http_cerver the HTTP cerver
- * @param[in] broadcast_timeout the milliseconds, 0 for #HTTP_WEB_SOCKET_DEFAULT_BROADCAST_TIMEOUT (the default)
+ * @param[in] max_queue the bytes, 0 for #HTTP_WEB_SOCKET_DEFAULT_MAX_QUEUE (the default)
+ * @param[in] overflow what a send does with a message that does not fit, HTTP_WEB_SOCKET_OVERFLOW_DROP by default
+ * @since 2.1b-21 (it replaces http_cerver_set_web_socket_broadcast_timeout_milliseconds (): a broadcast does not
+ * wait for any connection)
  */
-CERVER_EXPORT void http_cerver_set_web_socket_broadcast_timeout_milliseconds (
-	struct _HttpCerver *http_cerver, const unsigned int broadcast_timeout
+CERVER_EXPORT void http_cerver_set_web_socket_queue (
+	struct _HttpCerver *http_cerver, const size_t max_queue, const HttpWebSocketOverflow overflow
 );
 
 /**
- * @brief Returns the WebSocket connections that are open, of a room or of every one.
+ * @brief The connections that a broadcast, a count or a for each reach: the ones that match every field that is set.
+ *
+ * A NULL target, or one whose fields are all NULL, reaches every connection of the registry.
+ *
+ * @since 2.1b-21
+ */
+typedef struct HttpWebSocketTarget {
+
+	/** @brief Only the connections of this room, NULL for every room. */
+	const char *room;
+
+	/** @brief Only the connections of this endpoint, NULL for every endpoint. */
+	const struct _HttpEndpoint *endpoint;
+
+	/** @brief A connection that is not reached, it can be NULL. */
+	const HttpWebSocket *except;
+
+} HttpWebSocketTarget;
+
+/**
+ * @brief Returns the WebSocket connections that are open, the ones of a target.
  *
  * @param[in] http_cerver the HTTP cerver
- * @param[in] room the room, NULL for every connection
+ * @param[in] target the connections, NULL for every one
  * @return the number of connections, 0 for a NULL cerver
+ * @since 2.1b-21 (it took the room)
  */
 CERVER_EXPORT unsigned int http_cerver_web_socket_count (
-	struct _HttpCerver *http_cerver, const char *room
+	struct _HttpCerver *http_cerver, const HttpWebSocketTarget *target
 );
 
 /**
@@ -141,6 +170,13 @@ typedef struct HttpWebSocketStats {
 
 	/** @brief The connections that failed because a send did not end in time. */
 	u64 n_slow;
+
+	/** @brief The messages that a queue without a place did not take (A5). @since 2.1b-21 */
+	u64 n_dropped;
+	/** @brief The times that a queue was empty again after its backpressure, each one an on_drain (). @since 2.1b-21 */
+	u64 n_drains;
+	/** @brief The bytes that the queues of the connections that are open have now, a gauge. @since 2.1b-21 */
+	u64 n_queued_bytes;
 
 	/** @brief The connections that ended with an error. */
 	u64 n_errors;
@@ -181,15 +217,81 @@ CERVER_EXPORT u8 http_web_socket_get_stats (
 );
 
 /**
- * @brief Adds a connection to a room; a connection is in #HTTP_WEB_SOCKET_MAX_ROOMS rooms or less.
+ * @brief Returns the registered connection with an id, the one of http_web_socket_get_id ().
+ *
+ * The ids are unique in the process, for the connections of the servers and of the clients.
+ *
+ * @param[in] http_cerver the HTTP cerver
+ * @param[in] id the id
+ * @return the connection with a reference that is released with http_web_socket_release (), NULL when no registered
+ * connection has the id
+ * @since 2.1b-21
+ */
+CERVER_EXPORT HttpWebSocket *http_cerver_web_socket_get_with_id (
+	struct _HttpCerver *http_cerver, const u64 id
+);
+
+/**
+ * @brief The X-macro table of the results of http_web_socket_join (): the number, the name, the string and the
+ * description of each one.
+ *
+ * @since 2.1b-21
+ */
+#define HTTP_WEB_SOCKET_JOIN_MAP(XX)																			\
+	XX(0,	JOINED,			Joined,			The connection joined the room)									\
+	XX(1,	ALREADY,		Already,		The connection was already in the room)							\
+	XX(2,	INVALID,		Invalid,		A NULL argument or an empty name)								\
+	XX(3,	UNREGISTERED,	Unregistered,	The connection is of a client or it is not in the registry)		\
+	XX(4,	FAILED,			Failed,			The room could not be allocated)
+
+/**
+ * @brief The result of http_web_socket_join (), one `HTTP_WEB_SOCKET_JOIN_<name>` for each row of
+ * #HTTP_WEB_SOCKET_JOIN_MAP.
+ *
+ * @since 2.1b-21
+ */
+typedef enum HttpWebSocketJoin {
+
+	#define XX(num, name, string, description) HTTP_WEB_SOCKET_JOIN_##name = num,
+	HTTP_WEB_SOCKET_JOIN_MAP (XX)
+	#undef XX
+
+} HttpWebSocketJoin;
+
+/**
+ * @brief Returns the string of a result of http_web_socket_join ().
+ *
+ * @param[in] join the result
+ * @return the string of its row in #HTTP_WEB_SOCKET_JOIN_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_join_to_string (const HttpWebSocketJoin join);
+
+/**
+ * @brief Returns the description of a result of http_web_socket_join ().
+ *
+ * @param[in] join the result
+ * @return the description of its row in #HTTP_WEB_SOCKET_JOIN_MAP, or "Undefined" for a value out of the table; a
+ * static string that must not be freed
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC const char *http_web_socket_join_description (const HttpWebSocketJoin join);
+
+/**
+ * @brief Adds a connection to a room; a connection can be in any number of rooms, of any length.
+ *
+ * The rooms are an index of the registry (a room has its members), so a broadcast to a room only goes through its
+ * members; a room is created with its first member and removed with its last one. A connection joins in its
+ * on_open () too, before it is registered: the broadcasts and the counts reach it once it is (S7).
  *
  * @param[in,out] web_socket the connection of the server
- * @param[in] room the name, shorter than #HTTP_WEB_SOCKET_ROOM_NAME_SIZE
- * @retval 0 the connection is in the room (also when it already was)
- * @retval 1 a NULL argument, a connection of a client or that is not registered, a name that is too long, or the
- * connection has its most rooms
+ * @param[in] room the name, a string that is not empty; it is copied
+ * @return HTTP_WEB_SOCKET_JOIN_JOINED or HTTP_WEB_SOCKET_JOIN_ALREADY when the connection is in the room, the cause
+ * otherwise
+ * @since 2.1b-21 (it returned u8, and it had a limit of 16 rooms of 63 bytes)
  */
-CERVER_EXPORT u8 http_web_socket_join (HttpWebSocket *web_socket, const char *room);
+CERVER_EXPORT HttpWebSocketJoin http_web_socket_join (HttpWebSocket *web_socket, const char *room);
 
 /**
  * @brief Removes a connection from a room.
@@ -202,58 +304,70 @@ CERVER_EXPORT u8 http_web_socket_join (HttpWebSocket *web_socket, const char *ro
 CERVER_EXPORT u8 http_web_socket_leave (HttpWebSocket *web_socket, const char *room);
 
 /**
+ * @brief Removes a connection from every one of its rooms.
+ *
+ * The rooms of a connection are kept while its on_close () runs, and cerver removes them after it.
+ *
+ * @param[in,out] web_socket the connection
+ * @return the rooms that it left, 0 for a NULL connection
+ * @since 2.1b-21
+ */
+CERVER_EXPORT unsigned int http_web_socket_leave_all (HttpWebSocket *web_socket);
+
+/**
  * @brief Returns whether a connection is in a room.
  *
  * @param[in] web_socket the connection
  * @param[in] room the name
  * @return true when the connection is in the room
+ * @since 2.1b-21 (it took a connection that was not const)
  */
-CERVER_EXPORT bool http_web_socket_in_room (HttpWebSocket *web_socket, const char *room);
+CERVER_EXPORT bool http_web_socket_in_room (const HttpWebSocket *web_socket, const char *room);
 
 /**
- * @brief Sends a message to every connection of a room, or to every one, but one.
+ * @brief Returns a copy of the names of the rooms of a connection, in no order.
  *
- * A connection that is too slow (the broadcast timeout) fails without stopping the others.
+ * @param[in] web_socket the connection
+ * @param[out] n_rooms the number of rooms
+ * @return the names, an array and its strings in a single allocation that is released with free (); NULL (with 0
+ * rooms) when it is in no room, for a NULL argument or when the copy could not be allocated
+ * @since 2.1b-21
+ */
+CERVER_EXPORT char **http_web_socket_get_rooms (const HttpWebSocket *web_socket, unsigned int *n_rooms);
+
+/**
+ * @brief Sends a message to every connection of a target.
+ *
+ * Each connection takes the message in its queue with its own policy and its own compression, so a slow one never
+ * makes the others wait.
  *
  * @param[in] http_cerver the HTTP cerver
- * @param[in] room the room, NULL for every connection
- * @param[in] except a connection that does not receive it, it can be NULL
+ * @param[in] target the connections, NULL for every one
  * @param[in] type HTTP_WEB_SOCKET_OPCODE_TEXT or HTTP_WEB_SOCKET_OPCODE_BINARY
  * @param[in] data the payload
  * @param[in] size the bytes of the payload
- * @return the connections that received it
+ * @return the connections that took it in their queues (HTTP_WEB_SOCKET_SEND_QUEUED or
+ * HTTP_WEB_SOCKET_SEND_BACKPRESSURE)
+ * @since 2.1b-21 (it took the room and the connection that does not receive it, and it waited for each connection
+ * up to the broadcast timeout; it replaces http_endpoint_web_socket_broadcast ())
  */
 CERVER_EXPORT unsigned int http_cerver_web_socket_broadcast (
-	struct _HttpCerver *http_cerver, const char *room, const HttpWebSocket *except,
+	struct _HttpCerver *http_cerver, const HttpWebSocketTarget *target,
 	const HttpWebSocketOpcode type, const void *data, const size_t size
 );
 
 /**
- * @brief Sends a message to every connection of an endpoint, like http_cerver_web_socket_broadcast ().
+ * @brief Calls a method with every connection of a target, outside of the mutex of the registry, with a reference
+ * to each one that is released after its call.
  *
  * @param[in] http_cerver the HTTP cerver
- * @param[in] endpoint the endpoint
- * @param[in] type HTTP_WEB_SOCKET_OPCODE_TEXT or HTTP_WEB_SOCKET_OPCODE_BINARY
- * @param[in] data the payload
- * @param[in] size the bytes of the payload
- * @return the connections that received it, 0 for a NULL endpoint
- */
-CERVER_EXPORT unsigned int http_endpoint_web_socket_broadcast (
-	struct _HttpCerver *http_cerver, const struct _HttpEndpoint *endpoint,
-	const HttpWebSocketOpcode type, const void *data, const size_t size
-);
-
-/**
- * @brief Calls a method with every connection of a room (or every one), outside of the mutex of the registry, with
- * a reference to each one that is released after its call.
- *
- * @param[in] http_cerver the HTTP cerver
- * @param[in] room the room, NULL for every connection
+ * @param[in] target the connections, NULL for every one
  * @param[in] method the method
  * @param[in] args the arguments of the method
+ * @since 2.1b-21 (it took the room)
  */
 CERVER_EXPORT void http_cerver_web_socket_for_each (
-	struct _HttpCerver *http_cerver, const char *room,
+	struct _HttpCerver *http_cerver, const HttpWebSocketTarget *target,
 	void (*method)(HttpWebSocket *web_socket, void *args), void *args
 );
 

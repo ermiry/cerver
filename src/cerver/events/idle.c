@@ -6,6 +6,7 @@
 #include "cerver/events/internal.h"
 
 #include "cerver/http/core/connection.h"
+#include "cerver/http/websockets/internal.h"
 
 #include "cerver/threads/thpool.h"
 
@@ -64,6 +65,33 @@ static ThpoolWaited event_idle_reported (HttpConnection *connection, ThpoolJob *
 
 }
 
+// the thread that got the socket of a WebSocket connection that waits between its jobs reads its next frames (F6b)
+static ThpoolWaited event_idle_web_socket (HttpWebSocketPark *park, ThpoolJob *job) {
+
+	ThpoolWaited waited = THPOOL_WAITED_NOTHING;
+
+	HttpWebSocket *web_socket = http_web_socket_park_take (park);
+	if (web_socket) {
+		job->work = http_web_socket_park_work;
+		job->reject = NULL;
+		job->args = web_socket;
+
+		waited = THPOOL_WAITED_WORK;
+	}
+
+	return waited;
+
+}
+
+// the owner of a source of the poller of a pool is an idle connection or the park of a WebSocket connection
+static ThpoolWaited event_idle_source (const EventSource *source, ThpoolJob *job) {
+
+	return (source->type == EVENT_SOURCE_TYPE_WEB_SOCKET) ?
+		event_idle_web_socket ((HttpWebSocketPark *) source->owner, job) :
+		event_idle_reported ((HttpConnection *) source->owner, job);
+
+}
+
 // a thread of the pool waits for the socket of an idle connection, or for a wake up of its thpool (a job in its
 // queue, its end)
 static ThpoolWaited event_idle_wait (void *idle_ptr, ThpoolJob *job) {
@@ -75,7 +103,7 @@ static ThpoolWaited event_idle_wait (void *idle_ptr, ThpoolJob *job) {
 	EventReady ready = { NULL, 0 };
 	switch (event_poller_wait_one (idle->poller, &ready, EVENT_POLLER_WAIT_FOREVER)) {
 		case EVENT_POLLER_WAITED_SOURCE:
-			waited = event_idle_reported ((HttpConnection *) ready.source->owner, job);
+			waited = event_idle_source (ready.source, job);
 			break;
 
 		case EVENT_POLLER_WAITED_WAKE:
@@ -132,7 +160,10 @@ void event_idle_rescue (EventIdle *idle, EventLoop *loop) {
 
 		const int n_ready = event_poller_take (idle->poller, ready, EVENT_IDLE_EVENTS);
 		for (int idx = 0; idx < n_ready; idx++) {
-			http_connection_rescued (loop, (HttpConnection *) ready[idx].source->owner);
+			const EventSource *source = ready[idx].source;
+
+			if (source->type == EVENT_SOURCE_TYPE_WEB_SOCKET) http_web_socket_park_rescued ((HttpWebSocketPark *) source->owner);
+			else http_connection_rescued (loop, (HttpConnection *) source->owner);
 		}
 	}
 
