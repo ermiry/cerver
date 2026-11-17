@@ -99,12 +99,15 @@ static u8 balancer_send_packet (
 	(void) pthread_mutex_lock (socket->write_mutex);
 
 	if (socket->sock_fd > -1) {
+		int error = 0;
 		retval = socket_send_vector (
 			socket,
 			parts, (body && body_size) ? BALANCER_SEND_PARTS : 1,
 			0, (time_t) CERVER_DEFAULT_SEND_TIMEOUT,
-			NULL, NULL
+			NULL, &error
 		);
+
+		if (retval) (void) socket_end_on_send_timeout (socket, error);
 	}
 
 	(void) pthread_mutex_unlock (socket->write_mutex);

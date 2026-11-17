@@ -22,6 +22,16 @@
 #define SEND_PIECE_SIZE			1000
 #define ROUTE_BODY_SIZE			((4096 * 3) + 123)
 
+// a peer that never reads: more data than any socket buffer of a socketpair, in packets that time out
+#define SEND_TIMEOUT_DATA_SIZE		(1 << 23)
+#define SEND_TIMEOUT_SECONDS		1
+#define SEND_TIMEOUT_PACKETS		3
+#define SEND_TIMEOUT_DRAIN_SIZE		(1 << 16)
+#define SEND_TIMEOUT_MILLISECONDS	1000.0
+
+// a send after the end of the connection fails before half of the timeout
+#define SEND_TIMEOUT_ENDED_MAXIMUM	500.0
+
 #define CHECK_MAJOR				2
 #define CHECK_MINOR				4
 
@@ -870,6 +880,64 @@ static void test_packets_send_pieces_failed (void) {
 
 }
 
+// the milliseconds that a send of the packet takes, it has to fail
+static double send_timeout_failed_milliseconds (const Packet *packet) {
+
+	const double start = test_wait_now ();
+	test_check_unsigned_eq (packet_send (packet, 0, NULL, false), 1, NULL);
+
+	return (test_wait_now () - start) * SEND_TIMEOUT_MILLISECONDS;
+
+}
+
+// reads what is buffered without waiting, returns the last result of recv ()
+static ssize_t send_timeout_drain (const int fd) {
+
+	char buffer[SEND_TIMEOUT_DRAIN_SIZE];
+
+	ssize_t received = 0;
+	do {
+		received = recv (fd, buffer, SEND_TIMEOUT_DRAIN_SIZE, MSG_DONTWAIT);
+	} while (received > 0);
+
+	return received;
+
+}
+
+// a send that waits for its whole timeout, to a peer that never reads, ends its connection:
+// the next sends fail at once, instead of waiting each one, and the peer sees the end of the stream
+static void test_packets_send_timeout_ends (void) {
+
+	SendPair pair = send_pair_create ();
+	connection_set_send_timeout (pair.connection, SEND_TIMEOUT_SECONDS);
+
+	char *data = (char *) malloc (SEND_TIMEOUT_DATA_SIZE);
+	test_check_ptr (data);
+	send_fill (data, SEND_TIMEOUT_DATA_SIZE, 't');
+
+	Packet *packet = packet_create (PACKET_TYPE_APP, SEND_REQUEST_TYPE, data, SEND_TIMEOUT_DATA_SIZE);
+	test_check_ptr (packet);
+	test_check_unsigned_eq (packet_generate (packet), 0, NULL);
+	packet_set_network_values (packet, NULL, NULL, pair.connection, NULL);
+
+	// the first one waits for its timeout
+	(void) send_timeout_failed_milliseconds (packet);
+
+	for (unsigned int i = 1; i < SEND_TIMEOUT_PACKETS; i++) {
+		test_check (
+			send_timeout_failed_milliseconds (packet) < SEND_TIMEOUT_ENDED_MAXIMUM,
+			"a send after a timeout waited for its own timeout"
+		);
+	}
+
+	test_check_int_eq ((int) send_timeout_drain (pair.fds[1]), 0, "the peer did not see the end of the stream");
+
+	packet_delete (packet);
+	free (data);
+	send_pair_delete (&pair);
+
+}
+
 // the whole generated packet is written to the socket
 static void test_packets_send_to_socket (void) {
 
@@ -1238,6 +1306,7 @@ int main (void) {
 	test_packets_send_split ();
 	test_packets_send_pieces ();
 	test_packets_send_pieces_failed ();
+	test_packets_send_timeout_ends ();
 	test_packets_send_to_socket ();
 	test_packets_send_request ();
 	test_packets_route_between_connections ();
