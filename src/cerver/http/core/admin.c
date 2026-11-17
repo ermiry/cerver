@@ -519,6 +519,10 @@ static void http_cerver_admin_handler_pool_stats (
 	http_json_member_integer (
 		writer, "n_unavailable", (i64) __atomic_load_n (&pool->n_unavailable, __ATOMIC_RELAXED)
 	);
+	http_json_member_integer (
+		writer, "parked_microseconds",
+		(i64) __atomic_load_n (&pool->parked_total_microseconds, __ATOMIC_RELAXED)
+	);
 
 	cerver_json_writer_object_end (writer);
 
@@ -570,6 +574,7 @@ static void http_cerver_admin_handler_connections_stats (
 
 	http_json_member_integer (writer, "n_reused", (i64) CERVER_STATS_GET (http_cerver->n_reused_connections));
 	http_json_member_integer (writer, "n_followed", (i64) CERVER_STATS_GET (http_cerver->n_followed_requests));
+	http_json_member_integer (writer, "n_pool_read", (i64) CERVER_STATS_GET (http_cerver->n_pool_read_requests));
 	http_json_member_integer (writer, "n_ended", (i64) ended);
 	http_json_member_integer (writer, "n_requests", (i64) CERVER_STATS_GET (http_cerver->n_connection_requests));
 

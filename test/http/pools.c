@@ -1413,6 +1413,18 @@ static void test_pools_wait (void) {
 	test_check_unsigned_eq (__atomic_load_n (&server->slow->n_parked, __ATOMIC_ACQUIRE), 2, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&server->slow->n_unavailable, __ATOMIC_ACQUIRE), 1, NULL);
 
+	// the time that each one waited: the one whose wait ended waited the time of the pool
+	pools_metrics_expect (server, "cerver_http_pool_parked_seconds_count{pool=\"slow\"} 2\n", true);
+	pools_metrics_expect (server, "cerver_http_pool_parked_seconds_bucket{pool=\"slow\",le=\"+Inf\"} 2\n", true);
+	pools_metrics_expect (server, "cerver_http_pool_parked_seconds_count{pool=\"default\"} 0\n", true);
+	test_check (
+		__atomic_load_n (&server->slow->parked_total_microseconds, __ATOMIC_ACQUIRE)
+			>= ((u64) POOLS_SLOW_WAIT * THPOOL_MICROSECONDS_PER_SECOND),
+		"the time that the requests waited is less than the wait of the pool"
+	);
+
+	pools_admin_expect (server, "\"n_parked\": 2");
+
 	pools_server_stop (server);
 
 }

@@ -156,6 +156,14 @@
 #define HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT			(1 << 6)
 
 /**
+ * @brief By default the threads of the pools read the next request of a connection that is kept, without its
+ * event loop: http_cerver_set_keep_alive_pool_read ().
+ *
+ * @since 3.0b-10
+ */
+#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ	true
+
+/**
  * @brief The exponent of the last bucket with a limit of the requests that a connection handled: 2^10 requests,
  * the default of #HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS.
  *
@@ -768,6 +776,22 @@ struct _HttpCerver {
 	 * @since 3.0b-5
 	 */
 	size_t n_followed_requests;
+
+	/**
+	 * @brief The threads of the pools read, parse and handle the next request of a connection that is kept, and
+	 * its event loop only reads it when its pool has no place (http_cerver_set_keep_alive_pool_read ()). Only with
+	 * event loops.
+	 *
+	 * @since 3.0b-10
+	 */
+	bool keep_alive_pool_read;
+	/**
+	 * @brief The requests of connections that were kept that a thread of a pool read and handled, without their
+	 * event loop; updated with atomic operations.
+	 *
+	 * @since 3.0b-10
+	 */
+	size_t n_pool_read_requests;
 
 };
 
