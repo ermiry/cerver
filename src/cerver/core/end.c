@@ -52,6 +52,8 @@
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -608,6 +610,9 @@ static void cerver_clean (Cerver *cerver) {
 		game_cerver_stop (cerver);
 
 		cerver_stop_threads (cerver);
+
+		// the handshakes end before the drain: a connection that waited for its own drops itself
+		cerver_tls_end (cerver);
 
 		cerver_drain (cerver);
 

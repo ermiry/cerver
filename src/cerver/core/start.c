@@ -50,6 +50,8 @@
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -595,6 +597,9 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 			// init the cerver thpool
 			errors |= cerver_one_time_init_thpool (cerver);
+
+			// the certificates and the settings of TLS are validated before the cerver listens
+			errors |= cerver_tls_start (cerver);
 
 			// perform one time init methods by cerver type
 			switch (cerver->type) {

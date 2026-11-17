@@ -88,6 +88,20 @@ CERVER_PUBLIC unsigned int thread_set_name (
 	const char *name, ...
 ) CERVER_PRINTF_FORMAT (1, 2);
 
+/** @brief The signals that thread_signal_block_add () can add to SIGINT and SIGTERM: 2^3. */
+#define THREAD_BLOCKED_SIGNALS_MAX			8
+
+/**
+ * @brief Adds a signal to the ones that the threads of cerver block (SIGINT and SIGTERM), so the thread of the
+ * application takes it; the threads that already run keep their mask.
+ *
+ * @param[in] signal_number the signal
+ * @note For the internal methods of cerver (the reload signal of TLS).
+ * @threadsafety Safe from any thread.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE void thread_signal_block_add (const int signal_number);
+
 /** @} */
 
 /**

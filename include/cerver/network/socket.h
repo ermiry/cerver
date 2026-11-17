@@ -90,6 +90,12 @@ struct _Socket {
 	/** @brief The next deleted socket that waits to be reused. */
 	struct _Socket *recycle_next;
 
+	/**
+	 * @brief The TLS of the connection, NULL for a plain one: every receive and send of the socket goes through it.
+	 * @since 2.1b-22
+	 */
+	struct _TlsConnection *tls;
+
 };
 
 /** @brief The socket of a connection, see struct _Socket. */
@@ -164,6 +170,50 @@ CERVER_PUBLIC void socket_replace (Socket *socket, const int fd);
  * @threadsafety Safe from any thread that has a reference to the socket.
  */
 CERVER_PUBLIC u8 socket_shutdown (Socket *socket);
+
+/**
+ * @brief Ends what the socket sends: the close_notify of its TLS when it has one, and then shutdown (SHUT_WR).
+ *
+ * @param[in,out] socket the socket, it can be NULL
+ * @note For the internal methods of cerver.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE void socket_end_writes (Socket *socket);
+
+/**
+ * @brief Receives like recv (), through the TLS of the socket when it has one.
+ *
+ * @param[in,out] socket the socket
+ * @param[out] buffer where the bytes are written
+ * @param[in] size the size of the buffer
+ * @param[in] flags the flags of recv (); with TLS only MSG_DONTWAIT is taken (see socket_peek ())
+ * @return the bytes, 0 when the peer closed, -1 with errno
+ * @note For the internal methods of cerver.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE ssize_t socket_receive (Socket *socket, void *buffer, const size_t size, const int flags);
+
+/**
+ * @brief Returns whether a receive gives bytes (or the close of the peer) without waiting for the fd: with TLS a
+ * record can be decrypted already while the fd is not readable, so it is asked before every poll ().
+ *
+ * @param[in] socket the socket
+ * @return true when the poll () must not be waited; always false without TLS
+ * @note For the internal methods of cerver.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE bool socket_pending (Socket *socket);
+
+/**
+ * @brief Looks whether bytes arrived without taking them, like recv () with MSG_PEEK | MSG_DONTWAIT; with TLS
+ * the records that arrived count, before they are decrypted.
+ *
+ * @param[in] socket the socket
+ * @return 1 when something arrived, 0 when the peer closed, -1 with errno (EAGAIN when nothing arrived)
+ * @note For the internal methods of cerver.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE int socket_peek (Socket *socket);
 
 /** @} */
 

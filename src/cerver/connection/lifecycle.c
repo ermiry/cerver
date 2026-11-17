@@ -34,6 +34,8 @@
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -363,6 +365,37 @@ static void connection_connect_synchronization (Connection *connection) {
 
 }
 
+// a TCP connection of a client with TLS runs its handshake right after its connect (),
+// with the host of the connection as the name that it asks for and verifies
+// returns 0 on success (or without TLS), 1 when the handshake failed
+static int connection_connect_tls (Connection *connection) {
+
+	int retval = 0;
+
+	ClientTls *client_tls = connection->client ? connection->client->tls : NULL;
+	if (client_tls && (connection->protocol == PROTOCOL_TCP)) {
+		// a connection that connects again starts a new session
+		tls_connection_delete (connection->socket->tls);
+		connection->socket->tls = NULL;
+
+		TlsFailure failure = TLS_FAILURE_NONE;
+		connection->socket->tls = client_tls_connect (
+			client_tls, connection->socket->sock_fd, connection->ip, connection->port, &failure
+		);
+
+		if (!connection->socket->tls) {
+			cerver_log_error (
+				"Connection %s TLS handshake failed - %s", connection->name, tls_failure_description (failure)
+			);
+
+			retval = 1;
+		}
+	}
+
+	return retval;
+
+}
+
 // starts a connection -> connects to the specified ip and port
 // every address that the ip resolves to is tried in turn, see connection_set_connect_timeout ()
 // a connection without synchronization gets it before it starts, see connection_set_synchronization ()
@@ -378,6 +411,7 @@ int connection_connect (Connection *connection) {
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
 		retval = connection_try (connection);
+		if (!retval) retval = connection_connect_tls (connection);
 
 		// a socket whose connect () failed can not be used again,
 		// the next connect starts with a new one

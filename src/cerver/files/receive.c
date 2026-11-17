@@ -41,6 +41,9 @@
 // how many times a recv () can time out in the middle of a file
 #define FILES_RECEIVE_MAX_TIMEOUTS		4
 
+// the bytes that a file of a connection with TLS is decrypted in: 2^16
+#define FILES_RECEIVE_DECRYPTED_SIZE	65536
+
 #pragma region receive
 
 // move from socket to pipe buffer
@@ -223,6 +226,53 @@ static u8 file_receive_write_all (
 
 }
 
+// with TLS the bytes of the socket are encrypted: they can not go to the file with splice (),
+// they are decrypted to a buffer and written
+static u8 file_receive_decrypted (
+	Connection *connection, size_t filelen, int file_fd
+) {
+
+	u8 retval = 1;
+
+	char *buffer = (char *) malloc (FILES_RECEIVE_DECRYPTED_SIZE);
+	if (buffer) {
+		unsigned int timeouts = 0;
+		bool failed = false;
+		while (!failed && filelen) {
+			const size_t chunk = (filelen < FILES_RECEIVE_DECRYPTED_SIZE) ? filelen : FILES_RECEIVE_DECRYPTED_SIZE;
+
+			const ssize_t received = socket_receive (connection->socket, buffer, chunk, 0);
+			if (received > 0) {
+				timeouts = 0;
+				failed = file_receive_write_all (file_fd, buffer, (size_t) received);
+				filelen -= (size_t) received;
+			}
+
+			else {
+				failed = !file_receive_internal_retry (received, &timeouts);
+			}
+		}
+
+		free (buffer);
+
+		if (!filelen) retval = 0;
+	}
+
+	return retval;
+
+}
+
+// the rest of the file goes through splice (), or through the TLS of the socket
+static u8 file_receive_select (
+	Connection *connection, size_t filelen, int file_fd
+) {
+
+	return connection->socket->tls ?
+		file_receive_decrypted (connection, filelen, file_fd) :
+		file_receive_internal (connection, filelen, file_fd);
+
+}
+
 // a file that was not received complete is removed, so no partial file is left with its name
 static void file_receive_discard (char **saved_filename) {
 
@@ -285,7 +335,7 @@ u8 file_receive_actual (
 				file_header->len, file_data_len, real_filelen
 			);
 			#endif
-			if (!file_receive_internal (
+			if (!file_receive_select (
 				connection,
 				real_filelen,
 				file_fd

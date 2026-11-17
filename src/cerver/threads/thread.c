@@ -16,6 +16,23 @@
 
 #pragma region threads
 
+// the signals that the threads block besides SIGINT and SIGTERM, 0 in a free place
+static int thread_blocked_signals[THREAD_BLOCKED_SIGNALS_MAX] = { 0 };
+
+void thread_signal_block_add (const int signal_number) {
+
+	bool added = false;
+
+	for (unsigned int index = 0; !added && (index < THREAD_BLOCKED_SIGNALS_MAX); index++) {
+		int expected = 0;
+		added = (__atomic_load_n (&thread_blocked_signals[index], __ATOMIC_ACQUIRE) == signal_number)
+			|| __atomic_compare_exchange_n (
+				&thread_blocked_signals[index], &expected, signal_number, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE
+			);
+	}
+
+}
+
 // the new thread inherits the signal mask of its creator,
 // so the signals are blocked only while the thread is created
 static void thread_signals_block (sigset_t *previous) {
@@ -24,6 +41,11 @@ static void thread_signals_block (sigset_t *previous) {
 	(void) sigemptyset (&blocked);
 	(void) sigaddset (&blocked, SIGINT);
 	(void) sigaddset (&blocked, SIGTERM);
+
+	for (unsigned int index = 0; index < THREAD_BLOCKED_SIGNALS_MAX; index++) {
+		const int signal_number = __atomic_load_n (&thread_blocked_signals[index], __ATOMIC_ACQUIRE);
+		if (signal_number) (void) sigaddset (&blocked, signal_number);
+	}
 
 	(void) pthread_sigmask (SIG_BLOCK, &blocked, previous);
 

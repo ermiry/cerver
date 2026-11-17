@@ -48,6 +48,8 @@
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -203,6 +205,8 @@ Cerver *cerver_new (void) {
 		cerver->request_stats = NULL;
 
 		cerver->balancer = NULL;
+
+		cerver->tls = NULL;
 	}
 
 	return cerver;
@@ -265,6 +269,8 @@ void cerver_delete (void *ptr) {
 		thread_cond_delete (cerver->handlers_alive_cond);
 
 		admin_cerver_delete (cerver->admin);
+
+		cerver_tls_delete (cerver->tls);
 
 		for (unsigned int i = 0; i < CERVER_MAX_EVENTS; i++)
 			if (cerver->events[i]) cerver_event_delete (cerver->events[i]);

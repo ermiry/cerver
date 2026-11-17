@@ -735,7 +735,8 @@ CERVER_EXPORT u8 packet_send_ping (
  * @param[in] header the header of the packet
  * @param[out] sent the bytes that were sent, it can be NULL
  * @retval 0 the whole packet was routed
- * @retval 1 a NULL argument or on error
+ * @retval 1 a NULL argument, a connection with TLS (since 2.1b-22: its bytes are records, splice () can not move
+ * them) or on error
  * @threadsafety It holds the write mutex of the socket of to until the whole packet has been routed.
  */
 CERVER_PUBLIC u8 packet_route_between_connections (

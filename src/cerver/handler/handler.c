@@ -62,6 +62,8 @@
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -1887,15 +1889,22 @@ static inline bool cerver_receive_should_retry (const int error) {
 
 }
 
-void cerver_receive_internal (
+// a poll thread never waits for the rest of a record of TLS, it waits for the next poll ()
+static inline int cerver_receive_internal_flags (const CerverReceive *cr) {
+
+	return cr->socket->tls ? MSG_DONTWAIT : 0;
+
+}
+
+static ssize_t cerver_receive_internal_once (
 	CerverReceive *cr,
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
-	ssize_t rc = recv (
-		cr->socket->sock_fd,
+	ssize_t rc = socket_receive (
+		cr->socket,
 		packet_buffer, packet_buffer_size,
-		0
+		cerver_receive_internal_flags (cr)
 	);
 
 	switch (rc) {
@@ -1947,6 +1956,22 @@ void cerver_receive_internal (
 		} break;
 	}
 
+	return rc;
+
+}
+
+// with TLS the records that were decrypted already never wake the poll () again, they are received now
+void cerver_receive_internal (
+	CerverReceive *cr,
+	char *packet_buffer, const size_t packet_buffer_size
+) {
+
+	ssize_t rc = cerver_receive_internal_once (cr, packet_buffer, packet_buffer_size);
+
+	while ((rc > 0) && (cr->socket->sock_fd > -1) && socket_pending (cr->socket)) {
+		rc = cerver_receive_internal_once (cr, packet_buffer, packet_buffer_size);
+	}
+
 }
 
 // packet buffer only gets deleted if cerver_receive_handle_buffer () is used
@@ -1956,8 +1981,8 @@ static inline u8 cerver_receive_threads_actual (
 ) {
 
 	u8 retval = 1;
-	
-	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
+
+	ssize_t rc = socket_receive (cr->socket, buffer, buffer_size, 0);
 	switch (rc) {
 		case -1: {
 			if (cerver_receive_should_retry (errno)) {
@@ -2319,11 +2344,9 @@ static int cerver_receive_http_idle_poll (
 }
 
 // the client of an idle connection sent the first bytes of its next request, or it left
-static bool cerver_receive_http_idle_arrived (const int sock_fd) {
+static bool cerver_receive_http_idle_arrived (Socket *socket) {
 
-	char byte = 0;
-
-	return recv (sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT) > 0;
+	return socket_peek (socket) > 0;
 
 }
 
@@ -2381,14 +2404,16 @@ static HandlerIdle cerver_receive_http_idle (CerverReceive *cr, HttpReceive *htt
 		!ready && !yield && !cerver_is_stopping (cr->cerver)
 		&& (cerver_receive_monotonic_time () < deadline)
 	) {
-		ready = cerver_receive_http_idle_poll (sock_fd, deadline, cerver_receive_http_idle_part (cr));
+		// with TLS a request that was decrypted already never makes the fd readable
+		ready = socket_pending (cr->socket) ?
+			1 : cerver_receive_http_idle_poll (sock_fd, deadline, cerver_receive_http_idle_part (cr));
 
 		yield = !ready && cerver_receive_http_can_yield (cr);
 	}
 
 	HandlerIdle idle = HANDLER_IDLE_YIELDED;
 
-	if ((ready > 0) && cerver_receive_http_idle_arrived (sock_fd)) {
+	if ((ready > 0) && cerver_receive_http_idle_arrived (cr->socket)) {
 		cr->idle_deadline = 0;
 
 		http_receive_request_arrived (http_receive);
@@ -2415,7 +2440,7 @@ static inline u8 cerver_receive_http_actual (
 
 	HttpReceiveDiagnostics *diagnostics = &http_receive->diagnostics;
 
-	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
+	ssize_t rc = socket_receive (cr->socket, buffer, buffer_size, 0);
 
 	diagnostics->last_rc = rc;
 	diagnostics->last_errno = (rc < 0) ? errno : 0;
@@ -2614,6 +2639,17 @@ static void cerver_receive_http_yield (CerverReceive *cr) {
 
 }
 
+// a connection whose handshake of TLS failed (counted by its reason) is closed without an answer
+static void cerver_receive_http_handshake_failed (CerverReceive *cr) {
+
+	http_cerver_connection_ended ((HttpCerver *) cr->cerver->cerver_data, cr->n_requests);
+
+	connection_drop (cr->cerver, cr->connection);
+
+	cerver_receive_delete (cr);
+
+}
+
 // the connection of a client that could not get the memory of its receive is closed
 static void cerver_receive_http_unavailable (CerverReceive *cr) {
 
@@ -2639,6 +2675,12 @@ static void cerver_receive_http_unavailable (CerverReceive *cr) {
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+	// the handshake of TLS runs once, in the first thread that takes the connection
+	if (cr->cerver->tls && !cerver_tls_accept (cr->cerver, cr->socket)) {
+		cerver_receive_http_handshake_failed (cr);
+		return NULL;
+	}
 
 	// the receive and the data of its request use the memory of the thread, if it is available
 	HandlerThreadContext *context = handler_context_get (cr->cerver->receive_buffer_size);
@@ -2838,6 +2880,7 @@ HandlerThreadContext *handler_context_get (const size_t buffer_size) {
 // answers 503 to a web connection that the cerver can not handle,
 // the data that the client already sent is read before the close,
 // otherwise the close answers with a RST that can destroy the response
+// with TLS the connection is closed without its handshake: a full cerver never spends one on it
 static void cerver_reject_web_connection (
 	Cerver *cerver, Connection *connection
 ) {
@@ -2846,7 +2889,11 @@ static void cerver_reject_web_connection (
 
 	CERVER_STATS_ADD (cerver->stats->total_rejected_connections, 1);
 
-	if (sock_fd > -1) {
+	if (cerver->tls) {
+		cerver_tls_reject (cerver);
+	}
+
+	else if (sock_fd > -1) {
 		(void) http_response_send_service_unavailable (sock_fd);
 
 		(void) shutdown (sock_fd, SHUT_WR);
@@ -3216,6 +3263,44 @@ static inline u8 cerver_register_new_connection_select (
 
 }
 
+void cerver_register_new_connection_ready (Cerver *cerver, Connection *connection) {
+
+	if (!cerver_register_new_connection_select (cerver, connection)) {
+		#ifdef CERVER_DEBUG
+		cerver_log (
+			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+			"New connection to cerver %s!", cerver->info->name
+		);
+		#endif
+	}
+
+	// internal server error - failed to handle the new connection
+	else {
+		cerver_log_error (
+			"cerver_register_new_connection () "
+			"- internal error - dropping sock fd <%d> connection...",
+			connection->socket->sock_fd
+		);
+
+		connection_drop (cerver, connection);
+	}
+
+}
+
+// a cerver with TLS that is not a web one registers the connection after its handshake, in the pool of its TLS,
+// so its info packet is the first thing that goes encrypted; a web one runs it in the thread that receives
+static void cerver_register_new_connection_dispatch (Cerver *cerver, Connection *connection) {
+
+	if (cerver->tls && (cerver->type != CERVER_TYPE_WEB)) {
+		if (cerver_tls_dispatch (cerver, connection)) connection_drop (cerver, connection);
+	}
+
+	else {
+		cerver_register_new_connection_ready (cerver, connection);
+	}
+
+}
+
 static void cerver_register_new_connection (
 	Cerver *cerver,
 	const i32 new_fd, const struct sockaddr_storage *client_address
@@ -3224,7 +3309,7 @@ static void cerver_register_new_connection (
 	Connection *connection = cerver_connection_create (
 		cerver, new_fd, client_address
 	);
-	
+
 	if (connection) {
 		#ifdef CERVER_DEBUG
 		cerver_log (
@@ -3245,25 +3330,7 @@ static void cerver_register_new_connection (
 
 		connection_set_active (connection, true);
 
-		if (!cerver_register_new_connection_select (cerver, connection)) {
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-				"New connection to cerver %s!", cerver->info->name
-			);
-			#endif
-		}
-
-		// internal server error - failed to handle the new connection
-		else {
-			cerver_log_error (
-				"cerver_register_new_connection () "
-				"- internal error - dropping sock fd <%d> connection...",
-				connection->socket->sock_fd
-			);
-
-			connection_drop (cerver, connection);
-		}
+		cerver_register_new_connection_dispatch (cerver, connection);
 	}
 
 	else {

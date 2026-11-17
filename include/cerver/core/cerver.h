@@ -502,6 +502,13 @@ struct _Cerver {
 	struct _Balancer *balancer;
 
 	/**
+	 * @brief The TLS of the cerver, NULL without it (see cerver_set_tls ()).
+	 *
+	 * @since 2.1b-22
+	 */
+	struct _CerverTls *tls;
+
+	/**
 	 * @brief The I/O threads of a cerver with CERVER_HANDLER_TYPE_EVENTS.
 	 *
 	 * @since 2.1b-15
