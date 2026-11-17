@@ -317,7 +317,7 @@ static unsigned int keepalive_authentication_handler (
 }
 
 static const HttpWebSocketHandlers keepalive_web_socket_handlers = {
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static void keepalive_routes (HttpCerver *http_cerver) {
@@ -1816,6 +1816,47 @@ static void test_keepalive_events_pool_busy (void) {
 
 }
 
+// the thread that gets the socket of an idle connection while its loop rejects its requests does not read it:
+// the connection goes back to its loop, that reads the request and answers it with 503 (http_connection_reported ())
+static void test_keepalive_events_reported_rejecting (void) {
+
+	KeepAliveOptions options = keepalive_options_default ();
+	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
+	options.threads = 1;
+
+	KeepAliveServer *server = keepalive_server_start (&options);
+
+	const HttpCerver *http_cerver = server->http_cerver;
+
+	KeepAliveClient client;
+	keepalive_client_start (&client, server);
+	keepalive_client_send (&client, keepalive_ok_request);
+	keepalive_client_expect_kept (&client, "HTTP/1.1 200", NULL);
+
+	// the only thread waits for the socket of the idle connection, so its loop does not look at it
+	keepalive_server_wait_idle (server, 1);
+	keepalive_server_wait_waiting (server, 1);
+
+	EventLoop *loop = server->cerver->event_loops->loops[0];
+	__atomic_store_n (&loop->rejecting, true, __ATOMIC_RELEASE);
+
+	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
+
+	keepalive_client_send (&client, keepalive_ok_request);
+
+	char response[KEEPALIVE_RESPONSE_SIZE];
+	keepalive_client_expect (&client, "HTTP/1.1 503", NULL, response);
+
+	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
+
+	__atomic_store_n (&loop->rejecting, false, __ATOMIC_RELEASE);
+
+	keepalive_client_end (&client);
+
+	keepalive_server_stop (server);
+
+}
+
 // a cerver that is asked to stop while a thread looks for the next request of its connection does not wait
 // for that time: the thread stops looking, and the connection is closed like the idle ones
 static void test_keepalive_events_followed_stop (void) {
@@ -2003,6 +2044,7 @@ void http_tests_keepalive (void) {
 	test_run (test_keepalive_events_default);
 	test_run (test_keepalive_events_pool_read);
 	test_run (test_keepalive_events_pool_busy);
+	test_run (test_keepalive_events_reported_rejecting);
 	test_run (test_keepalive_events_followed);
 	test_run (test_keepalive_events_followed_stop);
 	test_run (test_keepalive_events_followed_awaited);
