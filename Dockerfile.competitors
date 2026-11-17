@@ -9,6 +9,7 @@ ENV RAPIDJSON_COMMIT=297637bc0a0f00dc504dbc1a47ebdaa577f8ae19
 ENV LLHTTP_VERSION=9.4.4
 ENV PICOHTTPPARSER_COMMIT=dd573d8fa9264c646a400e96ce9f07dea6f156e4
 ENV HTTP_PARSER_VERSION=2.9.4
+ENV MULTIPART_PARSER_COMMIT=772639cf10db6d9f5a655ee9b7eb20b815fab396
 ENV LIBJWT_VERSION=1.17.2
 ENV L8W8JWT_VERSION=2.5.0
 ENV JWT_CPP_VERSION=0.7.2
@@ -33,6 +34,8 @@ RUN curl -fsSL https://github.com/h2o/picohttpparser/archive/${PICOHTTPPARSER_CO
 	&& mv picohttpparser-${PICOHTTPPARSER_COMMIT} picohttpparser
 RUN curl -fsSL https://github.com/nodejs/http-parser/archive/refs/tags/v${HTTP_PARSER_VERSION}.tar.gz | tar xz \
 	&& mv http-parser-${HTTP_PARSER_VERSION} http-parser
+RUN curl -fsSL https://github.com/iafonov/multipart-parser-c/archive/${MULTIPART_PARSER_COMMIT}.tar.gz | tar xz \
+	&& mv multipart-parser-c-${MULTIPART_PARSER_COMMIT} multipart
 RUN curl -fsSL https://github.com/benmcollins/libjwt/archive/refs/tags/v${LIBJWT_VERSION}.tar.gz | tar xz \
 	&& PKG_CONFIG_PATH=${COMPETITORS}/jansson/lib/pkgconfig cmake -S libjwt-${LIBJWT_VERSION} -B libjwt-build \
 		-D CMAKE_BUILD_TYPE=Release -D BUILD_SHARED_LIBS=OFF -D BUILD_EXAMPLES=OFF \

@@ -52,3 +52,10 @@ gcc $FLAGS -I "$COMPETITORS/picohttpparser" $SOURCE/parser/picohttpparser.c "$CO
 
 gcc $FLAGS -I "$COMPETITORS/http-parser" $SOURCE/parser/joyent.c "$COMPETITORS/http-parser/http_parser.c" \
 	$OUTPUT/parser.o $OUTPUT/measure.o -o $OUTPUT/parser-joyent
+
+gcc $FLAGS -c $SOURCE/multipart/driver.c -o $OUTPUT/multipart.o
+
+gcc $FLAGS $SOURCE/multipart/cerver.c $OUTPUT/multipart.o $OUTPUT/measure.o -o $OUTPUT/multipart-cerver $CERVER
+
+gcc $FLAGS -I "$COMPETITORS/multipart" $SOURCE/multipart/legacy.c "$COMPETITORS/multipart/multipart_parser.c" \
+	$OUTPUT/multipart.o $OUTPUT/measure.o -o $OUTPUT/multipart-legacy
