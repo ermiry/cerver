@@ -1,41 +1,25 @@
 ## General
-- Updated roadmap & CLAUDE.md with L2: the JWT & keys
-- Added the changes of the 3.0b-8 to the incompatibility file
+- Updated roadmap & CLAUDE.md with L3: the HTTP parser
+- Added the changes of the 3.0b-9 to the incompatibility file
+- Removed llhttp & the multipart copy from the third parties
 
-## Crypto
-- Added the keys & the signatures to the crypto of OpenSSL
-- Added the crypto keys from a secret and the PEM of a key
-- Added the crypto keys from the JWK with the cerver JSON
-- Added the signatures of crypto over the buffers of a caller
-
-## JWT
-- Added the algorithms, the errors and the limits of the JWT
-- Added the keys of the JWT: the key decides the algorithm
-- Added cerver_jwt_sign () to sign some claims into a buffer
-- Added the validation of the claims of any token of the JWT
-- Added cerver_jwt_verify () and the jwt inside the umbrella
+## HTTP Parser
+- Added the types, tables & the kernels of the cerver parser
+- Added the head of the parser: the start line & all the fields
+- Added the body of the parser: its length, chunks & trailers
+- Added the multipart parser of cerver that lives in a receive
 
 ## HTTP
-- Signing & verifying the tokens of HTTP on the cerver JWT
-- Removed the includes of the old jwt headers of HTTP core
-- Removed the JWT of libjwt & the internal copy of Jansson
-
-## Examples
-- Using the cerver JWT in the web examples of auth & users
+- Migrated the receive of every request to the cerver parser
+- Using the parser for the response of the WebSocket client
+- Removed llhttp & the multipart copy from the HTTP layers
 
 ## Tests
-- Added the tests of the crypto keys with their own key files
-- Added the tests of the keys of a JWK of each type & curve
-- Added the tests of the signatures against the RFC vectors
-- Replaced the tests of libjwt with the ones of the JWT keys
-- Added the tests of signing tokens and of validating claims
-- Added the tests of verifying tokens with the RFC examples
-- Testing the tokens of HTTP byte by byte with the new JWT
-- Using the cerver JWT in the test app, and in the web pairs
-- Testing the allocations of crypto & the JWT when one fails
-- Added the jwk fuzzer and the modes of the jwt fuzz target
-- Added a differential fuzzer against the libjwt of the system
-- Added the conformance runner of the JWT on Wycheproof
-- Removed the tests and the fuzzers of the copy of Jansson
-- Counting 10 allocations for a request with its bearer token
-- Measuring the cerver JWT against libjwt, l8w8jwt, jwt-cpp
+- Added the units of the HTTP parser in the http tests binary
+- Added the smuggling suite to the requests of receive tests
+- Added the conformance runner of HTTP on the llhttp tests
+- Added differential fuzzers against llhttp & multipart-parser
+- Added an origin of cerver for the HTTP Garden & its cases
+- Testing the fields of a receive that fail to grow in the faults
+- Measuring the parser against http_parser & in more cases
+- Measuring the cerver multipart against multipart-parser-c

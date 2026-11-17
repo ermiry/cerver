@@ -28,8 +28,8 @@ static const size_t http_stream_last_chunk_length = sizeof (HTTP_STREAM_LAST_CHU
 // the version of the request, a receive whose parser did not parse a request has 0.0
 static bool http_stream_is_chunked (const HttpReceive *http_receive) {
 
-	const uint8_t major = llhttp_get_http_major (&http_receive->parser);
-	const uint8_t minor = llhttp_get_http_minor (&http_receive->parser);
+	const unsigned int major = http_receive->parser.head.major;
+	const unsigned int minor = http_receive->parser.head.minor;
 
 	return (major > HTTP_STREAM_CHUNKED_MAJOR)
 		|| ((major == HTTP_STREAM_CHUNKED_MAJOR) && (minor >= HTTP_STREAM_CHUNKED_MINOR));

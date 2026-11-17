@@ -425,12 +425,12 @@ typedef struct HandlerThreadContext {
 	/** @brief The size of the receive buffer. */
 	size_t buffer_size;
 
-	/** @brief The buffer of the url of a request. */
-	String *url_buffer;
-	/** @brief The buffer of the field of a header. */
-	String *field_buffer;
-	/** @brief The buffer of the value of a header. */
-	String *value_buffer;
+	/**
+	 * @brief The buffer of the head of a request that does not arrive in one piece.
+	 *
+	 * @since 3.0b-9
+	 */
+	String *head_buffer;
 
 	/** @brief The receive of the HTTP connection that the thread handles, with the arena and the buffers of the thread. */
 	struct _HttpReceive *http_receive;

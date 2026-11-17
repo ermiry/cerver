@@ -3,6 +3,56 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-9 (from 3.0b-8)
+
+The parsers of cerver (L3 of `roadmap.md`): `cerver/http/parser/` reads HTTP/1.1 and the multipart bodies with code
+of its own, in place of llhttp 9.4.3 and of the copy of multipart-parser-c, that leave the library. A request gets the
+same response as before, except the two cases below; the structs of the receive and the API of the parser change.
+
+**The structs and the API**
+
+- **New:** `cerver/http/parser/{parser,head,body,multipart}.h`, in the umbrella `cerver/http/http.h`: the types
+  `CerverHttpParser`, `CerverHttpParserLimits`, `CerverHttpHead`, `CerverHttpField`, `CerverHttpSpan`,
+  `CerverHttpMultipart` and `CerverHttpMultipartCallbacks`, the errors of `CERVER_HTTP_PARSER_ERROR_MAP`, the results
+  `CERVER_HTTP_PARSER_RESULT_*` and the methods `cerver_http_parser_*`, `cerver_http_head_*` and
+  `cerver_http_multipart_*`
+- **Removed:** `cerver/http/parser/{api,helpers,llhttp}.h` with every `llhttp_*` and the types of llhttp, and the
+  group `http_multipart_parser` of `cerver/http/requests/multipart.h` (`multipart_parser`,
+  `multipart_parser_settings`, `multipart_parser_init ()`, `multipart_parser_execute ()`, `multipart_parser_free ()`)
+- **`HttpReceive`:** `parser` is a `CerverHttpParser` (it was an `llhttp_t`), without `settings`, `protocol_length`,
+  `protocol_other`, `url_buffer`, `field_buffer`, `value_buffer`, `header_size` and `n_headers`; new `fields`,
+  `fields_capacity` and `fields_inline` (the array of the fields of its requests: 32 of its own, one that doubles for
+  a request with more), `head_buffer` (the head that does not arrive whole) and `body_handler`; `mpart_parser` is a
+  `CerverHttpMultipart *` that points to the new `multipart` (it was allocated for each request), without
+  `mpart_settings`
+- **`HttpReceiveResources`** has `arena` and `head_buffer` (it had `url_buffer`, `field_buffer` and `value_buffer`),
+  and the context of a handler thread lends one `head_buffer` instead of those three
+- **`HttpRequest::strings_in_arena`:** the url, the query and the headers of a request that the receive read are views
+  of the copy of its head in the arena of the request (one copy instead of one `String` for each piece that llhttp
+  gave)
+- **`HttpParserLenient`** and `HTTP_PARSER_LENIENT_*` keep their names and their values, on a table of their own
+  (`HTTP_PARSER_LENIENT_MAP` in `cerver/http/parser/parser.h`, not on the one of llhttp);
+  `http_parser_lenient_string ()` and `http_parser_lenient_description ()` live there too.
+  `HTTP_RECEIVE_PARSER_STOP` is not public any more (it was the `HPE_USER` of llhttp)
+
+**What the parser does that llhttp did not** (the only responses that change)
+
+- **A request line without a version** (the form of HTTP/0.9) is answered with 505: llhttp took it without calling
+  the callback where cerver checked the version, so it reached the handlers
+- **The name of a field never has the spaces** that `HTTP_PARSER_LENIENT_HEADERS` takes before its colon, so
+  `Content-Type :` is the known header Content-Type
+
+**Tests and scripts:** `make REFERENCES=<folder>` builds the conformance of HTTP (`make conformance`,
+`test/bin/conformance/http`) and the differential fuzzers `llhttp` and `parts` with the upstream llhttp 9.4.3 and
+multipart-parser-c `772639cf`, that `Dockerfile.conformance` and `Dockerfile.fuzz` download; without it they are not
+built (the `differential` of the 3.0b-8, against the libjwt of the system, is another target). `bash
+test/conformance/http.sh` runs the corpus of llhttp (`test/conformance/http.txt` has the verdicts).
+`CERVER_HTTP_PARSER_SCALAR` builds the parser without its kernels of NEON, SSE2 and SSSE3. `benchmarks/http-parser.c`
+is gone: `benchmarks/competitors/` measures the parser against llhttp, picohttpparser and http_parser 2.9.4 (the new
+cases `cookies`, `chunked` and `pipeline`), and the new module `multipart` against multipart-parser-c.
+`bash test/conformance/garden.sh` runs the HTTP Garden with cerver as one of its origins (`Dockerfile.garden`,
+`test/web/garden.c`).
+
 ## 3.0b-8 (from 3.0b-7)
 
 The JWT of cerver (L2 of `roadmap.md`): `cerver/jwt/` signs and verifies the tokens (RFC 7515, 7518 and 7519) over

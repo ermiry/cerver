@@ -42,11 +42,20 @@ gcc $FLAGS -I "$COMPETITORS/l8w8jwt/include" $SOURCE/jwt/l8w8jwt.c $OUTPUT/jwt.o
 g++ $FLAGS -std=c++17 -I "$COMPETITORS/jwt-cpp/include" $SOURCE/jwt/jwtcpp.cpp $OUTPUT/jwt.o $OUTPUT/measure.o \
 	-o $OUTPUT/jwt-jwtcpp -l crypto
 
-gcc $FLAGS $SOURCE/parser/cerver.c objs/cerver/http/parser/*.o $OUTPUT/parser.o $OUTPUT/measure.o \
-	-o $OUTPUT/parser-cerver $CERVER
+gcc $FLAGS $SOURCE/parser/cerver.c $OUTPUT/parser.o $OUTPUT/measure.o -o $OUTPUT/parser-cerver $CERVER
 
 gcc $FLAGS -I "$COMPETITORS/llhttp/include" $SOURCE/parser/llhttp.c "$COMPETITORS"/llhttp/src/*.c \
 	$OUTPUT/parser.o $OUTPUT/measure.o -o $OUTPUT/parser-llhttp
 
 gcc $FLAGS -I "$COMPETITORS/picohttpparser" $SOURCE/parser/picohttpparser.c "$COMPETITORS/picohttpparser/picohttpparser.c" \
 	$OUTPUT/parser.o $OUTPUT/measure.o -o $OUTPUT/parser-picohttpparser
+
+gcc $FLAGS -I "$COMPETITORS/http-parser" $SOURCE/parser/joyent.c "$COMPETITORS/http-parser/http_parser.c" \
+	$OUTPUT/parser.o $OUTPUT/measure.o -o $OUTPUT/parser-joyent
+
+gcc $FLAGS -c $SOURCE/multipart/driver.c -o $OUTPUT/multipart.o
+
+gcc $FLAGS $SOURCE/multipart/cerver.c $OUTPUT/multipart.o $OUTPUT/measure.o -o $OUTPUT/multipart-cerver $CERVER
+
+gcc $FLAGS -I "$COMPETITORS/multipart" $SOURCE/multipart/legacy.c "$COMPETITORS/multipart/multipart_parser.c" \
+	$OUTPUT/multipart.o $OUTPUT/measure.o -o $OUTPUT/multipart-legacy

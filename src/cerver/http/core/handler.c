@@ -46,8 +46,9 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/body.h"
+#include "cerver/http/parser/head.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
@@ -87,13 +88,14 @@ static const char *expect_continue_value = { "100-continue" };
 static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
 static const size_t continue_response_len = 25;
 
-static const char *http_receive_parser_no_reason = { "No reason" };
+// what the complete headers of a request of an event loop return when a thread of the pool authorizes it
+#define HTTP_RECEIVE_HEADERS_PAUSE				2
 
 #pragma region handler
 
-static int http_receive_handle_headers_completed (llhttp_t *parser);
+static int http_receive_handle_headers_completed (HttpReceive *http_receive);
 
-static int http_receive_handle_message_completed (llhttp_t *parser);
+static int http_receive_handle_message_completed (HttpReceive *http_receive);
 
 const char *http_receive_status_str (
 	const HttpReceiveStatus status
@@ -109,35 +111,6 @@ const char *http_receive_status_str (
 
 }
 
-static const char *http_parser_lenient_none = { "none" };
-
-const char *http_parser_lenient_string (const HttpParserLenient lenient) {
-
-	switch (lenient) {
-		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #string;
-		LLHTTP_LENIENT_MAP(XX)
-		#undef XX
-
-		default: break;
-	}
-
-	return http_parser_lenient_none;
-
-}
-
-const char *http_parser_lenient_description (const HttpParserLenient lenient) {
-
-	switch (lenient) {
-		#define XX(num, name, string, description) case HTTP_PARSER_LENIENT_##name: return #description;
-		LLHTTP_LENIENT_MAP(XX)
-		#undef XX
-
-		default: break;
-	}
-
-	return http_parser_lenient_none;
-
-}
 
 const char *http_stage_string (const HttpStage stage) {
 
@@ -223,11 +196,10 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->keep_alive_requested = false;
 	http_receive->unparsed = 0;
 
-	http_receive->protocol_length = 0;
-	http_receive->protocol_other = false;
+	// the body of a request is saved, unless it is discarded or it is multipart
+	http_receive->body_handler = http_receive_handle_body;
 
 	http_receive->mpart_parser = NULL;
-	(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
 
 	http_receive->request = NULL;
 
@@ -250,8 +222,6 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->upload_sequence = 0;
 	http_receive->upload_directory_created = false;
 
-	http_receive->header_size = 0;
-	http_receive->n_headers = 0;
 	http_receive->body_size = 0;
 	http_receive->n_parts = 0;
 
@@ -299,12 +269,12 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->http_cerver = NULL;
 
-		(void) memset (&http_receive->parser, 0, sizeof (llhttp_t));
-		llhttp_settings_init (&http_receive->settings);
+		(void) memset (&http_receive->parser, 0, sizeof (CerverHttpParser));
 
-		http_receive->url_buffer = NULL;
-		http_receive->field_buffer = NULL;
-		http_receive->value_buffer = NULL;
+		http_receive->fields = NULL;
+		http_receive->fields_capacity = 0;
+
+		http_receive->head_buffer = NULL;
 
 		http_receive->arena = NULL;
 		http_receive->borrowed_buffers = false;
@@ -443,8 +413,7 @@ static void http_receive_borrow_buffer (String **destination, String *buffer) {
 
 static bool http_receive_resources_are_complete (const HttpReceiveResources *resources) {
 
-	return resources && resources->arena
-		&& resources->url_buffer && resources->field_buffer && resources->value_buffer;
+	return resources && resources->arena && resources->head_buffer;
 
 }
 
@@ -463,9 +432,7 @@ u8 http_receive_prepare (
 		http_receive->arena = resources->arena;
 
 		http_receive->borrowed_buffers = true;
-		http_receive_borrow_buffer (&http_receive->url_buffer, resources->url_buffer);
-		http_receive_borrow_buffer (&http_receive->field_buffer, resources->field_buffer);
-		http_receive_borrow_buffer (&http_receive->value_buffer, resources->value_buffer);
+		http_receive_borrow_buffer (&http_receive->head_buffer, resources->head_buffer);
 
 		http_receive_connection_set (http_receive, cerver_receive);
 
@@ -481,53 +448,64 @@ u8 http_receive_prepare (
 
 }
 
-// only the callbacks that cerver uses, the rest stay NULL
-static void http_receive_settings_init (llhttp_settings_t *settings) {
+// the limits of the parser are the ones of the cerver: the url, the bytes of the headers and the headers,
+// the trailers of a chunked body and the extensions of its chunks count as headers
+static void http_receive_parser_limits (const HttpReceive *http_receive, CerverHttpParserLimits *limits) {
 
-	llhttp_settings_init (settings);
+	const HttpCerver *http_cerver = http_receive->http_cerver;
 
-	settings->on_url = http_receive_handle_url;
-	settings->on_url_complete = http_receive_handle_url_complete;
-	settings->on_protocol = http_receive_handle_protocol;
-	settings->on_protocol_complete = http_receive_handle_protocol_complete;
-	settings->on_version_complete = http_receive_handle_version_complete;
-	settings->on_header_field = http_receive_handle_header_field;
-	settings->on_header_value = http_receive_handle_header_value;
-	settings->on_header_value_complete = http_receive_handle_header_value_complete;
-	settings->on_chunk_extension_name = http_receive_handle_discarded;
-	settings->on_chunk_extension_value = http_receive_handle_discarded;
-	settings->on_headers_complete = http_receive_handle_headers_completed;
-	settings->on_body = http_receive_handle_body;
-	settings->on_message_complete = http_receive_handle_message_completed;
+	limits->target_size = http_cerver->max_url_size;
+	limits->fields_size = http_cerver->max_header_size;
+	limits->fields = http_cerver->max_headers;
 
 }
 
-// the parser is embedded in the receive and it uses the receive's settings,
-// so its on_body can change for each request
+// the parser is embedded in the receive, with the array of the fields of its requests,
+// that grows when a request has more fields than it takes
 static void http_receive_parser_init (HttpReceive *http_receive) {
 
-	http_receive_settings_init (&http_receive->settings);
-
-	llhttp_init (&http_receive->parser, HTTP_REQUEST, &http_receive->settings);
-	http_receive->parser.data = http_receive;
-
-	if (http_receive->http_cerver) {
-		llhttp_set_lenient_flags (&http_receive->parser, (uint16_t) http_receive->http_cerver->parser_lenient);
+	if (!http_receive->fields) {
+		http_receive->fields = http_receive->fields_inline;
+		http_receive->fields_capacity = HTTP_RECEIVE_FIELDS_INLINE;
 	}
+
+	CerverHttpParserLimits limits;
+	http_receive_parser_limits (http_receive, &limits);
+
+	cerver_http_parser_init (
+		&http_receive->parser, CERVER_HTTP_PARSER_TYPE_REQUEST, http_receive->http_cerver->parser_lenient,
+		&limits, http_receive->fields, http_receive->fields_capacity
+	);
+
+}
+
+// the array of the fields doubles for a request that has more of them than it takes
+// returns 0 on success, 1 on error
+static int http_receive_fields_grow (HttpReceive *http_receive) {
+
+	const unsigned int capacity = http_receive->fields_capacity * HTTP_RECEIVE_FIELDS_GROWTH;
+
+	CerverHttpField *fields = (CerverHttpField *) malloc (capacity * sizeof (CerverHttpField));
+	if (!fields) return 1;
+
+	cerver_http_parser_fields_set (&http_receive->parser, fields, capacity);
+
+	if (http_receive->fields != http_receive->fields_inline) free (http_receive->fields);
+	http_receive->fields = fields;
+	http_receive->fields_capacity = capacity;
+
+	return 0;
 
 }
 
 static void http_receive_delete_buffers (HttpReceive *http_receive) {
 
-	if (!http_receive->borrowed_buffers) {
-		str_delete (http_receive->url_buffer);
-		str_delete (http_receive->field_buffer);
-		str_delete (http_receive->value_buffer);
-	}
+	if (!http_receive->borrowed_buffers) str_delete (http_receive->head_buffer);
+	http_receive->head_buffer = NULL;
 
-	http_receive->url_buffer = NULL;
-	http_receive->field_buffer = NULL;
-	http_receive->value_buffer = NULL;
+	if (http_receive->fields != http_receive->fields_inline) free (http_receive->fields);
+	http_receive->fields = NULL;
+	http_receive->fields_capacity = 0;
 
 }
 
@@ -592,10 +570,8 @@ static void http_receive_request_end (HttpReceive *http_receive) {
 	if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
 	http_receive->file_stats = NULL;
 
-	if (http_receive->mpart_parser) {
-		multipart_parser_free (http_receive->mpart_parser);
-		http_receive->mpart_parser = NULL;
-	}
+	// the parser of the parts lives in the receive
+	http_receive->mpart_parser = NULL;
 
 }
 
@@ -611,14 +587,10 @@ u8 http_receive_reset (HttpReceive *http_receive) {
 
 		http_receive_request_init (http_receive);
 
-		// the parser keeps its type and its lenient flags,
-		// and the callbacks that a request changed are the ones of a new request
-		http_receive_settings_init (&http_receive->settings);
-		llhttp_reset (&http_receive->parser);
+		// the parser keeps its type, its lenient flags, its limits and the array of its fields
+		cerver_http_parser_reset (&http_receive->parser);
 
-		http_receive_buffer_reset (http_receive->url_buffer);
-		http_receive_buffer_reset (http_receive->field_buffer);
-		http_receive_buffer_reset (http_receive->value_buffer);
+		http_receive_buffer_reset (http_receive->head_buffer);
 
 		retval = http_receive_request_create (http_receive);
 
@@ -1429,6 +1401,17 @@ static int http_receive_uploads_directory_create (
 
 }
 
+// the callbacks of the parts of a multipart body, the same for every request
+static const CerverHttpMultipartCallbacks http_receive_multipart_callbacks = {
+	http_receive_handle_mpart_header_field,
+	http_receive_handle_mpart_header_value,
+	http_receive_handle_mpart_data,
+	http_receive_handle_mpart_part_data_begin,
+	http_receive_handle_mpart_headers_completed,
+	http_receive_handle_mpart_data_end,
+	NULL
+};
+
 // returns 0 on success, 1 if the request was rejected
 int http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
@@ -1437,23 +1420,18 @@ int http_receive_init_mpart_parser (
 
 	char dirname[HTTP_MULTI_PART_DIRNAME_SIZE] = { 0 };
 
-	http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
-	http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
-	http_receive->mpart_settings.on_part_data = http_receive_handle_mpart_data;
+	// the parser lives in the receive, a boundary that does not fit is a body that can not be read
+	if (cerver_http_multipart_init (
+		&http_receive->multipart, boundary, strlen (boundary), &http_receive_multipart_callbacks, http_receive
+	)) {
+		http_receive->mpart_parser = &http_receive->multipart;
+	}
 
-	http_receive->mpart_settings.on_part_data_begin = http_receive_handle_mpart_part_data_begin;
-	http_receive->mpart_settings.on_headers_complete = http_receive_handle_mpart_headers_completed;
-	http_receive->mpart_settings.on_part_data_end = http_receive_handle_mpart_data_end;
-	http_receive->mpart_settings.on_body_end = NULL;
-
-	http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
 	http_receive->request->multi_parts = dlist_init (http_multi_parts_return, NULL);
 
 	int retval = (http_receive->mpart_parser && http_receive->request->multi_parts) ? 0 : 1;
 
 	if (!retval) {
-		http_receive->mpart_parser->data = http_receive;
-
 		if (http_receive_uploads_directory_path (http_receive, dirname)) {
 			retval = http_receive_uploads_directory_create (http_receive, dirname);
 		}
@@ -1519,7 +1497,7 @@ static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 		if (!http_mpart_get_boundary (
 			boundary, content_type->str, (unsigned int) content_type->len
 		)) {
-			http_receive->settings.on_body = http_receive_handle_mpart_body;
+			http_receive->body_handler = http_receive_handle_mpart_body;
 
 			if (http_receive_init_mpart_parser (http_receive, boundary)) {
 				retval = http_receive->responded ? 1 : http_receive_reject (
@@ -1543,13 +1521,13 @@ static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 // a request without a route is answered by the catch all handler,
 // so its body is only checked against the limit, but it is not saved
 static int http_receive_handle_body_discard (
-	llhttp_t *parser, const char *at, size_t length
+	HttpReceive *http_receive, const char *at, size_t length
 ) {
 
 	(void) at;
 
 	return http_receive_parser_result (
-		http_receive_check_body_size ((HttpReceive *) parser->data, length)
+		http_receive_check_body_size (http_receive, length)
 	);
 
 }
@@ -1574,21 +1552,21 @@ static void http_receive_identify (HttpReceive *http_receive) {
 // a body bigger than the limit is rejected before receiving it
 // (the parser only has a content length when the request has a Content-Length)
 static bool http_receive_body_too_large (
-	const HttpReceive *http_receive, const llhttp_t *parser
+	const HttpReceive *http_receive, const CerverHttpParser *parser
 ) {
 
 	return http_receive->max_body_size
-		&& (parser->flags & F_CONTENT_LENGTH)
-		&& (parser->content_length > http_receive->max_body_size);
+		&& (parser->head.flags & CERVER_HTTP_HEAD_CONTENT_LENGTH)
+		&& (parser->head.content_length > http_receive->max_body_size);
 
 }
 
 // a request whose Transfer-Encoding does not end with chunked can not tell the length of its body
 // (RFC 9112 section 6.3): the parser rejects it, but with its lenient flags of the transfer encoding
 // it reads the body until the connection is closed, a request that cerver never completes nor answers
-static bool http_receive_body_has_no_end (const llhttp_t *parser) {
+static bool http_receive_body_has_no_end (const CerverHttpParser *parser) {
 
-	return (parser->flags & F_TRANSFER_ENCODING) && !(parser->flags & F_CHUNKED);
+	return (parser->head.flags & CERVER_HTTP_HEAD_TRANSFER_ENCODING) && !(parser->head.flags & CERVER_HTTP_HEAD_CHUNKED);
 
 }
 
@@ -1599,7 +1577,7 @@ static bool http_receive_handle_static_authenticate (
 // the first part of the complete headers, only CPU: the method, the request's id and its client,
 // the route that answers it and the limit of its body
 // returns 0 on success, 1 if the request was rejected
-static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *parser) {
+static int http_receive_headers_select (HttpReceive *http_receive, const CerverHttpParser *parser) {
 
 	HttpCerver *http_cerver = http_receive->http_cerver;
 	HttpRequest *request = http_receive->request;
@@ -1609,8 +1587,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 	// the headers are complete, what follows is the body
 	http_receive->stage = HTTP_STAGE_BODY;
 
-	const uint8_t method = llhttp_get_method (parser);
-	request->method = (RequestMethod) method;
+	request->method = (RequestMethod) parser->head.method;
 
 	http_receive_identify (http_receive);
 
@@ -1661,7 +1638,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 // returns 0 on success, HTTP_RECEIVE_PARSER_STOP if the request was rejected or its client is gone
 int http_receive_headers_authorize (HttpReceive *http_receive) {
 
-	llhttp_t *parser = &http_receive->parser;
+	const CerverHttpParser *parser = &http_receive->parser;
 	HttpCerver *http_cerver = http_receive->http_cerver;
 	HttpRequest *request = http_receive->request;
 
@@ -1696,7 +1673,7 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 			if (!http_receive_handle_static_authenticate (http_receive, request)) return HTTP_RECEIVE_PARSER_STOP;
 		}
 
-		http_receive->settings.on_body = http_receive_handle_body_discard;
+		http_receive->body_handler = http_receive_handle_body_discard;
 	}
 
 	// a client that is gone stops the parser, without a response
@@ -1705,9 +1682,9 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 }
 
 // a request has a body to wait for when it is chunked or its Content-Length is not 0
-static bool http_receive_has_body (const llhttp_t *parser) {
+static bool http_receive_has_body (const CerverHttpParser *parser) {
 
-	return (parser->flags & F_CHUNKED) || (parser->content_length > 0);
+	return cerver_http_parser_has_body (parser);
 
 }
 
@@ -1732,12 +1709,12 @@ static bool http_receive_authorize_is_deferred (const HttpReceive *http_receive)
 // the url and the headers are complete (each header was saved with its value):
 // the route is selected and the request is authenticated before its body is received,
 // so the files of a rejected request are never saved
-// HTTP_RECEIVE_PARSER_STOP stops the parser (1 would only skip the body)
+// HTTP_RECEIVE_PARSER_STOP stops the request
 // the request of an event loop that a thread of the pool has to authorize pauses the parser
-// when its body follows; without a body it is authorized by the job that handles it
-static int http_receive_handle_headers_completed (llhttp_t *parser) {
+// when its body follows (HTTP_RECEIVE_HEADERS_PAUSE); without a body it is authorized by the job that handles it
+static int http_receive_handle_headers_completed (HttpReceive *http_receive) {
 
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	const CerverHttpParser *parser = &http_receive->parser;
 
 	if (http_receive_headers_select (http_receive, parser)) return HTTP_RECEIVE_PARSER_STOP;
 
@@ -1756,7 +1733,7 @@ static int http_receive_handle_headers_completed (llhttp_t *parser) {
 
 		http_receive->pause = HTTP_RECEIVE_PAUSE_HEADERS;
 
-		return HPE_PAUSED;
+		return HTTP_RECEIVE_HEADERS_PAUSE;
 	}
 
 	return http_receive_headers_authorize (http_receive);
@@ -2203,7 +2180,7 @@ static bool http_receive_keep_alive_allowed (const HttpReceive *http_receive) {
 static void http_receive_keep_alive_decide (HttpReceive *http_receive) {
 
 	// what the client asked (HTTP/1.1 without close, HTTP/1.0 with keep-alive)
-	http_receive->keep_alive_requested = llhttp_should_keep_alive (&http_receive->parser);
+	http_receive->keep_alive_requested = cerver_http_parser_keep_alive (&http_receive->parser);
 
 	http_receive->n_requests += 1;
 
@@ -2239,12 +2216,12 @@ bool http_receive_keeps_connection (HttpReceive *http_receive) {
 
 }
 
-// the endpoint and its authentication were resolved in on_headers_complete,
+// the endpoint and its authentication were resolved with the complete headers,
 // now that the body is complete the request is handled
-// the request of an event loop is not handled in the parser: its loop answers it or gives it to the pool
-static int http_receive_handle_message_completed (llhttp_t *parser) {
-
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
+// the request of an event loop is not handled in the parse: its loop answers it or gives it to the pool
+// one request is handled at a time: the parse stops here, and the owner of the connection
+// starts the next request (a pipelined one in the same buffer) once this one was answered
+static int http_receive_handle_message_completed (HttpReceive *http_receive) {
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 	http_receive->stage = HTTP_STAGE_HANDLER;
@@ -2254,10 +2231,7 @@ static int http_receive_handle_message_completed (llhttp_t *parser) {
 	if (http_receive->connection) http_receive->pause = HTTP_RECEIVE_PAUSE_MESSAGE;
 	else http_receive_dispatch (http_receive);
 
-	// one request is handled at a time: the parser pauses here, and the owner of the connection
-	// starts the next request (a pipelined one in the same buffer) once this one was answered
-	// (a callback can not call llhttp_pause (), it returns HPE_PAUSED)
-	return HPE_PAUSED;
+	return 0;
 
 }
 
@@ -2319,41 +2293,39 @@ void http_receive_close (
 
 }
 
-// a request that the parser could not parse is answered with 400,
-// unless a callback already answered it (a limit, a failed authentication, ...)
-// or it stopped the parser because the client is gone
+// a request that the parser could not parse is answered with its error (400 for most of them),
+// unless a part of the receive already answered it (a limit, a failed authentication, ...)
+// or it stopped because the client is gone
 void http_receive_parser_failed (
-	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
+	HttpReceive *http_receive,
 	const size_t n_parsed, const ssize_t received
 ) {
 
 	if (!http_receive->responded && (http_receive->receive_status != HTTP_RECEIVE_STATUS_CLOSED)) {
-		const char *reason = llhttp_get_error_reason (&http_receive->parser);
+		const CerverHttpParserError error = cerver_http_parser_get_error (&http_receive->parser);
 
 		cerver_log_with_date (
 			LOG_TYPE_ERROR, LOG_TYPE_HTTP,
-			"http_receive_handle () - llhttp_execute () failed - n parsed %zu / received %zd"
+			"http_receive_handle () - the parser failed - n parsed %zu / received %zd"
 			" - fd %d - %s: %s - status %s",
 			n_parsed, received,
 			http_receive->cr->connection->socket->sock_fd,
-			llhttp_errno_name (parser_errno),
-			reason ? reason : http_receive_parser_no_reason,
+			cerver_http_parser_error_string (error),
+			cerver_http_parser_error_reason (error),
 			http_receive_status_str (http_receive->receive_status)
 		);
 
-		(void) http_receive_reject (
-			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
-		);
+		http_receive_parser_rejected (http_receive);
 	}
 
 }
 
 static void http_receive_handle_parser_error (
-	HttpReceive *http_receive, const llhttp_errno_t parser_errno,
+	HttpReceive *http_receive,
 	const size_t n_parsed, const ssize_t received
 ) {
 
-	http_receive_parser_failed (http_receive, parser_errno, n_parsed, received);
+	http_receive_parser_failed (http_receive, n_parsed, received);
 
 	http_receive_close (http_receive, true);
 
@@ -2401,28 +2373,173 @@ void http_receive_handle_timeout (
 
 }
 
-// the bytes of the buffer that the parser consumed,
-// after an error or a pause llhttp tells where it stopped
-static size_t http_receive_parsed_bytes (
-	const HttpReceive *http_receive, const llhttp_errno_t parser_errno,
-	const char *buffer, const size_t length
-) {
+// the head of a request that did not arrive whole is gathered in the buffer of the receive until it is complete:
+// the parser reads it from its first byte and goes on from the last line that it read
+// returns 0 on success, 1 when the buffer could not take the bytes
+static int http_receive_head_gather (HttpReceive *http_receive, const char *bytes, const size_t length) {
 
-	size_t parsed = length;
+	if (!http_receive->head_buffer) http_receive->head_buffer = str_new (NULL);
 
-	const char *position = llhttp_get_error_pos (&http_receive->parser);
-	if (
-		(parser_errno != HPE_OK) && position
-		&& (position >= buffer) && (position <= (buffer + length))
-	) {
-		parsed = (size_t) (position - buffer);
-	}
-
-	return parsed;
+	return http_receive->head_buffer ? str_append_bytes (http_receive->head_buffer, bytes, length) : 1;
 
 }
 
-llhttp_errno_t http_receive_execute (
+// the head that the parser completed is the one of the request; its complete headers select and authorize it
+static HttpReceiveParse http_receive_head_read (HttpReceive *http_receive) {
+
+	HttpReceiveParse result = HTTP_RECEIVE_PARSE_MORE;
+
+	const int rejected = http_receive_head_complete (http_receive);
+
+	// the head was copied to the request, the buffer that gathered it is free for the next one
+	http_receive_buffer_reset (http_receive->head_buffer);
+
+	if (rejected) {
+		result = HTTP_RECEIVE_PARSE_ERROR;
+	}
+
+	else {
+		const int completed = http_receive_handle_headers_completed (http_receive);
+		if (completed == HTTP_RECEIVE_PARSER_STOP) result = HTTP_RECEIVE_PARSE_ERROR;
+		else if (completed == HTTP_RECEIVE_HEADERS_PAUSE) result = HTTP_RECEIVE_PARSE_PAUSED;
+	}
+
+	return result;
+
+}
+
+// the first byte of the first field ends the request line, like the first header field of before
+static bool http_receive_head_in_fields (
+	const HttpReceive *http_receive, const char *head, const size_t head_length
+) {
+
+	const CerverHttpParser *parser = &http_receive->parser;
+	const size_t next = parser->offset;
+
+	return cerver_http_parser_started (parser) && (
+		parser->head.fields_count
+		|| ((head_length > next) && (head[next] != '\r') && (head[next] != '\n'))
+	);
+
+}
+
+// the bytes of a head that is not complete yet
+static HttpReceiveParse http_receive_head_more (
+	HttpReceive *http_receive, const char *head, const size_t head_length,
+	const size_t gathered, const size_t consumed
+) {
+
+	HttpReceiveParse result = HTTP_RECEIVE_PARSE_MORE;
+
+	if (http_receive_head_in_fields (http_receive, head, head_length)) http_receive->stage = HTTP_STAGE_HEADERS;
+
+	// the bytes after a request with Connection close that the lenient flag discards
+	if (consumed) {
+		http_receive_buffer_reset (http_receive->head_buffer);
+	}
+
+	else if (!gathered && head_length && http_receive_head_gather (http_receive, head, head_length)) {
+		(void) http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+		result = HTTP_RECEIVE_PARSE_ERROR;
+	}
+
+	return result;
+
+}
+
+static HttpReceiveParse http_receive_parse_head (
+	HttpReceive *http_receive, const char *buffer, const size_t length, size_t *offset
+) {
+
+	CerverHttpParser *parser = &http_receive->parser;
+
+	const size_t gathered = http_receive->head_buffer ? http_receive->head_buffer->len : 0;
+
+	const char *head = buffer + *offset;
+	size_t head_length = length - *offset;
+
+	// the bytes of the head that arrived before are the start of this one
+	if (gathered) {
+		if (http_receive_head_gather (http_receive, head, head_length)) {
+			(void) http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+			return HTTP_RECEIVE_PARSE_ERROR;
+		}
+
+		head = http_receive->head_buffer->str;
+		head_length = http_receive->head_buffer->len;
+	}
+
+	size_t consumed = 0;
+	CerverHttpParserResult result = cerver_http_parser_head (parser, head, head_length, &consumed);
+	while ((result == CERVER_HTTP_PARSER_RESULT_FIELDS) && !http_receive_fields_grow (http_receive)) {
+		result = cerver_http_parser_head (parser, head, head_length, &consumed);
+	}
+
+	HttpReceiveParse parse = HTTP_RECEIVE_PARSE_ERROR;
+
+	switch (result) {
+		case CERVER_HTTP_PARSER_RESULT_MORE:
+			parse = http_receive_head_more (http_receive, head, head_length, gathered, consumed);
+			*offset = length;
+			break;
+
+		// the bytes of this buffer that ended the head
+		case CERVER_HTTP_PARSER_RESULT_HEAD:
+			*offset += consumed - gathered;
+			parse = http_receive_head_read (http_receive);
+			break;
+
+		case CERVER_HTTP_PARSER_RESULT_FIELDS:
+			(void) http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+			break;
+
+		default:
+			http_receive_parser_rejected (http_receive);
+			break;
+	}
+
+	return parse;
+
+}
+
+// the pieces of the body go to the body handler of the request, until the message is complete
+static HttpReceiveParse http_receive_parse_body (
+	HttpReceive *http_receive, const char *buffer, const size_t length, size_t *offset
+) {
+
+	CerverHttpParser *parser = &http_receive->parser;
+
+	for (;;) {
+		size_t consumed = 0;
+		const char *data = NULL;
+		size_t data_length = 0;
+
+		const CerverHttpParserResult result = cerver_http_parser_body (
+			parser, buffer + *offset, length - *offset, &consumed, &data, &data_length
+		);
+
+		*offset += consumed;
+
+		switch (result) {
+			case CERVER_HTTP_PARSER_RESULT_BODY:
+				if (http_receive->body_handler (http_receive, data, data_length)) return HTTP_RECEIVE_PARSE_ERROR;
+				break;
+
+			case CERVER_HTTP_PARSER_RESULT_MORE: return HTTP_RECEIVE_PARSE_MORE;
+
+			case CERVER_HTTP_PARSER_RESULT_COMPLETE:
+				(void) http_receive_handle_message_completed (http_receive);
+				return parser->upgrade ? HTTP_RECEIVE_PARSE_UPGRADE : HTTP_RECEIVE_PARSE_PAUSED;
+
+			default:
+				http_receive_parser_rejected (http_receive);
+				return HTTP_RECEIVE_PARSE_ERROR;
+		}
+	}
+
+}
+
+HttpReceiveParse http_receive_execute (
 	HttpReceive *http_receive,
 	const char *buffer, const size_t length, size_t *n_parsed
 ) {
@@ -2432,21 +2549,27 @@ llhttp_errno_t http_receive_execute (
 		http_receive->stage = HTTP_STAGE_REQUEST_LINE;
 	}
 
-	const llhttp_errno_t parser_errno = llhttp_execute (
-		&http_receive->parser, buffer, length
-	);
+	size_t offset = 0;
+	HttpReceiveParse result = HTTP_RECEIVE_PARSE_MORE;
 
-	*n_parsed = http_receive_parsed_bytes (http_receive, parser_errno, buffer, length);
+	if (!cerver_http_parser_head_read (&http_receive->parser)) {
+		result = http_receive_parse_head (http_receive, buffer, length, &offset);
+	}
 
-	return parser_errno;
+	// the body follows the head, also in the same buffer
+	if ((result == HTTP_RECEIVE_PARSE_MORE) && cerver_http_parser_head_read (&http_receive->parser)) {
+		result = http_receive_parse_body (http_receive, buffer, length, &offset);
+	}
+
+	*n_parsed = offset;
+
+	return result;
 
 }
 
 void http_receive_resume (HttpReceive *http_receive) {
 
 	http_receive->pause = HTTP_RECEIVE_PAUSE_NONE;
-
-	llhttp_resume (&http_receive->parser);
 
 }
 
@@ -2456,18 +2579,18 @@ void http_receive_handle (
 ) {
 
 	size_t n_parsed = 0;
-	const llhttp_errno_t parser_errno = http_receive_execute (
+	const HttpReceiveParse result = http_receive_execute (
 		http_receive, packet_buffer, (size_t) rc, &n_parsed
 	);
 
-	switch (parser_errno) {
+	switch (result) {
 		// all the data was parsed, the request is not complete yet
-		case HPE_OK: break;
+		case HTTP_RECEIVE_PARSE_MORE: break;
 
 		// the request was completed and handled,
 		// the bytes after it (a pipelined request) were not parsed
-		case HPE_PAUSED:
-		case HPE_PAUSED_UPGRADE:
+		case HTTP_RECEIVE_PARSE_PAUSED:
+		case HTTP_RECEIVE_PARSE_UPGRADE:
 			http_receive->unparsed = (size_t) rc - n_parsed;
 
 			// the connection belongs to its WebSocket now, with the bytes that followed the request
@@ -2478,7 +2601,7 @@ void http_receive_handle (
 			break;
 
 		default:
-			http_receive_handle_parser_error (http_receive, parser_errno, n_parsed, rc);
+			http_receive_handle_parser_error (http_receive, n_parsed, rc);
 			break;
 	}
 

@@ -556,9 +556,11 @@ static void test_http_receive_new (void) {
 	test_check_null_ptr (http_receive->http_cerver);
 
 	// the parser is embedded and empty until the receive is created for a connection
-	test_check_null_ptr (http_receive->parser.data);
-	test_check_null_ptr (http_receive->parser.settings);
-	test_check_null_ptr (http_receive->settings.on_url);
+	test_check_null_ptr (http_receive->parser.head.fields);
+	test_check_unsigned_eq (http_receive->parser.head.fields_capacity, 0, NULL);
+	test_check_null_ptr (http_receive->fields);
+	test_check_null_ptr (http_receive->head_buffer);
+	test_check (http_receive->body_handler != NULL, NULL);
 	test_check_false (http_receive->keep_alive_requested);
 	test_check_unsigned_eq (http_receive->unparsed, 0, NULL);
 
@@ -607,28 +609,16 @@ static void test_http_receive_create (void) {
 
 	test_check_ptr (http_receive->http_cerver);
 
-	// the parser is embedded, it parses requests with the receive's own settings
-	test_check (http_receive->parser.data == http_receive, NULL);
-	test_check (http_receive->parser.settings == &http_receive->settings, NULL);
-	test_check_unsigned_eq (http_receive->parser.type, HTTP_REQUEST, NULL);
-	test_check_unsigned_eq (http_receive->parser.lenient_flags, HTTP_PARSER_LENIENT_NONE, NULL);
-
-	test_check_null_ptr (http_receive->settings.on_message_begin);
-	test_check_ptr (http_receive->settings.on_url);
-	test_check_ptr (http_receive->settings.on_url_complete);
-	test_check_null_ptr (http_receive->settings.on_status);
-	test_check_null_ptr (http_receive->settings.on_method);
-	test_check_null_ptr (http_receive->settings.on_version);
-	test_check_ptr (http_receive->settings.on_header_field);
-	test_check_null_ptr (http_receive->settings.on_header_field_complete);
-	test_check_ptr (http_receive->settings.on_header_value);
-	test_check_ptr (http_receive->settings.on_header_value_complete);
-	test_check_ptr (http_receive->settings.on_headers_complete);
-	test_check_ptr (http_receive->settings.on_body);
-	test_check_ptr (http_receive->settings.on_message_complete);
-	test_check_null_ptr (http_receive->settings.on_chunk_header);
-	test_check_null_ptr (http_receive->settings.on_chunk_complete);
-	test_check_null_ptr (http_receive->settings.on_reset);
+	// the parser is embedded, it parses requests with the limits of the cerver and the fields of the receive
+	test_check_unsigned_eq (http_receive->parser.type, CERVER_HTTP_PARSER_TYPE_REQUEST, NULL);
+	test_check_unsigned_eq (http_receive->parser.lenient, HTTP_PARSER_LENIENT_NONE, NULL);
+	test_check_unsigned_eq (http_receive->parser.limits.target_size, http_cerver.max_url_size, NULL);
+	test_check_unsigned_eq (http_receive->parser.limits.fields_size, http_cerver.max_header_size, NULL);
+	test_check_unsigned_eq (http_receive->parser.limits.fields, http_cerver.max_headers, NULL);
+	test_check (http_receive->fields == http_receive->fields_inline, NULL);
+	test_check (http_receive->parser.head.fields == http_receive->fields, NULL);
+	test_check_unsigned_eq (http_receive->parser.head.fields_capacity, HTTP_RECEIVE_FIELDS_INLINE, NULL);
+	test_check_false (cerver_http_parser_started (&http_receive->parser));
 
 	test_check_null_ptr (http_receive->mpart_parser);
 
@@ -654,7 +644,7 @@ static void test_http_receive_create_lenient (void) {
 	(void) memset (&http_cerver, 0, sizeof (HttpCerver));
 
 	http_cerver_set_parser_lenient (&http_cerver, HTTP_PARSER_LENIENT_VERSION | HTTP_PARSER_LENIENT_HEADERS);
-	test_check_unsigned_eq (http_cerver.parser_lenient, (LENIENT_VERSION | LENIENT_HEADERS), NULL);
+	test_check_unsigned_eq (http_cerver.parser_lenient, (HTTP_PARSER_LENIENT_VERSION | HTTP_PARSER_LENIENT_HEADERS), NULL);
 
 	test_check_str_eq (http_parser_lenient_string (HTTP_PARSER_LENIENT_VERSION), "version", NULL);
 	test_check_str_eq (http_parser_lenient_string (HTTP_PARSER_LENIENT_NONE), "none", NULL);
@@ -670,7 +660,7 @@ static void test_http_receive_create_lenient (void) {
 
 	HttpReceive *http_receive = http_receive_create (&cerver_receive);
 	test_check_ptr (http_receive);
-	test_check_unsigned_eq (http_receive->parser.lenient_flags, (LENIENT_VERSION | LENIENT_HEADERS), NULL);
+	test_check_unsigned_eq (http_receive->parser.lenient, (HTTP_PARSER_LENIENT_VERSION | HTTP_PARSER_LENIENT_HEADERS), NULL);
 	http_receive_delete (http_receive);
 
 	// the strict mode again for the next receives
@@ -678,7 +668,7 @@ static void test_http_receive_create_lenient (void) {
 
 	http_receive = http_receive_create (&cerver_receive);
 	test_check_ptr (http_receive);
-	test_check_unsigned_eq (http_receive->parser.lenient_flags, 0, NULL);
+	test_check_unsigned_eq (http_receive->parser.lenient, 0, NULL);
 	http_receive_delete (http_receive);
 
 }
@@ -734,9 +724,17 @@ static void http_tests_main (void) {
 // the pools of threads run alone to be repeated, their requests wait and move between threads
 #define POOLS_ONLY_VARIABLE					"POOLS_ONLY"
 
+// the parser runs alone, its units take a second
+#define PARSER_ONLY_VARIABLE				"PARSER_ONLY"
+
 int main (void) {
 
 	test_output_init ();
+
+	if (getenv (PARSER_ONLY_VARIABLE)) {
+		http_tests_parser ();
+		return 0;
+	}
 
 	if (getenv (DISCONNECT_ONLY_VARIABLE)) {
 		http_tests_disconnect ();
@@ -774,6 +772,7 @@ int main (void) {
 	http_tests_conditional ();
 	http_tests_compression ();
 	http_tests_proxy ();
+	http_tests_parser ();
 
 	http_tests_jwt ();
 

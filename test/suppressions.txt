@@ -21,6 +21,5 @@ scan-build src/cerver/core/data.c unix.MallocSizeof
 scan-build src/cerver/game/lobby.c core.NullDereference
 scan-build src/cerver/game/lobby.c unix.Malloc
 scan-build src/cerver/handler/handler.c core.NonNullParamChecker
-scan-build src/cerver/http/core/handler.c core.NullDereference
 scan-build src/cerver/packets/serializer.c core.NonNullParamChecker
 scan-build src/cerver/threads/jobs.c core.DivideZero

@@ -128,6 +128,8 @@ static void http_request_init (HttpRequest *http_request) {
 
 		http_request->arena = NULL;
 		http_request->own_arena = NULL;
+
+		http_request->strings_in_arena = false;
 	}
 
 }
@@ -167,10 +169,11 @@ static void http_request_body_release (HttpRequest *http_request) {
 
 }
 
-// the url, the query and the headers of a request in an arena are released with it
+// the url, the query and the headers of a request in an arena are released with it,
+// and so are the views of its head when it has its own arena
 static void http_request_delete_strings (HttpRequest *http_request) {
 
-	if (!http_request->arena) {
+	if (!http_request->arena && !http_request->strings_in_arena) {
 		str_delete (http_request->url);
 		str_delete (http_request->query);
 

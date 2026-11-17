@@ -175,7 +175,7 @@ void measure_print (
 ) {
 
 	(void) printf (
-		"%-8s %-10s %-16s %-10s %14.1f %10.1f %10.1f %10.1f %10.2f %10ld\n",
+		"%-9s %-10s %-18s %-10s %14.1f %10.1f %10.1f %10.1f %10.2f %10ld\n",
 		module, name, implementation, operation,
 		result->items_per_second, result->megabytes_per_second, result->lowest, result->highest,
 		result->allocations, result->rss_kib

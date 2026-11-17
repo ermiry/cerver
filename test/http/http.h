@@ -44,6 +44,8 @@ extern void http_tests_compression (void);
 
 extern void http_tests_proxy (void);
 
+extern void http_tests_parser (void);
+
 /*** integration ***/
 
 extern void http_tests_origins_whitelist (void);

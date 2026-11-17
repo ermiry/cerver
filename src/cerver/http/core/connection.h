@@ -197,12 +197,8 @@ struct HttpConnection {
 
 	/** @internal @brief The arena of the data of its request. */
 	struct Arena *arena;
-	/** @internal @brief The buffer of the pieces of the url. */
-	String *url_buffer;
-	/** @internal @brief The buffer of the pieces of the name of a header. */
-	String *field_buffer;
-	/** @internal @brief The buffer of the pieces of the value of a header. */
-	String *value_buffer;
+	/** @internal @brief The buffer of the head of a request that does not arrive in one piece. */
+	String *head_buffer;
 
 	/** @internal @brief The bytes that followed a paused request in the buffer of the loop. */
 	HttpConnectionBuffer pending;

@@ -27,8 +27,8 @@
 #include "cerver/network/socket.h"
 
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/head.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/websockets/client.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/handshake.h"
@@ -48,6 +48,9 @@
 
 // the bytes of the name of a header of the response, a longer one is never one that is checked
 #define HTTP_WEB_SOCKET_CLIENT_FIELD_SIZE				(1 << 6)
+
+// the headers of the response that are read, a response with more is not valid
+#define HTTP_WEB_SOCKET_CLIENT_FIELDS					(1 << 6)
 
 // the end of the headers of the response
 static const char *http_web_socket_client_headers_end = { "\r\n\r\n" };
@@ -160,29 +163,22 @@ static void http_web_socket_client_append (
 
 }
 
-static int http_web_socket_client_on_field (llhttp_t *parser, const char *at, size_t length) {
-
-	HttpWebSocketClientParse *parse = (HttpWebSocketClientParse *) parser->data;
+// the name and the value of a field of the response, as C strings of the parse
+static void http_web_socket_client_field (
+	HttpWebSocketClientParse *parse, const CerverHttpHead *head, const CerverHttpField *field
+) {
 
 	http_web_socket_client_append (
 		parse->field, HTTP_WEB_SOCKET_CLIENT_FIELD_SIZE,
-		&parse->field_length, &parse->field_overflow, at, length
+		&parse->field_length, &parse->field_overflow,
+		cerver_http_head_at (head, field->name), field->name.length
 	);
-
-	return 0;
-
-}
-
-static int http_web_socket_client_on_value (llhttp_t *parser, const char *at, size_t length) {
-
-	HttpWebSocketClientParse *parse = (HttpWebSocketClientParse *) parser->data;
 
 	http_web_socket_client_append (
 		parse->value, HTTP_WEB_SOCKET_CLIENT_VALUE_SIZE,
-		&parse->value_length, &parse->value_overflow, at, length
+		&parse->value_length, &parse->value_overflow,
+		cerver_http_head_at (head, field->value), field->value.length
 	);
-
-	return 0;
 
 }
 
@@ -254,9 +250,7 @@ static void http_web_socket_client_header (HttpWebSocketClientParse *parse) {
 
 }
 
-static int http_web_socket_client_on_value_complete (llhttp_t *parser) {
-
-	HttpWebSocketClientParse *parse = (HttpWebSocketClientParse *) parser->data;
+static void http_web_socket_client_field_complete (HttpWebSocketClientParse *parse) {
 
 	http_web_socket_client_header (parse);
 
@@ -268,19 +262,36 @@ static int http_web_socket_client_on_value_complete (llhttp_t *parser) {
 	parse->value[0] = '\0';
 	parse->value_overflow = false;
 
-	return 0;
-
 }
 
-static int http_web_socket_client_on_headers_complete (llhttp_t *parser) {
+// the head of the response, read whole with the parser of cerver;
+// the body of a response that was not a 101 is never read
+static bool http_web_socket_client_head_parse (
+	HttpWebSocketClientParse *parse, const char *data, const size_t size
+) {
 
-	HttpWebSocketClientParse *parse = (HttpWebSocketClientParse *) parser->data;
+	CerverHttpField fields[HTTP_WEB_SOCKET_CLIENT_FIELDS];
+	CerverHttpParser parser;
+	cerver_http_parser_init (
+		&parser, CERVER_HTTP_PARSER_TYPE_RESPONSE, HTTP_PARSER_LENIENT_NONE, NULL,
+		fields, HTTP_WEB_SOCKET_CLIENT_FIELDS
+	);
 
-	parse->response->status = llhttp_get_status_code (parser);
-	parse->response->complete = true;
+	size_t consumed = 0;
+	const bool parsed = (cerver_http_parser_head (&parser, data, size, &consumed) == CERVER_HTTP_PARSER_RESULT_HEAD);
 
-	// the body of a response that was not a 101 is never read
-	return 1;
+	if (parsed) {
+		const CerverHttpHead *head = &parser.head;
+		for (unsigned int i = 0; i < head->fields_count; i++) {
+			http_web_socket_client_field (parse, head, &head->fields[i]);
+			http_web_socket_client_field_complete (parse);
+		}
+
+		parse->response->status = (int) head->status;
+		parse->response->complete = true;
+	}
+
+	return parsed;
 
 }
 
@@ -307,24 +318,11 @@ u8 http_web_socket_client_response_parse (
 		else {
 			response->size = (size_t) (end - data) + HTTP_WEB_SOCKET_CLIENT_HEADERS_END_LENGTH;
 
-			llhttp_settings_t settings;
-			llhttp_settings_init (&settings);
-			settings.on_header_field = http_web_socket_client_on_field;
-			settings.on_header_value = http_web_socket_client_on_value;
-			settings.on_header_value_complete = http_web_socket_client_on_value_complete;
-			settings.on_headers_complete = http_web_socket_client_on_headers_complete;
-
 			HttpWebSocketClientParse parse;
 			(void) memset (&parse, 0, sizeof (HttpWebSocketClientParse));
 			parse.response = response;
 
-			llhttp_t parser;
-			llhttp_init (&parser, HTTP_RESPONSE, &settings);
-			parser.data = &parse;
-
-			const llhttp_errno_t result = llhttp_execute (&parser, data, response->size);
-
-			const bool parsed = (result == HPE_OK) || (result == HPE_PAUSED_UPGRADE) || (result == HPE_PAUSED);
+			const bool parsed = http_web_socket_client_head_parse (&parse, data, response->size);
 			response->invalid = !parsed || !response->complete || response->invalid;
 			if (!response->invalid) retval = HTTP_WEB_SOCKET_CLIENT_RESPONSE_COMPLETE;
 		}

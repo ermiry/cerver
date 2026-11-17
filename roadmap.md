@@ -564,6 +564,44 @@ el árbol anterior al borrado:
   desde el día uno.
 - **Al cerrar:** se borran `include/cerver/http/parser/` y `src/cerver/http/parser/` y su fila de `thirdparty.md`.
 
+**Lo hecho en la 3.0b-9** (una sola beta: el módulo, la migración y el borrado de llhttp y de multipart-parser-c):
+
+- **El módulo** `cerver/http/parser/{parser,head,body,multipart}.h` (API pública, `@since 3.0b-9`) y
+  `src/cerver/http/parser/{internal.h,parser,head,body,fields,scan,tables,multipart}.c`. El modelo: **la cabeza entera
+  y el cuerpo en stream.** La cabeza se lee del inicio de su búfer cada vez que llega más (el parser sigue desde la
+  última línea que leyó, así que es O(n) en total), y sus campos son spans (offset + largo) sobre ese búfer: moverla
+  es solo cambiar su base. El cuerpo (Content-Length, chunked con sus extensiones y trailers, hasta el cierre en una
+  respuesta) se lee en cualquier byte y entrega vistas del búfer del caller. Multipart es la misma máquina de estados
+  de multipart-parser-c, byte por byte, embebida en `HttpReceive` (sin un `malloc ()` por petición) y con los datos de
+  cada parte buscados con `memchr ()`.
+- **La conducta:** las mismas respuestas que con llhttp (`test/http/receive.c` y `disconnect.c` sin cambiar sus
+  expectativas), con cada rareza de llhttp que el corpus y el diferencial encontraron replicada; solo dos diferencias,
+  donde llhttp aceptaba lo que no debía (`incompatibilities.md`, 3.0b-9). Los 10 flags lenient con sus nombres y sus
+  valores, en `HTTP_PARSER_LENIENT_MAP`.
+- **La vía rápida del modo estricto:** la línea de la petición en una pasada (GET y POST comparados enteros, el target
+  con el kernel de lo visible, la versión con su CRLF comparada entera) y cada campo en una pasada (el nombre con el
+  kernel de los tokens hasta sus dos puntos, el valor con el de los valores hasta su CRLF, el nombre conocido por una
+  tabla de su largo y su primer y último byte); lo que no es común va a la vía línea por línea, que da los mismos
+  errores. Los campos especiales solo se leen otra vez cuando un campo puede serlo; el CRLF tras los datos de un chunk
+  y la línea del siguiente tamaño sin extensiones se leen enteros.
+- **El SIMD:** kernels de 16 bytes en NEON (arm64) y SSE2 (x86_64), la base de cada arquitectura, sin despacho; el de
+  los tokens busca los dos nibbles de cada byte en dos tablas de 16 (`vqtbl1q_u8`, y `pshufb` con SSSE3);
+  `CERVER_HTTP_PARSER_SCALAR` deja solo las palabras de 8 bytes (SWAR). AVX2 no se escribió: los valores son de 10 a
+  120 bytes y 32 a la vez ahorra poco frente al despacho que pediría; queda para cuando haya cifras de x86 nativo.
+- **Las pruebas:** el corpus de llhttp 9.4.3 (`test/conformance/http.{c,txt,sh}`: 246 iguales, 3 decididas, 4 con el
+  flag relajado que cerver no tiene, 0 fallas), la región `smuggling` de `test/http/receive.c` (50 casos en cada corte,
+  vista pasar contra llhttp antes), las unidades de `test/http/parser/parser.c` (cada byte en cada posición de un
+  nombre, cada error, cada flag, los límites justo y un byte arriba), los diferenciales `llhttp` (contra llhttp)
+  y `parts` (contra multipart-parser-c) con el código de arriba (`REFERENCES`), y las seis variantes de los kernels
+  (NEON, SSE2, SSSE3 y las escalares) con las unidades y el corpus en x86_64 emulado y en arm64.
+- **Lo medido** (`benchmarks/competitors/results/aarch64.txt`, la corrida sola del 2026-11-16 en arm64): le gana a
+  llhttp 9.4.4 en los seis casos (`small` 2.23×, `browser` 1.42×, `post` 1.46×, `cookies` 1.54×, `chunked` 1.43×,
+  `pipeline` 2.53×) y a http_parser 2.9.4 en todos (de 2.5 a 12 veces); contra picohttpparser gana `post` (1.06×) y
+  `cookies` (2.57×: una cabecera de 1.8 KB), queda en 97 % en `browser`, 92 % en `chunked`, 85 % en `pipeline` y 80 %
+  en `small`, donde pesa el costo fijo de su API (el estado, la segunda llamada para el cuerpo, el keep-alive) que
+  picohttpparser no tiene. Multipart: 1.06× (`form`) y 20× (`upload`, 64 KiB) multipart-parser-c, sin asignaciones
+  (una por cuerpo). `test/performance.sh`: las peticiones siguen en 0 asignaciones.
+
 ### 4.4 L4 — La arquitectura de I/O
 
 - **Thread-per-core:**

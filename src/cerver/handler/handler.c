@@ -2502,10 +2502,7 @@ static HttpReceive *cerver_receive_http_create (
 	HttpReceive *http_receive = NULL;
 
 	if (*context) {
-		const HttpReceiveResources resources = {
-			(*context)->arena,
-			(*context)->url_buffer, (*context)->field_buffer, (*context)->value_buffer
-		};
+		const HttpReceiveResources resources = { (*context)->arena, (*context)->head_buffer };
 
 		if (!http_receive_prepare ((*context)->http_receive, cr, &resources)) {
 			http_receive = (*context)->http_receive;
@@ -2753,9 +2750,7 @@ static void handler_context_delete (void *context_ptr) {
 
 		free (context->buffer);
 
-		str_delete (context->url_buffer);
-		str_delete (context->field_buffer);
-		str_delete (context->value_buffer);
+		str_delete (context->head_buffer);
 
 		free (context->http_receive);
 
@@ -2776,15 +2771,12 @@ static HandlerThreadContext *handler_context_create (void) {
 	if (context) {
 		context->arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
 
-		context->url_buffer = str_new (NULL);
-		context->field_buffer = str_new (NULL);
-		context->value_buffer = str_new (NULL);
+		context->head_buffer = str_new (NULL);
 
 		context->http_receive = (HttpReceive *) calloc (1, sizeof (HttpReceive));
 
 		if (
-			!context->arena
-			|| !context->url_buffer || !context->field_buffer || !context->value_buffer
+			!context->arena || !context->head_buffer
 			|| !context->http_receive
 			|| pthread_setspecific (handler_context_key, context)
 		) {

@@ -186,12 +186,6 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
-# the parser is internal, its objects never export their symbols:
-# llhttp.c is generated and it defines its methods without a visibility
-PARSEROBJS	:= $(filter $(BUILDDIR)/cerver/http/parser/%,$(OBJECTS))
-
-$(PARSEROBJS): CFLAGS += -fvisibility=hidden
-
 $(SLIB):
 	$(MAKE) $(OBJECTS)
 	$(CC) $(OBJECTS) $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
@@ -375,7 +369,7 @@ endif
 
 TESTINC		:= -I $(INCDIR) -I $(SRCDIR) -I ./$(TESTDIR)
 
-TESTS		:= $(shell find $(TESTDIR) -type f -name '*.$(SRCEXT)' -not -path '$(TESTDIR)/fuzz/*')
+TESTS		:= $(shell find $(TESTDIR) -type f -name '*.$(SRCEXT)' -not -path '$(TESTDIR)/fuzz/*' -not -path '$(TESTDIR)/conformance/http.$(SRCEXT)')
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 # a test is compiled again when a header that it includes changes
@@ -505,6 +499,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/auth.o -o $(INTWEBOUT)/auth $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/disconnect.o -o $(INTWEBOUT)/disconnect $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/features.o -o $(INTWEBOUT)/features $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/garden.o -o $(INTWEBOUT)/garden $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/jobs.o -o $(INTWEBOUT)/jobs $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/json.o -o $(INTWEBOUT)/json $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/multi.o -o $(INTWEBOUT)/multi $(INTWEBLIBS)
@@ -557,11 +552,27 @@ test: testout
 	$(MAKE) units
 	$(MAKE) integration
 
+# the code of the parsers that the ones of cerver replaced (llhttp and multipart-parser-c), only for the
+# conformance of HTTP and the differential fuzzers, downloaded by Dockerfile.conformance and Dockerfile.fuzz:
+# make REFERENCES=<the folder with llhttp/ and multipart/>
+REFERENCES		?=
+REFERENCESINC	:= -I $(REFERENCES)/llhttp/include -I $(REFERENCES)/multipart
+REFERENCESSRC	:= $(REFERENCES)/llhttp/src/api.c $(REFERENCES)/llhttp/src/http.c $(REFERENCES)/llhttp/src/llhttp.c \
+	$(REFERENCES)/multipart/multipart_parser.c
+# their code is C, also when the tests are built with CC=g++
+REFERENCESFLAGS	:= -x c -w
+
 conformance:
 	$(MAKE) ./$(TESTBUILD)/conformance/json.$(OBJEXT) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT)
 	@mkdir -p ./$(TESTTARGET)/conformance
 	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/json.$(OBJEXT) -o ./$(TESTTARGET)/conformance/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/conformance/jwt.$(OBJEXT) -o ./$(TESTTARGET)/conformance/jwt $(TESTLIBS)
+ifneq ($(REFERENCES),)
+	@mkdir -p ./$(TESTBUILD)/references
+	$(foreach source,$(REFERENCESSRC),$(CC) -O2 -g $(REFERENCESFLAGS) $(REFERENCESINC) -c $(source) -o ./$(TESTBUILD)/references/$(basename $(notdir $(source))).$(OBJEXT) || exit 1;)
+	$(CC) $(TESTFLAGS) $(TESTINC) $(REFERENCESINC) ./$(TESTDIR)/conformance/http.$(SRCEXT) ./$(TESTBUILD)/references/*.$(OBJEXT) \
+		-o ./$(TESTTARGET)/conformance/http $(TESTLIBS)
+endif
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
@@ -623,7 +634,6 @@ bench: $(BENCHOBJS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/frames.o -o ./$(BENCHTARGET)/frames $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
-	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o $(PARSEROBJS) -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # matches real routes with the matcher of 2.0b-58 and with the routes tree
@@ -665,12 +675,20 @@ ifeq ($(ZLIB), 1)
 	FUZZLIBS += $(ZLIBLIB)
 endif
 
-FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name '*.$(SRCEXT)' 2> /dev/null)
+# the differential fuzzers of the parsers are built only with the code of the ones that they replaced (REFERENCES)
+FUZZREFERENCED	:= $(FUZZDIR)/llhttp.$(SRCEXT) $(FUZZDIR)/parts.$(SRCEXT)
+FUZZERS			:= $(filter-out $(FUZZREFERENCED),$(shell find $(FUZZDIR) -maxdepth 1 -type f -name '*.$(SRCEXT)' 2> /dev/null))
 FUZZLIBOBJS		:= $(patsubst $(SRCDIR)/%,$(FUZZBUILD)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 fuzz: $(FUZZLIBOBJS)
 	@mkdir -p ./$(FUZZTARGET)
 	$(foreach fuzzer,$(FUZZERS),$(CC) $(FUZZFLAGS) $(FUZZINC) $(fuzzer) $(FUZZLIBOBJS) -o ./$(FUZZTARGET)/$(basename $(notdir $(fuzzer))) $(FUZZLIBS) || exit 1;)
+ifneq ($(REFERENCES),)
+	@mkdir -p ./$(FUZZBUILD)/references
+	$(foreach source,$(REFERENCESSRC),$(CC) $(FUZZLIBFLAGS) $(REFERENCESFLAGS) $(REFERENCESINC) -c $(source) -o ./$(FUZZBUILD)/references/$(basename $(notdir $(source))).$(OBJEXT) || exit 1;)
+	$(foreach fuzzer,$(FUZZREFERENCED),$(CC) $(FUZZFLAGS) $(FUZZINC) $(REFERENCESINC) $(fuzzer) ./$(FUZZBUILD)/references/*.$(OBJEXT) $(FUZZLIBOBJS) \
+		-o ./$(FUZZTARGET)/$(basename $(notdir $(fuzzer))) $(FUZZLIBS) || exit 1;)
+endif
 
 # the target that gives every token to the JWT of cerver and to the libjwt of the system,
 # built only where it is installed: make TYPE=test CC=clang differential

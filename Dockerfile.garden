@@ -1,0 +1,11 @@
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev make libssl-dev zlib1g-dev && apt-get clean
+
+WORKDIR /opt/cerver
+
+COPY . .
+RUN make clean && make TYPE=production -j4 \
+	&& gcc -O2 -D _GNU_SOURCE -I include test/web/garden.c -o garden -Wl,-rpath=/opt/cerver/bin -L bin -l cerver
+
+CMD ["/opt/cerver/garden"]

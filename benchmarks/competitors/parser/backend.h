@@ -14,6 +14,10 @@ extern const char *parser_backend_name;
 // returns the headers that it found, -1 when the request is not valid or it is not complete
 extern int parser_backend_parse (const char *request, const size_t size);
 
+// parses the requests of a text one after another, as the ones of a connection with pipelining
+// returns the requests that it found, -1 when one is not valid or the last one is not complete
+extern int parser_backend_pipeline (const char *text, const size_t size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -14,7 +14,7 @@
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
-#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/routes/route.h"
@@ -173,7 +173,7 @@ static void http_access_rejected (
 	http_access_client (http_receive, client);
 
 	// the method that the parser found, the request was rejected before its headers were complete
-	const uint8_t method = llhttp_get_method (&http_receive->parser);
+	const unsigned int method = http_receive->parser.head.method;
 
 	cerver_log_with_date (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
@@ -234,7 +234,7 @@ static void http_access_incomplete (
 		http_stage_string (http_receive->stage),
 		http_receive->received, http_receive->diagnostics.n_recvs,
 		http_receive->diagnostics.last_rc, http_receive->diagnostics.last_errno,
-		llhttp_errno_name (llhttp_get_errno (&http_receive->parser)),
+		cerver_http_parser_error_string (cerver_http_parser_get_error (&http_receive->parser)),
 		cerver_is_running (http_receive->cr->cerver), process_time
 	);
 

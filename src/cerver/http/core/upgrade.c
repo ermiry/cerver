@@ -40,8 +40,7 @@
 #include "cerver/http/core/recycle.h"
 #include "cerver/http/core/settings.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/method.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
@@ -131,15 +130,15 @@ static bool http_request_web_socket_requested (const HttpRequest *request) {
 // a key of 16 bytes, the version 13 and no body
 // returns true when it is valid, and sets the rejection when it is not
 static bool http_receive_web_socket_validate (
-	const llhttp_t *parser, const HttpRequest *request,
+	const CerverHttpParser *parser, const HttpRequest *request,
 	HttpWebSocketRejection *rejection
 ) {
 
 	const String *key = request->headers[HTTP_HEADER_SEC_WEBSOCKET_KEY];
 	const String *version = request->headers[HTTP_HEADER_SEC_WEBSOCKET_VERSION];
 
-	const u8 major = llhttp_get_http_major (parser);
-	const u8 minor = llhttp_get_http_minor (parser);
+	const unsigned int major = parser->head.major;
+	const unsigned int minor = parser->head.minor;
 
 	bool valid = false;
 
@@ -155,7 +154,10 @@ static bool http_receive_web_socket_validate (
 		*rejection = HTTP_WEB_SOCKET_REJECTION_VERSION;
 	}
 
-	else if (((parser->flags & F_CONTENT_LENGTH) && parser->content_length) || (parser->flags & F_CHUNKED)) {
+	else if (
+		((parser->head.flags & CERVER_HTTP_HEAD_CONTENT_LENGTH) && parser->head.content_length)
+		|| (parser->head.flags & CERVER_HTTP_HEAD_CHUNKED)
+	) {
 		*rejection = HTTP_WEB_SOCKET_REJECTION_BAD_REQUEST;
 	}
 
@@ -232,7 +234,7 @@ static HttpWebSocketHandshake *http_receive_web_socket_handshake (
 
 // the checks of an upgrade before its body, a place for its connection is taken
 static int http_receive_web_socket_prepare (
-	HttpReceive *http_receive, const llhttp_t *parser,
+	HttpReceive *http_receive, const CerverHttpParser *parser,
 	const HttpEndpoint *endpoint
 ) {
 
@@ -274,14 +276,14 @@ static int http_receive_web_socket_prepare (
 // an upgrade is checked, a request without one goes to the handler of the endpoint (426 without it)
 // returns 0 to continue, 1 when the request was rejected
 int http_receive_handle_headers_web_socket (
-	HttpReceive *http_receive, const llhttp_t *parser
+	HttpReceive *http_receive, const CerverHttpParser *parser
 ) {
 
 	int retval = 0;
 
 	const HttpEndpoint *endpoint = http_receive->endpoint;
 	if (endpoint && http_endpoint_is_web_socket (endpoint)) {
-		if (llhttp_get_upgrade (parser) && http_request_web_socket_requested (http_receive->request)) {
+		if (parser->upgrade && http_request_web_socket_requested (http_receive->request)) {
 			retval = http_receive_web_socket_prepare (http_receive, parser, endpoint);
 		}
 
