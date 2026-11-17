@@ -837,6 +837,11 @@ static void server_test_routes (HttpCerver *http_cerver) {
 
 	test_check_ptr (http_group_web_socket_add (ws, "echo", NULL));
 
+	// the methods of its connections run in the event loop, without a job (in THREADS it changes nothing)
+	HttpEndpoint *loop = http_group_web_socket_add (ws, "loop", NULL);
+	test_check_ptr (loop);
+	http_web_socket_settings_set_loop_callbacks (http_endpoint_get_web_socket_settings (loop), true);
+
 	HttpEndpoint *plain = http_group_get (ws, "plain", server_test_plain_handler);
 	http_endpoint_set_web_socket_handlers (plain, &server_test_echo_handlers);
 
@@ -1119,13 +1124,15 @@ static void test_server_handshake (void) {
 }
 
 // echoes of every size, around the limits of the encodings of the length
-static void test_server_echo (void) {
+static void server_test_echo_path (const char *path) {
 
 	static const size_t sizes[] = { 0, 1, 125, 126, 127, 1000, 65535, 65536, SERVER_TEST_LARGE_MESSAGE };
 
+	(void) memset (&counters, 0, sizeof (ServerTestCounters));
+
 	ServerTest *server = server_test_start (0);
 
-	const int fd = raw_open (server->port, "/ws/echo", NULL);
+	const int fd = raw_open (server->port, path, NULL);
 	RawReader reader;
 	raw_reader_init (&reader, fd);
 
@@ -1151,6 +1158,14 @@ static void test_server_echo (void) {
 	free (data);
 
 	server_test_stop (server);
+
+}
+
+// every size of a payload, in a job of the pool and in the loop (the methods of the endpoint run there)
+static void test_server_echo (void) {
+
+	server_test_echo_path ("/ws/echo");
+	server_test_echo_path ("/ws/loop");
 
 }
 

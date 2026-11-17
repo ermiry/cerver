@@ -441,6 +441,7 @@ endif
 	$(CC) $(TESTINC) ./$(TESTBUILD)/packets/*.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/system/*.o -o ./$(TESTTARGET)/system $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/tls/*.o -o ./$(TESTTARGET)/tls $(TESTLIBS) $(OPENSSL)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/types/*.o -o ./$(TESTTARGET)/types $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)

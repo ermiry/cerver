@@ -54,6 +54,8 @@ run ./test/bin/system
 
 run ./test/bin/threads
 
+run ./test/bin/tls
+
 run ./test/bin/utils
 
 run ./test/bin/crypto
