@@ -3,19 +3,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <cerver/collections/arena.h>
 #include <cerver/collections/dlist.h>
 
+#include <cerver/connection/connection.h>
+#include <cerver/connection/end.h>
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
+#include <cerver/handler/handler.h>
 
+#include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
 #include <cerver/http/core/pairs.h>
 #include <cerver/http/core/routes.h>
+#include <cerver/http/parser/parser.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/security/auth.h>
 
 #include <cerver/json/document.h>
@@ -242,6 +251,137 @@ static void faults_http_bearer_arena (HttpCerver *http_cerver) {
 
 }
 
+#pragma region parser
+
+#define FAULTS_HTTP_CONNECTIONS			2
+#define FAULTS_HTTP_SERVER				0
+#define FAULTS_HTTP_CLIENT				1
+
+// a request with one field more than the array of the receive takes, that doubles it
+#define FAULTS_HTTP_FIELDS				(HTTP_RECEIVE_FIELDS_INLINE + 1)
+#define FAULTS_HTTP_FIELDS_GROWN		(HTTP_RECEIVE_FIELDS_INLINE * 2)
+
+#define FAULTS_HTTP_REQUEST_SIZE		(1 << 12)
+#define FAULTS_HTTP_RESPONSE_SIZE		(1 << 12)
+
+static const char *faults_http_ok = { "HTTP/1.1 200" };
+static const char *faults_http_server_error = { "HTTP/1.1 500" };
+
+static void faults_http_fields_handler (const HttpReceive *http_receive, const HttpRequest *request) {
+
+	(void) request;
+
+	(void) http_response_json_msg_send (http_receive, HTTP_STATUS_OK, "fields");
+
+}
+
+static Cerver *faults_http_cerver_create (void) {
+
+	Cerver *cerver = cerver_create (
+		CERVER_TYPE_WEB, FAULTS_HTTP_CERVER_NAME, FAULTS_HTTP_CERVER_PORT, PROTOCOL_TCP, false, FAULTS_HTTP_CONNECTIONS
+	);
+
+	test_check_ptr (cerver);
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	test_check_ptr (http_cerver);
+
+	http_cerver_route_register (
+		http_cerver, http_route_create (REQUEST_METHOD_GET, "fields", faults_http_fields_handler)
+	);
+
+	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+
+	return cerver;
+
+}
+
+// the request with its fields, X-Field-<n>: <n>
+static size_t faults_http_fields_request (char *request) {
+
+	size_t length = (size_t) snprintf (request, FAULTS_HTTP_REQUEST_SIZE, "GET /fields HTTP/1.1\r\nHost: cerver\r\n");
+
+	for (unsigned int i = 1; i < FAULTS_HTTP_FIELDS; i++) {
+		length += (size_t) snprintf (request + length, FAULTS_HTTP_REQUEST_SIZE - length, "X-Field-%u: %u\r\n", i, i);
+	}
+
+	length += (size_t) snprintf (request + length, FAULTS_HTTP_REQUEST_SIZE - length, "\r\n");
+
+	return length;
+
+}
+
+// the request through a receive of its own, the start of the response that it got
+static void faults_http_receive (Cerver *cerver, const char *request, const size_t length, char *response) {
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
+	(void) shutdown (fds[FAULTS_HTTP_CLIENT], SHUT_WR);
+
+	Connection *connection = connection_create_empty ();
+	test_check_ptr (connection);
+	connection->socket->sock_fd = fds[FAULTS_HTTP_SERVER];
+	connection->active = true;
+
+	CerverReceive cerver_receive;
+	(void) memset (&cerver_receive, 0, sizeof (CerverReceive));
+	cerver_receive.cerver = cerver;
+	cerver_receive.socket = connection->socket;
+	cerver_receive.connection = connection;
+
+	HttpReceive *http_receive = http_receive_create (&cerver_receive);
+	test_check_ptr (http_receive);
+
+	char *buffer = (char *) malloc (length);
+	test_check_ptr (buffer);
+	(void) memcpy (buffer, request, length);
+
+	http_receive->handler (http_receive, (ssize_t) length, buffer);
+	free (buffer);
+
+	if (connection->socket->sock_fd != -1) connection_end (connection);
+
+	const ssize_t received = read (fds[FAULTS_HTTP_CLIENT], response, FAULTS_HTTP_RESPONSE_SIZE - 1);
+	response[(received > 0) ? received : 0] = '\0';
+
+	http_receive_delete (http_receive);
+	connection_delete (connection);
+
+	(void) close (fds[FAULTS_HTTP_CLIENT]);
+
+}
+
+// a request with more fields than the receive takes doubles its array; without memory for it, the request is
+// answered with 500 instead of reading its head with the fields that fit
+static void faults_http_fields_grow (void) {
+
+	Cerver *cerver = faults_http_cerver_create ();
+
+	char request[FAULTS_HTTP_REQUEST_SIZE];
+	const size_t length = faults_http_fields_request (request);
+
+	char buffer[FAULTS_HTTP_RESPONSE_SIZE];
+	const char *response = buffer;
+
+	faults_http_receive (cerver, request, length, buffer);
+	test_check (!strncmp (response, faults_http_ok, strlen (faults_http_ok)), response);
+
+	const unsigned int before = faults_triggered (FAULTS_FUNCTION_MALLOC);
+
+	faults_arm (FAULTS_FUNCTION_MALLOC, true, FAULTS_HTTP_FIELDS_GROWN * sizeof (CerverHttpField));
+	faults_http_receive (cerver, request, length, buffer);
+	const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_MALLOC) - before;
+	faults_disarm (FAULTS_FUNCTION_MALLOC);
+
+	test_check_unsigned_eq (triggered, 1, "the array of the fields did not grow");
+	test_check (!strncmp (response, faults_http_server_error, strlen (faults_http_server_error)), response);
+
+	(void) cerver_teardown (cerver);
+
+}
+
+#pragma endregion
+
 void faults_tests_http (void) {
 
 	(void) printf ("Testing FAULTS http...\n");
@@ -269,6 +409,8 @@ void faults_tests_http (void) {
 	faults_http_bearer_arena (http_cerver_get (cerver));
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+	faults_http_fields_grow ();
 
 	(void) printf ("Done!\n");
 
