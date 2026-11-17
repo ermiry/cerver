@@ -4,12 +4,16 @@
 #include <string.h>
 
 #include <pthread.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cerver/connection/connection.h>
 #include <cerver/files/files.h>
 #include <cerver/files/images.h>
+#include <cerver/files/receive.h>
 #include <cerver/files/send.h>
+#include <cerver/network/socket.h>
 #include <cerver/packets/packets.h>
 
 #include "../test.h"
@@ -67,8 +71,11 @@ static void test_files_create_dir (void) {
 	test_check_unsigned_eq (files_create_dir ("hola", 0777), 0, NULL);
 	test_check_true (file_exists ("hola"));
 
-	test_check_unsigned_eq (files_create_dir ("test", 0777), 1, NULL);
+	// a directory that exists is a success, a path that exists and is not a directory is not
+	test_check_unsigned_eq (files_create_dir ("test", 0777), 0, "an existing directory was an error");
 	test_check_true (file_exists ("test"));
+
+	test_check_unsigned_eq (files_create_dir ("./test/data/test.txt", 0777), 1, NULL);
 
 }
 
@@ -368,11 +375,32 @@ static void test_file_n_read_more_text (void) {
 
 }
 
+// the bytes that were read replace what n_read had, they are not added to it
+static void test_file_n_read_count (void) {
+
+	size_t n_read = strlen (test_string);
+	char *file_contents = file_n_read ("./test/data/test.txt", strlen (less_test_string), &n_read);
+
+	test_check_ptr (file_contents);
+	test_check_unsigned_eq (n_read, strlen (less_test_string), "the bytes that were read were added to n_read");
+
+	free (file_contents);
+
+	file_contents = file_n_read ("./test/data/test.txt", strlen (less_test_string), NULL);
+	test_check_ptr (file_contents);
+	test_check_str_eq (file_contents, less_test_string, NULL);
+
+	free (file_contents);
+
+}
+
 static void test_file_n_read (void) {
 
 	test_file_n_read_less_text ();
 
 	test_file_n_read_more_text ();
+
+	test_file_n_read_count ();
 
 }
 
@@ -451,7 +479,97 @@ static void test_files_image_get_type_without_file (void) {
 
 }
 
+#define FILES_IMAGE_TEMPLATE			"/tmp/cerver-image-XXXXXX"
+#define FILES_IMAGE_PATH_SIZE			32
+#define FILES_IMAGE_BMP_SIZE			54
+
+// the file header of a BMP of 54 bytes and the start of its BITMAPINFOHEADER (40 bytes)
+static const unsigned char files_image_bmp[FILES_IMAGE_BMP_SIZE] = {
+	'B', 'M', 54, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
+	40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0
+};
+
+static const char *files_image_text = { "BMW is a car, this text is not a bitmap at all" };
+
+// writes the bytes to a new file and returns its type by its bytes
+static ImageType files_image_type_of (const void *bytes, const size_t size) {
+
+	char path[FILES_IMAGE_PATH_SIZE] = FILES_IMAGE_TEMPLATE;
+	const int fd = mkstemp (path);
+	test_check (fd > -1, "failed to create a temporary image");
+
+	test_check_int_eq ((int) write (fd, bytes, size), (int) size, NULL);
+	(void) close (fd);
+
+	const ImageType type = files_image_get_type (path);
+	(void) unlink (path);
+
+	return type;
+
+}
+
+// a BMP is found by its "BM" and the size of a known DIB header, a text that starts with "BM" is not one
+static void test_files_image_get_type_bmp (void) {
+
+	test_check_unsigned_eq (
+		files_image_type_of (files_image_bmp, FILES_IMAGE_BMP_SIZE), IMAGE_TYPE_BMP, "a BMP was not found"
+	);
+
+	test_check_unsigned_eq (
+		files_image_type_of (files_image_text, strlen (files_image_text)), IMAGE_TYPE_NONE, NULL
+	);
+
+}
+
 #pragma endregion
+
+#define FILES_RECEIVE_TEMPLATE			"/tmp/cerver-receive-XXXXXX"
+#define FILES_RECEIVE_PATH_SIZE			32
+#define FILES_RECEIVE_LENGTH			4096
+#define FILES_RECEIVE_FIRST				"first"
+#define FILES_RECEIVE_SENT				128
+
+// a file whose sender goes away in the middle is not left partially written in its path
+static void test_files_receive_partial (void) {
+
+	int fds[2] = { -1, -1 };
+	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
+
+	Connection *connection = connection_create_empty ();
+	test_check_ptr (connection);
+	connection->socket->sock_fd = fds[0];
+
+	char sent[FILES_RECEIVE_SENT];
+	(void) memset (sent, 'f', FILES_RECEIVE_SENT);
+	test_check_int_eq ((int) send (fds[1], sent, FILES_RECEIVE_SENT, 0), FILES_RECEIVE_SENT, NULL);
+	(void) close (fds[1]);
+
+	char path[FILES_RECEIVE_PATH_SIZE] = FILES_RECEIVE_TEMPLATE;
+	const int file_fd = mkstemp (path);
+	test_check (file_fd > -1, "failed to create a temporary file");
+	(void) close (file_fd);
+
+	char *saved_filename = strdup (path);
+	test_check_ptr (saved_filename);
+
+	FileHeader header;
+	(void) memset (&header, 0, sizeof (FileHeader));
+	header.len = FILES_RECEIVE_LENGTH;
+
+	test_check_unsigned_eq (
+		file_receive_actual (
+			NULL, connection, &header, FILES_RECEIVE_FIRST, strlen (FILES_RECEIVE_FIRST), &saved_filename
+		), 1, NULL
+	);
+
+	test_check (saved_filename == NULL, NULL);
+	test_check_bool_eq (file_exists (path), false, "a partial file was left in its path");
+
+	(void) unlink (path);
+	connection_delete (connection);
+	(void) close (fds[0]);
+
+}
 
 #define FILES_HEADER_NAME			"image.png"
 #define FILES_HEADER_LENGTH			256
@@ -771,6 +889,7 @@ int main (void) {
 	test_file_read ();
 	test_file_n_read ();
 	test_files_header_is_valid ();
+	test_files_receive_partial ();
 	test_files_header_get ();
 
 	// copy, remove and move
@@ -782,6 +901,7 @@ int main (void) {
 	test_files_image_extension_is_jpeg ();
 	test_files_image_extension_is_png ();
 	test_files_image_get_type_without_file ();
+	test_files_image_get_type_bmp ();
 
 	(void) printf ("\nDone with FILES tests!\n\n");
 
