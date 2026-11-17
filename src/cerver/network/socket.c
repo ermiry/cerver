@@ -612,4 +612,19 @@ u8 socket_send_file (
 
 }
 
+// a send that waited for space until its deadline leaves the peer with a part of what was sent,
+// and a peer that did not read in all that time is taken as gone: the socket is shut down,
+// so its receive ends the connection and the next sends fail at once instead of waiting each one
+bool socket_end_on_send_timeout (Socket *socket, const int error) {
+
+	bool ended = false;
+
+	if (socket && ((error == EAGAIN) || (error == EWOULDBLOCK))) {
+		ended = !socket_shutdown (socket);
+	}
+
+	return ended;
+
+}
+
 #pragma endregion

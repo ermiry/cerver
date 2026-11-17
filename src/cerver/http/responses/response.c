@@ -25,6 +25,7 @@
 #include "cerver/core/start.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
+#include "cerver/network/socket.h"
 
 #include "cerver/http/core/connection.h"
 #include "cerver/http/core/handler.h"
@@ -1047,6 +1048,9 @@ static void http_response_send_failed (
 
 	// the client can not find the end of a response that was cut
 	((HttpReceive *) http_receive)->framed = false;
+
+	// a client that did not read in all the time of the response is taken as gone
+	(void) socket_end_on_send_timeout (http_receive->cr->connection->socket, error);
 
 	http_receive_response_failed (http_receive, error);
 

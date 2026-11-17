@@ -150,15 +150,18 @@ ssize_t file_send_actual (
 	)) {
 		// send the actual file, a sendfile () can send only a part of it
 		size_t sent = 0;
+		int error = 0;
 		if (!socket_send_file (
 			connection->socket, file_fd, filelen,
 			(time_t) connection->send_timeout,
-			&sent, NULL
+			&sent, &error
 		)) {
 			retval = (ssize_t) sent;
 		}
 
 		else {
+			(void) socket_end_on_send_timeout (connection->socket, error);
+
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_FILE,
 				"file_send_actual () - sent %zu of %zu bytes",
