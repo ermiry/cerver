@@ -10,7 +10,9 @@
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
-#include <cerver/http/parser/api.h>
+
+#include "cerver/http/core/internal.h"
+#include "cerver/http/parser/api.h"
 
 #include "fuzz.h"
 
@@ -58,7 +60,7 @@ static void pipeline_drain_available (const int fd) {
 // the parser stopped: the request was completed (it is paused) or it was rejected
 static bool pipeline_request_ended (const HttpReceive *http_receive) {
 
-	return llhttp_get_errno (&http_receive->parser) != HPE_OK;
+	return llhttp_get_errno (http_receive_parser_read (http_receive)) != HPE_OK;
 
 }
 

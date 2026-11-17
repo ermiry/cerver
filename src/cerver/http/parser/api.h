@@ -1,6 +1,6 @@
 /*
  * llhttp 9.4.3 (https://github.com/nodejs/llhttp), split and restyled for cerver
- * the API of the parser, the parser is embedded in HttpReceive
+ * the API of the parser, internal: the parser lives in the opaque memory of HttpReceive (HttpParserState)
  *
  * This software is licensed under the MIT License.
  *
@@ -93,6 +93,36 @@ struct llhttp_settings_s {
 	llhttp_cb on_reset;
 
 };
+
+#ifdef __cplusplus
+	#define LLHTTP_STATIC_ASSERT(condition, message)		static_assert (condition, message)
+	#define LLHTTP_ALIGNMENT(type)							alignof (type)
+#else
+	#define LLHTTP_STATIC_ASSERT(condition, message)		_Static_assert (condition, message)
+	#define LLHTTP_ALIGNMENT(type)							_Alignof (type)
+#endif
+
+// a receive keeps its parser and its callbacks in the opaque memory of cerver/http/parser/parser.h,
+// so the public headers never include llhttp
+LLHTTP_STATIC_ASSERT (
+	sizeof (llhttp_t) <= sizeof (HttpParserState),
+	"the state of llhttp does not fit in HttpParserState"
+);
+
+LLHTTP_STATIC_ASSERT (
+	LLHTTP_ALIGNMENT (llhttp_t) <= LLHTTP_ALIGNMENT (HttpParserState),
+	"the state of llhttp needs more alignment than HttpParserState"
+);
+
+LLHTTP_STATIC_ASSERT (
+	sizeof (llhttp_settings_t) <= sizeof (HttpParserSettings),
+	"the callbacks of llhttp do not fit in HttpParserSettings"
+);
+
+LLHTTP_STATIC_ASSERT (
+	LLHTTP_ALIGNMENT (llhttp_settings_t) <= LLHTTP_ALIGNMENT (HttpParserSettings),
+	"the callbacks of llhttp need more alignment than HttpParserSettings"
+);
 
 // initializes the parser with its type and the settings
 // the settings must live at least as long as the parser
@@ -200,6 +230,11 @@ CERVER_HIDDEN void llhttp_set_lenient_flags (llhttp_t *parser, uint16_t flags);
 
 // all the flags of llhttp_lenient_flags
 #define LLHTTP_LENIENT_ALL				0x3FF
+
+LLHTTP_STATIC_ASSERT (
+	LLHTTP_LENIENT_ALL == HTTP_PARSER_LENIENT_ALL,
+	"the lenient flags of llhttp are not the ones of HTTP_PARSER_LENIENT_MAP"
+);
 
 #ifdef __cplusplus
 }

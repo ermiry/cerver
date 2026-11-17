@@ -26,8 +26,7 @@ WARN_FORMAT            = "$file:$line: $text"
 INPUT                  = include/cerver
 FILE_PATTERNS          = *.h
 RECURSIVE              = YES
-EXCLUDE                = include/cerver/http/json \
-                         include/cerver/http/parser
+EXCLUDE                = include/cerver/http/json
 EXCLUDE_PATTERNS       = */http/jwt/jwt.h \
                          */http/jwt/alg.h
 ENABLE_PREPROCESSING   = YES

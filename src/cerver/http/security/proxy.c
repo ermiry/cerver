@@ -41,7 +41,9 @@ static const char *http_proxy_private_cidrs[] = {
 static HttpProxyNetwork http_proxy_private_networks[HTTP_PROXY_PRIVATE_NETWORKS];
 static pthread_once_t http_proxy_private_networks_once = PTHREAD_ONCE_INIT;
 
-const char *http_trusted_proxies_string (
+static const char *http_trusted_proxies_undefined = { "Undefined" };
+
+const char *http_trusted_proxies_to_string (
 	const HttpTrustedProxies trusted_proxies
 ) {
 
@@ -51,7 +53,7 @@ const char *http_trusted_proxies_string (
 		#undef XX
 	}
 
-	return http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE);
+	return http_trusted_proxies_undefined;
 
 }
 

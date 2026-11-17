@@ -248,10 +248,10 @@ static void test_proxy_resolve (void) {
 
 static void test_proxy_strings (void) {
 
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE), "None", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_LIST), "List", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_PRIVATE), "Private", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_ALL), "All", NULL);
+	test_check_str_eq (http_trusted_proxies_to_string (HTTP_TRUSTED_PROXIES_NONE), "None", NULL);
+	test_check_str_eq (http_trusted_proxies_to_string (HTTP_TRUSTED_PROXIES_LIST), "List", NULL);
+	test_check_str_eq (http_trusted_proxies_to_string (HTTP_TRUSTED_PROXIES_PRIVATE), "Private", NULL);
+	test_check_str_eq (http_trusted_proxies_to_string (HTTP_TRUSTED_PROXIES_ALL), "All", NULL);
 
 	test_check_ptr (http_trusted_proxies_description (HTTP_TRUSTED_PROXIES_ALL));
 

@@ -855,7 +855,7 @@ static void http_metrics_endpoint_value (
 		metrics, line,
 		snprintf (
 			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_ENDPOINT_FORMAT,
-			name, http_request_method_str (endpoint->method), path, value
+			name, http_request_method_to_string (endpoint->method), path, value
 		)
 	);
 
@@ -896,7 +896,7 @@ static void http_metrics_endpoint_histogram (String *metrics, const HttpEndpoint
 	char path[HTTP_METRICS_LABEL_SIZE] = { 0 };
 	http_metrics_label_escape (endpoint->path->str, path);
 
-	const char *method = http_request_method_str (endpoint->method);
+	const char *method = http_request_method_to_string (endpoint->method);
 	const double *buckets = http_route_stats_duration_buckets ();
 
 	char line[HTTP_METRICS_LINE_SIZE] = { 0 };

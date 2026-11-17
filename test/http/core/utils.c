@@ -24,12 +24,12 @@ static const char *range_empty = { "Empty" };
 static const char *range_first = { "First" };
 static const char *range_full = { "Full" };
 
-static void test_http_range_type_string (void) {
+static void test_http_range_type_to_string (void) {
 
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_NONE), range_none, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_EMPTY), range_empty, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_FIRST), range_first, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_FULL), range_full, NULL);
+	test_check_str_eq (http_range_type_to_string (HTTP_RANGE_TYPE_NONE), range_none, NULL);
+	test_check_str_eq (http_range_type_to_string (HTTP_RANGE_TYPE_EMPTY), range_empty, NULL);
+	test_check_str_eq (http_range_type_to_string (HTTP_RANGE_TYPE_FIRST), range_first, NULL);
+	test_check_str_eq (http_range_type_to_string (HTTP_RANGE_TYPE_FULL), range_full, NULL);
 
 }
 
@@ -125,7 +125,7 @@ void http_tests_utils (void) {
 
 	(void) printf ("Testing HTTP utils...\n");
 
-	test_http_range_type_string ();
+	test_http_range_type_to_string ();
 
 	test_http_bytes_range_init ();
 	test_http_bytes_range_print ();

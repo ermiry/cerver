@@ -23,7 +23,10 @@
  * @{
  */
 
-/** @brief The size of the tables indexed by a request method (the highest value + 1). */
+/**
+ * @brief The size of the tables indexed by a request method (the highest value + 1); cerver checks it against
+ * #REQUEST_METHOD_MAP when it is built.
+ */
 #define REQUEST_METHOD_SIZE				47
 
 #ifdef __cplusplus
@@ -94,10 +97,21 @@ typedef enum RequestMethod {
  * @param[in] request_method the method
  * @return the string of its row in #REQUEST_METHOD_MAP, "Undefined" for a method outside it; a static string that
  * must not be freed
+ * @since 2.1b-21 (it was http_request_method_str ())
  */
-CERVER_PUBLIC const char *http_request_method_str (
+CERVER_PUBLIC const char *http_request_method_to_string (
 	const RequestMethod request_method
 );
+
+/**
+ * @brief Returns the method of a string, the inverse of http_request_method_to_string ().
+ *
+ * @param[in] method the string of a method, like "GET" or "M-SEARCH"; the methods are case sensitive (RFC 9110)
+ * @return its method, or REQUEST_METHOD_UNDEFINED for NULL or a string that is not one of #REQUEST_METHOD_MAP
+ * @threadsafety Safe from any thread.
+ * @since 2.1b-21
+ */
+CERVER_PUBLIC RequestMethod http_request_method_from_string (const char *method);
 
 /**
  * @brief Returns whether a method is one of #REQUEST_METHOD_MAP.

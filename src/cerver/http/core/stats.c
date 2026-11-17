@@ -129,7 +129,7 @@ static void http_cerver_route_handler_stats_print (
 
 	cerver_log_msg (
 		"\t\t%s\t%zu",
-		http_request_method_str (method),
+		http_request_method_to_string (method),
 		stats->n_requests
 	);
 
@@ -181,7 +181,7 @@ static void http_cerver_child_route_handler_stats_print (
 
 	cerver_log_msg (
 		"\t\t\t%s\t%zu",
-		http_request_method_str (method),
+		http_request_method_to_string (method),
 		stats->n_requests
 	);
 
@@ -311,7 +311,7 @@ static void http_cerver_gone_stats_print (const HttpCerver *http_cerver) {
 			if (aborted) {
 				cerver_log_msg (
 					"Aborted requests (%s, %s): %zu",
-					http_stage_string ((HttpStage) stage), http_abort_reason_string ((HttpAbortReason) reason),
+					http_stage_to_string ((HttpStage) stage), http_abort_reason_to_string ((HttpAbortReason) reason),
 					aborted
 				);
 			}
@@ -319,7 +319,7 @@ static void http_cerver_gone_stats_print (const HttpCerver *http_cerver) {
 
 		const size_t vanished = CERVER_STATS_GET (http_cerver->n_vanished_requests[stage]);
 		if (vanished) {
-			cerver_log_msg ("Vanished requests (%s): %zu", http_stage_string ((HttpStage) stage), vanished);
+			cerver_log_msg ("Vanished requests (%s): %zu", http_stage_to_string ((HttpStage) stage), vanished);
 		}
 	}
 

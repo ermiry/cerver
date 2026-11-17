@@ -55,7 +55,7 @@ static u8 http_compatibility_pool (
 		else {
 			http_tree_error (
 				tree, "route %s \"%s\" - the name of its pool is too long",
-				http_request_method_str (endpoint->method), endpoint->path->str
+				http_request_method_to_string (endpoint->method), endpoint->path->str
 			);
 
 			errors = 1;

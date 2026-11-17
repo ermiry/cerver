@@ -313,6 +313,19 @@ CERVER_EXPORT void http_cerver_set_parser_lenient (
 	HttpCerver *http_cerver, const unsigned int lenient
 );
 
+/**
+ * @brief Returns the lenient flags of the parser of every request.
+ *
+ * @param[in] http_cerver the HttpCerver
+ * @return the HttpParserLenient flags combined with | that http_cerver_set_parser_lenient () kept, or
+ * HTTP_PARSER_LENIENT_NONE (the strict mode) without an HttpCerver
+ * @threadsafety Safe from any thread once the cerver started.
+ * @since 2.1b-21
+ */
+CERVER_EXPORT unsigned int http_cerver_get_parser_lenient (
+	const HttpCerver *http_cerver
+);
+
 /** @} */
 
 #ifdef __cplusplus

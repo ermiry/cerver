@@ -656,7 +656,7 @@ size_t http_route_methods_string (
 			const int written = snprintf (
 				buffer + length, buffer_size - length, "%s%s",
 				length ? http_route_methods_separator : "",
-				http_request_method_str ((RequestMethod) method)
+				http_request_method_to_string ((RequestMethod) method)
 			);
 
 			if ((written < 0) || ((size_t) written >= (buffer_size - length))) break;

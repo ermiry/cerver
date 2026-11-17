@@ -178,7 +178,7 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 	json_t *handler_object = json_object ();
 
 	(void) json_object_set_new (
-		handler_object, "method", json_string (http_request_method_str (method))
+		handler_object, "method", json_string (http_request_method_to_string (method))
 	);
 
 	(void) json_object_set_new (

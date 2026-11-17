@@ -104,8 +104,9 @@ typedef enum http_status http_status;
  * @param[in] status the status code
  * @return the phrase of its row in #HTTP_STATUS_MAP, or "Undefined" (HTTP_STATUS_NONE) for a code out of the
  * table; a static string that must not be freed
+ * @since 2.1b-21 (it was http_status_string ())
  */
-CERVER_PUBLIC const char *http_status_string (
+CERVER_PUBLIC const char *http_status_to_string (
 	const http_status status
 );
 

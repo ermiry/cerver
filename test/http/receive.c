@@ -26,6 +26,7 @@
 
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/connection.h"
+#include "cerver/http/core/internal.h"
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
@@ -5835,7 +5836,7 @@ static void test_receive_session_start (TestReceiveSession *session, Cerver *cer
 
 	session->http_receive = test_receive_create (&session->cerver_receive);
 
-	session->on_body = session->http_receive->settings.on_body;
+	session->on_body = http_receive_parser_settings (session->http_receive)->on_body;
 
 	session->arena_used = receive_arena ? receive_arena->used : 0;
 	session->arena_allocations = receive_arena ? receive_arena->n_allocations : 0;
@@ -5947,10 +5948,10 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->start_time > 0);
 
 	// the parser is ready for a new request with the callbacks of a new one
-	test_receive_expect (http_receive->parser.error == HPE_OK);
-	test_receive_expect (http_receive->parser.data == http_receive);
-	test_receive_expect (http_receive->parser.settings == &http_receive->settings);
-	test_receive_expect (http_receive->settings.on_body == session->on_body);
+	test_receive_expect (http_receive_parser_read (http_receive)->error == HPE_OK);
+	test_receive_expect (http_receive_parser_read (http_receive)->data == http_receive);
+	test_receive_expect (http_receive_parser_read (http_receive)->settings == http_receive_parser_settings_read (http_receive));
+	test_receive_expect (http_receive_parser_settings_read (http_receive)->on_body == session->on_body);
 
 	// the request is a new one, without what the one before received
 	const HttpRequest *request = http_receive->request;

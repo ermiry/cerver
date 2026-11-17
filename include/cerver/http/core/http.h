@@ -1,7 +1,7 @@
 /**
  * @file cerver/http/core/http.h
- * @brief The HttpCerver: the defaults of HTTP, the lenient flags of the parser, the stages of a request and the
- * struct of the HTTP data of a web cerver.
+ * @brief The HttpCerver: the defaults of HTTP, the stages of a request and the struct of the HTTP data of a web
+ * cerver.
  */
 
 #ifndef _CERVER_HTTP_CORE_HTTP_H_
@@ -20,8 +20,7 @@
 
 #include "cerver/http/headers/fields.h"
 #include "cerver/http/jwt/alg.h"
-#include "cerver/http/parser/api.h"
-#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/status.h"
@@ -258,62 +257,6 @@ struct jwt;
 struct JwtKey;
 
 /**
- * @defgroup http_parser Parser
- * @ingroup http_core
- * @brief The lenient flags of the parser (llhttp).
- * @{
- */
-
-/**
- * @brief The lenient flags of the parser, the values of LLHTTP_LENIENT_MAP, one `HTTP_PARSER_LENIENT_<name>` for
- * each row.
- *
- * All of them are disabled by default (the strict mode).
- *
- * @warning Each one can open the cerver to request smuggling or cache poisoning attacks.
- */
-typedef enum HttpParserLenient {
-
-	/** @brief No lenient flag: the strict mode. */
-	HTTP_PARSER_LENIENT_NONE = 0,
-
-	#define XX(num, name, string, description) HTTP_PARSER_LENIENT_##name = num,
-	LLHTTP_LENIENT_MAP(XX)
-	#undef XX
-
-} HttpParserLenient;
-
-/** @brief Every lenient flag of LLHTTP_LENIENT_MAP. */
-#define HTTP_PARSER_LENIENT_ALL				LLHTTP_LENIENT_ALL
-
-/** @brief The value that a parser callback returns when it stops the parser, because it rejected the request or because its client is gone. */
-#define HTTP_RECEIVE_PARSER_STOP			HPE_USER
-
-/**
- * @brief Returns the name of a lenient flag ("headers", "chunked_length", ...).
- *
- * @param[in] lenient a single flag
- * @return the name of its row in LLHTTP_LENIENT_MAP, or "none" for any other value; a static string that must not
- * be freed
- */
-CERVER_PUBLIC const char *http_parser_lenient_string (
-	const HttpParserLenient lenient
-);
-
-/**
- * @brief Returns what a lenient flag accepts.
- *
- * @param[in] lenient a single flag
- * @return the description of its row in LLHTTP_LENIENT_MAP, or "none" for any other value; a static string that
- * must not be freed
- */
-CERVER_PUBLIC const char *http_parser_lenient_description (
-	const HttpParserLenient lenient
-);
-
-/** @} */
-
-/**
  * @defgroup http_stages Stages
  * @ingroup http_core
  * @brief Where a request was when its client left, and how it left.
@@ -351,10 +294,11 @@ typedef enum HttpStage {
  * @brief Returns the string of a stage.
  *
  * @param[in] stage the stage
- * @return the string of its row in #HTTP_STAGE_MAP, or the one of HTTP_STAGE_QUEUED for a value out of the table; a
- * static string that must not be freed
+ * @return the string of its row in #HTTP_STAGE_MAP, or "Undefined" for a value out of the table; a static string
+ * that must not be freed
+ * @since 2.1b-21 (it was http_stage_string ())
  */
-CERVER_PUBLIC const char *http_stage_string (
+CERVER_PUBLIC const char *http_stage_to_string (
 	const HttpStage stage
 );
 
@@ -396,10 +340,11 @@ typedef enum HttpAbortReason {
  * @brief Returns the string of an abort reason.
  *
  * @param[in] reason the reason
- * @return the string of its row in #HTTP_ABORT_REASON_MAP, or the one of HTTP_ABORT_REASON_CLOSED for a value out
- * of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_ABORT_REASON_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21 (it was http_abort_reason_string ())
  */
-CERVER_PUBLIC const char *http_abort_reason_string (
+CERVER_PUBLIC const char *http_abort_reason_to_string (
 	const HttpAbortReason reason
 );
 
@@ -441,10 +386,11 @@ typedef enum HttpClientState {
  * @brief Returns the string of a client state.
  *
  * @param[in] state the state
- * @return the string of its row in #HTTP_CLIENT_STATE_MAP, or the one of HTTP_CLIENT_STATE_CONNECTED for a value
- * out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_CLIENT_STATE_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21 (it was http_client_state_string ())
  */
-CERVER_PUBLIC const char *http_client_state_string (
+CERVER_PUBLIC const char *http_client_state_to_string (
 	const HttpClientState state
 );
 

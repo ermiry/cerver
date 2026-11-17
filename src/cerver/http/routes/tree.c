@@ -481,7 +481,7 @@ void http_endpoint_set_pool (
 		http_tree_error (
 			endpoint->group ? endpoint->group->tree : NULL,
 			"route %s \"%s\" - the name of its pool is too long",
-			http_request_method_str (endpoint->method),
+			http_request_method_to_string (endpoint->method),
 			endpoint->path ? endpoint->path->str : http_tree_empty_path
 		);
 	}
@@ -904,11 +904,11 @@ static HttpEndpoint *http_group_endpoint_add (
 		}
 
 		else if (handler_required && !handler) {
-			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_str (method), path ? path : "");
+			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_to_string (method), path ? path : "");
 		}
 
 		else if (http_tree_path_validate (path, error, HTTP_TREE_ERROR_SIZE)) {
-			http_tree_error (group->tree, "route %s \"%s\" - %s", http_request_method_str (method), path ? path : "", error);
+			http_tree_error (group->tree, "route %s \"%s\" - %s", http_request_method_to_string (method), path ? path : "", error);
 		}
 
 		else {
@@ -1634,14 +1634,14 @@ static void http_tree_insert_fail (HttpTreeInsert *insert) {
 	if (insert->compatibility) {
 		http_tree_warning (
 			"route %s %s - %s - it is not registered",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
+			http_request_method_to_string (endpoint->method), endpoint->path->str, insert->error
 		);
 	}
 
 	else {
 		http_tree_error (
 			insert->tree, "route %s %s - %s",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
+			http_request_method_to_string (endpoint->method), endpoint->path->str, insert->error
 		);
 	}
 
@@ -1743,7 +1743,7 @@ static u8 http_tree_resolve_web_socket (
 		else if (endpoint->method != REQUEST_METHOD_GET) {
 			http_tree_error (
 				tree, "websocket %s \"%s\" - a WebSocket endpoint is a GET",
-				http_request_method_str (endpoint->method), endpoint->path->str
+				http_request_method_to_string (endpoint->method), endpoint->path->str
 			);
 
 			errors = 1;
@@ -1770,7 +1770,7 @@ u8 http_tree_resolve_pool (
 		if (!resolved->pool) {
 			http_tree_error (
 				tree, "route %s \"%s\" - the cerver has no pool \"%s\" (http_cerver_pool_create ())",
-				http_request_method_str (endpoint->method), endpoint->path->str, resolved->pool_name
+				http_request_method_to_string (endpoint->method), endpoint->path->str, resolved->pool_name
 			);
 
 			errors = 1;
@@ -2134,7 +2134,7 @@ static void http_tree_print_methods (const HttpRouteNode *node, const char *inde
 
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 		if (node->endpoints[method]) {
-			http_tree_print_append (methods, &length, http_request_method_str (node->endpoints[method]->method));
+			http_tree_print_append (methods, &length, http_request_method_to_string (node->endpoints[method]->method));
 		}
 	}
 
@@ -2165,7 +2165,7 @@ static void http_tree_print_value (
 		char method_value[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
 		(void) snprintf (
 			method_value, HTTP_TREE_PRINT_VALUES_SIZE, "%s %s",
-			http_request_method_str (node->endpoints[method]->method), value (node->endpoints[method])
+			http_request_method_to_string (node->endpoints[method]->method), value (node->endpoints[method])
 		);
 
 		http_tree_print_append (values, &length, method_value);
@@ -2304,7 +2304,7 @@ static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
 	json_t *endpoint_object = json_object ();
 	if (endpoint_object) {
 		(void) json_object_set_new (
-			endpoint_object, "method", json_string (http_request_method_str (endpoint->method))
+			endpoint_object, "method", json_string (http_request_method_to_string (endpoint->method))
 		);
 
 		(void) json_object_set_new (

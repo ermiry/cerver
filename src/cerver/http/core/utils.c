@@ -3,7 +3,9 @@
 
 #include "cerver/http/core/utils.h"
 
-const char *http_range_type_string (
+static const char *http_range_type_undefined = { "Undefined" };
+
+const char *http_range_type_to_string (
 	const RangeType range_type
 ) {
 
@@ -13,7 +15,7 @@ const char *http_range_type_string (
 		#undef XX
 	}
 
-	return http_range_type_string (HTTP_RANGE_TYPE_NONE);
+	return http_range_type_undefined;
 
 }
 
@@ -32,7 +34,7 @@ void http_bytes_range_print (const BytesRange *bytes_range) {
 
 	(void) printf ("Bytes Range: \n");
 	(void) printf ("\tFile size: %ld", bytes_range->file_size);
-	(void) printf ("\tType: %s", http_range_type_string (bytes_range->type));
+	(void) printf ("\tType: %s", http_range_type_to_string (bytes_range->type));
 	(void) printf ("\tStart: %ld", bytes_range->start);
 	(void) printf ("\tEnd: %ld", bytes_range->end);
 	(void) printf ("\tChunk size: %ld", bytes_range->chunk_size);

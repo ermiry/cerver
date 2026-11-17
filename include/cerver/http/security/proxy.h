@@ -69,10 +69,11 @@ typedef enum HttpTrustedProxies {
  * @brief Returns the string of a trusted proxies setting.
  *
  * @param[in] trusted_proxies the setting
- * @return the string of its row in #HTTP_TRUSTED_PROXIES_MAP, or the one of HTTP_TRUSTED_PROXIES_NONE for a value
- * out of the table; a static string that must not be freed
+ * @return the string of its row in #HTTP_TRUSTED_PROXIES_MAP, or "Undefined" for a value out of the table; a static
+ * string that must not be freed
+ * @since 2.1b-21 (it was http_trusted_proxies_string ())
  */
-CERVER_PUBLIC const char *http_trusted_proxies_string (
+CERVER_PUBLIC const char *http_trusted_proxies_to_string (
 	const HttpTrustedProxies trusted_proxies
 );
 
