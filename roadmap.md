@@ -131,12 +131,13 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F5** | 2.1b-17 | Pools nombrados, health / ready, métricas | F4 |
 | **Arreglos** | 2.1b-18 | Los arreglos de la auditoría de las otras líneas (§4.13): el core de la 1.9b-2 (con el stop por un pipe), el HTTP de la 2.0b-75 y el dueño del stream de WebSocket de la 3.0b-4 | F5 |
 | **F4b** | 2.1b-19 | La forma completa del keep-alive: los hilos del pool leen, parsean y contestan la siguiente petición de una conexión conservada (§4.4b); con el backlog de rendimiento y de tests | 2.1b-18 |
-| **F6b** | 2.1b-20 | WebSocket sobre el loop | F4, F6a |
-| **F8a** | 2.1b-21 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
-| **F8b** | 2.1b-22 | TLS no bloqueante en el loop | F4, F8a |
-| **F9a** | 2.1b-23 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
-| **F9b** | 2.1b-24 | HTTP/2 en el loop | F8b, F9a |
-| **F7** | 2.1b-25 | Auth asíncrona | F5 |
+| **Sincronización** | 2.1b-20 | El port del Release 1.9 de `core` y de la 2.0b-77 de `http` | 2.1b-19 |
+| **F6b** | 2.1b-21 | WebSocket sobre el loop, la cola acotada y el backpressure (A5), y el resto del backlog §31.2 de WebSocket y del parser | F4, F6a |
+| **F8a** | 2.1b-22 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
+| **F8b** | 2.1b-23 | TLS no bloqueante en el loop | F4, F8a |
+| **F9a** | 2.1b-24 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
+| **F9b** | 2.1b-25 | HTTP/2 en el loop | F8b, F9a |
+| **F7** | 2.1b-26 | Auth asíncrona | F5 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
 - **La 2.1b-14 fue la estructura,** así que F3 y las fases que siguen se recorren una beta; **la 2.1b-18 (los arreglos
@@ -943,7 +944,7 @@ Corre con el handler de hoy (thpool), sin el loop. **Implementada y validada.** 
 | `frame.c` | El encoder (la longitud mínima, la máscara) y el parser incremental (los bytes de un frame en muchas lecturas, muchos frames por lectura, desenmascarado por tramos) |
 | `message.c` | Las reglas de los mensajes sin sockets: fragmentos y controles intercalados, el close (1002 / 1007), `max_message` (1009, también descomprimido), streaming |
 | `handshake.c` | El accept (SHA-1 de EVP), la llave de 16 bytes, los tokens en listas, los subprotocolos |
-| `deflate.c` | permessage-deflate (RFC 7692): la negociación en las dos puntas, context takeover y ventanas, el inflate acotado; sin zlib no se negocia. zlib no comprime raw con ventana 2^8: una oferta que la exige se declina |
+| `deflate.c` | permessage-deflate (RFC 7692): la negociación en las dos puntas, context takeover y ventanas, el inflate acotado; sin zlib no se negocia. zlib no comprime raw con ventana 2^8: desde la 2.1b-21 se acepta y se comprime con 2^9 (W11) |
 | `settings.c` | Los handlers y las opciones, heredables por los grupos uno por uno |
 | `websocket.c` | `HttpWebSocket`: referencias, su hilo (`poll` del socket y un `eventfd`), los envíos, el cierre, ping / pong, la entrega desde el pool |
 | `registry.c` | Las conexiones de cada cerver, el tope (con reservas antes del 101), salas, broadcast, `for_each`, stats |
@@ -972,21 +973,62 @@ cliente: 517 casos cada uno, 514 OK y 3 INFORMATIONAL, sin NON-STRICT, FAILED ni
 en las dos familias; nginx con `Upgrade`; `performance.sh` con 0 asignaciones por mensaje y ~1.9 M mensajes/s
 (`benchmarks/messages.c`); `benchmarks/frames.c`.
 
-#### F6b — WebSocket sobre el loop (2.1b-20)
+#### F6b — WebSocket sobre el loop (2.1b-21)
 
-**La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
-pool de la ruta.
+**Implementada.** El roadmap de la beta tiene sus decisiones; `incompatibilities.md` «2.1b-21» tiene cada ruptura.
 
-**Aquí sí escribe el loop.** `http_web_socket_send` se llama desde cualquier hilo: encola en una cola de salida acotada
-de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
+**El loop lee y el pool entrega.** En EVENTS, después del 101 la conexión pasa a su loop (`websockets/loop.c`), sin un
+hilo propio:
 
-- Con la cola llena: descartar, o cerrar con 1008, según la configuración.
-- Un registro de clientes por ruta permite el broadcast.
+- el loop lee en su búfer, parsea, contesta los pongs y lleva el handshake del close;
+- los eventos de una lectura (open, mensajes, fragmentos, ping, pong, drain, end) van en lote a un job del pool del
+  endpoint;
+- un solo job a la vez por conexión, en orden, con `EPOLLIN` apagado mientras corre;
+- el timer de ping, pong y close está en la rueda del loop;
+- el loop no termina mientras tenga una conexión (`n_web_sockets`).
 
-En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
-`Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
+**Entre dos jobs la conexión espera en el poller de su pool** (el patrón de F4b, una decisión tomada en la
+implementación para el rendimiento):
 
-### 4.7 F7 — Auth asíncrona (2.1b-25)
+- el hilo que terminó un job espera un momento (2^18 ns) el siguiente frame de su conexión, y lo lee, lo parsea y lo
+  entrega él mismo, como el hilo de una conexión en THREADS;
+- si no llega, la conexión se arma una vez en el poller del pool (`HttpWebSocketPark`, que vive en su loop y se libera
+  con él), y el primer hilo del pool que no tiene un job la toma;
+- un hilo que conserva su conexión mira su pool cada 2^4 mensajes, y si ningún hilo espera también espera por él,
+  así una conexión no deja esperando a las demás;
+- el loop la recupera para sus timers (cada intervalo de ping), su fin, el go-away, el stop y su `on_drain ()`, y la
+  lee él mismo cuando los hilos del pool no esperan.
+
+**El rendimiento** (`performance.sh`, ping-pong de 64 bytes, en una máquina de 10 núcleos):
+
+- con un pool de un hilo por núcleo y 8 conexiones, la mediana de EVENTS fue el 93 % de THREADS, que tiene un hilo por
+  conexión;
+- antes del estacionamiento era el 8 al 12 %;
+- con más conexiones que hilos (64 con 10) queda en el 22 % y se mide sin fallar: el backlog §43 lo tiene.
+
+**La cola de salida (A5)** es la misma en los dos modelos y en el cliente:
+
+- `http_web_socket_send ()` se llama desde cualquier hilo y encola: con la cola vacía, el servidor escribe directo y
+  deja el resto;
+- el dueño de la conexión (el loop con `EPOLLOUT`, el hilo con `POLLOUT`) escribe lo que queda;
+- es de 2^20 bytes por default, heredable;
+- cuando no cabe un mensaje: `DROP` (el default) o `CLOSE` con 1008;
+- arriba de la mitad el envío regresa `BACKPRESSURE`, y `on_drain ()` corre al vaciarse;
+- los envíos regresan `HttpWebSocketSendResult`, y el broadcast ya no tiene timeout.
+
+**Lo demás de la beta:**
+
+- el registro después de `on_open ()` (S7) y los ids por proceso (A9);
+- las salas como índice del registro (A14), con `HttpWebSocketTarget`;
+- el transporte (A24);
+- los settings como objeto (A7);
+- W4, W7 / S10 y W11;
+- el almacenamiento opaco del parser (A22 / V6).
+
+En THREADS cada conexión sigue en su hilo propio (F6a), con la misma API y la misma cola. Detrás de un proxy van
+`Upgrade` / `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
+
+### 4.7 F7 — Auth asíncrona (2.1b-26)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
@@ -999,9 +1041,9 @@ TLS en proceso para **todos los cervers TCP** (`CUSTOM`, `GAME`, `WEB`, `FILES`,
 cliente TCP, el cliente WebSocket con `wss://` y el cliente HTTP de F9a). UDP queda fuera (DTLS no está en el alcance).
 Se parte como WebSocket:
 
-- **F8a (2.1b-21): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
+- **F8a (2.1b-22): sobre hilos y en los clientes.** No necesita el loop: el handshake y los registros corren en el hilo
   que hoy hace `recv`, con las deadlines que ya existen.
-- **F8b (2.1b-22): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
+- **F8b (2.1b-23): en el loop.** El mismo `SSL *` en la máquina de estados de EVENTS, no bloqueante.
 
 #### 4.8.1 Los requisitos (las RFC)
 
@@ -1180,9 +1222,9 @@ CERVER_EXPORT void cerver_tls_set_reload_watch (Cerver *cerver, bool enable, uns
 HTTP/2 (RFC 9113) con HPACK (RFC 7541) **escritos por cerver**, como WebSocket: frames, HPACK con el Huffman de la
 RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. También partido:
 
-- **F9a (2.1b-23): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
+- **F9a (2.1b-24): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
   un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
-- **F9b (2.1b-24): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
+- **F9b (2.1b-25): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
 
 #### 4.9.1 Los requisitos (las RFC)
 
