@@ -138,6 +138,14 @@ struct HttpPool {
 	char name[HTTP_POOL_NAME_SIZE];
 	/** @internal @brief Its position in the pools of its cerver, 0 for the default one. */
 	unsigned int index;
+	/**
+	 * @internal
+	 * @brief The pool of the event loops (#HTTP_POOL_LOOP_NAME): it has no threads, the loop of a request handles
+	 * it; it is not one of the pools of its cerver.
+	 *
+	 * @since 3.0b-11
+	 */
+	bool in_loop;
 
 	/** @internal @brief The HTTP cerver of the pool. */
 	struct _HttpCerver *http_cerver;
@@ -948,6 +956,35 @@ CERVER_HIDDEN bool http_receive_was_handled (const HttpReceive *http_receive);
  * @return true when the owner of the connection starts its next request with http_receive_reset ()
  */
 CERVER_HIDDEN bool http_receive_keeps_connection (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Counts bytes of the response of a request that were sent: in the stats of its cerver and of its
+ * connection and in the request, whose response stage starts with the first of them.
+ *
+ * @param[in,out] http_receive the receive
+ * @param[in] bytes the bytes that were sent
+ */
+CERVER_HIDDEN void http_receive_response_bytes (HttpReceive *http_receive, const size_t bytes);
+
+/**
+ * @internal
+ * @brief Counts the response that a request gave to the event loop of its connection (HttpReceive::response_written),
+ * once the loop sent it whole: its bytes and its status. Nothing is done for a request that wrote none.
+ *
+ * @param[in,out] http_receive the receive of a connection of an event loop, in the thread of its loop
+ */
+CERVER_HIDDEN void http_receive_response_sent (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Counts what left of a response that the event loop of its connection could not send whole: its bytes,
+ * that start its response stage, and not its status.
+ *
+ * @param[in,out] http_receive the receive of a connection of an event loop, in the thread of its loop
+ * @param[in] sent the bytes of the output of the connection that its client took since the request started
+ */
+CERVER_HIDDEN void http_receive_response_cut (HttpReceive *http_receive, const size_t sent);
 
 /**
  * @internal

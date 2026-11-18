@@ -415,6 +415,22 @@ struct _HttpReceive {
 	 */
 	unsigned int n_requests;
 
+	/**
+	 * @brief A response was given to the event loop of the connection and is not counted yet: its loop counts its
+	 * status and its bytes when it sent it whole; a value of a request.
+	 *
+	 * @since 3.0b-11
+	 */
+	bool response_written;
+
+	/**
+	 * @brief The bytes of the response that were given to the event loop of the connection, counted when the loop
+	 * sent them; a value of a request.
+	 *
+	 * @since 3.0b-11
+	 */
+	size_t response_written_bytes;
+
 };
 
 /** @brief The state of an HTTP connection, see struct _HttpReceive. */
