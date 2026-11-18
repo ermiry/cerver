@@ -6,6 +6,7 @@
 
 #include <poll.h>
 #include <pthread.h>
+#include <sched.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -39,11 +40,39 @@
 
 #pragma region loops
 
+// the processor of a loop is the one with its position among the ones that the process can use,
+// the loops after the last one start again from the first
+static void event_loop_group_thread_affinity (const EventLoop *loop) {
+
+	cpu_set_t allowed;
+	CPU_ZERO (&allowed);
+
+	if (!sched_getaffinity (0, sizeof (cpu_set_t), &allowed) && (CPU_COUNT (&allowed) > 0)) {
+		unsigned int position = loop->id % (unsigned int) CPU_COUNT (&allowed);
+
+		int processor = 0;
+		while (!CPU_ISSET (processor, &allowed) || position) {
+			if (CPU_ISSET (processor, &allowed)) position -= 1;
+
+			processor += 1;
+		}
+
+		cpu_set_t one;
+		CPU_ZERO (&one);
+		CPU_SET (processor, &one);
+
+		(void) pthread_setaffinity_np (pthread_self (), sizeof (cpu_set_t), &one);
+	}
+
+}
+
 static void *event_loop_group_thread (void *loop_ptr) {
 
 	EventLoop *loop = (EventLoop *) loop_ptr;
 
 	(void) thread_set_name ("events-%u", loop->id);
+
+	if (loop->cerver->io_threads_affinity) event_loop_group_thread_affinity (loop);
 
 	event_loop_run (loop);
 
@@ -76,16 +105,11 @@ static unsigned int event_loop_group_loop_listen (
 
 }
 
-// a lane for each named pool that has threads, in the position of its pool,
-// with the poller where the threads of its pool wait for the idle connections
+// a lane for each named pool that has threads, in the position of its pool
 static void event_loop_group_loop_lanes (EventLoopGroup *group, EventLoop *loop) {
 
 	for (unsigned int idx = EVENT_LOOP_LANE_DEFAULT + 1; idx < group->n_dispatchers; idx++) {
 		if (group->dispatchers[idx].submit) (void) event_loop_lane_set (loop, idx, &group->dispatchers[idx]);
-	}
-
-	for (unsigned int idx = EVENT_LOOP_LANE_DEFAULT; idx < group->n_dispatchers; idx++) {
-		loop->lanes[idx].idle = group->idles[idx];
 	}
 
 }
@@ -117,17 +141,6 @@ static unsigned int event_loop_group_loops_create (EventLoopGroup *group) {
 
 }
 
-// the threads of the pools do not wait on the pollers of the idle connections anymore:
-// the group ended (event_loop_group_finish ()), or it never started them
-static void event_loop_group_idles_delete (EventLoopGroup *group) {
-
-	for (unsigned int idx = 0; idx < EVENT_LOOP_LANES_SIZE; idx++) {
-		event_idle_delete (group->idles[idx]);
-		group->idles[idx] = NULL;
-	}
-
-}
-
 static void event_loop_group_free (EventLoopGroup *group) {
 
 	if (group) {
@@ -138,8 +151,6 @@ static void event_loop_group_free (EventLoopGroup *group) {
 
 			free (group->loops);
 		}
-
-		event_loop_group_idles_delete (group);
 
 		free (group);
 	}
@@ -172,32 +183,26 @@ static void event_loop_group_dispatchers (EventLoopGroup *group) {
 
 }
 
-// the threads of the pools read the next request of the idle connections when the cerver keeps its connections
-// and asks for it (http_cerver_set_keep_alive_pool_read ())
-static bool event_loop_group_pools_read (const EventLoopGroup *group) {
+// the processors that the process can use, the ones of its affinity: a container can have fewer than its machine
+static unsigned int event_loop_group_processors (void) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) group->cerver->cerver_data;
+	cpu_set_t processors;
+	CPU_ZERO (&processors);
 
-	return http_cerver && http_cerver->keep_alive && http_cerver->keep_alive_pool_read;
+	const int count = !sched_getaffinity (0, sizeof (cpu_set_t), &processors) ? CPU_COUNT (&processors) : 0;
+
+	return (count > 0) ? (unsigned int) count : CERVER_DEFAULT_IO_THREADS;
 
 }
 
-// a poller of the idle connections for each lane whose pool has threads
-// returns 0 on success, 1 on error
-static unsigned int event_loop_group_idles_create (EventLoopGroup *group) {
+// a loop for each I/O thread that the cerver asked for, or one for each processor
+static unsigned int event_loop_group_loops_count (const Cerver *cerver) {
 
-	unsigned int errors = 0;
+	unsigned int count = cerver->n_io_threads ? cerver->n_io_threads : CERVER_DEFAULT_IO_THREADS;
 
-	if (event_loop_group_pools_read (group)) {
-		for (unsigned int idx = 0; (idx < group->n_dispatchers) && !errors; idx++) {
-			if (group->dispatchers[idx].submit) {
-				group->idles[idx] = event_idle_create ((Thpool *) group->dispatchers[idx].data, idx);
-				if (!group->idles[idx]) errors = 1;
-			}
-		}
-	}
+	if (count == CERVER_IO_THREADS_PER_CORE) count = event_loop_group_processors ();
 
-	return errors;
+	return count;
 
 }
 
@@ -209,10 +214,10 @@ static EventLoopGroup *event_loop_group_create (Cerver *cerver) {
 
 		event_loop_group_dispatchers (group);
 
-		group->n_loops = cerver->n_io_threads ? cerver->n_io_threads : CERVER_DEFAULT_IO_THREADS;
+		group->n_loops = event_loop_group_loops_count (cerver);
 		group->loops = (EventLoop **) calloc (group->n_loops, sizeof (EventLoop *));
 
-		if (!group->loops || event_loop_group_idles_create (group) || event_loop_group_loops_create (group)) {
+		if (!group->loops || event_loop_group_loops_create (group)) {
 			cerver_log_error (
 				"Failed to create the event loops of cerver %s!", cerver->info->name
 			);
@@ -389,8 +394,8 @@ static void event_loop_group_log_ready (const EventLoopGroup *group) {
 
 	cerver_log (
 		LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-		"Cerver %s is ready in %s port %d with %u event loops!",
-		cerver->info->name, ip, cerver->port, group->n_loops
+		"Cerver %s is ready in %s port %d with %u event loops (%s)!",
+		cerver->info->name, ip, cerver->port, group->n_loops, group->loops[0]->backend->name
 	);
 
 }
@@ -444,34 +449,6 @@ static void event_loop_group_stop (EventLoopGroup *group, const bool reject) {
 
 }
 
-// the threads of each pool wait for the idle connections of the loops, they stop with event_loop_group_finish ()
-// returns 0 on success, 1 on error
-static unsigned int event_loop_group_idles_start (EventLoopGroup *group) {
-
-	unsigned int errors = 0;
-
-	for (unsigned int idx = 0; idx < EVENT_LOOP_LANES_SIZE; idx++) {
-		if (group->idles[idx]) errors |= event_idle_start (group->idles[idx]);
-	}
-
-	if (errors) {
-		cerver_log_error (
-			"Failed to start the threads that read the idle connections of cerver %s!", group->cerver->info->name
-		);
-	}
-
-	return errors;
-
-}
-
-static void event_loop_group_idles_end (EventLoopGroup *group) {
-
-	for (unsigned int idx = 0; idx < EVENT_LOOP_LANES_SIZE; idx++) {
-		event_idle_end (group->idles[idx]);
-	}
-
-}
-
 // the loops are in the cerver before the wait: a teardown ends the ones that started
 static u8 event_loop_group_start (Cerver *cerver, EventLoopGroup *group) {
 
@@ -483,7 +460,7 @@ static u8 event_loop_group_start (Cerver *cerver, EventLoopGroup *group) {
 
 	cerver_event_trigger (CERVER_EVENT_STARTED, cerver, NULL, NULL);
 
-	if (!event_loop_group_threads_start (group) && !event_loop_group_idles_start (group)) {
+	if (!event_loop_group_threads_start (group)) {
 		event_loop_group_log_ready (group);
 
 		event_loop_group_wait (cerver);
@@ -648,9 +625,6 @@ bool event_loop_group_finish (EventLoopGroup *group, const time_t timeout) {
 		);
 
 		event_loop_group_join (group);
-
-		// no loop arms an idle connection anymore: the threads of the pools wait for their jobs again
-		event_loop_group_idles_end (group);
 	}
 
 	return ended;
