@@ -51,6 +51,7 @@
 
 #include <cerver/jwt/jwt.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -837,6 +838,9 @@ static Cerver *test_receive_cerver_create (void) {
 
 	test_check_ptr (cerver);
 
+	// the loops of the tests take the backend of their cerver when they are created
+	cerver_set_events_backend (cerver, test_events_backend ());
+
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 	test_check_ptr (http_cerver);
 
@@ -989,9 +993,21 @@ static void test_receive_loop_start (Cerver *cerver) {
 
 }
 
+// a connection that ended while its backend still had one of its operations gives its memory back
+// when that operation ends, in a later step
 static void test_receive_loop_end (void) {
 
 	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+
+	for (
+		unsigned int steps = 0;
+		receive_loop->n_ending && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (receive_loop->n_ending, 0, NULL);
 
 	event_loop_delete (receive_loop);
 	receive_loop = NULL;
@@ -4070,6 +4086,15 @@ static size_t test_receive_loop_output_request (char *request, char *headers) {
 
 }
 
+// whether the only connection of the loop of the tests has a response to send
+static bool test_receive_loop_output_is_writing (void) {
+
+	const HttpConnection *connection = receive_loop->active;
+
+	return connection && (connection->state == HTTP_CONNECTION_STATE_WRITE);
+
+}
+
 // a connection of the loop of the tests whose socket takes very little of a response,
 // with the preflight already read: its response is answered by the loop
 static int test_receive_loop_output_start (const char *request, const size_t request_length) {
@@ -4094,7 +4119,14 @@ static int test_receive_loop_output_start (const char *request, const size_t req
 		"the request was not sent"
 	);
 
-	(void) event_loop_step (receive_loop, 0);
+	// the read that the loop asks for when it takes the connection completes in one of its steps
+	for (
+		unsigned int steps = 0;
+		!test_receive_loop_output_is_writing () && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
 
 	return fds[TEST_RECEIVE_CLIENT];
 
@@ -4124,7 +4156,10 @@ static void test_receive_loop_output (Cerver *cerver) {
 	const HttpConnection *connection = receive_loop->active;
 	test_check_ptr (connection);
 	test_check_int_eq ((int) connection->state, (int) HTTP_CONNECTION_STATE_WRITE, NULL);
-	test_check (connection->output.length > connection->output.offset, "nothing of the response was kept");
+	test_check (connection->output_head != NULL, "nothing of the response was kept");
+	test_check (
+		connection->output_head->offset < connection->output_head->length, "the response was sent whole"
+	);
 
 	// the client reads what is ready and the loop writes more, until the connection ends
 	for (
@@ -4270,9 +4305,6 @@ typedef struct TestReceiveManual {
 	HttpConnection *taken[TEST_RECEIVE_MANUAL_JOBS];
 	int fds[TEST_RECEIVE_MANUAL_JOBS];
 
-	// a job that was taken waits for a thread, the test says it
-	bool awaited;
-
 } TestReceiveManual;
 
 static TestReceiveManual manual;
@@ -4318,15 +4350,74 @@ static bool test_receive_manual_is_full (const EventDispatcher *dispatcher) {
 
 }
 
-static bool test_receive_manual_is_awaited (const EventDispatcher *dispatcher) {
-
-	return ((const TestReceiveManual *) dispatcher->data)->awaited;
-
-}
-
 static unsigned int test_receive_manual_taken (void) {
 
 	return __atomic_load_n (&manual.n_taken, __ATOMIC_ACQUIRE);
+
+}
+
+// the requests that the loop gave to the dispatcher or parked for it
+static unsigned int test_receive_manual_submitted (void) {
+
+	return test_receive_manual_taken () + event_loop_parked (receive_loop);
+
+}
+
+static unsigned int test_receive_loop_connections_count (void) {
+
+	return event_loop_connections (receive_loop);
+
+}
+
+static unsigned int test_receive_loop_idle_count (void) {
+
+	return event_loop_idle (receive_loop);
+
+}
+
+static unsigned int test_receive_loop_parked_count (void) {
+
+	return event_loop_parked (receive_loop);
+
+}
+
+// the loop takes steps until a count of the test is the one that it expects: what a step asks of the backend
+// of the loop is given to the kernel or tried in a later step
+static void test_receive_loop_step_until (unsigned int (*count) (void), const unsigned int expected) {
+
+	for (
+		unsigned int steps = 0;
+		(count () != expected) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (count (), expected, NULL);
+
+}
+
+// returns whether the client has bytes to read or the end of its connection, without waiting
+static bool test_receive_client_is_readable (const int client_fd) {
+
+	struct pollfd poll_fd = { client_fd, POLLIN, 0 };
+
+	return poll (&poll_fd, 1, 0) > 0;
+
+}
+
+// the loop takes steps until what it sends reaches the client
+static void test_receive_loop_step_readable (const int client_fd) {
+
+	for (
+		unsigned int steps = 0;
+		!test_receive_client_is_readable (client_fd) && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check (test_receive_client_is_readable (client_fd), "nothing reached the client");
 
 }
 
@@ -4345,7 +4436,6 @@ static void test_receive_manual_start (Cerver *cerver, const unsigned int places
 
 	receive_dispatcher.submit = test_receive_manual_submit;
 	receive_dispatcher.is_full = test_receive_manual_is_full;
-	receive_dispatcher.is_awaited = test_receive_manual_is_awaited;
 	receive_dispatcher.data = &manual;
 
 	receive_loop = event_loop_create (cerver, &receive_dispatcher);
@@ -4353,23 +4443,28 @@ static void test_receive_manual_start (Cerver *cerver, const unsigned int places
 
 }
 
-// a client whose request is complete when the loop takes its connection: the loop reads it at once
-// and submits its job; returns the socket of the client and gives the one of the loop
-static int test_receive_manual_client (int *server_fd) {
+// a client whose requests are complete when the loop takes its connection: the loop reads them in its next
+// steps and submits the job of the first one, or parks it; returns the socket of the client and gives the one
+// of the loop
+static int test_receive_manual_connect (const char *requests, int *server_fd) {
 
 	int fds[2] = { -1, -1 };
 	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
 
-	const size_t request_length = strlen (manual_request);
+	const size_t requests_length = strlen (requests);
 	test_check (
-		send (fds[TEST_RECEIVE_CLIENT], manual_request, request_length, MSG_NOSIGNAL) == (ssize_t) request_length,
+		send (fds[TEST_RECEIVE_CLIENT], requests, requests_length, MSG_NOSIGNAL) == (ssize_t) requests_length,
 		"the request was not sent"
 	);
 
 	struct sockaddr_storage address;
 	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
 
+	const unsigned int submitted = test_receive_manual_submitted ();
+
 	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+
+	test_receive_loop_step_until (test_receive_manual_submitted, submitted + 1);
 
 	*server_fd = fds[TEST_RECEIVE_SERVER];
 
@@ -4377,20 +4472,55 @@ static int test_receive_manual_client (int *server_fd) {
 
 }
 
-// the job of a request runs like in a thread of the pool, that also ends its connection
+static int test_receive_manual_client (int *server_fd) {
+
+	return test_receive_manual_connect (manual_request, server_fd);
+
+}
+
+// the job of a request runs like in a thread of the pool: what it writes and its connection go back to the loop
 static void test_receive_manual_work (const unsigned int job) {
 
 	http_connection_work (manual.taken[job]);
 
 }
 
+// reads what the client has; returns true when its connection ended
+static bool test_receive_manual_read (const int client_fd) {
+
+	ssize_t received = 0;
+	while (
+		(result.response_len < (TEST_RECEIVE_RESPONSE_SIZE - 1))
+		&& ((received = read (
+			client_fd,
+			result.response + result.response_len,
+			TEST_RECEIVE_RESPONSE_SIZE - 1 - result.response_len
+		)) > 0)
+	) {
+		result.response_len += (size_t) received;
+	}
+
+	result.response[result.response_len] = '\0';
+
+	return !received;
+
+}
+
+// the response of a connection that the loop closes: the loop takes steps until the client read it to its end
 static void test_receive_manual_response (const int client_fd, const char *status) {
 
 	(void) memset (&result, 0, sizeof (TestReceiveResult));
 
-	test_receive_read_response (client_fd);
+	bool ended = test_receive_manual_read (client_fd);
+	for (unsigned int steps = 0; !ended && (steps < TEST_RECEIVE_LOOP_STEPS); steps++) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+
+		ended = test_receive_manual_read (client_fd);
+	}
+
 	(void) close (client_fd);
 
+	test_check (ended, "the loop did not close the connection");
 	test_receive_expect (test_receive_status_is (status));
 
 }
@@ -4407,31 +4537,41 @@ static void test_receive_manual_parked_forever (void) {
 
 }
 
-// one step of a loop in its thread, that waits in its poller as long as it has to
+// one step of a loop in its thread, that waits in its backend as long as it has to
 static void *test_receive_manual_step (void *loop_ptr) {
 
-	(void) event_loop_step ((EventLoop *) loop_ptr, EVENT_POLLER_WAIT_FOREVER);
+	(void) event_loop_step ((EventLoop *) loop_ptr, EVENT_BACKEND_WAIT_FOREVER);
 
 	return NULL;
 
 }
 
-// waits until the loop told that it is going to wait in its poller
+// waits until the loop told that it is going to wait in its backend
 static void test_receive_manual_wait_loop (EventLoop *loop) {
 
 	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
 	const double deadline = test_wait_now () + (double) TEST_RECEIVE_MANUAL_SECONDS;
 
-	bool waiting = false;
-	while (!waiting && (test_wait_now () < deadline)) {
-		(void) pthread_mutex_lock (&loop->completed_mutex);
-		waiting = loop->waiting;
-		(void) pthread_mutex_unlock (&loop->completed_mutex);
+	bool sleeping = false;
+	while (!sleeping && (test_wait_now () < deadline)) {
+		sleeping = __atomic_load_n (&loop->sleeping, __ATOMIC_SEQ_CST);
 
-		if (!waiting) (void) nanosleep (&interval, NULL);
+		if (!sleeping) (void) nanosleep (&interval, NULL);
 	}
 
-	test_check (waiting, "the loop does not wait in its poller");
+	test_check (sleeping, "the loop does not wait in its backend");
+
+}
+
+// the loops of the tests that step them from another thread than the one that read their requests: the backend
+// of io_uring belongs to the first thread that steps it, only the one of epoll can be stepped by another thread
+static void test_receive_manual_start_epoll (Cerver *cerver, const unsigned int places) {
+
+	cerver_set_events_backend (cerver, CERVER_EVENTS_BACKEND_EPOLL);
+
+	test_receive_manual_start (cerver, places);
+
+	cerver_set_events_backend (cerver, test_events_backend ());
 
 }
 
@@ -4455,17 +4595,19 @@ static void test_receive_loop_parked_order (Cerver *cerver) {
 	test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_PARKED, NULL);
 	test_check_unsigned_eq (test_receive_manual_taken (), 0, NULL);
 
-	// a place is free when the last request arrives: it waits behind the parked ones
+	// a place is free when the last request arrives: it waits behind the parked ones, and the step that
+	// read it gives the place to the first one
 	test_receive_manual_place ();
 
 	client_fds[TEST_RECEIVE_MANUAL_PARKED] = test_receive_manual_client (&server_fds[TEST_RECEIVE_MANUAL_PARKED]);
 
-	test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_JOBS, NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 0, NULL);
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
+	test_check_int_eq (manual.fds[0], server_fds[0], NULL);
+	test_check_unsigned_eq (event_loop_parked (receive_loop), TEST_RECEIVE_MANUAL_PARKED, NULL);
 
 	// the loop gives each place to the request that has waited the most
-	for (unsigned int idx = 0; idx < TEST_RECEIVE_MANUAL_JOBS; idx++) {
-		if (idx) test_receive_manual_place ();
+	for (unsigned int idx = 1; idx < TEST_RECEIVE_MANUAL_JOBS; idx++) {
+		test_receive_manual_place ();
 
 		(void) event_loop_step (receive_loop, 0);
 
@@ -4525,11 +4667,11 @@ static void test_receive_loop_parked_timeout (Cerver *cerver) {
 	test_check_unsigned_eq (event_loop_parked (receive_loop), 0, NULL);
 	test_check_unsigned_eq (CERVER_STATS_GET (cerver->stats->total_rejected_connections), rejected + 1, NULL);
 
-	// its connection ended, only the one of the pool is left
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-
 	test_receive_manual_response (client_fds[1], "503");
+
+	// its connection ended once its response was sent, only the one of the pool is left
+	test_receive_loop_step_until (test_receive_loop_connections_count, 1);
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
 
 	test_receive_manual_work (0);
 
@@ -4548,7 +4690,7 @@ static void test_receive_loop_parked_wake (Cerver *cerver) {
 	current_case = "loop: a place wakes the loop of a parked request up";
 	current_mode = "whole";
 
-	test_receive_manual_start (cerver, 1);
+	test_receive_manual_start_epoll (cerver, 1);
 
 	int server_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
 	int client_fds[TEST_RECEIVE_MANUAL_PAIR] = { -1, -1 };
@@ -4596,7 +4738,7 @@ static void test_receive_loop_parked_place (Cerver *cerver) {
 	current_case = "loop: a place that was freed before the loop waits";
 	current_mode = "whole";
 
-	test_receive_manual_start (cerver, 0);
+	test_receive_manual_start_epoll (cerver, 0);
 
 	int server_fd = -1;
 	const int client_fd = test_receive_manual_client (&server_fd);
@@ -4742,6 +4884,24 @@ static bool test_receive_accept_is_closed (const int client_fd) {
 
 }
 
+// a loop stops accepting before it is released, like the loops of a cerver that ends: its backend
+// can still have the accept of its listening socket
+static void test_receive_loop_listen_end (void) {
+
+	event_loop_stop (receive_loop, false);
+
+	for (
+		unsigned int steps = 0;
+		receive_loop->listen.operations && (steps < TEST_RECEIVE_LOOP_STEPS);
+		steps++
+	) {
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	}
+
+	test_check_unsigned_eq (receive_loop->listen.operations, EVENT_OPERATION_NONE, NULL);
+
+}
+
 // a loop without fds rejects in one step every connection that waits in its listening socket:
 // it rejected one each time that its accept came back from its pause, and the rest waited in the
 // listen backlog for seconds
@@ -4796,6 +4956,8 @@ static void test_receive_loop_out_of_fds (Cerver *cerver) {
 		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
 	}
 
+	test_receive_loop_listen_end ();
+
 	test_receive_loop_end ();
 
 	(void) close (listen_fd);
@@ -4833,13 +4995,6 @@ static void test_receive_kept_start (Cerver *cerver, const unsigned int places) 
 	http_cerver_set_keep_alive (http_cerver, true);
 	http_cerver_set_keep_alive_timeout_milliseconds (http_cerver, TEST_RECEIVE_KEPT_TIMEOUT);
 
-	// the thread that answers a request gives its connection back at once, the tests of a thread that follows
-	// its connection have their own start
-	http_cerver_set_keep_alive_follow (http_cerver, 0);
-
-	// the loop reads the next request of an idle connection, the tests of the pool that reads it have their own start
-	http_cerver_set_keep_alive_pool_read (http_cerver, false);
-
 	test_receive_manual_start (cerver, places);
 
 	manual_clock = TEST_RECEIVE_MANUAL_CLOCK_START;
@@ -4856,15 +5011,15 @@ static void test_receive_kept_end (Cerver *cerver) {
 	http_cerver_set_keep_alive (http_cerver, false);
 	http_cerver_set_keep_alive_timeout (http_cerver, 0);
 	http_cerver_set_keep_alive_requests (http_cerver, HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS);
-	http_cerver_set_keep_alive_follow (http_cerver, HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW);
-	http_cerver_set_keep_alive_pool_read (http_cerver, HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ);
 
 }
 
-// reads the response that the client has, its connection stays open
+// the loop takes steps until a response reaches the client and it reads it, its connection stays open
 static void test_receive_kept_response (const int client_fd, const char *status) {
 
 	(void) memset (&result, 0, sizeof (TestReceiveResult));
+
+	test_receive_loop_step_readable (client_fd);
 
 	ssize_t received = 0;
 	while (
@@ -4902,9 +5057,9 @@ static void test_receive_kept_expect_open (const int client_fd) {
 
 }
 
-// a connection whose request was answered goes back to its loop and waits idle for the next one:
-// it is not pending (a drain does not wait for it), its next request is handled like the first one,
-// and the time that it waited idle is not the time of its request
+// a connection whose request was answered waits idle in its loop for the next one, once its response was sent:
+// it is not pending (a drain does not wait for it), it has its own timer with the time that the cerver keeps it,
+// its next request is handled like the first one, and the time that it waited idle is not the time of its request
 static void test_receive_loop_kept_idle (Cerver *cerver) {
 
 	current_case = "loop: a connection that is kept waits idle for its next request";
@@ -4922,20 +5077,20 @@ static void test_receive_loop_kept_idle (Cerver *cerver) {
 
 	test_receive_manual_work (0);
 
-	// the thread that answered its request gave it to the idle ones of its loop by itself:
-	// the loop has nothing to do for it until its client sends its next request
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
+	test_receive_kept_response (client_fd, "200");
+	test_receive_expect (!test_receive_has_header ("Connection"));
+
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 	test_check_unsigned_eq (event_loop_pending (receive_loop), 0, NULL);
 	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
-	test_check (!manual.taken[0]->timer.armed, "an idle connection has a timer in its loop");
+	test_check (manual.taken[0]->timer.armed, "an idle connection has no timer in its loop");
+	test_check_unsigned_eq (manual.taken[0]->deadline, manual_clock + TEST_RECEIVE_KEPT_TIMEOUT, NULL);
 
 	(void) event_loop_step (receive_loop, 0);
 
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
 	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
 
-	test_receive_kept_response (client_fd, "200");
-	test_receive_expect (!test_receive_has_header ("Connection"));
 	test_receive_kept_expect_open (client_fd);
 
 	// most of its time passes, then its next request arrives: the headers timeout starts with it
@@ -4950,17 +5105,15 @@ static void test_receive_loop_kept_idle (Cerver *cerver) {
 		"the second request was not sent"
 	);
 
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_PAIR);
 
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
 	test_check_int_eq (manual.fds[1], server_fd, NULL);
 
 	test_receive_manual_work (1);
-	(void) event_loop_step (receive_loop, 0);
 
 	test_receive_kept_response (client_fd, "200");
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
 	test_check_unsigned_eq (
 		__atomic_load_n (&http_cerver->n_reused_connections, __ATOMIC_RELAXED), reused + 1, NULL
@@ -4971,9 +5124,7 @@ static void test_receive_loop_kept_idle (Cerver *cerver) {
 	const u64 idle_closed = event_loop_idle_closed_total (receive_loop);
 
 	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
 	test_check_unsigned_eq (http_cerver->n_incompleted_requests, incompleted, NULL);
 	test_check_unsigned_eq (event_loop_idle_closed_total (receive_loop), idle_closed + 1, NULL);
@@ -4995,9 +5146,9 @@ static void test_receive_loop_kept_timeout (Cerver *cerver) {
 	const int client_fd = test_receive_manual_client (&server_fd);
 
 	test_receive_manual_work (0);
-	(void) event_loop_step (receive_loop, 0);
 
 	test_receive_kept_response (client_fd, "200");
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
 	// right before the end of its time
 	manual_clock += TEST_RECEIVE_KEPT_TIMEOUT - 1;
@@ -5006,9 +5157,8 @@ static void test_receive_loop_kept_timeout (Cerver *cerver) {
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
 	test_receive_kept_expect_open (client_fd);
 
-	// the loop checks its idle connections every few milliseconds, with a timer that expires
-	// at most a tick after its deadline
-	manual_clock += 1 + EVENT_LOOP_IDLE_SWEEP + EVENT_WHEEL_TICK;
+	// each idle connection has its own timer, that expires at most a tick after its deadline
+	manual_clock += 1 + EVENT_WHEEL_TICK;
 	(void) event_loop_step (receive_loop, 0);
 
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
@@ -5018,16 +5168,13 @@ static void test_receive_loop_kept_timeout (Cerver *cerver) {
 	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
 
 	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
 
 	test_receive_kept_end (cerver);
 
 }
 
-// a connection that is not kept is ended by the thread that handled its request, like before:
-// its loop is not woken up and has nothing to do for it
+// a connection that is not kept is closed by its loop once its response was sent: it never waits idle
 static void test_receive_loop_kept_close (Cerver *cerver) {
 
 	current_case = "loop: a client that asks to close its connection";
@@ -5035,35 +5182,25 @@ static void test_receive_loop_kept_close (Cerver *cerver) {
 
 	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
 
-	int fds[2] = { -1, -1 };
-	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
-
-	const size_t request_length = strlen (kept_close_request);
-	test_check (
-		send (fds[TEST_RECEIVE_CLIENT], kept_close_request, request_length, MSG_NOSIGNAL) == (ssize_t) request_length,
-		"the request was not sent"
-	);
-
-	struct sockaddr_storage address;
-	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
-
-	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+	int server_fd = -1;
+	const int client_fd = test_receive_manual_connect (kept_close_request, &server_fd);
 
 	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
 
 	test_receive_manual_work (0);
 
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_manual_response (fds[TEST_RECEIVE_CLIENT], "200");
+	test_receive_manual_response (client_fd, "200");
 	test_receive_expect (test_receive_has_header ("Connection"));
+
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
+	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
 
 	test_receive_kept_end (cerver);
 
 }
 
 // a connection handles the requests that its cerver allows: the response of the last one says "close"
-// and the thread that handled it ends the connection
+// and its loop closes the connection once it was sent
 static void test_receive_loop_kept_requests (Cerver *cerver) {
 
 	current_case = "loop: a connection that reaches its requests";
@@ -5077,7 +5214,6 @@ static void test_receive_loop_kept_requests (Cerver *cerver) {
 	const int client_fd = test_receive_manual_client (&server_fd);
 
 	test_receive_manual_work (0);
-	(void) event_loop_step (receive_loop, 0);
 
 	test_receive_kept_response (client_fd, "200");
 	test_receive_expect (!test_receive_has_header ("Connection"));
@@ -5088,14 +5224,14 @@ static void test_receive_loop_kept_requests (Cerver *cerver) {
 		"the last request was not sent"
 	);
 
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_PAIR);
 
 	test_receive_manual_work (1);
 
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
 	test_receive_manual_response (client_fd, "200");
 	test_receive_expect (test_receive_has_header ("Connection"));
+
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
 
 	test_receive_kept_end (cerver);
 
@@ -5115,8 +5251,8 @@ static void test_receive_loop_kept_stop (Cerver *cerver) {
 	// the first one is idle when the loop stops, the request of the second one is being handled
 	client_fds[0] = test_receive_manual_client (&server_fds[0]);
 	test_receive_manual_work (0);
-	(void) event_loop_step (receive_loop, 0);
 	test_receive_kept_response (client_fds[0], "200");
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
 	client_fds[1] = test_receive_manual_client (&server_fds[1]);
 
@@ -5129,18 +5265,15 @@ static void test_receive_loop_kept_stop (Cerver *cerver) {
 	test_receive_kept_expect_closed (client_fds[0]);
 
 	(void) close (client_fds[0]);
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_loop_step_until (test_receive_loop_connections_count, 1);
 
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
-
-	// its response is complete, and its connection is closed when it comes back
+	// its response is complete, and its connection is closed once it was sent
 	test_receive_manual_work (1);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
 
 	test_receive_manual_response (client_fds[1], "200");
+
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
+	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
 
 	test_receive_kept_end (cerver);
 
@@ -5155,333 +5288,53 @@ static void test_receive_loop_kept_pipelined (Cerver *cerver) {
 
 	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
 
-	int fds[2] = { -1, -1 };
-	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds), 0, NULL);
-
-	const size_t requests_length = strlen (kept_pipelined_requests);
-	test_check (
-		send (fds[TEST_RECEIVE_CLIENT], kept_pipelined_requests, requests_length, MSG_NOSIGNAL) == (ssize_t) requests_length,
-		"the requests were not sent"
-	);
-
-	struct sockaddr_storage address;
-	(void) memset (&address, 0, sizeof (struct sockaddr_storage));
-
-	test_check_unsigned_eq (event_loop_adopt (receive_loop, fds[TEST_RECEIVE_SERVER], &address), 0, NULL);
+	int server_fd = -1;
+	const int client_fd = test_receive_manual_connect (kept_pipelined_requests, &server_fd);
 
 	// only the first one went to the pool, the others wait behind it
 	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
 	(void) event_loop_step (receive_loop, 0);
 	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-	test_receive_kept_expect_open (fds[TEST_RECEIVE_CLIENT]);
+	test_receive_kept_expect_open (client_fd);
 
 	test_receive_manual_work (0);
-	test_receive_kept_response (fds[TEST_RECEIVE_CLIENT], "200");
+	test_receive_kept_response (client_fd, "200");
 
 	// the loop answers the second one by itself and gives the third one to the pool
-	for (
-		unsigned int steps = 0;
-		(test_receive_manual_taken () < TEST_RECEIVE_MANUAL_PAIR) && (steps < TEST_RECEIVE_LOOP_STEPS);
-		steps++
-	) {
-		(void) event_loop_step (receive_loop, 0);
-	}
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_PAIR);
 
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_receive_kept_response (fds[TEST_RECEIVE_CLIENT], "200");
+	test_receive_kept_response (client_fd, "200");
 	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
 
 	test_receive_manual_work (1);
-	test_receive_kept_response (fds[TEST_RECEIVE_CLIENT], "200");
+	test_receive_kept_response (client_fd, "200");
 	test_receive_expect (strstr (result.response, catch_all_message) == NULL);
 
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
-
-	(void) close (fds[TEST_RECEIVE_CLIENT]);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+	(void) close (client_fd);
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
 
 	test_receive_kept_end (cerver);
 
 }
 
-// the thread of the pool that answered a request follows its connection: it looks for its next request for a
-// short time and handles it by itself; here that request is already in the socket when the job runs,
-// so nothing depends on the time
-
-// the responses of a client whose two requests were handled by the same job
-#define TEST_RECEIVE_FOLLOWED_REQUESTS			2
-// the jobs that the dispatcher took after the third request of a connection went through its loop
-#define TEST_RECEIVE_FOLLOWED_JOBS				3
-// the requests that are not followed after the second miss in a row
-#define TEST_RECEIVE_FOLLOWED_SKIP				3
-// the milliseconds that pass while the first request of a connection is handled, less than the time of its headers
-#define TEST_RECEIVE_FOLLOWED_DELAY				(1 << 10)
-
-static const char *followed_start = { "GET /v2/render HTTP/1.1\r\nHost: local" };
-static const char *followed_end = { "host:8080\r\n\r\n" };
+// the jobs that the dispatcher takes for a connection whose second request is authorized before its body:
+// its first request, the authorization and the second request
+#define TEST_RECEIVE_KEPT_AUTHORIZED_JOBS		3
 
 // a method that is not a token, not one that cerver does not implement (501)
-static const char *followed_bad_request = { "(NOT) A REQUEST\r\n\r\n" };
+static const char *kept_bad_request = { "(NOT) A REQUEST\r\n\r\n" };
 
-static void test_receive_followed_start (Cerver *cerver) {
-
-	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
-
-	http_cerver_set_keep_alive_follow (
-		(HttpCerver *) cerver->cerver_data, HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT
-	);
-
-}
-
-static void test_receive_followed_send (const int client_fd, const char *request) {
+static void test_receive_kept_send (const int client_fd, const char *request) {
 
 	const size_t length = strlen (request);
 	test_check (send (client_fd, request, length, MSG_NOSIGNAL) == (ssize_t) length, "the request was not sent");
 
 }
 
-// reads the responses that the client has, its connection stays open
-static void test_receive_followed_responses (const int client_fd, const unsigned int count) {
-
-	(void) memset (&result, 0, sizeof (TestReceiveResult));
-
-	ssize_t received = 0;
-	while (
-		(result.response_len < (TEST_RECEIVE_RESPONSE_SIZE - 1))
-		&& ((received = recv (
-			client_fd, result.response + result.response_len,
-			TEST_RECEIVE_RESPONSE_SIZE - 1 - result.response_len, MSG_DONTWAIT
-		)) > 0)
-	) {
-		result.response_len += (size_t) received;
-	}
-
-	result.response[result.response_len] = '\0';
-
-	test_check_unsigned_eq (test_receive_count_responses (), count, NULL);
-
-}
-
-// a complete request: the thread handles it, the loop is not told and no job is submitted for it;
-// a connection whose client sent nothing in time waits idle, and its next request is not followed
-static void test_receive_loop_followed (Cerver *cerver) {
-
-	current_case = "loop: the thread that answered a request handles the next one of its connection";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-	const size_t reused = CERVER_STATS_GET (http_cerver->n_reused_connections);
-
-	test_receive_followed_start (cerver);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (0);
-
-	test_receive_followed_responses (client_fd, TEST_RECEIVE_FOLLOWED_REQUESTS);
-	test_receive_expect (!test_receive_has_header ("Connection"));
-
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed + 1, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_reused_connections), reused + 1, NULL);
-
-	// no third request arrived in its time: the connection waits idle in its loop, with its first miss
-	const HttpConnection *connection = manual.taken[0];
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
-	test_check_unsigned_eq (connection->follow_misses, 1, NULL);
-	test_check_unsigned_eq (connection->follow_skip, 1, NULL);
-
-	// the third one goes through its loop; the thread that answers it does not look for the fourth one,
-	// that is already there: the request after a miss is not followed
-	test_receive_followed_send (client_fd, manual_request);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (1);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_check_unsigned_eq (connection->follow_skip, 0, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed + 1, NULL);
-
-	// the loop reads the fourth one; the thread looks again after it, and the second miss in a row
-	// leaves more requests without it
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_FOLLOWED_JOBS, NULL);
-
-	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_check_unsigned_eq (connection->follow_misses, TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_check_unsigned_eq (connection->follow_skip, TEST_RECEIVE_FOLLOWED_SKIP, NULL);
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
-
-	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_kept_end (cerver);
-
-}
-
-// a request that is not complete in what the thread read: the connection goes back to its loop in the middle
-// of it, the loop reads the rest and gives the request to the pool like any other
-static void test_receive_loop_followed_partial (Cerver *cerver) {
-
-	current_case = "loop: a thread gives back a connection whose next request is not complete";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	// the headers of a request have the time that an idle connection is kept
-	const unsigned int headers_timeout = http_cerver->headers_timeout;
-	http_cerver_set_headers_timeout_milliseconds ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_KEPT_TIMEOUT);
-
-	test_receive_followed_start (cerver);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_followed_send (client_fd, followed_start);
-
-	// time passes while its first request is handled
-	manual_clock += TEST_RECEIVE_FOLLOWED_DELAY;
-
-	test_receive_manual_work (0);
-
-	test_receive_followed_responses (client_fd, 1);
-
-	// the loop owns it again, in the middle of a request: it is not idle, and a drain waits for it
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (event_loop_pending (receive_loop), 1, NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-	test_check_unsigned_eq (manual.taken[0]->state, HTTP_CONNECTION_STATE_READ, NULL);
-	test_check (manual.taken[0]->timer.armed, "a request that is being read has no deadline");
-
-	// the time of its headers started when the loop got it back, not when its connection was accepted:
-	// the time of a first request has passed, and this one still has some
-	manual_clock += TEST_RECEIVE_KEPT_TIMEOUT - TEST_RECEIVE_FOLLOWED_DELAY + 1;
-	(void) event_loop_step (receive_loop, 0);
-
-	test_receive_kept_expect_open (client_fd);
-	test_check_unsigned_eq (manual.taken[0]->state, HTTP_CONNECTION_STATE_READ, NULL);
-
-	test_receive_followed_send (client_fd, followed_end);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-
-	test_receive_manual_work (1);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_receive_expect (test_receive_status_is ("200"));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed, NULL);
-
-	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_kept_end (cerver);
-
-	http_cerver_set_headers_timeout_milliseconds ((HttpCerver *) cerver->cerver_data, headers_timeout);
-
-}
-
-// a request that needs its authentication before its body: the thread is one of the pool that would run that
-// job, so it authorizes it by itself, continues with the body that it already read and handles it;
-// the loop is not told and no job is submitted for it
-static void test_receive_loop_followed_authorized (Cerver *cerver) {
-
-	current_case = "loop: the thread that follows its connection authorizes its next request before its body";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	test_receive_followed_start (cerver);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_followed_send (client_fd, private_request);
-
-	test_receive_manual_work (0);
-
-	test_receive_followed_responses (client_fd, TEST_RECEIVE_FOLLOWED_REQUESTS);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 401") == NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed + 1, NULL);
-
-	(void) close (client_fd);
-
-	for (
-		unsigned int steps = 0;
-		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
-		steps++
-	) {
-		(void) event_loop_step (receive_loop, 0);
-	}
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_kept_end (cerver);
-
-}
-
-// the pool reads the next request of an idle connection (2.1b-19): with the dispatcher of these tests,
-// the job of a reported idle connection is HTTP_CONNECTION_JOB_READ and the test runs it like a thread of the pool
-
-// the requests that a connection of these tests sends before its client leaves
-#define TEST_RECEIVE_READ_JOBS					3
-
-// the bytes of the body of a request that the thread that reads it gets with its head
-#define TEST_RECEIVE_READ_BODY_PIECE			16
-
-static void test_receive_read_start (Cerver *cerver, const unsigned int places) {
-
-	test_receive_kept_start (cerver, places);
-
-	http_cerver_set_keep_alive_pool_read ((HttpCerver *) cerver->cerver_data, true);
-
-}
-
-// the loop runs its steps until the dispatcher took a number of jobs
-static void test_receive_read_wait_taken (const unsigned int taken) {
-
-	for (
-		unsigned int steps = 0;
-		(test_receive_manual_taken () < taken) && (steps < TEST_RECEIVE_LOOP_STEPS);
-		steps++
-	) {
-		(void) event_loop_step (receive_loop, 0);
-	}
-
-	test_check_unsigned_eq (test_receive_manual_taken (), taken, NULL);
-
-}
-
-// the loop runs its steps until its connections ended, and the test runs the jobs that it submits meanwhile:
-// the one of an idle connection whose client left is ended by the thread that reads it
-static void test_receive_read_wait_ended (void) {
+// the loop runs its steps until its connections ended, and the test runs the jobs that it submits meanwhile
+static void test_receive_manual_wait_ended (void) {
 
 	unsigned int worked = test_receive_manual_taken ();
 
@@ -5490,7 +5343,7 @@ static void test_receive_read_wait_ended (void) {
 		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
 		steps++
 	) {
-		(void) event_loop_step (receive_loop, 0);
+		(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
 
 		for (; worked < test_receive_manual_taken (); worked++) test_receive_manual_work (worked);
 	}
@@ -5499,527 +5352,137 @@ static void test_receive_read_wait_ended (void) {
 
 }
 
-// the next request of an idle connection goes to the pool of the one before it without being read by the loop,
-// and the thread reads, parses and handles it; the connection waits idle again after it. Its client leaves while
-// it is idle: the thread that reads it finds the end, there is no request to count
-static void test_receive_loop_read (Cerver *cerver) {
+// a connection whose first request was answered and that waits idle for the next one
+static int test_receive_kept_client (int *server_fd) {
 
-	current_case = "loop: the pool reads the next request of an idle connection";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-	const size_t reused = CERVER_STATS_GET (http_cerver->n_reused_connections);
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
+	const int client_fd = test_receive_manual_client (server_fd);
 
 	test_receive_manual_work (0);
 	test_receive_kept_response (client_fd, "200");
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
 
-	test_receive_followed_send (client_fd, manual_request);
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
-	// the loop did not read it: the connection is with the pool, with nothing received of its next request
-	const HttpConnection *connection = manual.taken[1];
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_check (connection == manual.taken[0], "the job is not of the same connection");
-	test_check_unsigned_eq (connection->job, HTTP_CONNECTION_JOB_READ, NULL);
-	test_check_unsigned_eq (connection->state, HTTP_CONNECTION_STATE_DISPATCHED, NULL);
-	test_check_unsigned_eq (connection->receive.received, 0, NULL);
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (event_loop_pending (receive_loop), 0, NULL);
-
-	test_receive_manual_work (1);
-
-	test_receive_kept_response (client_fd, "200");
-	test_receive_expect (!test_receive_has_header ("Connection"));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read + 1, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_reused_connections), reused + 1, NULL);
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
-	test_check (!connection->timer.armed, "an idle connection has a timer in its loop");
-
-	// its client leaves while it is idle
-	const size_t incompleted = http_cerver->n_incompleted_requests;
-	const u64 idle_closed = event_loop_idle_closed_total (receive_loop);
-
-	(void) close (client_fd);
-
-	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
-	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_READ, NULL);
-
-	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (http_cerver->n_incompleted_requests, incompleted, NULL);
-	test_check_unsigned_eq (event_loop_idle_closed_total (receive_loop), idle_closed + 1, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read + 1, NULL);
-
-	test_receive_kept_end (cerver);
+	return client_fd;
 
 }
 
-// a request that is not complete in what the thread read goes back to its loop in the middle of it,
-// with the time of a request from that moment: the loop reads the rest and submits it like any other
-static void test_receive_loop_read_partial (Cerver *cerver) {
+// the next request of an idle connection needs its authentication before its body: the loop gives the job of its
+// headers to the pool, and once it was authorized it parses its body and gives the request to the pool
+static void test_receive_loop_kept_authorized (Cerver *cerver) {
 
-	current_case = "loop: the pool gives back an idle connection whose next request is not complete";
+	current_case = "loop: the next request of an idle connection is authorized before its body";
 	current_mode = "whole";
 
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
+	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
 
 	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
-
-	test_receive_followed_send (client_fd, followed_start);
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_manual_work (1);
-
-	// the loop owns it again, in the middle of a request: it is not idle, and a drain waits for it
-	(void) event_loop_step (receive_loop, 0);
-
-	const HttpConnection *connection = manual.taken[1];
-	test_check_unsigned_eq (connection->state, HTTP_CONNECTION_STATE_READ, NULL);
-	test_check (connection->timer.armed, "a request that is being read has no deadline");
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_check_unsigned_eq (event_loop_pending (receive_loop), 1, NULL);
-
-	test_receive_followed_send (client_fd, followed_end);
-	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
-	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL);
-
-	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_kept_response (client_fd, "200");
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
-
-	(void) close (client_fd);
-	test_receive_read_wait_ended ();
-
-	test_receive_kept_end (cerver);
-
-}
-
-// a request that needs its authentication before its body: the thread that reads it authorizes it and handles it,
-// a request whose authentication fails is answered and its loop closes the connection
-static void test_receive_loop_read_authorized (Cerver *cerver) {
-
-	current_case = "loop: the pool authorizes the next request of an idle connection before its body";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
-
-	test_receive_followed_send (client_fd, private_request);
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_manual_work (1);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 401") == NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read + 1, NULL);
-
-	(void) close (client_fd);
-
-	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
-	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_read_wait_ended ();
-
-	test_receive_kept_end (cerver);
-
-}
-
-// the thread that authorizes the next request of an idle connection read a part of its body with its head:
-// the parser takes those bytes after the authorization, and the loop reads the rest without them again
-static void test_receive_loop_read_authorized_partial (Cerver *cerver) {
-
-	current_case = "loop: the pool authorizes the next request of an idle connection with a part of its body";
-	current_mode = "whole";
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
+	const int client_fd = test_receive_kept_client (&server_fd);
 
 	(void) memset (&observed, 0, sizeof (TestReceiveObserved));
 
-	const char *body = strstr (private_request, "\r\n\r\n") + strlen ("\r\n\r\n");
-	const size_t first = (size_t) (body - private_request) + TEST_RECEIVE_READ_BODY_PIECE;
-	test_check (send (client_fd, private_request, first, MSG_NOSIGNAL) == (ssize_t) first, "the request was not sent");
+	test_receive_kept_send (client_fd, private_request);
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_PAIR);
+	test_check_unsigned_eq (manual.taken[1]->job, HTTP_CONNECTION_JOB_AUTHORIZE, NULL);
 
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
 	test_receive_manual_work (1);
 
-	// the loop reads the rest of the body and submits the request
-	test_receive_followed_send (client_fd, private_request + first);
-	test_receive_read_wait_taken (TEST_RECEIVE_READ_JOBS);
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_KEPT_AUTHORIZED_JOBS);
 	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL);
 
 	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
 
-	test_receive_followed_responses (client_fd, 1);
+	test_receive_kept_response (client_fd, "200");
 	test_receive_check_private ();
 
 	(void) close (client_fd);
-	test_receive_read_wait_ended ();
+	test_receive_manual_wait_ended ();
 
 	test_receive_kept_end (cerver);
 
 }
 
-// bytes that are not a request: the thread that reads them answers them with 400, and the loop closes
-// the connection like the one of any request that it could not parse
-static void test_receive_loop_read_failed (Cerver *cerver) {
+// bytes that are not a request after one that was answered: the loop answers them with 400, and closes the
+// connection like the one of any request that it could not parse once its client closes it too
+static void test_receive_loop_kept_failed (Cerver *cerver) {
 
-	current_case = "loop: the pool gives back an idle connection whose next request can not be parsed";
+	current_case = "loop: the next request of an idle connection can not be parsed";
 	current_mode = "whole";
 
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
+	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
 
 	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
+	const int client_fd = test_receive_kept_client (&server_fd);
 
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
+	test_receive_kept_send (client_fd, kept_bad_request);
 
-	test_receive_followed_send (client_fd, followed_bad_request);
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
-
-	test_receive_manual_work (1);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 400") != NULL);
+	test_receive_kept_response (client_fd, "400");
 	test_receive_expect (test_receive_has_header ("Connection"));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
-
-	// its writes are shut down, and it ends when its client closes it too
-	(void) event_loop_step (receive_loop, 0);
 
 	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
+	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
+
+	// its writes are shut down, and it ends when its client closes it too
 	test_receive_kept_expect_closed (client_fd);
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
 
 	(void) close (client_fd);
-	test_receive_read_wait_ended ();
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
+	test_receive_loop_step_until (test_receive_loop_connections_count, 0);
 
 	test_receive_kept_end (cerver);
 
 }
 
-// a pool without a place for the next request: the loop reads it, and it waits for a place like any other;
-// a loop that rejects its requests reads it too, and answers it with 503
-static void test_receive_loop_read_no_place (Cerver *cerver) {
+// a pool without a place for the next request of an idle connection: the request waits for a place like any other;
+// a loop that rejects its requests answers it with 503
+static void test_receive_loop_kept_no_place (Cerver *cerver) {
 
-	current_case = "loop: the loop reads the next request of an idle connection when its pool has no place";
+	current_case = "loop: the next request of an idle connection when its pool has no place";
 	current_mode = "whole";
 
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-
-	test_receive_read_start (cerver, 1);
+	test_receive_kept_start (cerver, 1);
 
 	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
+	const int client_fd = test_receive_kept_client (&server_fd);
 
 	// the only place was not given back: the loop reads the request and parks its job
-	test_receive_followed_send (client_fd, manual_request);
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_kept_send (client_fd, manual_request);
+	test_receive_loop_step_until (test_receive_loop_parked_count, 1);
 
 	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
 
 	test_receive_manual_place ();
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_PAIR);
 	test_check_unsigned_eq (manual.taken[1]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL);
 
 	test_receive_manual_work (1);
 	test_receive_kept_response (client_fd, "200");
+	test_receive_loop_step_until (test_receive_loop_idle_count, 1);
 
 	// the loop rejects its requests: it reads the next one and answers it
 	test_receive_manual_place ();
 	__atomic_store_n (&receive_loop->rejecting, true, __ATOMIC_RELEASE);
 
-	test_receive_followed_send (client_fd, manual_request);
-	(void) event_loop_step (receive_loop, 0);
+	test_receive_kept_send (client_fd, manual_request);
 
-	test_receive_followed_responses (client_fd, 1);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 503") != NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
-
-	(void) close (client_fd);
-	test_receive_read_wait_ended ();
-
-	test_receive_kept_end (cerver);
-
-}
-
-// a job of an idle connection that the pool drops without running it (a drain that rejects): it has no request,
-// so it gets no 503, it is closed like an idle connection whose time ended
-static void test_receive_loop_read_dropped (Cerver *cerver) {
-
-	current_case = "loop: the pool drops the job of an idle connection";
-	current_mode = "whole";
-
-	test_receive_read_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_manual_work (0);
-	test_receive_kept_response (client_fd, "200");
-
-	test_receive_followed_send (client_fd, manual_request);
-	test_receive_read_wait_taken (TEST_RECEIVE_MANUAL_PAIR);
-
-	http_connection_work_dropped (manual.taken[1]);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_receive_kept_expect_closed (client_fd);
-
-	(void) close (client_fd);
-	test_receive_read_wait_ended ();
-
-	test_receive_kept_end (cerver);
-
-}
-
-// bytes that are not a request: the thread answers them with 400, and the loop closes the connection
-// like the one of any request that it could not parse
-static void test_receive_loop_followed_failed (Cerver *cerver) {
-
-	current_case = "loop: a thread gives back a connection whose next request can not be parsed";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	test_receive_followed_start (cerver);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_followed_send (client_fd, followed_bad_request);
-
-	test_receive_manual_work (0);
-
-	test_receive_followed_responses (client_fd, TEST_RECEIVE_FOLLOWED_REQUESTS);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 400") != NULL);
-	test_receive_expect (test_receive_has_header ("Connection"));
-
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed, NULL);
-
-	// its writes are shut down, and it ends when its client closes it too
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 0, NULL);
-	test_receive_kept_expect_closed (client_fd);
-
-	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-
-	test_receive_kept_end (cerver);
-
-}
-
-// while a job waits for a thread, the thread does not look for the next request of its connection:
-// the request that is already there goes first. It gives the connection back, without a miss, and its loop reads
-// that request; without a job that waits, the thread handles the one after it
-static void test_receive_loop_followed_awaited (Cerver *cerver) {
-
-	current_case = "loop: a thread does not follow its connection while a job waits for it";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	test_receive_followed_start (cerver);
-
-	manual.awaited = true;
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (0);
-
-	// the request that was there was not read by the thread: its connection waits idle with it
-	test_receive_followed_responses (client_fd, 1);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed, NULL);
-	test_check_unsigned_eq (manual.taken[0]->follow_misses, 0, NULL);
-	test_check_unsigned_eq (manual.taken[0]->follow_skip, 0, NULL);
-	test_check_unsigned_eq (event_loop_idle (receive_loop), 1, NULL);
-
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-
-	// no job waits now, and the third request of the connection is there: the thread handles it too
-	manual.awaited = false;
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (1);
-
-	test_receive_followed_responses (client_fd, TEST_RECEIVE_FOLLOWED_REQUESTS);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed + 1, NULL);
+	test_receive_kept_response (client_fd, "503");
 	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
 
 	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
+	test_receive_manual_wait_ended ();
 
 	test_receive_kept_end (cerver);
 
 }
 
-// a request that waits in the loop for a place in the pool goes before the next one of a connection that a
-// thread follows: the thread gives its connection back, and the loop gives the place to the one that waited
-static void test_receive_loop_followed_parked (Cerver *cerver) {
+static unsigned int test_receive_loop_held_count (void) {
 
-	current_case = "loop: a thread gives back a connection when a request waits for a place in its pool";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	test_receive_kept_start (cerver, 1);
-
-	http_cerver_set_keep_alive_follow (
-		(HttpCerver *) cerver->cerver_data, HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT
-	);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-
-	// the only place is taken: the request of another client waits for it
-	int parked_server_fd = -1;
-	const int parked_client_fd = test_receive_manual_client (&parked_server_fd);
-
-	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (0);
-
-	test_receive_followed_responses (client_fd, 1);
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed, NULL);
-
-	// the place of the job that ended is for the request that waited, the one of the thread waits behind it
-	test_receive_manual_place ();
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_MANUAL_PAIR, NULL);
-	test_check_int_eq (manual.fds[1], parked_server_fd, NULL);
-	test_check_unsigned_eq (event_loop_parked (receive_loop), 1, NULL);
-
-	test_receive_manual_work (1);
-	test_receive_followed_responses (parked_client_fd, 1);
-
-	test_receive_manual_place ();
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (test_receive_manual_taken (), TEST_RECEIVE_FOLLOWED_JOBS, NULL);
-	test_check_int_eq (manual.fds[TEST_RECEIVE_MANUAL_PAIR], server_fd, NULL);
-
-	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
-	test_receive_followed_responses (client_fd, 1);
-
-	(void) close (client_fd);
-	(void) close (parked_client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_kept_end (cerver);
-
-}
-
-// a loop that rejects its requests (its cerver is drained with that policy) answers 503 to the one that a
-// thread found while it followed its connection: the thread does not handle it
-static void test_receive_loop_followed_rejecting (Cerver *cerver) {
-
-	current_case = "loop: a thread gives back a connection whose loop rejects its requests";
-	current_mode = "whole";
-
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
-	const size_t followed = CERVER_STATS_GET (http_cerver->n_followed_requests);
-
-	test_receive_followed_start (cerver);
-
-	int server_fd = -1;
-	const int client_fd = test_receive_manual_client (&server_fd);
-
-	__atomic_store_n (&receive_loop->rejecting, true, __ATOMIC_RELEASE);
-
-	test_receive_followed_send (client_fd, manual_request);
-
-	test_receive_manual_work (0);
-
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), followed, NULL);
-
-	for (
-		unsigned int steps = 0;
-		event_loop_connections (receive_loop) && (steps < TEST_RECEIVE_LOOP_STEPS);
-		steps++
-	) {
-		(void) event_loop_step (receive_loop, 0);
-	}
-
-	test_receive_followed_responses (client_fd, TEST_RECEIVE_FOLLOWED_REQUESTS);
-	test_receive_expect (strstr (result.response, "HTTP/1.1 503") != NULL);
-	test_check_unsigned_eq (test_receive_manual_taken (), 1, NULL);
-
-	(void) close (client_fd);
-	(void) event_loop_step (receive_loop, 0);
-
-	test_check_unsigned_eq (event_loop_connections (receive_loop), 0, NULL);
-
-	test_receive_kept_end (cerver);
+	return receive_loop->n_held;
 
 }
 
 // a loop at the limit of connections of its cerver, without an idle one that can give its place, stops accepting
-// for EVENT_LOOP_ACCEPT_BACKOFF and not for a tick of its timers (2^8 ms): a connection that arrives meanwhile
-// waits that time in the listen backlog at most
+// for EVENT_LOOP_ACCEPT_BACKOFF and not for a tick of its timers (2^8 ms): a connection that its backend accepted
+// meanwhile waits in the loop that time at most, and takes the place that was freed when the pause ends
 static void test_receive_loop_accept_pause (Cerver *cerver) {
 
 	current_case = "loop: the pause of the accept at the limit of connections";
@@ -6039,26 +5502,33 @@ static void test_receive_loop_accept_pause (Cerver *cerver) {
 	cerver->max_connections = 1;
 
 	const int waiting_fd = test_receive_accept_client (&address);
-	(void) event_loop_step (receive_loop, TEST_RECEIVE_LOOP_WAIT);
+	test_receive_loop_step_until (test_receive_loop_held_count, 1);
 
-	test_check (!receive_loop->listen.registered, "the loop did not stop accepting at its limit");
 	test_check_unsigned_eq (receive_loop->accept_resume, manual_clock + EVENT_LOOP_ACCEPT_BACKOFF, NULL);
+	test_check_unsigned_eq (event_loop_connections (receive_loop), 1, NULL);
 
 	manual_clock += EVENT_LOOP_ACCEPT_BACKOFF - 1;
 	(void) event_loop_step (receive_loop, 0);
-	test_check (!receive_loop->listen.registered, "the loop accepted before its pause ended");
+	test_check_unsigned_eq (receive_loop->n_held, 1, "the loop took a connection before its pause ended");
+
+	// a place is free when the pause ends
+	cerver->max_connections = max_connections;
 
 	manual_clock += 1;
 	(void) event_loop_step (receive_loop, 0);
-	test_check (receive_loop->listen.registered, "the loop did not accept again when its pause ended");
-
-	cerver->max_connections = max_connections;
+	test_check_unsigned_eq (receive_loop->n_held, 0, "the loop did not take its connection when its pause ended");
+	test_check_unsigned_eq (event_loop_connections (receive_loop), TEST_RECEIVE_MANUAL_PAIR, NULL);
+	test_check (
+		receive_loop->listen.operations & EVENT_OPERATION_ACCEPT, "the loop did not accept again when its pause ended"
+	);
 
 	(void) close (waiting_fd);
 	(void) close (client_fd);
 
 	test_receive_manual_work (0);
-	test_receive_read_wait_ended ();
+	test_receive_manual_wait_ended ();
+
+	test_receive_loop_listen_end ();
 
 	test_receive_kept_end (cerver);
 
@@ -6076,22 +5546,9 @@ static void test_receive_loop_kept (Cerver *cerver) {
 	test_receive_loop_kept_requests (cerver);
 	test_receive_loop_kept_stop (cerver);
 	test_receive_loop_kept_pipelined (cerver);
-
-	test_receive_loop_followed (cerver);
-	test_receive_loop_followed_partial (cerver);
-	test_receive_loop_followed_authorized (cerver);
-	test_receive_loop_followed_failed (cerver);
-	test_receive_loop_followed_awaited (cerver);
-	test_receive_loop_followed_parked (cerver);
-	test_receive_loop_followed_rejecting (cerver);
-
-	test_receive_loop_read (cerver);
-	test_receive_loop_read_partial (cerver);
-	test_receive_loop_read_authorized (cerver);
-	test_receive_loop_read_authorized_partial (cerver);
-	test_receive_loop_read_failed (cerver);
-	test_receive_loop_read_no_place (cerver);
-	test_receive_loop_read_dropped (cerver);
+	test_receive_loop_kept_authorized (cerver);
+	test_receive_loop_kept_failed (cerver);
+	test_receive_loop_kept_no_place (cerver);
 
 }
 
