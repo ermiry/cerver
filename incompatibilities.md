@@ -3,6 +3,75 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-11 (from 3.0b-10)
+
+The first part of L4 of `roadmap.md`: the I/O of the event loops (`CERVER_HANDLER_TYPE_EVENTS`) is new. A loop asks
+for operations that complete, over io_uring (with the system calls of cerver, without liburing) or over epoll where
+io_uring is not available, and **only the loop uses the socket of a connection**: it reads, it sends and it closes.
+The handlers can run in the loop itself. The other handler types (`THREADS`, `POLL`) did not change.
+
+**The event loops**
+
+- **io_uring by default:** the loops of a cerver use io_uring when the kernel has what they need (Linux 6.1) and the
+  process is allowed to use it, and epoll otherwise, with a warning that tells why (the default seccomp profile of a
+  container blocks io_uring: `EPERM`). **New:** `<cerver/events/events.h>` with `CerverEventsBackend`
+  (`CERVER_EVENTS_BACKEND_MAP`: `AUTO`, `URING`, `EPOLL`), `cerver_set_events_backend ()`,
+  `cerver_get_events_backend ()`, `cerver_events_backend_to_string ()` and `_description ()`. A cerver that asks for
+  `CERVER_EVENTS_BACKEND_URING` does not start where io_uring is not available
+- **cerver builds with the header of io_uring of Linux 6.1 or newer** (`<linux/io_uring.h>`): an older one stops
+  the build
+- **The response of a handler that runs in a pool of threads is sent by its event loop:** `http_response_send ()` and
+  the other sends copy what they are given into the output of the connection and return; the loop sends it while the
+  handler goes on. They return an error only when a send of the connection already failed (or without memory): a
+  send that fails later ends the connection and is counted in its request (`n_failed_responses`), but the handler
+  that wrote it already got a success. A handler that writes more than 2^20 bytes that its client has not read waits
+  there until the loop sent some, at most the send timeout, and its send fails when the loop gave up meanwhile
+- **A response is counted when its event loop sent it whole:** its status (`n_responses_by_status`, the metrics by
+  status) and its bytes (`total_bytes_sent`) are counted then, not when its handler wrote it. A response that failed
+  is never counted with its status (a thread of a connection counts the status of a response of many pieces when it
+  sent its header), and its client left in the response stage only when some of its bytes were sent
+  (`n_aborted_requests[HTTP_STAGE_RESPONSE]`), in the one of its handler when none was. `HttpReceive` has
+  `response_written` and `response_written_bytes` at its end
+- **All the sends of a response of an event loop share its send timeout** (`http_cerver_set_send_timeout_milliseconds ()`):
+  the time that its output waits for its client is counted once, whatever the parts that its handler writes
+- **`HttpCerver::n_timeout_requests` and `n_limited_requests` are atomic like the other counters:** they were added
+  with the mutex of the HTTP cerver and read without it by the stats and the metrics (a data race); code that locked
+  `HttpCerver::mutex` to read them reads them with `CERVER_STATS_GET`
+- **A request ends in its event loop, when its response was sent:** the request is logged and counted and its data
+  is released (the methods that delete the data of a request, the files of its uploads) by the thread of the loop,
+  not by the thread of the pool that handled it
+- **The files are sent by the loop** with `sendfile ()` without waiting: a file that is not in the memory of the
+  system keeps its I/O thread while it is read
+- **The connections of an event loop have `TCP_NODELAY`** (from the socket that accepts them): a loop sends each
+  response whole
+- **The threads of the pools do not read the idle connections anymore** (the F4b of `nightly`, in the 3.0b-10), and
+  no thread follows its connection. **Removed:** `http_cerver_set_keep_alive_pool_read ()`,
+  `http_cerver_set_keep_alive_follow ()`, `HttpCerver::keep_alive_pool_read`, `keep_alive_follow`,
+  `n_pool_read_requests` and `n_followed_requests`, `HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ`,
+  `HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW`, `HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT`, `n_followed` and `n_pool_read` in
+  the `connections` of the admin stats, and the metrics `cerver_http_followed_requests_total` and
+  `cerver_http_pool_read_requests_total`. `Thpool` keeps its waiter (it is a file of the core), without a use here
+- **An idle connection has its own timer:** one whose time ended is closed at most a tick of the timers (2^8 ms)
+  after it, the loop does not check its idle connections every 2^8 ms anymore
+
+**The handlers in the event loop**
+
+- **New:** the pool `HTTP_POOL_LOOP_NAME` (`"loop"`), that every HTTP cerver has and that has no threads: the event
+  loop that read a request of that pool handles it and sends its response in the same thread. A group, an endpoint or
+  a route chooses it like any pool (`http_group_set_pool ()`, `http_endpoint_set_pool ()`, `http_route_set_pool ()`),
+  and `http_cerver_set_handlers_pool ()` sets the pool of every request that did not choose one. **A handler of that
+  pool must never wait:** while it runs, its I/O thread handles no other connection. `"loop"` can not be the name of a
+  pool that is created anymore
+- **The requests of a pipeline that the loop handles leave in one send:** each one ends when its response is
+  written, up to 2^5 in a row, and a send that fails then is counted once
+
+**The I/O threads**
+
+- **New:** `CERVER_IO_THREADS_PER_CORE` for `cerver_set_io_threads ()` (a loop for each processor that the process
+  can use) and `cerver_set_io_threads_affinity ()` (each loop in its processor)
+- `Cerver` has `events_backend` and `io_threads_affinity` at its end, and `HttpCerver` has `loop_pool` and
+  `handlers_pool` after `pools_started`: a binary that allocates them itself is built again
+
 ## 3.0b-10 (from 3.0b-9)
 
 The sync of `labs` before L4 (L0.5 of `roadmap.md`): the whole form of keep-alive of `nightly` (its 2.1b-19, F4b, over
