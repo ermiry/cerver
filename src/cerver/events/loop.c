@@ -20,6 +20,7 @@
 #include "cerver/handler/internal.h"
 
 #include "cerver/http/core/connection.h"
+#include "cerver/http/security/internal.h"
 #include "cerver/http/websockets/internal.h"
 
 #include "cerver/utils/log.h"
@@ -63,6 +64,9 @@ void event_loop_delete (EventLoop *loop) {
 
 		// the threads of its pools already ended, no report of a park is left
 		http_web_socket_parks_delete (loop);
+
+		// its sockets leave its poller before it is released
+		http_remote_loop_delete (loop);
 
 		if (loop->listen_owned && (loop->listen_fd > -1)) (void) close (loop->listen_fd);
 
@@ -1215,6 +1219,10 @@ static void event_loop_ready_handle (EventLoop *loop, const int n_ready) {
 			http_web_socket_loop_ready ((struct _HttpWebSocket *) ready->source->owner, ready->ready);
 		}
 
+		else if (ready->source->type == EVENT_SOURCE_TYPE_REMOTE) {
+			http_remote_loop_ready (loop, ready->source, ready->ready);
+		}
+
 		else if (ready->source->type == EVENT_SOURCE_TYPE_LISTEN) {
 			accept = true;
 		}
@@ -1282,6 +1290,7 @@ static int event_loop_wait_time (EventLoop *loop, const int timeout) {
 		wait = event_loop_wait_shortest (timeout, event_wheel_next (&loop->wheel, loop->now));
 		wait = event_loop_wait_shortest (wait, event_loop_accept_wait (loop));
 		wait = event_loop_wait_shortest (wait, event_loop_web_sockets_wait (loop));
+		wait = event_loop_wait_shortest (wait, http_remote_loop_wait (loop));
 	}
 
 	return wait;
@@ -1308,6 +1317,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 		handled += event_loop_completed_handle (loop);
 
 		handled += event_loop_web_sockets_handle (loop);
+
+		handled += (int) http_remote_loop_step (loop);
 
 		handled += (int) event_wheel_advance (&loop->wheel, loop->now, event_loop_timer_expired, loop);
 
