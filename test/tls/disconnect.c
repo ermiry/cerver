@@ -18,6 +18,7 @@
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
+#include <cerver/core/types.h>
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
@@ -85,6 +86,9 @@ static u16 disconnect_tls_port = DISCONNECT_TLS_PORT_BASE;
 
 static unsigned int disconnect_tls_handled = 0;
 
+// the tests run with threads and with the event loop
+static CerverHandlerType disconnect_tls_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
 #pragma region server
 
 static void disconnect_tls_hello (const HttpReceive *receive, const HttpRequest *request) {
@@ -129,7 +133,7 @@ static void disconnect_tls_server_start (DisconnectTlsServer *server, const Test
 	server->cerver = cerver_create_web ("tls-disconnect", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (server->cerver);
 
-	cerver_set_handler_type (server->cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (server->cerver, disconnect_tls_handler_type);
 	cerver_set_reusable_address_flags (server->cerver, true);
 	cerver_set_thpool_n_threads (server->cerver, DISCONNECT_TLS_THREADS);
 
@@ -550,15 +554,24 @@ static void test_disconnect_tls_record (const TestCertificates *certificates) {
 
 #pragma endregion
 
+static void disconnect_tls_tests (const TestCertificates *certificates, const CerverHandlerType handler_type) {
+
+	disconnect_tls_handler_type = handler_type;
+
+	(void) printf ("\ttest_disconnect_tls_handshake - %s\n", cerver_handler_type_to_string (handler_type));
+	test_disconnect_tls_handshake (certificates);
+
+	(void) printf ("\ttest_disconnect_tls_record - %s\n", cerver_handler_type_to_string (handler_type));
+	test_disconnect_tls_record (certificates);
+
+}
+
 void tls_tests_disconnect (const TestCertificates *certificates) {
 
 	(void) printf ("Testing TLS disconnect...\n");
 
-	(void) printf ("\ttest_disconnect_tls_handshake\n");
-	test_disconnect_tls_handshake (certificates);
-
-	(void) printf ("\ttest_disconnect_tls_record\n");
-	test_disconnect_tls_record (certificates);
+	disconnect_tls_tests (certificates, CERVER_HANDLER_TYPE_THREADS);
+	disconnect_tls_tests (certificates, CERVER_HANDLER_TYPE_EVENTS);
 
 	(void) printf ("Done!\n");
 
