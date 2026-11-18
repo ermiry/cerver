@@ -13,8 +13,8 @@
 
 #pragma region types
 
-const char *http_header_string (
-	const http_header header
+const char *cerver_http_header_to_string (
+	const CerverHttpHeader header
 ) {
 
 	switch (header) {
@@ -23,12 +23,12 @@ const char *http_header_string (
 		#undef XX
 	}
 
-	return http_header_string (HTTP_HEADER_UNDEFINED);
+	return cerver_http_header_to_string (HTTP_HEADER_UNDEFINED);
 
 }
 
-const char *http_header_description (
-	const http_header header
+const char *cerver_http_header_description (
+	const CerverHttpHeader header
 ) {
 
 	switch (header) {
@@ -37,7 +37,7 @@ const char *http_header_description (
 		#undef XX
 	}
 
-	return http_header_description (HTTP_HEADER_UNDEFINED);
+	return cerver_http_header_description (HTTP_HEADER_UNDEFINED);
 
 }
 
@@ -61,9 +61,9 @@ static unsigned int http_headers_hash (const char *name) {
 
 }
 
-static void http_headers_table_insert (const http_header type) {
+static void http_headers_table_insert (const CerverHttpHeader type) {
 
-	unsigned int slot = http_headers_hash (http_header_string (type)) & (HTTP_HEADERS_TABLE_SIZE - 1);
+	unsigned int slot = http_headers_hash (cerver_http_header_to_string (type)) & (HTTP_HEADERS_TABLE_SIZE - 1);
 	while (http_headers_table[slot]) {
 		slot = (slot + 1) & (HTTP_HEADERS_TABLE_SIZE - 1);
 	}
@@ -80,19 +80,19 @@ static void http_headers_table_init (void) {
 
 }
 
-const http_header http_header_type_with_string (
+const CerverHttpHeader cerver_http_header_with_string (
 	const char *header_type_string
 ) {
 
-	http_header found = HTTP_HEADER_UNDEFINED;
+	CerverHttpHeader found = HTTP_HEADER_UNDEFINED;
 
 	if (header_type_string) {
 		(void) pthread_once (&http_headers_table_once, http_headers_table_init);
 
 		unsigned int slot = http_headers_hash (header_type_string) & (HTTP_HEADERS_TABLE_SIZE - 1);
 		while (http_headers_table[slot]) {
-			const http_header candidate = (http_header) (http_headers_table[slot] - 1);
-			if (!strcasecmp (http_header_string (candidate), header_type_string)) {
+			const CerverHttpHeader candidate = (CerverHttpHeader) (http_headers_table[slot] - 1);
+			if (!strcasecmp (cerver_http_header_to_string (candidate), header_type_string)) {
 				found = candidate;
 				break;
 			}

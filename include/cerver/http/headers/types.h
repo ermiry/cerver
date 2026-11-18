@@ -130,13 +130,13 @@ extern "C" {
 /**
  * @brief A known header, one `HTTP_HEADER_<name>` for each row of #HTTP_HEADERS_MAP.
  */
-typedef enum http_header {
+typedef enum CerverHttpHeader {
 
 	#define XX(num, name, string, description) HTTP_HEADER_##name = num,
 	HTTP_HEADERS_MAP(XX)
 	#undef XX
 
-} http_header;
+} CerverHttpHeader;
 
 /**
  * @brief Returns the name of a header, like "Content-Type".
@@ -145,8 +145,8 @@ typedef enum http_header {
  * @return the name of its row in #HTTP_HEADERS_MAP, or "Undefined" for a value out of the table; a static string that
  * must not be freed
  */
-CERVER_PUBLIC const char *http_header_string (
-	const http_header header
+CERVER_PUBLIC const char *cerver_http_header_to_string (
+	const CerverHttpHeader header
 );
 
 /**
@@ -156,8 +156,8 @@ CERVER_PUBLIC const char *http_header_string (
  * @return the description of its row in #HTTP_HEADERS_MAP, or the one of HTTP_HEADER_UNDEFINED for a value out of
  * the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_header_description (
-	const http_header header
+CERVER_PUBLIC const char *cerver_http_header_description (
+	const CerverHttpHeader header
 );
 
 /**
@@ -167,7 +167,7 @@ CERVER_PUBLIC const char *http_header_description (
  * @return the type, HTTP_HEADER_UNDEFINED for a NULL or an unknown name
  * @threadsafety Safe from any thread, the table is built once with pthread_once ().
  */
-CERVER_PUBLIC const http_header http_header_type_with_string (
+CERVER_PUBLIC const CerverHttpHeader cerver_http_header_with_string (
 	const char *header_type_string
 );
 
