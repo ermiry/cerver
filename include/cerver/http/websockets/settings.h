@@ -119,7 +119,7 @@ typedef struct HttpWebSocketUpgrade {
 	bool adopt_decoded_data;
 
 	/** @brief The status of the response when the upgrade is rejected, 403 by default. */
-	http_status status;
+	CerverHttpStatus status;
 
 	/**
 	 * @brief The headers that the 101 adds after the ones of the handshake; they are of cerver,
@@ -161,10 +161,11 @@ typedef struct HttpWebSocketHandlers {
 	 * middlewares; it returns true to accept the connection, false to reject it with the status of the upgrade.
 	 *
 	 * It can answer the request itself and return false.
+	 *
+	 * @since 3.0b-12 it takes the context of the request, instead of its receive and its request.
 	 */
 	bool (*on_upgrade)(
-		const struct _HttpReceive *http_receive,
-		const struct _HttpRequest *request,
+		struct _HttpReceive *context,
 		HttpWebSocketUpgrade *upgrade
 	);
 

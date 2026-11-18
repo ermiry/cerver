@@ -10,6 +10,8 @@
 #include "cerver/core/cerver.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/types.h"
+#include "cerver/http/routes/internal.h"
 #include "cerver/http/routes/tree.h"
 #include "cerver/http/websockets/frame.h"
 #include "cerver/http/websockets/internal.h"
