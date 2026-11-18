@@ -1051,16 +1051,24 @@ static void http_response_send_failed (
 	// the client can not find the end of a response that was cut
 	((HttpReceive *) http_receive)->framed = false;
 
-	// a client that did not read in all the time of the response is taken as gone
-	(void) socket_end_on_send_timeout (http_receive->cr->connection->socket, error);
+	// the socket of a connection of an event loop is only used by its loop, that ends it; its response failed in
+	// its response stage only when some of its bytes left, which its connection knows
+	if (http_receive->connection) {
+		http_connection_response_failed (http_receive->connection);
+	}
 
-	http_receive_response_failed (http_receive, error);
+	// a client that did not read in all the time of the response is taken as gone
+	else {
+		(void) socket_end_on_send_timeout (http_receive->cr->connection->socket, error);
+
+		http_receive_response_failed (http_receive, error);
+	}
 
 }
 
-// how the bytes of a request leave: a thread that handles the request waits for a full socket
-// until the deadline of the response; the thread of an event loop never waits,
-// its connection keeps what the socket does not take and writes it later
+// how the bytes of a request leave: a thread that owns its connection sends them, and waits for a full socket
+// until the deadline of the response; the ones of a connection of an event loop are taken by the connection,
+// and its loop sends them (http_connection_send ()), whoever writes them: its loop or a thread of a pool
 // returns 0 on success, 1 on error
 static u8 http_response_transport_send (
 	const HttpReceive *http_receive, struct iovec *parts, const int n_parts,
@@ -1069,10 +1077,55 @@ static u8 http_response_transport_send (
 
 	HttpConnection *connection = http_receive->connection;
 
-	return (connection && http_connection_is_loop_owned (connection)) ?
+	return connection ?
 		http_connection_send (connection, parts, n_parts, sent, error) :
 		socket_send_vector_until (
 			http_receive->cr->connection->socket, parts, n_parts, 0,
+			http_response_send_deadline (http_receive), sent, error
+		);
+
+}
+
+// the bytes of a file of a connection of an event loop are sent by its loop too, after what was written before
+// them: the file is taken from where its offset says, or from where it is read now
+// returns 0 on success, 1 on error
+static u8 http_response_transport_send_file_loop (
+	HttpConnection *connection, const int file_fd, off_t *offset, const size_t remaining,
+	size_t *sent, int *error
+) {
+
+	u8 retval = 1;
+
+	const off_t start = offset ? *offset : lseek (file_fd, 0, SEEK_CUR);
+
+	if (start < 0) {
+		*error = errno;
+	}
+
+	else if (!http_connection_send_file (connection, file_fd, start, remaining, error)) {
+		*sent = remaining;
+
+		if (offset) *offset = start + (off_t) remaining;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// returns 0 on success, 1 on error
+static u8 http_response_transport_send_file (
+	const HttpReceive *http_receive, const int file_fd, off_t *offset, const size_t remaining,
+	size_t *sent, int *error
+) {
+
+	HttpConnection *connection = http_receive->connection;
+
+	return connection ?
+		http_response_transport_send_file_loop (connection, file_fd, offset, remaining, sent, error) :
+		socket_send_file_until (
+			http_receive->cr->connection->socket, file_fd, offset, remaining,
 			http_response_send_deadline (http_receive), sent, error
 		);
 
@@ -1119,31 +1172,40 @@ static void http_response_sent_bytes (
 	const HttpReceive *http_receive, const size_t bytes
 ) {
 
-	if (http_receive->cr->cerver)
-		CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, bytes);
-
-	http_receive->cr->connection->stats->total_bytes_sent += bytes;
-
 	HttpReceive *receive = (HttpReceive *) http_receive;
-	receive->sent += bytes;
 
-	// the first bytes of the response that its handler sends start the response stage
-	if (bytes && (receive->stage == HTTP_STAGE_HANDLER)) receive->stage = HTTP_STAGE_RESPONSE;
+	// the bytes that were given to the event loop of the connection have not left: its loop counts them when
+	// it sent them (http_receive_response_sent ()), or the ones that left of a response that failed
+	if (receive->connection) receive->response_written_bytes += bytes;
+	else http_receive_response_bytes (receive, bytes);
 
 }
 
+// a response was sent whole, or given whole to the event loop of its connection: the loop counts its status
+// when it sent it, so a response that failed is never counted with its status
 static void http_response_sent (
 	const HttpReceive *http_receive,
 	const http_status status, const size_t total_size
 ) {
 
-	((HttpReceive *) http_receive)->status = status;
-	((HttpReceive *) http_receive)->sent = 0;
+	HttpReceive *receive = (HttpReceive *) http_receive;
 
-	http_response_sent_bytes (http_receive, total_size);
+	receive->status = status;
 
-	if (http_receive->http_cerver && ((size_t) status < HTTP_CERVER_RESPONSES_STATUS_SIZE)) {
-		CERVER_STATS_ADD (http_receive->http_cerver->n_responses_by_status[status], 1);
+	if (receive->connection) {
+		receive->response_written = true;
+
+		http_response_sent_bytes (http_receive, total_size);
+	}
+
+	else {
+		receive->sent = 0;
+
+		http_response_sent_bytes (http_receive, total_size);
+
+		if (http_receive->http_cerver && ((size_t) status < HTTP_CERVER_RESPONSES_STATUS_SIZE)) {
+			CERVER_STATS_ADD (http_receive->http_cerver->n_responses_by_status[status], 1);
+		}
 	}
 
 }
@@ -2424,9 +2486,8 @@ static u8 http_response_send_file_pipe (
 
 	size_t sent = 0;
 	int error = 0;
-	u8 retval = socket_send_file_until (
-		http_receive->cr->connection->socket, file_fd, offset, remaining,
-		http_response_send_deadline (http_receive), &sent, &error
+	u8 retval = http_response_transport_send_file (
+		http_receive, file_fd, offset, remaining, &sent, &error
 	);
 
 	*total_sent += sent;
