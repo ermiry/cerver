@@ -7,7 +7,6 @@ services:
     command: ["../bin/web/features"]
     environment:
       CERVER_TEST_ADDRESS: "::"
-      CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
       CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
@@ -22,7 +21,6 @@ services:
     profiles: ["restart"]
     environment:
       CERVER_TEST_ADDRESS: "::"
-      CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
       CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
@@ -37,7 +35,6 @@ services:
     restart: always
     environment:
       CERVER_TEST_ADDRESS: "::"
-      CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
       CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
@@ -53,7 +50,6 @@ services:
     profiles: ["pair"]
     environment:
       CERVER_TEST_ADDRESS: "::"
-      CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
       CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
       DISCONNECT_CRASH: "1"
@@ -68,7 +64,6 @@ services:
     command: ["../bin/web/websocket"]
     environment:
       CERVER_TEST_ADDRESS: "::"
-      CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
       CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0

@@ -6,7 +6,7 @@ BUILD=${BUILD:-1}
 
 NGINX_IMAGES=(${NGINX_IMAGES:-nginx:1.31.6-alpine nginx:1.30.6-alpine})
 CONFIGS=(${CONFIGS:-direct services pair restart})
-HANDLERS=(${HANDLERS:-threads uring epoll keep})
+BACKENDS=(${BACKENDS:-uring epoll})
 
 PROJECT=${PROJECT:-cerver-nginx}
 COMPOSE="$DOCKER compose -p $PROJECT -f test/nginx/docker-compose.yml"
@@ -25,7 +25,6 @@ PAUSE_SECONDS=10
 METRICS_PATH=/features/cerver/metrics
 REUSED_METRIC=cerver_http_reused_connections_total
 REUSED_MINIMUM_PERCENT=90
-REUSED_MINIMUM_PERCENT_THREADS=1
 
 RESTART_SERVICES=(cerver cerver-2)
 RESTART_PATH=/features/small
@@ -92,9 +91,7 @@ nginx_metric () {
 	run_in_nginx | tr -d '\r' | sed -nE "s/^$1 ([0-9]+)$/\1/p"
 }
 
-# the requests of the load that reached the cerver through a connection that it had kept:
-# most of them with event loops, some of them with threads (a cerver with threads keeps one idle connection
-# for each thread, and it closes the others after their response), none when it closes each one
+# the requests of the load that reached the cerver through a connection that it had kept: most of them
 nginx_reuse () {
 	local reused=$(nginx_metric $REUSED_METRIC)
 	local requests=$(( THREADS * REQUESTS_PER_THREAD * ROUNDS * ${#PATHS_UNDER_TEST[@]} ))
@@ -103,18 +100,7 @@ nginx_reuse () {
 
 	[[ "$reused" =~ ^[0-9]+$ ]] || return 1
 
-	if [ "$(nginx_handler_keeps "$HANDLER")" -ne 0 ]; then
-		[ "$reused" -ge $(( requests * $(nginx_handler_reused_percent "$HANDLER") / 100 )) ]
-	else
-		[ "$reused" -eq 0 ]
-	fi
-}
-
-nginx_handler_reused_percent () {
-	case "$1" in
-		keep) echo "$REUSED_MINIMUM_PERCENT_THREADS" ;;
-		*) echo "$REUSED_MINIMUM_PERCENT" ;;
-	esac
+	[ "$reused" -ge $(( requests * REUSED_MINIMUM_PERCENT / 100 )) ]
 }
 
 nginx_restarts () {
@@ -189,35 +175,6 @@ nginx_config_profiles () {
 	esac
 }
 
-nginx_handler_type () {
-	case "$1" in
-		keep) echo "threads" ;;
-		uring|epoll) echo "events" ;;
-		*) echo "$1" ;;
-	esac
-}
-
-nginx_handler_backend () {
-	case "$1" in
-		uring|epoll) echo "$1" ;;
-		*) echo "" ;;
-	esac
-}
-
-nginx_handler_keep_alive () {
-	case "$1" in
-		keep) echo "1" ;;
-		*) echo "" ;;
-	esac
-}
-
-nginx_handler_keeps () {
-	case "$1" in
-		threads) echo "0" ;;
-		*) echo "1" ;;
-	esac
-}
-
 nginx_disconnect_at () {
 	COMMAND="./test/bin/client/web/disconnect"
 	run_in_nginx \
@@ -263,12 +220,10 @@ nginx_direct () {
 nginx_run () {
 	local failed=0
 
-	echo "---- $NGINX_IMAGE - $CONFIG - $HANDLER ----"
+	echo "---- $NGINX_IMAGE - $CONFIG - $BACKEND ----"
 
 	export IMAGE NGINX_IMAGE
-	export CERVER_TEST_HANDLER="$(nginx_handler_type "$HANDLER")"
-	export CERVER_TEST_BACKEND="$(nginx_handler_backend "$HANDLER")"
-	export CERVER_TEST_KEEP_ALIVE="$(nginx_handler_keep_alive "$HANDLER")"
+	export CERVER_TEST_BACKEND="$BACKEND"
 	export NGINX_CONF="$(nginx_config_file "$CONFIG")"
 	export COMPOSE_PROFILES="$(nginx_config_profiles "$CONFIG")"
 
@@ -301,8 +256,8 @@ nginx_run () {
 FAILED=0
 for NGINX_IMAGE in "${NGINX_IMAGES[@]}"; do
 	for CONFIG in "${CONFIGS[@]}"; do
-		for HANDLER in "${HANDLERS[@]}"; do
-			nginx_run || { echo "$NGINX_IMAGE - $CONFIG - $HANDLER: failed"; FAILED=1; }
+		for BACKEND in "${BACKENDS[@]}"; do
+			nginx_run || { echo "$NGINX_IMAGE - $CONFIG - $BACKEND: failed"; FAILED=1; }
 		done
 	done
 done
