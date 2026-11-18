@@ -123,6 +123,8 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 	(void) memset (settings->pool_name, 0, HTTP_POOL_NAME_SIZE);
 	settings->pool = NULL;
 
+	settings->client_certificate = HTTP_CLIENT_CERTIFICATE_NONE;
+
 	http_middlewares_init (&settings->middlewares);
 
 	http_web_socket_settings_init (&settings->web_socket);
