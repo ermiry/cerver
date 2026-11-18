@@ -73,6 +73,26 @@ typedef struct HttpRequestParam {
 
 } HttpRequestParam;
 
+struct TlsCertificate;
+
+/**
+ * @brief What the TLS of its connection tells of a request; empty in a plain connection.
+ *
+ * @since 2.1b-22
+ */
+typedef struct HttpRequestTls {
+
+	/** @brief The connection uses TLS. */
+	bool secure;
+	/** @brief The name that the client asked for (SNI), NULL without it; it lives with the connection. */
+	const char *server_name;
+	/** @brief The request arrived as early data of TLS 1.3 (0-RTT): it can be a replay (RFC 8470). */
+	bool early_data;
+	/** @brief The certificate that the client presented and that verified, NULL without one; it lives with the connection. */
+	struct TlsCertificate *client_certificate;
+
+} HttpRequestTls;
+
 /**
  * @brief A request.
  */
@@ -80,6 +100,13 @@ struct _HttpRequest {
 
 	/** @brief The method. */
 	RequestMethod method;
+
+	/**
+	 * @brief What the TLS of the connection tells: SNI, the early data and the certificate of the client.
+	 *
+	 * @since 2.1b-22
+	 */
+	HttpRequestTls tls;
 
 	/** @brief The path of the url. */
 	String *url;
@@ -294,6 +321,17 @@ CERVER_EXPORT const char *http_request_get_client_ip (
  */
 CERVER_PRIVATE void http_request_resolve_id (
 	HttpRequest *http_request
+);
+
+/**
+ * @brief Returns the certificate that the client of a request presented with TLS (mTLS) and that verified.
+ *
+ * @param[in] http_request the request
+ * @return the certificate, owned by the connection; NULL without TLS, without one, or one that did not verify
+ * @since 2.1b-22
+ */
+CERVER_EXPORT const struct TlsCertificate *http_request_get_client_certificate (
+	const HttpRequest *http_request
 );
 
 /**

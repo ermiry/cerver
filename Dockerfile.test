@@ -5,7 +5,7 @@ ARG COVERAGE=0
 ARG ZLIB=1
 ARG WERROR=1
 
-RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev zlib1g-dev gdb && apt-get clean
+RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev zlib1g-dev gdb softhsm2 pkcs11-provider && apt-get clean
 
 WORKDIR /opt/cerver
 

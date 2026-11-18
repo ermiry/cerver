@@ -1979,7 +1979,8 @@ u8 packet_route_between_connections (
 
 	u8 retval = 1;
 
-	if (from && to && header) {
+	// splice () moves the bytes of the fds: a socket with TLS has records, never the plaintext of a packet
+	if (from && to && header && !from->socket->tls && !to->socket->tls) {
 		u8 encoded[PACKET_HEADER_SIZE];
 		packet_header_encode (header, encoded);
 

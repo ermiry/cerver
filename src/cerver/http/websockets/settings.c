@@ -265,7 +265,20 @@ void http_web_socket_settings_inherit (
 			resolved->overflow = source->overflow;
 		}
 
+		if (missing & HTTP_WEB_SOCKET_SETTING_LOOP_CALLBACKS) resolved->loop_callbacks = source->loop_callbacks;
+
 		resolved->set |= missing;
+	}
+
+}
+
+void http_web_socket_settings_set_loop_callbacks (
+	HttpWebSocketSettings *settings, const bool loop_callbacks
+) {
+
+	if (settings) {
+		settings->loop_callbacks = loop_callbacks;
+		settings->set |= HTTP_WEB_SOCKET_SETTING_LOOP_CALLBACKS;
 	}
 
 }

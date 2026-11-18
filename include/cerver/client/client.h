@@ -373,6 +373,13 @@ struct _Client {
 	/** @brief The next deleted client that waits to be reused. */
 	struct _Client *recycle_next;
 
+	/**
+	 * @brief The TLS of the TCP connections of the client, NULL without it (see client_set_tls ()).
+	 *
+	 * @since 2.1b-22
+	 */
+	struct _ClientTls *tls;
+
 };
 
 /** @brief A client, see struct _Client. */

@@ -8,8 +8,10 @@ PYTHON_IMAGE=${PYTHON_IMAGE:-gcc:16.2}
 REPORTS=${REPORTS:-autobahn-reports}
 MODES=(${MODES:-server client})
 HANDLER=${HANDLER:-threads}
+SCHEME=${SCHEME:-ws}
 NETWORK=${NETWORK:-cerver-autobahn}
 WAIT_SECONDS=${WAIT_SECONDS:-60}
+CERTIFICATES=${CERTIFICATES:-autobahn-certificates}
 
 AUTOBAHN_PORT=9001
 SERVER=cerver-autobahn-server
@@ -21,6 +23,22 @@ if [ -n "$SANITIZER" ]; then
 fi
 
 IMAGE=${IMAGE:-ermiry/cerver:$TAG}
+
+if [ "$SCHEME" = "wss" ] && [ "$HANDLER" != "threads" ]; then
+	echo "wss:// needs HANDLER=threads, EVENTS has no TLS"
+	exit 1
+fi
+
+SUFFIX=""
+SERVER_TLS=()
+CLIENT_TLS=()
+CERTIFICATES_VOLUME=()
+if [ "$SCHEME" = "wss" ]; then
+	SUFFIX="-wss"
+	CERTIFICATES_VOLUME=(-v "$(pwd)/$CERTIFICATES:/certificates:ro")
+	SERVER_TLS=(-e TLS_CERTIFICATE=/certificates/server.pem -e TLS_KEY=/certificates/server.key)
+	CLIENT_TLS=(-e TLS_AUTHORITY=/certificates/authority.pem)
+fi
 
 if [ "$BUILD" -ne 0 ]; then
 	echo "Building $IMAGE..."
@@ -38,6 +56,14 @@ RUN_FLAGS=(
 cleanup () {
 	$DOCKER rm -f "$SERVER" "$FUZZER" > /dev/null 2>&1
 	$DOCKER network rm "$NETWORK" > /dev/null 2>&1
+}
+
+certificates_create () {
+	rm -rf "$CERTIFICATES"
+	mkdir -p "$CERTIFICATES" || return 1
+
+	$DOCKER run --rm -v "$(pwd)/$CERTIFICATES:/certificates" "$IMAGE" \
+		bash test/tls/certificates.sh /certificates cerver autobahn localhost 127.0.0.1
 }
 
 wait_listening () {
@@ -61,17 +87,17 @@ fuzzer_report () {
 }
 
 run_server () {
-	echo "Autobahn fuzzingclient against the server of cerver with $HANDLER..."
+	echo "Autobahn fuzzingclient against the server of cerver with $HANDLER ($SCHEME)..."
 
-	$DOCKER run -d --name "$SERVER" --network-alias cerver "${RUN_FLAGS[@]}" \
-		-e CERVER_TEST_ADDRESS=0.0.0.0 -e CERVER_TEST_HANDLER="$HANDLER" -w /opt/cerver/test/web \
+	$DOCKER run -d --name "$SERVER" --network-alias cerver "${RUN_FLAGS[@]}" "${CERTIFICATES_VOLUME[@]}" \
+		-e CERVER_TEST_ADDRESS=0.0.0.0 -e CERVER_TEST_HANDLER="$HANDLER" "${SERVER_TLS[@]}" -w /opt/cerver/test/web \
 		"$IMAGE" ../bin/web/autobahn > /dev/null || return 1
 
 	wait_listening "$SERVER" || { $DOCKER logs "$SERVER" | tail -n 64; return 1; }
 
 	$DOCKER run --name "$FUZZER" --platform linux/amd64 --network "$NETWORK" \
 		-v "$(pwd)/test/autobahn:/config" -v "$(pwd)/$REPORTS:/reports" \
-		"$AUTOBAHN" wstest -m fuzzingclient -s /config/fuzzingclient.json > "$REPORTS/server.log" 2>&1
+		"$AUTOBAHN" wstest -m fuzzingclient -s "/config/fuzzingclient$SUFFIX.json" > "$REPORTS/server.log" 2>&1
 	local result=$?
 
 	if [ "$result" -ne 0 ]; then
@@ -94,15 +120,16 @@ run_server () {
 }
 
 run_client () {
-	echo "Autobahn fuzzingserver against the client of cerver..."
+	echo "Autobahn fuzzingserver against the client of cerver ($SCHEME)..."
 
 	$DOCKER run -d --name "$FUZZER" --platform linux/amd64 --network "$NETWORK" --network-alias autobahn \
-		-v "$(pwd)/test/autobahn:/config" -v "$(pwd)/$REPORTS:/reports" \
-		"$AUTOBAHN" wstest -m fuzzingserver -s /config/fuzzingserver.json > /dev/null || return 1
+		-v "$(pwd)/test/autobahn:/config" -v "$(pwd)/$REPORTS:/reports" "${CERTIFICATES_VOLUME[@]}" \
+		"$AUTOBAHN" wstest -m fuzzingserver -s "/config/fuzzingserver$SUFFIX.json" > /dev/null || return 1
 
 	wait_listening "$FUZZER" || { $DOCKER logs "$FUZZER" | tail -n 64; return 1; }
 
-	$DOCKER run --rm "${RUN_FLAGS[@]}" -e AUTOBAHN_URL="ws://autobahn:$AUTOBAHN_PORT" \
+	$DOCKER run --rm "${RUN_FLAGS[@]}" "${CERTIFICATES_VOLUME[@]}" "${CLIENT_TLS[@]}" \
+		-e AUTOBAHN_URL="$SCHEME://autobahn:$AUTOBAHN_PORT" \
 		"$IMAGE" ./test/bin/client/web/autobahn > "$REPORTS/client-cerver.log" 2>&1
 	local result=$?
 
@@ -126,6 +153,10 @@ rm -rf "$REPORTS"
 mkdir -p "$REPORTS"
 chmod 777 "$REPORTS"
 
+if [ "$SCHEME" = "wss" ]; then
+	certificates_create || { echo "the certificates could not be made"; exit 1; }
+fi
+
 $DOCKER network create "$NETWORK" > /dev/null || exit 1
 
 FAILED=()
@@ -139,6 +170,7 @@ for mode in "${MODES[@]}"; do
 done
 
 cleanup
+rm -rf "$CERTIFICATES"
 
 if [ ${#INDEXES[@]} -gt 0 ]; then
 	if ! $DOCKER run --rm -v "$(pwd):/src" -w /src "$PYTHON_IMAGE" python3 test/autobahn/check.py "${INDEXES[@]}"; then

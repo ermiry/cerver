@@ -1,0 +1,27 @@
+services:
+  cerver-tls:
+    image: ${IMAGE:-ermiry/cerver:test}
+    working_dir: /opt/cerver/test/web
+    command: ["../bin/web/tls"]
+    environment:
+      CERVER_TEST_ADDRESS: "::"
+      CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
+      TLS_CERTIFICATE: /certificates/server.pem
+      TLS_KEY: /certificates/server.key
+      TLS_CLIENT_AUTHORITY: /certificates/authority.pem
+      TLS_KTLS: ${TLS_KTLS:-}
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 0
+    volumes:
+      - ${CERTIFICATES:?}:/certificates:ro
+
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:1.31.6-alpine}
+    depends_on:
+      cerver-tls:
+        condition: service_started
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 0
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${CERTIFICATES:?}:/certificates:ro

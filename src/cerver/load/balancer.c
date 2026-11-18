@@ -24,6 +24,9 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/client.h"
+#include "cerver/tls/tls.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -141,6 +144,13 @@ void balancer_delete (void *balancer_ptr) {
 BalancerType balancer_get_type (const Balancer *balancer) {
 
 	return balancer ? balancer->type : BALANCER_TYPE_NONE;
+
+}
+
+// the services are connections of the client of the balancer
+u8 balancer_set_services_tls (Balancer *balancer, TlsSettings *settings) {
+
+	return client_set_tls (balancer ? balancer->client : NULL, settings);
 
 }
 

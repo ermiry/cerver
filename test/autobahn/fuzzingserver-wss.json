@@ -1,0 +1,9 @@
+{
+	"url": "wss://0.0.0.0:9001",
+	"key": "/certificates/server.key",
+	"cert": "/certificates/server.pem",
+	"outdir": "/reports/client",
+	"cases": ["*"],
+	"exclude-cases": [],
+	"exclude-agent-cases": {}
+}

@@ -47,7 +47,7 @@ typedef enum BalancerReceiveResult {
 // and nothing was received, a packet that stops in the middle fails
 // after BALANCER_RECEIVE_MAX_TIMEOUTS timeouts
 static BalancerReceiveResult balancer_receive_exact (
-	const int sock_fd, char *buffer, const size_t size,
+	Socket *socket, char *buffer, const size_t size,
 	const bool allow_idle
 ) {
 
@@ -56,7 +56,7 @@ static BalancerReceiveResult balancer_receive_exact (
 	size_t received = 0;
 	unsigned int timeouts = 0;
 	while ((result == BALANCER_RECEIVE_RESULT_DONE) && (received < size)) {
-		ssize_t rc = recv (sock_fd, buffer + received, size - received, 0);
+		ssize_t rc = socket_receive (socket, buffer + received, size - received, 0);
 		if (rc > 0) {
 			received += (size_t) rc;
 			timeouts = 0;
@@ -129,14 +129,14 @@ static inline bool balancer_header_is_valid (
 // receives the bytes of a header and decodes them,
 // a header that can not be decoded is a bad packet, the result is BALANCER_RECEIVE_RESULT_BAD
 static BalancerReceiveResult balancer_receive_header (
-	const int sock_fd, PacketHeader *header
+	Socket *socket, PacketHeader *header
 ) {
 
 	u8 encoded[PACKET_HEADER_SIZE] = { 0 };
 	(void) memset (header, 0, sizeof (PacketHeader));
 
 	BalancerReceiveResult result = balancer_receive_exact (
-		sock_fd, (char *) encoded, PACKET_HEADER_SIZE, true
+		socket, (char *) encoded, PACKET_HEADER_SIZE, true
 	);
 
 	if (
@@ -153,7 +153,7 @@ static BalancerReceiveResult balancer_receive_header (
 // receives the body of a packet, the caller frees it
 // returns 0 on success, 1 on error
 static u8 balancer_receive_body (
-	const int sock_fd, const PacketHeader *header,
+	Socket *socket, const PacketHeader *header,
 	char **body, size_t *body_size
 ) {
 
@@ -164,7 +164,7 @@ static u8 balancer_receive_body (
 
 	if (*body_size) {
 		*body = (char *) malloc (*body_size);
-		if (!*body || balancer_receive_exact (sock_fd, *body, *body_size, false)) {
+		if (!*body || balancer_receive_exact (socket, *body, *body_size, false)) {
 			free (*body);
 			*body = NULL;
 			retval = 1;
@@ -628,7 +628,7 @@ u8 balancer_receive (CerverReceive *cr) {
 	Balancer *balancer = cr->cerver->balancer;
 
 	PacketHeader header;
-	switch (balancer_receive_header (cr->socket->sock_fd, &header)) {
+	switch (balancer_receive_header (cr->socket, &header)) {
 		case BALANCER_RECEIVE_RESULT_DONE: {
 			char *body = NULL;
 			size_t body_size = 0;
@@ -638,7 +638,7 @@ u8 balancer_receive (CerverReceive *cr) {
 				balancer_receive_bad_packet (balancer, &header);
 			}
 
-			else if (!balancer_receive_body (cr->socket->sock_fd, &header, &body, &body_size)) {
+			else if (!balancer_receive_body (cr->socket, &header, &body, &body_size)) {
 				retval = balancer_receive_handle (cr, balancer, &header, body, body_size);
 
 				free (body);
@@ -785,7 +785,7 @@ u8 balancer_client_receive (
 	Connection *connection = custom_data->connection;
 
 	PacketHeader header;
-	switch (balancer_receive_header (connection->socket->sock_fd, &header)) {
+	switch (balancer_receive_header (connection->socket, &header)) {
 		case BALANCER_RECEIVE_RESULT_DONE: {
 			char *body = NULL;
 			size_t body_size = 0;
@@ -795,7 +795,7 @@ u8 balancer_client_receive (
 				balancer_client_bad_packet (bs, &header);
 			}
 
-			else if (!balancer_receive_body (connection->socket->sock_fd, &header, &body, &body_size)) {
+			else if (!balancer_receive_body (connection->socket, &header, &body, &body_size)) {
 				balancer_client_receive_success (bs, connection, &header, body, body_size);
 
 				free (body);

@@ -165,6 +165,37 @@ CERVER_PUBLIC const char *http_trailing_slash_description (
  * @since 2.1b-17
  */
 #define HTTP_ROUTE_SETTING_POOL						(1 << 10)
+/**
+ * @brief What is asked of the certificate of the client was set.
+ *
+ * @since 2.1b-22
+ */
+#define HTTP_ROUTE_SETTING_CLIENT_CERTIFICATE		(1 << 11)
+
+/**
+ * @brief The X-macro table of what an endpoint asks of the certificate of the client (mTLS): the number, the name and
+ * the description of each one.
+ *
+ * TLS 1.3 never renegotiates (RFC 8740), so the cerver asks for the certificate in its handshake
+ * (tls_settings_set_client_verify () with TLS_CLIENT_VERIFY_OPTIONAL) and an endpoint only checks that it came.
+ */
+#define HTTP_CLIENT_CERTIFICATE_MAP(XX)																	\
+	XX(0,	NONE,		The endpoint does not need a certificate)											\
+	XX(1,	REQUIRED,	A request without a certificate that verified is answered with 403)
+
+/**
+ * @brief What an endpoint asks of the certificate of the client, one `HTTP_CLIENT_CERTIFICATE_<name>` for each row
+ * of #HTTP_CLIENT_CERTIFICATE_MAP.
+ *
+ * @since 2.1b-22
+ */
+typedef enum HttpClientCertificate {
+
+	#define XX(num, name, description) HTTP_CLIENT_CERTIFICATE_##name = num,
+	HTTP_CLIENT_CERTIFICATE_MAP (XX)
+	#undef XX
+
+} HttpClientCertificate;
 
 /**
  * @brief The size of the name of a pool of threads (http/core/pool.h), with its end.
@@ -236,6 +267,13 @@ struct _HttpRouteSettings {
 	 * @since 2.1b-17
 	 */
 	struct HttpPool *pool;
+
+	/**
+	 * @brief What is asked of the certificate of the client.
+	 *
+	 * @since 2.1b-22
+	 */
+	HttpClientCertificate client_certificate;
 
 	/** @brief The middlewares. */
 	HttpMiddlewares middlewares;
@@ -469,6 +507,18 @@ CERVER_EXPORT void http_endpoint_set_etag (
  */
 CERVER_EXPORT void http_endpoint_set_compression (
 	HttpEndpoint *endpoint, const bool compression
+);
+
+/**
+ * @brief Sets what an endpoint asks of the certificate of the client (mTLS).
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] certificate HTTP_CLIENT_CERTIFICATE_REQUIRED answers 403 to a request without a certificate that
+ * verified; the cerver must ask for it (tls_settings_set_client_verify () with TLS_CLIENT_VERIFY_OPTIONAL)
+ * @since 2.1b-22
+ */
+CERVER_EXPORT void http_endpoint_set_client_certificate (
+	HttpEndpoint *endpoint, const HttpClientCertificate certificate
 );
 
 /**
@@ -831,6 +881,18 @@ CERVER_EXPORT void http_group_set_etag (
  */
 CERVER_EXPORT void http_group_set_compression (
 	HttpGroup *group, const bool compression
+);
+
+/**
+ * @brief Sets what the endpoints of a group ask of the certificate of the client, like
+ * http_endpoint_set_client_certificate ().
+ *
+ * @param[in,out] group the group
+ * @param[in] certificate what is asked
+ * @since 2.1b-22
+ */
+CERVER_EXPORT void http_group_set_client_certificate (
+	HttpGroup *group, const HttpClientCertificate certificate
 );
 
 /**

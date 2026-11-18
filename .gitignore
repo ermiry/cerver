@@ -6,9 +6,12 @@ coverage
 coverage-integration
 data
 
+autobahn-certificates
 autobahn-reports
 fuzz-artifacts
+nginx-tls-certificates
 repeat-artifacts
+testssl-reports
 
 keys
 logs

@@ -185,10 +185,40 @@ typedef struct HttpWebSocketTransport {
 	/** @internal @brief The file descriptor that a poller watches, -1 without one. */
 	int (*fd) (const struct _HttpWebSocket *web_socket);
 
+	/**
+	 * @internal
+	 * @brief Whether a read gives bytes without the fd being readable (TLS: a record that was decrypted already).
+	 * @since 2.1b-22
+	 */
+	bool (*pending) (const struct _HttpWebSocket *web_socket);
+
+	/**
+	 * @internal
+	 * @brief The bytes that the transport keeps to send (TLS: the encrypted ones that the socket did not take);
+	 * they count in the queue, so its limit and its backpressure see them.
+	 * @since 2.1b-22
+	 */
+	size_t (*waiting) (const struct _HttpWebSocket *web_socket);
+
+	/**
+	 * @internal
+	 * @brief Sends what the transport keeps, without waiting: the bytes that still wait, -1 with errno.
+	 * @since 2.1b-22
+	 */
+	ssize_t (*flush) (struct _HttpWebSocket *web_socket);
+
 } HttpWebSocketTransport;
 
 /** @internal @brief The transport of the connections over a socket. */
 CERVER_HIDDEN const HttpWebSocketTransport http_web_socket_socket_transport;
+
+/**
+ * @internal
+ * @brief The transport of the connections over TLS: a write encrypts every byte into the output of the TLS of the
+ * socket (it takes them all), and the encrypted bytes that the socket does not take wait there.
+ * @since 2.1b-22
+ */
+CERVER_HIDDEN const HttpWebSocketTransport http_web_socket_tls_transport;
 
 /** @internal @brief What an event of a connection that its pool runs is (http/websockets/loop.c). */
 typedef enum HttpWebSocketEventType {
@@ -1351,6 +1381,11 @@ CERVER_PUBLIC bool http_web_socket_client_response_check (
  * @brief A WebSocket client.
  */
 struct _HttpWebSocketClient {
+
+	/** @internal @brief The url is a wss:// one: the client connects with TLS. */
+	bool secure;
+	/** @internal @brief The TLS of the client, made with the default settings for a wss:// url without one. */
+	struct _ClientTls *tls;
 
 	/** @internal @brief The host of the url. */
 	char host[HTTP_WEB_SOCKET_CLIENT_HOST_SIZE];

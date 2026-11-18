@@ -6,7 +6,7 @@
 
 **Cerver** is a framework, created by Ermiry, to build fast and reliable servers in C, also usable from C++. It is a single shared library, `libcerver.so`, with everything that a server needs out of the box: sockets and connections, the packets of its own protocol, handlers and threads, authentication and sessions, a load balancer, file transfers, game lobbies, an HTTP server and the collections and utilities that all of them are built with.
 
-This is the 2.1 line, the experimental one: the HTTP server of the 2.0 with an event loop, real keep alive, named pools and WebSocket. It can break its API for a better design, and every break is in [incompatibilities.md](./incompatibilities.md). It depends on pthreads and OpenSSL, and optionally on zlib for the compression of the HTTP responses and of the WebSocket messages.
+This is the 2.1 line, the experimental one: the HTTP server of the 2.0 with an event loop, real keep alive, named pools, WebSocket and TLS. It can break its API for a better design, and every break is in [incompatibilities.md](./incompatibilities.md). It depends on pthreads and OpenSSL, and optionally on zlib for the compression of the HTTP responses and of the WebSocket messages.
 
 ## Goal
 
@@ -27,8 +27,9 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 - **Handlers** for the packets of the application, by packet type, by request type or with multiple handlers by id, each one with its own queue and stats
 - **Authentication and sessions**, with credentials or session tokens, and an on hold stage for the connections that have not authenticated
 - **Admins**, a dedicated connection for monitoring and controlling a cerver
-- **A load balancer** that routes the packets of its clients to its services, round robin, by handler id or with a custom selection, and reconnects to the services that go down
+- **A load balancer** that routes the packets of its clients to its services, round robin, by handler id or with a custom selection, and reconnects to the services that go down; with TLS in front of its clients and to its services
 - **Files**: send and receive files with their headers, using `sendfile ()`
+- **TLS** 1.2 and 1.3 (RFC 9325) in every TCP cerver and client, with OpenSSL 3 as the provider: SNI with many certificates, ALPN, mTLS, session tickets that rotate, 0-RTT with 425, OCSP stapling, keys in a PKCS#11 token, kTLS for what is sent, and reloads of the certificates by the API, a signal or a watch of their files without a restart
 - **Games**: game types, lobbies with their players, scores and the requests to create, join, leave and start a game
 - **Threads**: thread groups, a bounded thread pool with stats, job queues with priorities, workers and a worker manager that scales them
 - **Collections**: lists, trees, hash tables, queues, pools, arenas and free lists
@@ -41,7 +42,8 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 - **An HTTP/1.1 server** in a `CERVER_TYPE_WEB` cerver, with keep alive, pipelining and limits for the headers and the body, parsed with llhttp in its strict mode
 - **Two models**: `CERVER_HANDLER_TYPE_THREADS`, a thread for each connection that is read, or `CERVER_HANDLER_TYPE_EVENTS`, event loops with epoll that read and parse every connection without waiting and give the requests to the pools, with the connections that are kept waiting in their loop and a wait or a 503 when the pools are full
 - **Named pools** for the endpoints that must not wait for the others, with health and ready routes
-- **WebSocket** (RFC 6455) with permessage-deflate (RFC 7692), in endpoints and groups, with subprotocols, the origins, ping and pong, rooms, broadcasts, a bounded output queue with backpressure in each connection, and a client with reconnection; with the event loop a connection lives in its loop and its methods run in the pool of its endpoint
+- **WebSocket** (RFC 6455) with permessage-deflate (RFC 7692), in endpoints and groups, with subprotocols, the origins, ping and pong, rooms, broadcasts, a bounded output queue with backpressure in each connection, and a client with reconnection and `wss://`; with the event loop a connection lives in its loop and its methods run in the pool of its endpoint (or in its loop, for short methods)
+- **TLS for HTTP** with the threads model: the name that the client asked for, the certificate of the client in each request, endpoints and groups that require it, and the authentication by certificate
 - **Routes** in a radix tree, with groups that pass their settings to their subgroups and endpoints, path parameters with validators, wildcards, middlewares, and automatic `OPTIONS`, 405 and 308 responses
 - **JWT authentication** with HMAC, RSA or ECDSA keys (HS, RS and ES of 256, 384 and 512 bits), validated against their algorithm when the cerver starts
 - **Uploads** of multipart forms, with their own limits and a path that never keeps the files of a request that failed
@@ -61,7 +63,7 @@ Zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IP
 |---|---|---|
 | **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver, without HTTP |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus the HTTP server. It reaches `master` with the release 2.0 |
-| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, named pools and WebSocket; then TLS and HTTP/2 (its [roadmap](./roadmap.md)) |
+| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, named pools, WebSocket and TLS over threads; then TLS in the loop and HTTP/2 (its [roadmap](./roadmap.md)) |
 | **3.0** | `labs` (development), `labs-beta` | The next major line, with cerver's own code in place of the code of other projects |
 
 The changes between versions are in [CHANGELOG.md](./CHANGELOG.md) and [incompatibilities.md](./incompatibilities.md).
@@ -244,9 +246,12 @@ bash test/nginx/run.sh                                  # the web cervers behind
 bash test/disconnect.sh                                 # the clients that leave in every part of a request
 bash test/performance.sh                                # the allocations, the requests per second and the WebSocket messages in both models
 bash test/autobahn/run.sh                               # autobahn-testsuite against the WebSocket server and client
+SCHEME=wss bash test/autobahn/run.sh                    # the same over TLS
+bash test/nginx/tls/run.sh                              # nginx in front of a web cerver with TLS
+bash test/tls/testssl.sh                                # testssl.sh against the defaults of TLS
 ```
 
-`CERVER_TEST_HANDLER=events` runs the web tests with the event loop, and `test/run.sh` runs the WebSocket ones in both models.
+`CERVER_TEST_HANDLER=events` runs the web tests with the event loop, and `test/run.sh` runs the WebSocket ones in both models. `test/bin/tls` makes its certificates in each run and tests TLS against raw clients of OpenSSL, with OCSP and a PKCS#11 token of SoftHSM2 when the image has them.
 
 Build the image with `--build-arg SANITIZER=address,undefined` (or `thread`) to run them with the sanitizers.
 

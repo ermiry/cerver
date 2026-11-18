@@ -95,6 +95,10 @@
 #include "cerver/threads/thread.h"
 #include "cerver/threads/worker.h"
 
+#include "cerver/tls/cerver.h"
+#include "cerver/tls/client.h"
+#include "cerver/tls/tls.h"
+
 #include "cerver/utils/base64.h"
 #include "cerver/utils/histogram.h"
 #include "cerver/utils/log.h"

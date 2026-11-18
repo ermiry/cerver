@@ -34,6 +34,8 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -297,6 +299,8 @@ Client *client_new (void) {
 		client->stats = NULL;
 
 		client->recycle_next = NULL;
+
+		client->tls = NULL;
 	}
 
 	return client;
@@ -335,6 +339,9 @@ void client_delete (void *ptr) {
 			str_delete (client->paths[i]);
 
 		str_delete (client->uploads_path);
+
+		client_tls_delete (client->tls);
+		client->tls = NULL;
 
 		// the stats, the lock and the synchronization values live inside the client
 		client_recycle (client);

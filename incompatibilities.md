@@ -3,6 +3,60 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-22 (from 2.1b-21)
+
+TLS over threads and in the clients (F8a of `roadmap.md` §4.8): every TCP cerver (`CUSTOM`, `GAME`, `WEB`, `FILES`,
+`BALANCER`) and every client (TCP, `wss://`, the balancer towards its services) can use TLS 1.2 and 1.3 through the
+provider of the cryptography (OpenSSL 3). A cerver or a client without TLS behaves as before; the structs below change
+their size, so a binary built with the 2.1b-21 is built again.
+
+**The structs**
+
+- `Socket` has `tls`, `Cerver` has `tls`, `Client` has `tls` and `HttpRequest` has `tls` (an `HttpRequestTls` after
+  its `method`); `HttpRouteSettings` has `client_certificate` and `HttpWebSocketSettings` has `loop_callbacks`.
+- The tables of the X-macros have new rows: `HTTP_STATUS_TOO_EARLY` (425), `HTTP_ROUTE_AUTH_TYPE_CERTIFICATE` (3) and
+  `HTTP_WEB_SOCKET_ERROR_TLS` (9), and a code that switches over them without a `default` gets a warning.
+
+**A cerver with TLS**
+
+- `cerver_set_tls ()` takes its `TlsSettings` (also when it fails, a cerver with `CERVER_HANDLER_TYPE_EVENTS` can not
+  have TLS until F8b). `cerver_start ()` reads and validates the certificates and the keys, and it fails with a
+  certificate that expired or is not valid yet, a key that does not match, a chain out of order, a name in two
+  certificates, a cipher or a group that is not known.
+- It only listens TLS on its port: a plain client is closed when the deadline of its handshake ends (2^13 ms).
+- **A cerver that is not a web one runs each handshake in the pool of its TLS** (`tls_settings_set_handshake_threads ()`,
+  2^2 threads), and its info packet, `CERVER_EVENT_CLIENT_CONNECTED` and the registration of the connection come after
+  it, in that thread instead of the one that accepts.
+- **A web cerver runs the handshake in the thread of its thpool that receives**, and when it is full a connection is
+  closed without its handshake (instead of its 503) and counted as `TLS_FAILURE_REJECTED`.
+- The close of a socket with TLS sends its `close_notify` first and waits for it up to 2^8 ms; a cerver that closes a
+  connection after its response sends it before its `shutdown (SHUT_WR)`.
+- With a reload signal (`cerver_tls_set_reload_signal ()`) the threads that cerver creates block that signal too, and
+  cerver sets its handler with `sigaction ()`.
+
+**HTTP**
+
+- An endpoint or a group with `HTTP_CLIENT_CERTIFICATE_REQUIRED` answers 403 to a request without a certificate that
+  verified; `HTTP_ROUTE_AUTH_TYPE_CERTIFICATE` answers 401 without one.
+- With early data (`tls_settings_set_early_data ()`, off by default) a request of the early data that is not a GET, a
+  HEAD or an OPTIONS without a body is answered with 425.
+- The `100 Continue` of a request that a thread reads goes through `socket_send_buffer ()` (a send that waits with
+  `poll ()` until the send timeout) instead of a blocking `send ()`.
+
+**WebSocket**
+
+- `http_web_socket_client_set_url ()` takes `wss://` (it returned 1), on 443 without a port, and the client connects
+  with TLS: with the settings of `http_web_socket_client_set_tls ()` or the default ones (the store of the system). A
+  handshake that fails is `HTTP_WEB_SOCKET_ERROR_TLS`.
+- With TLS the queue of a connection counts the encrypted bytes that the socket did not take: its limit, its
+  backpressure and `http_web_socket_get_buffered_size ()` see them.
+
+**The clients**
+
+- `client_set_tls ()`: every TCP connection of the client runs its handshake in `connection_connect ()`, and a
+  handshake that fails fails the connect. The certificate of the cerver is always verified (the store of the system or
+  `tls_settings_set_ca ()`), with the host of the connection (or `tls_settings_set_server_name ()`) in its SAN.
+
 ## 2.1b-21 (from 2.1b-20)
 
 The WebSocket connections over the event loop (F6b of `roadmap.md` §4.6), their bounded queue and the API of the

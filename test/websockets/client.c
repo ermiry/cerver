@@ -495,7 +495,19 @@ static void test_client_urls (void) {
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host?query"), 0, NULL);
 	test_check_str_eq (client->path, "/?query", NULL);
 
-	test_check_unsigned_eq (http_web_socket_client_set_url (client, "wss://example.com"), 1, NULL);
+	// wss:// connects with TLS, on 443 without a port
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "wss://example.com"), 0, NULL);
+	test_check_true (client->secure);
+	test_check_unsigned_eq (client->port, 443, NULL);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "WSS://example.com:8443/secure"), 0, NULL);
+	test_check_unsigned_eq (client->port, 8443, NULL);
+
+	// a url that is rejected keeps the scheme of the previous one
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host:0"), 1, NULL);
+	test_check_true (client->secure);
+	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://example.com"), 0, NULL);
+	test_check_false (client->secure);
+
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "http://example.com"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://"), 1, NULL);
 	test_check_unsigned_eq (http_web_socket_client_set_url (client, "ws://host:0"), 1, NULL);
@@ -1395,6 +1407,51 @@ static void test_client_fake_servers (void) {
 
 }
 
+// the attempt of the test of the close while opening waits here, after its handshake and before the client
+// has the connection, until the test closed the client
+static unsigned int client_test_hook_reached = 0;
+static unsigned int client_test_hook_released = 0;
+
+static void client_test_open_hook (HttpWebSocketClient *client) {
+
+	(void) client;
+
+	(void) __atomic_store_n (&client_test_hook_reached, 1, __ATOMIC_SEQ_CST);
+	(void) test_wait_counter (&client_test_hook_released, 1, TEST_WAIT_SECONDS);
+
+}
+
+// a close of the client while its attempt opens does not find the connection: the thread of the client closes it
+// with 1000 as soon as it has it (stopped_before_open), and the client ends
+static void test_client_close_while_opening (void) {
+
+	client_test_state_reset ();
+	ClientTestServer *server = client_test_server_start (client_test_port++);
+
+	__atomic_store_n (&client_test_hook_reached, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&client_test_hook_released, 0, __ATOMIC_SEQ_CST);
+	http_web_socket_client_set_open_hook (client_test_open_hook);
+
+	HttpWebSocketClient *client = client_test_create (server->port, "/ws/echo");
+	test_check_unsigned_eq (http_web_socket_client_connect_async (client), 0, NULL);
+	test_check_unsigned_eq (test_wait_counter (&client_test_hook_reached, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	test_check_null_ptr (http_web_socket_client_get_web_socket (client));
+	(void) http_web_socket_client_close (client, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
+
+	__atomic_store_n (&client_test_hook_released, 1, __ATOMIC_SEQ_CST);
+
+	http_web_socket_client_wait (client);
+	http_web_socket_client_set_open_hook (NULL);
+
+	test_check_unsigned_eq (__atomic_load_n (&state.closed, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&state.last_code, __ATOMIC_SEQ_CST), HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL);
+
+	http_web_socket_client_delete (client);
+	client_test_server_stop (server);
+
+}
+
 #pragma endregion
 
 void web_socket_tests_client (void) {
@@ -1419,6 +1476,7 @@ void web_socket_tests_client (void) {
 	test_run (test_client_refused);
 	test_run (test_client_cancel);
 	test_run (test_client_fake_servers);
+	test_run (test_client_close_while_opening);
 
 	(void) alarm (0);
 

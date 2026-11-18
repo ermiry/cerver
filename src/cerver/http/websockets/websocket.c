@@ -1352,12 +1352,17 @@ static bool http_web_socket_step (HttpWebSocket *web_socket) {
 	fds[HTTP_WEB_SOCKET_POLL_WAKE].events = POLLIN;
 	fds[HTTP_WEB_SOCKET_POLL_WAKE].revents = 0;
 
-	const int ready = poll (fds, HTTP_WEB_SOCKET_POLL_FDS, http_web_socket_next_timeout (web_socket, true));
+	// with TLS a record that was decrypted already never makes the fd readable: the poll () does not wait for it
+	const bool pending = web_socket->transport->pending (web_socket);
 
-	if (ready > 0) {
+	const int ready = poll (
+		fds, HTTP_WEB_SOCKET_POLL_FDS, pending ? 0 : http_web_socket_next_timeout (web_socket, true)
+	);
+
+	if ((ready > 0) || (pending && !ready)) {
 		if (fds[HTTP_WEB_SOCKET_POLL_WAKE].revents) finished = http_web_socket_woken (web_socket);
 
-		const short revents = fds[HTTP_WEB_SOCKET_POLL_SOCKET].revents;
+		const short revents = (short) (fds[HTTP_WEB_SOCKET_POLL_SOCKET].revents | (pending ? POLLIN : 0));
 		if (!finished && (revents & POLLOUT)) finished = http_web_socket_writable (web_socket);
 		if (!finished && (revents & ~POLLOUT)) finished = http_web_socket_receive (web_socket);
 	}
@@ -1617,7 +1622,7 @@ static void *http_web_socket_thread (void *web_socket_ptr) {
 u8 http_web_socket_stream_set (HttpWebSocket *web_socket, Socket *socket, const bool thread) {
 
 	web_socket->socket = socket;
-	web_socket->transport = &http_web_socket_socket_transport;
+	web_socket->transport = socket->tls ? &http_web_socket_tls_transport : &http_web_socket_socket_transport;
 
 	http_web_socket_queue_setup (web_socket);
 

@@ -803,8 +803,8 @@ ReceiveError client_receive_actual (
 
 	ReceiveError error = RECEIVE_ERROR_NONE;
 
-	ssize_t received = recv (
-		connection->socket->sock_fd,
+	ssize_t received = socket_receive (
+		connection->socket,
 		buffer, buffer_size,
 		connection->receive_flags
 	);

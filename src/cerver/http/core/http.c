@@ -91,6 +91,9 @@ HttpResponse *upgrade_required_error = NULL;
 HttpResponse *forbidden_error = NULL;
 HttpResponse *web_socket_unavailable_error = NULL;
 
+// a request of the early data of TLS that is not idempotent
+HttpResponse *too_early_error = NULL;
+
 // the answer of the ready route of a cerver that can not take a request
 HttpResponse *not_ready_error = NULL;
 
@@ -534,6 +537,10 @@ static unsigned int http_cerver_init_responses (void) {
 
 	not_ready_error = http_cerver_not_ready_response ();
 
+	too_early_error = http_response_create_json_key_value (
+		HTTP_STATUS_TOO_EARLY, "error", "Too early!"
+	);
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
@@ -546,7 +553,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& method_not_allowed_error && not_implemented_error
 		&& http_version_not_supported_error
 		&& upgrade_required_error && forbidden_error && web_socket_unavailable_error
-		&& not_ready_error
+		&& not_ready_error && too_early_error
 	) retval = 0;
 
 	return retval;
@@ -691,6 +698,8 @@ static void http_cerver_end_responses (void) {
 	forbidden_error = NULL;
 	http_response_delete (web_socket_unavailable_error);
 	web_socket_unavailable_error = NULL;
+	http_response_delete (too_early_error);
+	too_early_error = NULL;
 
 	http_response_delete (not_ready_error);
 	not_ready_error = NULL;

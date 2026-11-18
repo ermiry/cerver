@@ -86,6 +86,21 @@ CERVER_HIDDEN void cerver_accept_reserve_fd_open (void);
  */
 CERVER_HIDDEN bool cerver_accept_reserve_fd_reject (const int listen_fd);
 
+struct _Cerver;
+struct _Connection;
+
+/**
+ * @internal
+ * @brief Registers a new connection that is ready, by the type of its cerver; it is dropped when it fails.
+ *
+ * The accept calls it for a plain connection, and the pool of the handshakes of TLS after the handshake.
+ *
+ * @param[in,out] cerver the cerver
+ * @param[in] connection the new connection
+ * @since 2.1b-22
+ */
+CERVER_HIDDEN void cerver_register_new_connection_ready (struct _Cerver *cerver, struct _Connection *connection);
+
 #ifdef __cplusplus
 }
 #endif

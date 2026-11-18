@@ -21,6 +21,8 @@
 #include "cerver/handler/handler.h"
 #include "cerver/network/socket.h"
 
+#include "cerver/tls/internal.h"
+
 #pragma region recycle
 
 static FreeList socket_recycled = FREELIST_INITIALIZER (
@@ -91,6 +93,8 @@ Socket *socket_new (void) {
 		socket->references = 1;
 
 		socket->recycle_next = NULL;
+
+		socket->tls = NULL;
 	}
 
 	return socket;
@@ -121,6 +125,9 @@ void socket_delete (void *socket_ptr) {
 		// a send that another thread started finishes before the socket is reused
 		(void) pthread_mutex_lock (&socket->write_mutex_storage);
 		(void) pthread_mutex_unlock (&socket->write_mutex_storage);
+
+		tls_connection_delete (socket->tls);
+		socket->tls = NULL;
 
 		socket_recycle (socket);
 	}
@@ -166,6 +173,9 @@ int socket_close (Socket *socket) {
 	int retval = 0;
 
 	if (socket) {
+		// the close_notify of an orderly close goes before the shutdown (RFC 8446 section 6.1)
+		if (socket->tls) tls_connection_close (socket->tls);
+
 		socket_close_wait_sends (socket);
 
 		(void) pthread_mutex_lock (&socket->close_mutex);
@@ -174,6 +184,9 @@ int socket_close (Socket *socket) {
 			retval = close (socket->sock_fd);
 			socket->sock_fd = -1;
 		}
+
+		// a thread that still has the socket never reaches the fd that another connection takes
+		if (socket->tls) tls_connection_detach (socket->tls);
 
 		(void) pthread_mutex_unlock (&socket->close_mutex);
 
@@ -195,8 +208,61 @@ void socket_replace (Socket *socket, const int fd) {
 
 		socket->sock_fd = fd;
 
+		// the TLS was of the previous fd
+		tls_connection_delete (socket->tls);
+		socket->tls = NULL;
+
 		(void) pthread_mutex_unlock (&socket->close_mutex);
 	}
+
+}
+
+void socket_end_writes (Socket *socket) {
+
+	if (socket) {
+		// the close_notify goes before the FIN (RFC 8446 section 6.1)
+		if (socket->tls) tls_connection_close (socket->tls);
+
+		(void) pthread_mutex_lock (&socket->close_mutex);
+		if (socket->sock_fd >= 0) (void) shutdown (socket->sock_fd, SHUT_WR);
+		(void) pthread_mutex_unlock (&socket->close_mutex);
+	}
+
+}
+
+ssize_t socket_receive (Socket *socket, void *buffer, const size_t size, const int flags) {
+
+	ssize_t received = -1;
+
+	if (socket->tls) {
+		received = tls_connection_receive (socket->tls, buffer, size, flags);
+	}
+
+	else {
+		received = recv (socket->sock_fd, buffer, size, flags);
+	}
+
+	return received;
+
+}
+
+bool socket_pending (Socket *socket) {
+
+	return socket->tls ? tls_connection_pending (socket->tls) : false;
+
+}
+
+int socket_peek (Socket *socket) {
+
+	int retval = 1;
+
+	if (!socket->tls || !tls_connection_pending (socket->tls)) {
+		char byte = 0;
+		const ssize_t peeked = recv (socket->sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT);
+		retval = (peeked > 0) ? 1 : (int) peeked;
+	}
+
+	return retval;
 
 }
 
@@ -385,6 +451,10 @@ u8 socket_send_vector_until (
 	size_t *sent, int *error
 ) {
 
+	if (socket->tls) {
+		return tls_connection_send_vector_until (socket->tls, parts, n_parts, deadline, sent, error);
+	}
+
 	u8 retval = 0;
 
 	size_t total = 0;
@@ -542,6 +612,10 @@ u8 socket_send_file_until (
 	const struct timespec *deadline,
 	size_t *sent, int *error
 ) {
+
+	if (socket->tls) {
+		return tls_connection_send_file_until (socket->tls, file_fd, offset, size, deadline, sent, error);
+	}
 
 	u8 retval = 0;
 

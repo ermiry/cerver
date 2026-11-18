@@ -21,6 +21,8 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/tls/tls.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -274,6 +276,21 @@ CERVER_EXPORT void balancer_set_on_unavailable_services (
 CERVER_EXPORT void balancer_set_select_service (
 	Balancer *balancer, const BalancerSelectService select_service, void *args
 );
+
+/**
+ * @brief Sets the TLS of the connections of the balancer to its services; the balancer takes the settings.
+ *
+ * It is client_set_tls () of the client of the balancer: each service is reached with TLS, and its certificate is
+ * verified with the host of the service in its SAN. The clients of the balancer get TLS with cerver_set_tls () of its
+ * cerver.
+ *
+ * @param[in,out] balancer the balancer, before balancer_start ()
+ * @param[in] settings the settings, owned by the balancer even when it fails
+ * @retval 0 the services are reached with TLS
+ * @retval 1 a NULL argument or no memory
+ * @since 2.1b-22
+ */
+CERVER_EXPORT u8 balancer_set_services_tls (Balancer *balancer, TlsSettings *settings);
 
 /**
  * @brief Creates a load balancer of a type with its network values and the number of services that it will have.

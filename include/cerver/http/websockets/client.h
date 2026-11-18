@@ -27,6 +27,8 @@
 #include "cerver/http/websockets/settings.h"
 #include "cerver/http/websockets/websocket.h"
 
+#include "cerver/tls/tls.h"
+
 /**
  * @defgroup http_websockets_client Client
  * @ingroup http_websockets
@@ -39,11 +41,14 @@
 /** @brief The scheme of the URLs of the client. */
 #define HTTP_WEB_SOCKET_CLIENT_SCHEME				"ws://"
 
-/** @brief The scheme of the URLs with TLS, not supported yet. */
+/** @brief The scheme of the URLs with TLS (since 2.1b-22). */
 #define HTTP_WEB_SOCKET_CLIENT_SECURE_SCHEME		"wss://"
 
-/** @brief The port of a url without one. */
+/** @brief The port of a ws:// url without one. */
 #define HTTP_WEB_SOCKET_CLIENT_DEFAULT_PORT			80
+
+/** @brief The port of a wss:// url without one. */
+#define HTTP_WEB_SOCKET_CLIENT_SECURE_DEFAULT_PORT	443
 
 /** @brief The size of the host of the url. */
 #define HTTP_WEB_SOCKET_CLIENT_HOST_SIZE			(1 << 8)
@@ -101,18 +106,52 @@ CERVER_EXPORT HttpWebSocketClient *http_web_socket_client_create (void);
 CERVER_EXPORT void http_web_socket_client_delete (HttpWebSocketClient *client);
 
 /**
- * @brief Sets the url of the server: `ws://host[:port][/path][?query]`, the host can be an IPv6 in brackets.
+ * @brief Sets the url of the server: `ws://host[:port][/path][?query]` or `wss://...`, the host can be an IPv6 in
+ * brackets.
  *
- * A url that is rejected in any of its parts does not change the client.
+ * A url that is rejected in any of its parts does not change the client. A wss:// url connects with TLS, with the
+ * settings of http_web_socket_client_set_tls () or the default ones (the store of the system); the host is the name
+ * that the client asks for and verifies.
  *
  * @param[in,out] client the client
  * @param[in] url the url
  * @retval 0 the url was set
- * @retval 1 a NULL argument or a url that is not valid (wss:// is not supported yet)
+ * @retval 1 a NULL argument or a url that is not valid
  */
 CERVER_EXPORT u8 http_web_socket_client_set_url (
 	HttpWebSocketClient *client, const char *url
 );
+
+/**
+ * @brief Sets the TLS of the wss:// connections of the client; the client takes the settings.
+ *
+ * @param[in,out] client the client, before it connects
+ * @param[in] settings the settings (the authorities, a client certificate, the name to verify), owned by the client
+ * even when it fails
+ * @retval 0 the next wss:// connections use them
+ * @retval 1 a NULL argument or no memory
+ * @since 2.1b-22
+ */
+CERVER_EXPORT u8 http_web_socket_client_set_tls (HttpWebSocketClient *client, TlsSettings *settings);
+
+/**
+ * @brief A method that a test runs in the thread of an attempt, after its handshake and before the client has its
+ * connection: a close of the client in that moment does not find the connection.
+ *
+ * @param[in] client the client of the attempt
+ * @since 2.1b-22
+ */
+typedef void (*HttpWebSocketClientOpenHook) (HttpWebSocketClient *client);
+
+/**
+ * @brief Sets the hook of the attempts of every client, for the tests of the close of a client that is opening.
+ *
+ * @param[in] hook the hook, NULL to remove it
+ * @note For the internal methods of cerver and its tests.
+ * @threadsafety Safe from any thread.
+ * @since 2.1b-22
+ */
+CERVER_PRIVATE void http_web_socket_client_set_open_hook (const HttpWebSocketClientOpenHook hook);
 
 /**
  * @brief Adds a header to the request of the handshake, like an Authorization.

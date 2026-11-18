@@ -229,6 +229,8 @@ static void http_route_settings_inherit (
 		(void) memcpy (resolved->pool_name, source->pool_name, HTTP_POOL_NAME_SIZE);
 	}
 
+	if (missing & HTTP_ROUTE_SETTING_CLIENT_CERTIFICATE) resolved->client_certificate = source->client_certificate;
+
 	resolved->set |= missing;
 
 	http_web_socket_settings_inherit (&resolved->web_socket, &source->web_socket);
@@ -469,6 +471,17 @@ void http_endpoint_set_compression (
 	if (endpoint) {
 		endpoint->settings.compression = compression;
 		endpoint->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
+	}
+
+}
+
+void http_endpoint_set_client_certificate (
+	HttpEndpoint *endpoint, const HttpClientCertificate certificate
+) {
+
+	if (endpoint) {
+		endpoint->settings.client_certificate = certificate;
+		endpoint->settings.set |= HTTP_ROUTE_SETTING_CLIENT_CERTIFICATE;
 	}
 
 }
@@ -1045,6 +1058,17 @@ void http_group_set_compression (
 	if (group) {
 		group->settings.compression = compression;
 		group->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
+	}
+
+}
+
+void http_group_set_client_certificate (
+	HttpGroup *group, const HttpClientCertificate certificate
+) {
+
+	if (group) {
+		group->settings.client_certificate = certificate;
+		group->settings.set |= HTTP_ROUTE_SETTING_CLIENT_CERTIFICATE;
 	}
 
 }
