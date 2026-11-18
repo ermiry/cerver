@@ -27,18 +27,20 @@
 #include <cerver/files/files.h>
 #include <cerver/network/network.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/requests/request.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
-#include <cerver/http/responses/stream.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/security/auth.h>
 
 #include <cerver/jwt/jwt.h>
@@ -140,6 +142,9 @@ static const size_t disconnect_n_response_cuts = sizeof (disconnect_response_cut
 #define DISCONNECT_PUBLIC_FILE				DISCONNECT_PUBLIC_PATH "/index.html"
 #define DISCONNECT_LARGE_FILE				DISCONNECT_ROOT_PATH "/large.mp4"
 
+// the path of an entry of the uploads path that a run before left
+#define DISCONNECT_ENTRY_PATH_SIZE			1024
+
 #define DISCONNECT_FD_DIRECTORY				"/proc/self/fd"
 
 #define DISCONNECT_BOUNDARY					"disconnectboundary"
@@ -222,9 +227,9 @@ static unsigned int disconnect_handled = 0;
 static unsigned int disconnect_before_middlewares = 0;
 
 // the status that a batch of the error responses counts, 0 (never sent) in any other batch
-static http_status disconnect_other_status = HTTP_STATUS_NONE;
+static CerverHttpStatus disconnect_other_status = HTTP_STATUS_NONE;
 
-static void disconnect_counters_read (const HttpCerver *http_cerver, DisconnectCounters *counters) {
+static void disconnect_counters_read (const CerverHttp *http_cerver, DisconnectCounters *counters) {
 
 	(void) memset (counters, 0, sizeof (DisconnectCounters));
 
@@ -288,7 +293,7 @@ static void disconnect_counters_print (const char *title, const DisconnectCounte
 			if (counters->aborted[stage][reason]) {
 				(void) fprintf (
 					stderr, "\t\taborted %s %s: %zu\n",
-					http_stage_label ((HttpStage) stage), http_abort_reason_label ((HttpAbortReason) reason),
+					cerver_http_stage_label ((CerverHttpStage) stage), cerver_http_abort_reason_label ((CerverHttpAbortReason) reason),
 					counters->aborted[stage][reason]
 				);
 			}
@@ -297,7 +302,7 @@ static void disconnect_counters_print (const char *title, const DisconnectCounte
 		if (counters->vanished[stage]) {
 			(void) fprintf (
 				stderr, "\t\tvanished %s: %zu\n",
-				http_stage_label ((HttpStage) stage), counters->vanished[stage]
+				cerver_http_stage_label ((CerverHttpStage) stage), counters->vanished[stage]
 			);
 		}
 	}
@@ -533,15 +538,15 @@ static void disconnect_model_multipart (DisconnectModel *model) {
 
 }
 
-static void disconnect_model_bearer (DisconnectModel *model, HttpCerver *http_cerver) {
+static void disconnect_model_bearer (DisconnectModel *model, CerverHttp *http_cerver) {
 
-	HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+	HttpJwt *http_jwt = cerver_http_auth_jwt_new ();
 	test_check_ptr (http_jwt);
 
-	http_cerver_auth_jwt_add_value (http_jwt, "id", "disconnect-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
+	cerver_http_auth_jwt_add_value (http_jwt, "id", "disconnect-test");
+	cerver_http_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) (time (NULL) + DISCONNECT_WAIT_SECONDS * DISCONNECT_WAIT_SECONDS));
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 
 	char request[DISCONNECT_REQUEST_SIZE] = { 0 };
 	(void) snprintf (
@@ -550,13 +555,13 @@ static void disconnect_model_bearer (DisconnectModel *model, HttpCerver *http_ce
 		http_jwt->bearer
 	);
 
-	http_cerver_auth_jwt_delete (http_jwt);
+	cerver_http_auth_jwt_delete (http_jwt);
 
 	disconnect_model_set (model, "bearer", request, false);
 
 }
 
-static void disconnect_models_create (HttpCerver *http_cerver) {
+static void disconnect_models_create (CerverHttp *http_cerver) {
 
 	disconnect_model_set (
 		&disconnect_models[0], "get",
@@ -606,9 +611,9 @@ static void disconnect_models_create (HttpCerver *http_cerver) {
 }
 
 // the stage where the cerver is after receiving the first offset bytes of an incomplete request
-static HttpStage disconnect_model_stage (const DisconnectModel *model, const size_t offset) {
+static CerverHttpStage disconnect_model_stage (const DisconnectModel *model, const size_t offset) {
 
-	HttpStage stage = HTTP_STAGE_BODY;
+	CerverHttpStage stage = HTTP_STAGE_BODY;
 
 	if (!offset) stage = HTTP_STAGE_QUEUED;
 	else if (offset <= model->request_line_end) stage = HTTP_STAGE_REQUEST_LINE;
@@ -632,12 +637,9 @@ static void disconnect_handled_add (void) {
 
 }
 
-static HttpMiddlewareResult disconnect_before_middleware (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static CerverHttpMiddlewareResult disconnect_before_middleware (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 	(void) __atomic_add_fetch (&disconnect_before_middlewares, 1, __ATOMIC_SEQ_CST);
 
@@ -646,44 +648,40 @@ static HttpMiddlewareResult disconnect_before_middleware (
 }
 
 // GET /ok and GET /private
-static void disconnect_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_ok_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /echo
-static void disconnect_echo_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void disconnect_echo_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	const String *body = http_request_get_body (request);
-	const bool intact = body && (body->len == strlen (disconnect_body));
+	const CerverHttpView body = cerver_http_request_body (context);
+	const bool intact = !cerver_http_view_is_missing (body) && (body.length == strlen (disconnect_body));
 
-	(void) http_response_send (intact ? oki_doki : bad_request_error, http_receive);
+	(void) cerver_http_response_send_common (
+		context, intact ? CERVER_HTTP_COMMON_RESPONSE_OK : CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST
+	);
 
 }
 
 // POST /upload, the files are discarded, so the uploads path ends empty
-static void disconnect_upload_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void disconnect_upload_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	const bool saved = (http_request_get_n_files (request) == DISCONNECT_UPLOADS_MAX);
+	const bool saved = (cerver_http_request_files_count (context) == DISCONNECT_UPLOADS_MAX);
 
-	http_request_multi_part_discard_files (request);
+	cerver_http_request_discard_files (context);
 
-	(void) http_response_send (saved ? oki_doki : bad_request_error, http_receive);
+	(void) cerver_http_response_send_common (
+		context, saved ? CERVER_HTTP_COMMON_RESPONSE_OK : CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST
+	);
 
 }
 
@@ -692,23 +690,29 @@ static unsigned int gone_waiting = 0;
 static unsigned int gone_states[HTTP_CLIENT_STATE_RESET + 1] = { 0 };
 static unsigned int gone_left = 0;
 
+static CerverHttpClientState disconnect_client_state (const CerverHttpContext *context) {
+
+	return cerver_http_context_client_state (context);
+
+}
+
 // waits until the client leaves or DISCONNECT_GONE_WAIT milliseconds
-static HttpClientState disconnect_gone_wait (const HttpReceive *http_receive) {
+static CerverHttpClientState disconnect_gone_wait (const CerverHttpContext *context) {
 
 	(void) __atomic_add_fetch (&gone_waiting, 1, __ATOMIC_SEQ_CST);
 
 	const struct timespec interval = { 0, DISCONNECT_POLL_NANOSECONDS };
 	const double deadline = test_wait_now () + ((double) DISCONNECT_GONE_WAIT / DISCONNECT_MILLISECONDS_PER_SECOND);
 
-	HttpClientState state = http_receive_get_client_state (http_receive);
+	CerverHttpClientState state = disconnect_client_state (context);
 	while ((state == HTTP_CLIENT_STATE_CONNECTED) && (test_wait_now () < deadline)) {
 		(void) nanosleep (&interval, NULL);
-		state = http_receive_get_client_state (http_receive);
+		state = disconnect_client_state (context);
 	}
 
 	(void) __atomic_add_fetch (&gone_states[state], 1, __ATOMIC_SEQ_CST);
 
-	if (http_receive_is_client_gone (http_receive)) {
+	if (cerver_http_context_client_is_gone (context)) {
 		(void) __atomic_add_fetch (&gone_left, 1, __ATOMIC_SEQ_CST);
 	}
 
@@ -717,61 +721,49 @@ static HttpClientState disconnect_gone_wait (const HttpReceive *http_receive) {
 }
 
 // GET /gone answers after its client left, or after it waited for it
-static void disconnect_gone_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_gone_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	(void) disconnect_gone_wait (http_receive);
+	(void) disconnect_gone_wait (context);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 static char *disconnect_large_body = NULL;
 
 // the socket of the handler keeps a small buffer, so the response never fits in it
-static void disconnect_small_send_buffer (const HttpReceive *http_receive) {
+static void disconnect_small_send_buffer (const CerverHttpContext *context) {
 
 	const int size = DISCONNECT_SMALL_BUFFER;
 	(void) setsockopt (
-		http_receive_get_sock_fd (http_receive), SOL_SOCKET, SO_SNDBUF, &size, sizeof (int)
+		cerver_http_context_socket (context), SOL_SOCKET, SO_SNDBUF, &size, sizeof (int)
 	);
 
 }
 
 // GET /gone/large answers with a large response after its client left
-static void disconnect_gone_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_gone_large_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	(void) disconnect_gone_wait (http_receive);
+	(void) disconnect_gone_wait (context);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, disconnect_large_body, DISCONNECT_LARGE_SIZE);
+	(void) cerver_http_response_send_text (context, disconnect_large_body, DISCONNECT_LARGE_SIZE);
 
 }
 
 // GET /large
-static void disconnect_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_large_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, disconnect_large_body, DISCONNECT_LARGE_SIZE);
+	(void) cerver_http_response_send_text (context, disconnect_large_body, DISCONNECT_LARGE_SIZE);
 
 }
 
@@ -779,71 +771,57 @@ static void disconnect_large_handler (
 static unsigned int stream_writes_after_failure = 0;
 
 // GET /stream stops writing when a piece fails, then checks that the stream refuses more pieces
-static void disconnect_stream_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_stream_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
+	(void) cerver_http_response_set_header (
+		context, HTTP_HEADER_CONTENT_TYPE, cerver_http_content_type_mime (HTTP_CONTENT_TYPE_TXT)
+	);
 
-	if (!http_response_stream_begin (http_receive, response)) {
+	if (!cerver_http_response_stream_begin (context)) {
 		bool failed = false;
 		for (size_t sent = 0; !failed && (sent < DISCONNECT_LARGE_SIZE); sent += DISCONNECT_STREAM_PIECE_SIZE) {
-			failed = http_response_stream_write (
-				http_receive, disconnect_large_body + sent, DISCONNECT_STREAM_PIECE_SIZE
+			failed = cerver_http_response_stream_write (
+				context, disconnect_large_body + sent, DISCONNECT_STREAM_PIECE_SIZE
 			) != 0;
 		}
 
 		// a failed stream is not active anymore, it does not send anything else,
 		// and its client is gone
 		const bool refused = failed
-			&& !http_response_stream_is_active (http_receive)
-			&& http_response_stream_write (http_receive, disconnect_large_body, 1)
-			&& http_receive_is_client_gone (http_receive);
+			&& !cerver_http_response_stream_is_active (context)
+			&& cerver_http_response_stream_write (context, disconnect_large_body, 1)
+			&& cerver_http_context_client_is_gone (context);
 
 		if (failed && !refused) {
 			(void) __atomic_add_fetch (&stream_writes_after_failure, 1, __ATOMIC_SEQ_CST);
 		}
 	}
 
-	http_response_return (response);
-
 }
 
 // GET /file
-static void disconnect_file_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_file_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	(void) http_response_send_file (http_receive, HTTP_STATUS_OK, DISCONNECT_LARGE_FILE);
+	(void) cerver_http_response_send_file (context, DISCONNECT_LARGE_FILE);
 
 }
 
 // GET /video
-static void disconnect_video_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_video_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	(void) http_response_handle_video (http_receive, DISCONNECT_LARGE_FILE);
+	(void) cerver_http_response_send_video (context, DISCONNECT_LARGE_FILE);
 
 }
 
@@ -851,53 +829,41 @@ static void disconnect_video_handler (
 static JobQueue *disconnect_job_queue = NULL;
 
 // the job asks for the state of the client from the thread of the worker
-static void disconnect_job_work (void *http_receive_ptr) {
+static void disconnect_job_work (void *context_ptr) {
 
-	(void) disconnect_gone_wait ((const HttpReceive *) http_receive_ptr);
+	(void) disconnect_gone_wait ((const CerverHttpContext *) context_ptr);
 
 }
 
 // GET /job hands its work to a worker and waits for it, like a handler that calls another service
-static void disconnect_job_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_job_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	job_handler_wait (disconnect_job_queue, (void *) http_receive, NULL);
+	job_handler_wait (disconnect_job_queue, (void *) context, NULL);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /fail answers with 500
-static void disconnect_fail_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_fail_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	(void) http_response_send (server_error, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_SERVER_ERROR);
 
 }
 
 static const char *disconnect_etag_body = { "{\"disconnect\": \"the body of an entity tag\"}" };
 
 // GET /features/etag, a body with an entity tag, answered with 304 when the client has it
-static void disconnect_etag_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_etag_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_OK, disconnect_etag_body, strlen (disconnect_etag_body)
+	(void) cerver_http_response_send_json (
+		context, disconnect_etag_body, strlen (disconnect_etag_body)
 	);
 
 }
@@ -906,17 +872,13 @@ static void disconnect_etag_handler (
 static char *disconnect_hex_body = NULL;
 
 // GET /features/gzip
-static void disconnect_gzip_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_gzip_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
-	disconnect_small_send_buffer (http_receive);
+	disconnect_small_send_buffer (context);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, disconnect_hex_body, DISCONNECT_LARGE_SIZE);
+	(void) cerver_http_response_send_text (context, disconnect_hex_body, DISCONNECT_LARGE_SIZE);
 
 }
 
@@ -926,11 +888,7 @@ static pthread_cond_t gate_cond = PTHREAD_COND_INITIALIZER;
 static bool gate_open = true;
 static unsigned int gate_waiting = 0;
 
-static void disconnect_block_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_block_handler (CerverHttpContext *context) {
 
 	disconnect_handled_add ();
 
@@ -939,7 +897,7 @@ static void disconnect_block_handler (
 	while (!gate_open) (void) pthread_cond_wait (&gate_cond, &gate_mutex);
 	(void) pthread_mutex_unlock (&gate_mutex);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -971,55 +929,57 @@ static unsigned int disconnect_gate_waiting (void) {
 
 }
 
-static void disconnect_route (
-	HttpCerver *http_cerver, const RequestMethod method, const char *path,
-	void (*handler) (const HttpReceive *, const HttpRequest *)
+// a top level route: a group with the endpoint of its path
+static CerverHttpEndpoint *disconnect_route (
+	CerverHttp *http_cerver, const CerverHttpMethod method, const char *path,
+	const CerverHttpHandler handler
 ) {
 
-	HttpRoute *route = http_route_create (method, path, handler);
-	test_check_ptr (route);
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, path);
+	test_check_ptr (group);
 
-	http_cerver_route_register (http_cerver, route);
+	CerverHttpEndpoint *endpoint = cerver_http_group_root_add (group, method, handler);
+	test_check_ptr (endpoint);
+
+	return endpoint;
 
 }
 
-static void disconnect_routes (HttpCerver *http_cerver) {
+static void disconnect_routes (CerverHttp *http_cerver) {
 
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "ok", disconnect_ok_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_POST, "echo", disconnect_echo_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "ok", disconnect_ok_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_POST, "echo", disconnect_echo_handler);
 
-	HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", disconnect_upload_handler);
-	http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-	http_cerver_route_register (http_cerver, upload_route);
+	CerverHttpEndpoint *upload = disconnect_route (http_cerver, REQUEST_METHOD_POST, "upload", disconnect_upload_handler);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	HttpRoute *private_route = http_route_create (REQUEST_METHOD_GET, "private", disconnect_ok_handler);
-	http_route_set_auth (private_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-	http_cerver_route_register (http_cerver, private_route);
+	CerverHttpEndpoint *private_endpoint = disconnect_route (http_cerver, REQUEST_METHOD_GET, "private", disconnect_ok_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
 
-	HttpRoute *gone_route = http_route_create (REQUEST_METHOD_GET, "gone", disconnect_gone_handler);
-	HttpRoute *gone_large_route = http_route_create (REQUEST_METHOD_GET, "large", disconnect_gone_large_handler);
-	http_route_child_add (gone_route, gone_large_route);
-	http_cerver_route_register (http_cerver, gone_route);
+	CerverHttpGroup *gone = cerver_http_group_create (http_cerver, "gone");
+	test_check_ptr (gone);
+	test_check_ptr (cerver_http_group_root_add (gone, REQUEST_METHOD_GET, disconnect_gone_handler));
+	test_check_ptr (cerver_http_group_get (gone, "large", disconnect_gone_large_handler));
 
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "large", disconnect_large_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "stream", disconnect_stream_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "file", disconnect_file_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "video", disconnect_video_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "block", disconnect_block_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "job", disconnect_job_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "fail", disconnect_fail_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "large", disconnect_large_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "stream", disconnect_stream_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "file", disconnect_file_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "video", disconnect_video_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "block", disconnect_block_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "job", disconnect_job_handler);
+	(void) disconnect_route (http_cerver, REQUEST_METHOD_GET, "fail", disconnect_fail_handler);
 
-	HttpGroup *features = http_cerver_group_create (http_cerver, "features");
-	http_group_set_etag (features, true);
-	http_group_set_compression (features, true);
-	test_check_ptr (http_group_get (features, "etag", disconnect_etag_handler));
-	test_check_ptr (http_group_get (features, "gzip", disconnect_gzip_handler));
+	CerverHttpGroup *features = cerver_http_group_create (http_cerver, "features");
+	cerver_http_group_set_etag (features, true);
+	cerver_http_group_set_compression (features, true);
+	test_check_ptr (cerver_http_group_get (features, "etag", disconnect_etag_handler));
+	test_check_ptr (cerver_http_group_get (features, "gzip", disconnect_gzip_handler));
 
 	// a path without a route is answered with 404, a method that its path does not have with 405
-	http_cerver_set_not_found_handler (http_cerver);
-	http_cerver_set_method_not_allowed (http_cerver, true);
+	cerver_http_set_not_found_handler (http_cerver);
+	cerver_http_set_method_not_allowed (http_cerver, true);
 
-	test_check_unsigned_eq (http_cerver_add_before (http_cerver, disconnect_before_middleware), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_before (http_cerver, disconnect_before_middleware), 0, NULL);
 
 }
 
@@ -1029,9 +989,41 @@ static void disconnect_routes (HttpCerver *http_cerver) {
 
 static void disconnect_directory_create (const char *path) {
 
-	if (mkdir (path, HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE) && (errno != EEXIST)) {
+	if (mkdir (path, CERVER_HTTP_DEFAULT_UPLOADS_DIR_MODE) && (errno != EEXIST)) {
 		fail ("failed to create a directory of the disconnect tests");
 	}
+
+}
+
+static void disconnect_directory_empty (const char *path);
+
+// a folder is emptied before it is removed, a file is only removed
+static void disconnect_entry_remove (const char *path, const char *name) {
+
+	char entry[DISCONNECT_ENTRY_PATH_SIZE] = { 0 };
+	(void) snprintf (entry, DISCONNECT_ENTRY_PATH_SIZE, "%s/%s", path, name);
+
+	disconnect_directory_empty (entry);
+
+	(void) remove (entry);
+
+}
+
+// removes what a directory has, with what its folders have: a run that ended before its time leaves the files
+// of its uploads, and the next one in the same container would count them as the ones of its own requests
+static void disconnect_directory_empty (const char *path) {
+
+	DIR *directory = opendir (path);
+	if (!directory) return;
+
+	struct dirent *entry = NULL;
+	while ((entry = readdir (directory)) != NULL) {
+		if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
+			disconnect_entry_remove (path, entry->d_name);
+		}
+	}
+
+	(void) closedir (directory);
 
 }
 
@@ -1051,6 +1043,8 @@ static void disconnect_files_create (void) {
 	disconnect_directory_create (DISCONNECT_ROOT_PATH);
 	disconnect_directory_create (DISCONNECT_UPLOADS_PATH);
 	disconnect_directory_create (DISCONNECT_PUBLIC_PATH);
+
+	disconnect_directory_empty (DISCONNECT_UPLOADS_PATH);
 
 	disconnect_file_write (DISCONNECT_PUBLIC_FILE, disconnect_public_content, strlen (disconnect_public_content));
 
@@ -1123,7 +1117,7 @@ static size_t disconnect_open_fds (void) {
 typedef struct DisconnectServer {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 
 	// the thpool that cerver_start () created, taken after a handler answered
 	Thpool *thpool;
@@ -1137,7 +1131,6 @@ typedef struct DisconnectServer {
 
 typedef struct DisconnectOptions {
 
-	CerverHandlerType handler_type;
 	unsigned int threads;
 	unsigned int queue_size;
 	CerverOverloadPolicy overload_policy;
@@ -1303,16 +1296,13 @@ static void disconnect_leave (const int fd, const DisconnectForm form) {
 }
 
 // the connections that the cerver took and the ones that it finished:
-// with a thread for each connection they are the jobs of its thpool,
 // with event loops a connection takes none, one or two jobs, so the loops count them
 static void disconnect_thpool_stats (const DisconnectServer *server, ThpoolStats *stats) {
 
 	thpool_get_stats (server->thpool, stats);
 
-	if (server->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS) {
-		stats->total_jobs = event_loop_group_accepted (server->cerver);
-		stats->completed_jobs = event_loop_group_ended (server->cerver);
-	}
+	stats->total_jobs = event_loop_group_accepted (server->cerver);
+	stats->completed_jobs = event_loop_group_ended (server->cerver);
 
 }
 
@@ -1409,22 +1399,12 @@ static void disconnect_server_ready (DisconnectServer *server) {
 
 }
 
-// how the cervers of the tests that run now handle their connections,
-// the tests run with a thread for each connection and with event loops
-static CerverHandlerType disconnect_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 // with event loops the status of a response is counted when its loop sent it whole: a response that failed is
-// never counted with its status. A thread counts the status of a response when it sent its header
-static bool disconnect_counts_when_sent (void) {
-
-	return disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS;
-
-}
+// never counted with its status
 
 static DisconnectOptions disconnect_options_default (void) {
 
 	DisconnectOptions options;
-	options.handler_type = disconnect_handler_type;
 	options.threads = DISCONNECT_THREADS;
 	options.queue_size = DISCONNECT_QUEUE_SIZE;
 	options.overload_policy = CERVER_OVERLOAD_POLICY_WAIT;
@@ -1452,7 +1432,6 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	Cerver *cerver = cerver_create_web ("disconnect-test", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, options->handler_type);
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
@@ -1462,23 +1441,28 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	cerver_set_overload_policy (cerver, options->overload_policy);
 	cerver_set_send_timeout (cerver, disconnect_send_timeout ());
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
-	http_cerver_set_headers_timeout_milliseconds (http_cerver, DISCONNECT_HEADERS_TIMEOUT);
+	CerverHttp *http_cerver = cerver_http_get (cerver);
+
+	// the handlers of these tests wait (for their client, for the gate, for a worker) and their batches
+	// fill the threads of the thpool: they run in the threads of the default pool, not in the event loops
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
+
+	cerver_http_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
+	cerver_http_set_headers_timeout_milliseconds (http_cerver, DISCONNECT_HEADERS_TIMEOUT);
 
 	// the clients of these tests read each response until the cerver closes its connection,
 	// the connections that are kept have their own tests (keepalive.c)
-	http_cerver_set_keep_alive (http_cerver, false);
+	cerver_http_set_keep_alive (http_cerver, false);
 
-	http_cerver_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
-	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+	cerver_http_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_dirname_generator (http_cerver);
 
-	test_check_ptr (http_cerver_static_path_add (http_cerver, DISCONNECT_PUBLIC_PATH));
+	test_check_ptr (cerver_http_static_path_add (http_cerver, DISCONNECT_PUBLIC_PATH));
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
-	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
-	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+	cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+	cerver_http_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	cerver_http_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 
 	disconnect_routes (http_cerver);
 
@@ -1758,7 +1742,7 @@ static void disconnect_case_expect (const DisconnectCase *dc, DisconnectCounters
 	const DisconnectModel *model = dc->model;
 
 	if (dc->offset < model->length) {
-		const HttpStage stage = disconnect_model_stage (model, dc->offset);
+		const CerverHttpStage stage = disconnect_model_stage (model, dc->offset);
 
 		switch (dc->form) {
 			case DISCONNECT_FORM_RESET:
@@ -1786,22 +1770,20 @@ static void disconnect_case_expect (const DisconnectCase *dc, DisconnectCounters
 			expected->before_middlewares += 1;
 		}
 
-		// a client that left right after its request can make the pieces after the header fail: a thread
-		// counted the 200 of that header, an event loop counts a response that it sent whole or one that failed
+		// a client that left right after its request can make the pieces after the header fail:
+		// an event loop counts a response that it sent whole or one that failed
 		const bool left = (dc->form == DISCONNECT_FORM_RESET) || (dc->form == DISCONNECT_FORM_CLOSE);
 		const bool cut = model->many_sends && left;
 
-		if ((dc->form == DISCONNECT_FORM_RESET) || (cut && disconnect_counts_when_sent ())) expected->either += 1;
+		if ((dc->form == DISCONNECT_FORM_RESET) || cut) expected->either += 1;
 		else expected->ok_responses += 1;
-
-		if (cut && !disconnect_counts_when_sent ()) expected->maybe_failed += 1;
 	}
 
 }
 
 // the counters must have changed by exactly the expected values since before
 static void disconnect_counters_expect (
-	const HttpCerver *http_cerver, const DisconnectCounters *before,
+	const CerverHttp *http_cerver, const DisconnectCounters *before,
 	const DisconnectCounters *expected, const char *description,
 	const DisconnectCase *cases, const size_t n_cases
 ) {
@@ -2063,7 +2045,7 @@ static const char *gone_large_request = { "GET /gone/large HTTP/1.1\r\nHost: loc
 // must change the counters as expected
 static void disconnect_gone_case (
 	const char *request, const DisconnectForm form,
-	const HttpClientState state, const bool gone,
+	const CerverHttpClientState state, const bool gone,
 	const DisconnectCounters *expected, const size_t expected_size
 ) {
 
@@ -2096,7 +2078,7 @@ static void disconnect_gone_case (
 
 	test_check_unsigned_eq (
 		__atomic_load_n (&gone_left, __ATOMIC_SEQ_CST), left + (gone ? 1 : 0),
-		"http_receive_is_client_gone () did not tell that the client was gone"
+		"cerver_http_context_client_is_gone () did not tell that the client was gone"
 	);
 
 }
@@ -2173,14 +2155,14 @@ static void test_disconnect_handler (void) {
 // a cerver can take a half-close client as still connected
 static void test_disconnect_half_close_not_gone (void) {
 
-	http_cerver_set_half_close_is_gone (disconnect_server->http_cerver, false);
+	cerver_http_set_half_close_is_gone (disconnect_server->http_cerver, false);
 
 	DisconnectCounters expected = disconnect_handled_counters ();
 	expected.ok_responses = 1;
 
 	disconnect_gone_case (gone_request, DISCONNECT_FORM_HALF_CLOSE, HTTP_CLIENT_STATE_CLOSED, false, &expected, 0);
 
-	http_cerver_set_half_close_is_gone (disconnect_server->http_cerver, HTTP_CERVER_DEFAULT_HALF_CLOSE_IS_GONE);
+	cerver_http_set_half_close_is_gone (disconnect_server->http_cerver, CERVER_HTTP_DEFAULT_HALF_CLOSE_IS_GONE);
 
 }
 
@@ -2212,14 +2194,7 @@ static const DisconnectResponse disconnect_responses[] = {
 
 static const size_t disconnect_n_responses = sizeof (disconnect_responses) / sizeof (DisconnectResponse);
 
-// whether the 200 of a response that failed was counted: the ones whose header a thread sends first; an event
-// loop counts none of them
-static bool disconnect_response_ok_counted (const DisconnectResponse *response) {
-
-	return response->header_counted && !disconnect_counts_when_sent ();
-
-}
-
+// the 200 of a response that failed is not counted: an event loop counts none of them
 static void disconnect_response_expect (
 	const DisconnectResponse *response, const DisconnectForm form, DisconnectCounters *expected
 ) {
@@ -2235,13 +2210,11 @@ static void disconnect_response_expect (
 		case DISCONNECT_FORM_VANISH:
 			expected->failed_responses += 1;
 			expected->vanished[HTTP_STAGE_RESPONSE] += 1;
-			if (disconnect_response_ok_counted (response)) expected->ok_responses += 1;
 			break;
 
 		default:
 			expected->failed_responses += 1;
 			expected->aborted[HTTP_STAGE_RESPONSE][HTTP_ABORT_REASON_RESET] += 1;
-			if (disconnect_response_ok_counted (response)) expected->ok_responses += 1;
 			break;
 	}
 
@@ -2325,7 +2298,7 @@ static void test_disconnect_worker (void) {
 // a complete request answered with another status, in the four ways a client leaves:
 // the response is small, so only a reset races with it
 static void disconnect_status_batch (
-	const char *name, const char *request, const http_status status, const bool handled,
+	const char *name, const char *request, const CerverHttpStatus status, const bool handled,
 	const bool before_body
 ) {
 
@@ -2516,27 +2489,19 @@ static void disconnect_receive_probe_ring (const int fd) {
 }
 
 // keeps its task id and waits like the thread that reads the connections of the cerver:
-// in the same recv (), or in the backend of an event loop
+// in the backend of an event loop
 static void *disconnect_receive_probe (void *fd_ptr) {
 
 	const int fd = *(const int *) fd_ptr;
 
 	__atomic_store_n (&disconnect_probe_task, (pid_t) syscall (SYS_gettid), __ATOMIC_SEQ_CST);
 
-	if (
-		(disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS)
-		&& (cerver_get_events_backend (disconnect_server->cerver) == CERVER_EVENTS_BACKEND_URING)
-	) {
+	if (cerver_get_events_backend (disconnect_server->cerver) == CERVER_EVENTS_BACKEND_URING) {
 		disconnect_receive_probe_ring (fd);
 	}
 
-	else if (disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS) {
-		disconnect_receive_probe_poller (fd);
-	}
-
 	else {
-		char byte = 0;
-		(void) recv (fd, &byte, sizeof (byte), 0);
+		disconnect_receive_probe_poller (fd);
 	}
 
 	return NULL;
@@ -2626,8 +2591,7 @@ static void test_disconnect_interrupted (void) {
 	action.sa_handler = disconnect_signal_handler;
 	(void) sigemptyset (&action.sa_mask);
 
-	struct sigaction previous;
-	test_check_int_eq (sigaction (SIGUSR1, &action, &previous), 0, NULL);
+	test_check_int_eq (sigaction (SIGUSR1, &action, NULL), 0, NULL);
 
 	const long receive_syscall = disconnect_receive_syscall ();
 	test_check (receive_syscall > -1, "the system call of a thread in recv () could not be read");
@@ -2662,7 +2626,8 @@ static void test_disconnect_interrupted (void) {
 
 	disconnect_wait_jobs (server, stats.completed_jobs + 1, true);
 
-	test_check_int_eq (sigaction (SIGUSR1, &previous, NULL), 0, NULL);
+	// the handler stays: every event loop of the cerver was interrupted, and a signal that one of their
+	// threads takes after this test would end the process with the default action (seen once in 9 runs)
 
 	test_check (interrupted > 0, "the thread that reads the connection was not interrupted while it waited");
 	test_check (
@@ -2856,15 +2821,10 @@ static void test_disconnect_overload (void) {
 	int blocked = -1;
 	disconnect_gate_fill (server, &blocked, 1);
 
-	// a cerver with a thread for each connection queues the connection when it accepts it;
-	// one with event loops queues its request when it is complete, so its client sends it now
-	const bool events = (options.handler_type == CERVER_HANDLER_TYPE_EVENTS);
-
+	// a cerver with event loops queues its request when it is complete, so its client sends it now
 	const int queued = disconnect_connect (server->port, false);
-	if (events) {
-		disconnect_send (queued, ok_request, strlen (ok_request));
-		disconnect_wait_queued (server, 1);
-	}
+	disconnect_send (queued, ok_request, strlen (ok_request));
+	disconnect_wait_queued (server, 1);
 
 	ThpoolStats stats;
 	disconnect_thpool_stats (server, &stats);
@@ -2874,8 +2834,8 @@ static void test_disconnect_overload (void) {
 	// the queue is full, the cerver answers 503 to a client that already left:
 	// with event loops the client leaves after its request, that has to arrive to be rejected
 	const int extra = disconnect_connect (server->port, false);
-	if (events) disconnect_send (extra, ok_request, strlen (ok_request));
-	disconnect_leave (extra, events ? DISCONNECT_FORM_CLOSE : DISCONNECT_FORM_RESET);
+	disconnect_send (extra, ok_request, strlen (ok_request));
+	disconnect_leave (extra, DISCONNECT_FORM_CLOSE);
 
 	test_check (
 		test_wait_counter_64 (&server->cerver->stats->total_rejected_connections, rejected + 1, disconnect_wait_seconds ()) == rejected + 1,
@@ -2883,8 +2843,6 @@ static void test_disconnect_overload (void) {
 	);
 
 	disconnect_gate_release (&blocked, 1);
-
-	if (!events) disconnect_send (queued, ok_request, strlen (ok_request));
 
 	char response[DISCONNECT_RESPONSE_SIZE] = { 0 };
 	(void) disconnect_read (queued, DISCONNECT_RESPONSE_SIZE - 1, response, DISCONNECT_RESPONSE_SIZE - 1);
@@ -3001,26 +2959,8 @@ static void disconnect_level_init (void) {
 
 }
 
-// the request matrix also runs with a POLL cerver, with the sample
-static void test_disconnect_requests_poll (void) {
-
-	DisconnectOptions options = disconnect_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_POLL;
-
-	DisconnectServer *server = disconnect_server_start (&options);
-
-	disconnect_request_matrix (server, false);
-
-	disconnect_server_stop (server);
-
-}
-
-// the tests of a cerver that handles its connections with a model: a thread for each one, or event loops
-static void disconnect_tests_model (const CerverHandlerType handler_type) {
-
-	disconnect_handler_type = handler_type;
-
-	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
+// the tests of a cerver, that handles its connections with event loops
+static void disconnect_tests (void) {
 
 	disconnect_job_queue = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);
 	test_check_ptr (disconnect_job_queue);
@@ -3052,8 +2992,6 @@ static void disconnect_tests_model (const CerverHandlerType handler_type) {
 	test_run (test_disconnect_overload);
 	test_run (test_disconnect_drain);
 
-	disconnect_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 }
 
 void http_tests_disconnect (void) {
@@ -3064,10 +3002,7 @@ void http_tests_disconnect (void) {
 
 	disconnect_files_create ();
 
-	disconnect_tests_model (CERVER_HANDLER_TYPE_THREADS);
-	disconnect_tests_model (CERVER_HANDLER_TYPE_EVENTS);
-
-	test_run (test_disconnect_requests_poll);
+	disconnect_tests ();
 
 	disconnect_files_delete ();
 
