@@ -197,6 +197,7 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (router_cerver, ROUTER_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (router_cerver, ROUTER_THREADS);
 		cerver_set_handler_type (router_cerver, test_handler_type ());
+		cerver_set_events_backend (router_cerver, test_events_backend ());
 		cerver_set_io_threads (router_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (router_cerver, true);
 

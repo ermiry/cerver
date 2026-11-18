@@ -481,7 +481,9 @@ CERVER_EXPORT void http_endpoint_set_compression (
  * the cerver does not start.
  *
  * @param[in,out] endpoint the endpoint
- * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver. A name of more than
+ * @param[in] name the name of the pool, copied: "default" for the thpool of the cerver, "loop" for the event loop
+ * that reads the request (#HTTP_POOL_LOOP_NAME: its handler must never wait); NULL for none, the endpoint takes the
+ * one of its groups or the one of its cerver (http_cerver_set_handlers_pool ()). A name of more than
  * #HTTP_POOL_NAME_SIZE - 1 bytes is an error of the routes
  * @since 3.0b-5
  */
@@ -911,7 +913,8 @@ CERVER_EXPORT void http_group_set_compression (
  * @brief Sets the pool of threads that the endpoints of a group inherit, like http_endpoint_set_pool ().
  *
  * @param[in,out] group the group
- * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver
+ * @param[in] name the name of the pool, copied: "default" for the thpool of the cerver, "loop" for the event loop
+ * that reads each request (#HTTP_POOL_LOOP_NAME); NULL for none
  * @since 3.0b-5
  */
 CERVER_EXPORT void http_group_set_pool (

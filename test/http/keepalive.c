@@ -34,6 +34,7 @@
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/settings.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -81,12 +82,6 @@
 #define KEEPALIVE_REQUESTS					(1 << 4)
 #define KEEPALIVE_MAX_REQUESTS				3
 #define KEEPALIVE_PIPELINED					3
-
-// the microseconds that a thread looks for the next request of its connection in the tests that need it to
-// find that request: more than a client takes to send it, in any machine
-#define KEEPALIVE_FOLLOW_TIME				(1 << 24)
-// the secs that a cerver takes at most to stop while a thread looks for a request, far less than that time
-#define KEEPALIVE_FOLLOW_STOP_TIMEOUT		(1 << 2)
 
 // the buckets of the connections that ended: the ones with one request, and the ones with up to 2^2 of them
 #define KEEPALIVE_SINGLE_BUCKET				0
@@ -367,12 +362,6 @@ typedef struct KeepAliveOptions {
 	// the threads of its pool, 0 for KEEPALIVE_THREADS
 	unsigned int threads;
 
-	// the microseconds that a thread looks for the next request of its connection, 0 keeps the default
-	unsigned int follow;
-
-	// the event loop reads every request, the threads of the pool do not read the next one of an idle connection
-	bool loop_reads;
-
 } KeepAliveOptions;
 
 typedef struct KeepAliveServer {
@@ -387,7 +376,7 @@ typedef struct KeepAliveServer {
 
 static KeepAliveOptions keepalive_options_default (void) {
 
-	KeepAliveOptions options = { keepalive_handler_type, KEEPALIVE_CONFIGURE_DEFAULT, 0, 0, 0, 0, 0, false };
+	KeepAliveOptions options = { keepalive_handler_type, KEEPALIVE_CONFIGURE_DEFAULT, 0, 0, 0, 0 };
 
 	return options;
 
@@ -422,10 +411,6 @@ static void keepalive_server_configure (
 	else http_cerver_set_keep_alive_timeout (http_cerver, KEEPALIVE_LONG_TIMEOUT);
 
 	if (options->requests) http_cerver_set_keep_alive_requests (http_cerver, options->requests);
-
-	if (options->follow) http_cerver_set_keep_alive_follow (http_cerver, options->follow);
-
-	if (options->loop_reads) http_cerver_set_keep_alive_pool_read (http_cerver, false);
 
 }
 
@@ -462,6 +447,7 @@ static KeepAliveServer *keepalive_server_start (const KeepAliveOptions *options)
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, options->handler_type);
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
 	cerver_set_thpool_n_threads (cerver, (u16) (options->threads ? options->threads : KEEPALIVE_THREADS));
@@ -542,8 +528,8 @@ static void keepalive_server_wait_connections (const KeepAliveServer *server, co
 
 }
 
-// waits until the event loops of the cerver have a number of idle connections: the thread that answered
-// a request looks for the next one of its connection for a moment before the connection waits idle
+// waits until the event loops of the cerver have a number of idle connections: a connection waits idle once
+// its loop sent its response, a moment after its client read it
 static void keepalive_server_wait_idle (const KeepAliveServer *server, const unsigned int expected) {
 
 	const double deadline = test_wait_now () + (double) (KEEPALIVE_STOP_TIMEOUT * test_time_scale ());
@@ -553,21 +539,6 @@ static void keepalive_server_wait_idle (const KeepAliveServer *server, const uns
 	}
 
 	test_check_unsigned_eq (event_loop_group_idle (server->cerver), expected, NULL);
-
-}
-
-// the threads of the thpool of the cerver that wait for the idle connections, not for the jobs of its queue
-static void keepalive_server_wait_waiting (const KeepAliveServer *server, const unsigned int expected) {
-
-	const Thpool *thpool = server->cerver->thpool;
-
-	const double deadline = test_wait_now () + (double) (KEEPALIVE_STOP_TIMEOUT * test_time_scale ());
-	while ((thpool_get_num_threads_waiting (thpool) != expected) && (test_wait_now () < deadline)) {
-		struct timespec interval = { 0, KEEPALIVE_CONNECT_INTERVAL };
-		(void) nanosleep (&interval, NULL);
-	}
-
-	test_check_unsigned_eq (thpool_get_num_threads_waiting (thpool), expected, NULL);
 
 }
 
@@ -1582,33 +1553,11 @@ static void test_keepalive_setters (void) {
 	http_cerver_set_keep_alive_requests (http_cerver, 0);
 	test_check_unsigned_eq (http_cerver->keep_alive_requests, 0, NULL);
 
-	// a thread does not look for the next request of its connection until the cerver asks for it
-	test_check_unsigned_eq (http_cerver->keep_alive_follow, HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW, NULL);
-	test_check_unsigned_eq (http_cerver->keep_alive_follow, 0, NULL);
-
-	http_cerver_set_keep_alive_follow (http_cerver, HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT);
-	test_check_unsigned_eq (http_cerver->keep_alive_follow, HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT, NULL);
-
-	http_cerver_set_keep_alive_follow (http_cerver, 0);
-	test_check_unsigned_eq (http_cerver->keep_alive_follow, 0, NULL);
-
-	// the threads of the pools read the next request of an idle connection unless the cerver says no
-	test_check_bool_eq (http_cerver->keep_alive_pool_read, HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ, NULL);
-	test_check_bool_eq (http_cerver->keep_alive_pool_read, true, NULL);
-
-	http_cerver_set_keep_alive_pool_read (http_cerver, false);
-	test_check_bool_eq (http_cerver->keep_alive_pool_read, false, NULL);
-
-	http_cerver_set_keep_alive_pool_read (http_cerver, true);
-	test_check_bool_eq (http_cerver->keep_alive_pool_read, true, NULL);
-
 	// nothing is done without a cerver
 	http_cerver_set_keep_alive (NULL, true);
 	http_cerver_set_keep_alive_timeout (NULL, KEEPALIVE_DRAIN_TIMEOUT);
 	http_cerver_set_keep_alive_timeout_milliseconds (NULL, KEEPALIVE_SHORT_TIMEOUT);
 	http_cerver_set_keep_alive_requests (NULL, KEEPALIVE_REQUESTS);
-	http_cerver_set_keep_alive_follow (NULL, HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT);
-	http_cerver_set_keep_alive_pool_read (NULL, false);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -1639,18 +1588,14 @@ static void test_keepalive_events_default (void) {
 
 }
 
-// with event loops, the thread that answered a request handles the next one of its connection when it arrives
-// in its time, here more than any client takes: the client sees the same responses, and the cerver counts
-// the requests that no loop read
-static void test_keepalive_events_followed (void) {
+// with event loops, each request of a connection arrives after the connection waited idle for it: the loop reads
+// it and a thread of the pool handles it, and a client that leaves while its connection is idle ends it
+static void test_keepalive_events_idle (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
 	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
-	options.follow = KEEPALIVE_FOLLOW_TIME * test_time_scale ();
 
 	KeepAliveServer *server = keepalive_server_start (&options);
-
-	const HttpCerver *http_cerver = server->http_cerver;
 
 	KeepAliveClient client;
 	keepalive_client_start (&client, server);
@@ -1664,80 +1609,18 @@ static void test_keepalive_events_followed (void) {
 
 		keepalive_client_send (&client, request);
 		keepalive_client_expect_kept (&client, "HTTP/1.1 200", body);
+
+		// the connection is idle before the next request arrives
+		keepalive_server_wait_idle (server, 1);
 	}
 
-	// every request but the first one, that its loop read
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), KEEPALIVE_REQUESTS - 1, NULL);
 	test_check_unsigned_eq (keepalive_server_reused (server), KEEPALIVE_REQUESTS - 1, NULL);
 
-	// a request in two pieces: the thread reads the first one, gives the connection back and its loop
-	// reads the other one
-	keepalive_client_send (&client, "GET /keepalive/ok HTTP/1.1\r\nHost: local");
-	keepalive_sleep ((long) test_milliseconds (KEEPALIVE_OPEN_TIMEOUT));
-	keepalive_client_send (&client, "host\r\n\r\n");
-
-	keepalive_client_expect_kept (&client, "HTTP/1.1 200", NULL);
-
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), KEEPALIVE_REQUESTS - 1, NULL);
-	test_check_unsigned_eq (keepalive_server_reused (server), KEEPALIVE_REQUESTS, NULL);
-
-	// its client leaves while a thread looks for its next request: the connection ends
 	keepalive_client_end (&client);
 
 	keepalive_server_wait_connections (server, 0);
 
 	keepalive_server_stop (server);
-
-}
-
-// with event loops, the next request of an idle connection is read and handled by a thread of the pool:
-// the client sees the same responses, and the cerver counts every request but the first one, that the loop
-// read with the connection; a cerver that says no reads every request in its loop
-static void test_keepalive_events_pool_read (void) {
-
-	for (unsigned int loop_reads = 0; loop_reads <= 1; loop_reads++) {
-		KeepAliveOptions options = keepalive_options_default ();
-		options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
-		options.loop_reads = loop_reads;
-
-		KeepAliveServer *server = keepalive_server_start (&options);
-
-		const HttpCerver *http_cerver = server->http_cerver;
-
-		KeepAliveClient client;
-		keepalive_client_start (&client, server);
-
-		for (unsigned int idx = 0; idx < KEEPALIVE_REQUESTS; idx++) {
-			char request[KEEPALIVE_REQUEST_SIZE];
-			keepalive_items_request (request, idx);
-
-			char body[KEEPALIVE_REQUEST_SIZE];
-			keepalive_items_body (body, idx);
-
-			keepalive_client_send (&client, request);
-			keepalive_client_expect_kept (&client, "HTTP/1.1 200", body);
-
-			// the connection is idle before the next request arrives
-			keepalive_server_wait_idle (server, 1);
-		}
-
-		test_check_unsigned_eq (
-			CERVER_STATS_GET (http_cerver->n_pool_read_requests),
-			loop_reads ? 0 : (KEEPALIVE_REQUESTS - 1), NULL
-		);
-
-		test_check_unsigned_eq (keepalive_server_reused (server), KEEPALIVE_REQUESTS - 1, NULL);
-
-		// the threads of the thpool wait for the socket of the idle connection, not the loop
-		keepalive_server_wait_waiting (server, loop_reads ? 0 : server->cerver->thpool->n_threads);
-
-		// its client leaves while it is idle: the thread that reads it ends it
-		keepalive_client_end (&client);
-
-		keepalive_server_wait_connections (server, 0);
-
-		keepalive_server_stop (server);
-	}
 
 }
 
@@ -1756,9 +1639,9 @@ static void keepalive_server_wait_queued (const KeepAliveServer *server, const u
 
 }
 
-// with every thread of the pool busy no thread waits for the idle connections: the loop takes the one whose next
-// request arrived in its idle check and reads it, so the request waits in the queue of the pool like any other
-// instead of in its socket; once the thread is free again, it reads the idle connections by itself
+// with every thread of the pool busy, the next request of an idle connection is read by its loop and waits in the
+// queue of the pool like any other; once the thread is free again it is answered, and the connection waits idle
+// for the one after it
 static void test_keepalive_events_pool_busy (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
@@ -1768,8 +1651,6 @@ static void test_keepalive_events_pool_busy (void) {
 	keepalive_gate_reset ();
 
 	KeepAliveServer *server = keepalive_server_start (&options);
-
-	const HttpCerver *http_cerver = server->http_cerver;
 
 	KeepAliveClient idle;
 	keepalive_client_start (&idle, server);
@@ -1784,11 +1665,6 @@ static void test_keepalive_events_pool_busy (void) {
 	keepalive_client_send (&busy, "GET /keepalive/block HTTP/1.1\r\nHost: localhost\r\n\r\n");
 	keepalive_gate_wait_for (1);
 
-	keepalive_server_wait_waiting (server, 0);
-
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
-
-	// the next request of the idle connection waits in the queue: its loop read it
 	keepalive_client_send (&idle, keepalive_ok_request);
 	keepalive_server_wait_queued (server, 1);
 
@@ -1798,16 +1674,10 @@ static void test_keepalive_events_pool_busy (void) {
 	keepalive_client_expect (&busy, "HTTP/1.1 200", NULL, response);
 	keepalive_client_expect_kept (&idle, "HTTP/1.1 200", NULL);
 
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
-
-	// the thread waits for the idle connections again, and reads the next one
 	keepalive_server_wait_idle (server, KEEPALIVE_BUSY_IDLE);
-	keepalive_server_wait_waiting (server, 1);
 
 	keepalive_client_send (&idle, keepalive_ok_request);
 	keepalive_client_expect_kept (&idle, "HTTP/1.1 200", NULL);
-
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read + 1, NULL);
 
 	keepalive_client_end (&idle);
 	keepalive_client_end (&busy);
@@ -1816,9 +1686,8 @@ static void test_keepalive_events_pool_busy (void) {
 
 }
 
-// the thread that gets the socket of an idle connection while its loop rejects its requests does not read it:
-// the connection goes back to its loop, that reads the request and answers it with 503 (http_connection_reported ())
-static void test_keepalive_events_reported_rejecting (void) {
+// the next request of an idle connection that arrives while its loop rejects its requests is answered with 503
+static void test_keepalive_events_rejecting (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
 	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
@@ -1826,121 +1695,24 @@ static void test_keepalive_events_reported_rejecting (void) {
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 
-	const HttpCerver *http_cerver = server->http_cerver;
-
 	KeepAliveClient client;
 	keepalive_client_start (&client, server);
 	keepalive_client_send (&client, keepalive_ok_request);
 	keepalive_client_expect_kept (&client, "HTTP/1.1 200", NULL);
 
-	// the only thread waits for the socket of the idle connection, so its loop does not look at it
 	keepalive_server_wait_idle (server, 1);
-	keepalive_server_wait_waiting (server, 1);
 
 	EventLoop *loop = server->cerver->event_loops->loops[0];
 	__atomic_store_n (&loop->rejecting, true, __ATOMIC_RELEASE);
-
-	const size_t pool_read = CERVER_STATS_GET (http_cerver->n_pool_read_requests);
 
 	keepalive_client_send (&client, keepalive_ok_request);
 
 	char response[KEEPALIVE_RESPONSE_SIZE];
 	keepalive_client_expect (&client, "HTTP/1.1 503", NULL, response);
 
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_pool_read_requests), pool_read, NULL);
-
 	__atomic_store_n (&loop->rejecting, false, __ATOMIC_RELEASE);
 
 	keepalive_client_end (&client);
-
-	keepalive_server_stop (server);
-
-}
-
-// a cerver that is asked to stop while a thread looks for the next request of its connection does not wait
-// for that time: the thread stops looking, and the connection is closed like the idle ones
-static void test_keepalive_events_followed_stop (void) {
-
-	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
-	options.follow = KEEPALIVE_FOLLOW_TIME * test_time_scale ();
-
-	KeepAliveServer *server = keepalive_server_start (&options);
-
-	KeepAliveClient client;
-	keepalive_client_start (&client, server);
-
-	keepalive_client_send (&client, keepalive_ok_request);
-	keepalive_client_expect_kept (&client, "HTTP/1.1 200", NULL);
-
-	// the thread that answered it is looking for its next request by now
-	keepalive_client_expect_open (&client);
-
-	const double start = test_wait_now ();
-
-	test_check_unsigned_eq (cerver_shutdown (server->cerver), 0, NULL);
-
-	keepalive_client_expect_closed (&client);
-
-	keepalive_server_join (server);
-
-	test_check (
-		(test_wait_now () - start) < (double) (KEEPALIVE_FOLLOW_STOP_TIMEOUT * test_time_scale ()),
-		"the cerver waited for the thread that followed a connection"
-	);
-
-	keepalive_client_end (&client);
-
-	keepalive_server_end (server);
-
-}
-
-// a thread that looks for the next request of its connection stops when another request waits for it:
-// with one thread, the client that arrives is answered at once, and the connection that was followed waits idle
-// and is answered again
-static void test_keepalive_events_followed_awaited (void) {
-
-	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
-	options.threads = 1;
-	options.follow = KEEPALIVE_FOLLOW_TIME * test_time_scale ();
-
-	KeepAliveServer *server = keepalive_server_start (&options);
-
-	KeepAliveClient followed;
-	keepalive_client_start (&followed, server);
-	keepalive_client_send (&followed, keepalive_ok_request);
-	keepalive_client_expect_kept (&followed, "HTTP/1.1 200", NULL);
-
-	// the only thread of the cerver is looking for the next request of the first client by now
-	keepalive_client_expect_open (&followed);
-
-	const double start = test_wait_now ();
-
-	KeepAliveClient waiting;
-	keepalive_client_start (&waiting, server);
-	keepalive_client_send (&waiting, keepalive_ok_request);
-	keepalive_client_expect_kept (&waiting, "HTTP/1.1 200", NULL);
-
-	test_check (
-		(test_wait_now () - start) < (double) (KEEPALIVE_FOLLOW_STOP_TIMEOUT * test_time_scale ()),
-		"a request waited for the thread that followed another connection"
-	);
-
-	keepalive_client_expect_open (&followed);
-	keepalive_client_send (&followed, keepalive_ok_request);
-	keepalive_client_expect_kept (&followed, "HTTP/1.1 200", NULL);
-
-	// a thread that stopped looking for a request that waited did not miss: it looks again after the next
-	// request of that connection, and handles the one that follows it
-	keepalive_client_expect_open (&followed);
-	keepalive_client_send (&followed, keepalive_ok_request);
-	keepalive_client_expect_kept (&followed, "HTTP/1.1 200", NULL);
-
-	test_check_unsigned_eq (CERVER_STATS_GET (server->http_cerver->n_followed_requests), 1, NULL);
-
-	keepalive_client_end (&followed);
-	keepalive_client_end (&waiting);
 
 	keepalive_server_stop (server);
 
@@ -2042,12 +1814,9 @@ void http_tests_keepalive (void) {
 	test_run (test_keepalive_threads_default);
 	test_run (test_keepalive_threads_needed);
 	test_run (test_keepalive_events_default);
-	test_run (test_keepalive_events_pool_read);
+	test_run (test_keepalive_events_idle);
 	test_run (test_keepalive_events_pool_busy);
-	test_run (test_keepalive_events_reported_rejecting);
-	test_run (test_keepalive_events_followed);
-	test_run (test_keepalive_events_followed_stop);
-	test_run (test_keepalive_events_followed_awaited);
+	test_run (test_keepalive_events_rejecting);
 	test_run (test_keepalive_events_limit);
 
 	(void) alarm (0);

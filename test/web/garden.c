@@ -19,6 +19,8 @@
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/tree.h>
 
+#include "../handler.h"
+
 // the origin server of cerver for the HTTP Garden (test/garden/run.sh): each request is answered with what the
 // parser read, the format of the origins of the Garden: a JSON with the method, the target, the version, every
 // field in the order of the request and the body, each one in base64
@@ -199,6 +201,7 @@ int main (void) {
 
 	cerver_set_thpool_n_threads (garden_cerver, GARDEN_THREADS);
 	cerver_set_handler_type (garden_cerver, CERVER_HANDLER_TYPE_EVENTS);
+	cerver_set_events_backend (garden_cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (garden_cerver, true);
 
 	HttpCerver *http_cerver = (HttpCerver *) garden_cerver->cerver_data;

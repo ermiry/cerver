@@ -119,9 +119,34 @@ HttpPool *http_cerver_pool_get_with_name (
 		for (unsigned int idx = 0; (idx < http_cerver->n_pools) && !pool; idx++) {
 			if (!strcmp (http_cerver->pools[idx]->name, name)) pool = http_cerver->pools[idx];
 		}
+
+		// the pool of the event loops is not one of the pools with threads
+		if (!pool && http_cerver->loop_pool && !strcmp (http_cerver->loop_pool->name, name)) {
+			pool = http_cerver->loop_pool;
+		}
 	}
 
 	return pool;
+
+}
+
+u8 http_cerver_set_handlers_pool (
+	HttpCerver *http_cerver, const char *name
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver) {
+		HttpPool *pool = name ? http_cerver_pool_get_with_name (http_cerver, name) : NULL;
+
+		if (pool || !name) {
+			http_cerver->handlers_pool = pool;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
 
 }
 
@@ -201,9 +226,14 @@ void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds) {
 
 #pragma region lifecycle
 
+// the default pool is the first one of the cerver; the one of the event loops has no threads,
+// so it is apart from the ones that have a lane in each loop
 unsigned int http_cerver_pools_create (struct _HttpCerver *http_cerver) {
 
-	return http_cerver_pool_add (http_cerver, HTTP_POOL_DEFAULT_NAME, 0) ? 0 : 1;
+	http_cerver->loop_pool = http_pool_new (http_cerver, HTTP_POOL_LOOP_NAME, 0);
+	if (http_cerver->loop_pool) http_cerver->loop_pool->in_loop = true;
+
+	return (http_cerver->loop_pool && http_cerver_pool_add (http_cerver, HTTP_POOL_DEFAULT_NAME, 0)) ? 0 : 1;
 
 }
 
@@ -218,6 +248,10 @@ void http_cerver_pools_delete (struct _HttpCerver *http_cerver) {
 	}
 
 	http_cerver->n_pools = 0;
+
+	free (http_cerver->loop_pool);
+	http_cerver->loop_pool = NULL;
+	http_cerver->handlers_pool = NULL;
 
 }
 

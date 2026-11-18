@@ -642,10 +642,11 @@ tree: $(BENCHBUILD)/tree.$(OBJEXT)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/tree.o -o ./$(BENCHTARGET)/tree $(BENCHLIBS)
 
 # a web server and the load generators of its requests and its WebSocket messages, in any architecture
-load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT) $(BENCHBUILD)/messages.$(OBJEXT)
+load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT) $(BENCHBUILD)/flood.$(OBJEXT) $(BENCHBUILD)/messages.$(OBJEXT)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/server.o -o ./$(BENCHTARGET)/server $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/load.o -o ./$(BENCHTARGET)/load $(PTHREAD)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/flood.o -o ./$(BENCHTARGET)/flood $(PTHREAD)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/messages.o -o ./$(BENCHTARGET)/messages $(PTHREAD)
 
 # compile benchmarks

@@ -31,6 +31,10 @@ extern "C" {
  *
  * The pools are created before the cerver starts. With another handler type the named pools are not started and
  * every request is handled like before; a warning is logged when the cerver starts.
+ *
+ * The pool #HTTP_POOL_LOOP_NAME has no threads: the event loop that read a request of that pool handles it by
+ * itself, and its response leaves in the same thread, so the request crosses no thread at all. It is the pool of
+ * the handlers that never wait.
  * @{
  */
 
@@ -40,6 +44,18 @@ extern "C" {
  * @since 3.0b-5
  */
 #define HTTP_POOL_DEFAULT_NAME					"default"
+
+/**
+ * @brief The name of the pool of the requests that their event loop handles by itself, without a thread of a
+ * pool: every cerver has it, and it can not be created.
+ *
+ * @warning A handler of this pool runs in an I/O thread: while it runs, that thread handles no other connection.
+ * It must never wait (a database, another service, a lock that another request holds, a sleep): the handlers that
+ * do belong to a pool of threads. What it writes is sent when it returns: the parts of a stream stay in memory
+ * until then, so a response that is long or that is written over time also belongs to a pool of threads.
+ * @since 3.0b-11
+ */
+#define HTTP_POOL_LOOP_NAME						"loop"
 
 /**
  * @brief A pool of threads that handles the requests of the endpoints that chose it.
@@ -67,12 +83,35 @@ CERVER_EXPORT HttpPool *http_cerver_pool_create (
  * @brief Returns the pool of an HTTP cerver with a name.
  *
  * @param[in] http_cerver the HttpCerver
- * @param[in] name the name, #HTTP_POOL_DEFAULT_NAME for the default pool
+ * @param[in] name the name, #HTTP_POOL_DEFAULT_NAME for the default pool and #HTTP_POOL_LOOP_NAME for the one of
+ * the event loops
  * @return the pool, NULL for a NULL argument or when no pool has the name
  * @since 3.0b-5
  */
 CERVER_EXPORT HttpPool *http_cerver_pool_get_with_name (
 	const HttpCerver *http_cerver, const char *name
+);
+
+/**
+ * @brief Sets the pool of the requests whose endpoint and groups did not choose one, also the ones without an
+ * endpoint (the files of the static paths, the catch all handler).
+ *
+ * Without this call it is the default pool, the thpool of the cerver. With #HTTP_POOL_LOOP_NAME every handler of
+ * the cerver runs in its event loops, except the ones of the endpoints and the groups that chose a pool of threads
+ * (http_endpoint_set_pool (), http_group_set_pool ()).
+ *
+ * @param[in,out] http_cerver the HttpCerver
+ * @param[in] name the name of the pool; NULL for the default one
+ * @retval 0 the pool was set
+ * @retval 1 the HttpCerver is NULL or it has no pool with that name
+ * @note Only with CERVER_HANDLER_TYPE_EVENTS: with the other handler types the thread of a connection handles
+ * its requests.
+ * @warning With #HTTP_POOL_LOOP_NAME, a handler that waits stops every connection of its I/O thread while it
+ * does: see #HTTP_POOL_LOOP_NAME.
+ * @since 3.0b-11
+ */
+CERVER_EXPORT u8 http_cerver_set_handlers_pool (
+	HttpCerver *http_cerver, const char *name
 );
 
 /**

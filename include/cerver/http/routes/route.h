@@ -549,7 +549,9 @@ CERVER_EXPORT void http_route_set_authentication_with_body (
  * the cerver does not start.
  *
  * @param[in,out] route the route
- * @param[in] name the name of the pool, copied; NULL or "default" for the thpool of the cerver
+ * @param[in] name the name of the pool, copied: "default" for the thpool of the cerver, "loop" for the event loop
+ * that reads the request (#HTTP_POOL_LOOP_NAME); NULL for none, the route takes the one of its cerver
+ * (http_cerver_set_handlers_pool ())
  * @since 3.0b-5
  */
 CERVER_EXPORT void http_route_set_pool (

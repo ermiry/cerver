@@ -757,6 +757,7 @@ static ServerTest *server_test_start (const unsigned int max_connections) {
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, test_handler_type ());
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
@@ -2237,6 +2238,10 @@ static void test_server_metrics (void) {
 	raw_reader_init (&reader, fd);
 	raw_send_frame (fd, true, HTTP_WEB_SOCKET_OPCODE_TEXT, "metrics", 7);
 	server_test_expect_frame (&reader, HTTP_WEB_SOCKET_OPCODE_TEXT, "metrics", 7);
+
+	// the metrics read what the cerver set when it started: the count of its handler orders it before them,
+	// the echo alone does not because with io_uring the cerver sends without a syscall that TSan sees
+	test_check_unsigned_eq (test_wait_counter (&counters.messages, 1, TEST_WAIT_SECONDS), 1, NULL);
 
 	String *metrics = http_cerver_metrics_generate (server->http_cerver);
 	test_check_ptr (metrics);

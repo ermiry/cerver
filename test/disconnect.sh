@@ -6,6 +6,7 @@ IMAGE_PREFIX=${IMAGE_PREFIX:-ermiry/cerver:test}
 
 VARIANTS=(${VARIANTS:-normal address,undefined thread valgrind})
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
+BACKENDS=(${BACKENDS:-uring epoll})
 
 DISCONNECT_LEVEL=${DISCONNECT_LEVEL:-full}
 DISCONNECT_SEED=${DISCONNECT_SEED:-}
@@ -69,6 +70,7 @@ variant_install () {
 variant_run () {
 	local variant=$1
 	local address=$2
+	local backend=$3
 	local image=$(variant_image "$variant")
 	local command="timeout $VARIANT_SECONDS $(variant_runner "$variant") ./test/bin/http"
 
@@ -76,18 +78,19 @@ variant_run () {
 		command="$(variant_install) && $command"
 	fi
 
-	echo "---- disconnect - $variant - $address - $(variant_level "$variant") ----"
+	echo "---- disconnect - $variant - $address - $backend - $(variant_level "$variant") ----"
 
 	local start=$SECONDS
 
 	$DOCKER run "${RUN_FLAGS[@]}" \
 		-e CERVER_TEST_ADDRESS="$address" \
+		-e CERVER_TEST_BACKEND="$backend" \
 		-e DISCONNECT_LEVEL="$(variant_level "$variant")" \
 		"$image" bash -c "$command"
 
 	local result=$?
 
-	echo "disconnect - $variant - $address: $([ $result -eq 0 ] && echo ok || echo failed) in $(( SECONDS - start ))s"
+	echo "disconnect - $variant - $address - $backend: $([ $result -eq 0 ] && echo ok || echo failed) in $(( SECONDS - start ))s"
 
 	return $result
 }
@@ -99,7 +102,9 @@ for variant in "${VARIANTS[@]}"; do
 	fi
 
 	for address in "${ADDRESSES[@]}"; do
-		variant_run "$variant" "$address" || FAILED=1
+		for backend in "${BACKENDS[@]}"; do
+			variant_run "$variant" "$address" "$backend" || FAILED=1
+		done
 	done
 done
 

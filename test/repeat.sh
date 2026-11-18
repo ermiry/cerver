@@ -36,6 +36,8 @@ if [ ! -f /.dockerenv ]; then
 		--sysctl net.ipv6.conf.all.disable_ipv6=0 \
 		--add-host "service-1:$CERVER_TEST_ADDRESS" --add-host "service-2:$CERVER_TEST_ADDRESS" \
 		-e CERVER_TEST_ADDRESS="$CERVER_TEST_ADDRESS" \
+		-e CERVER_TEST_HANDLER="${CERVER_TEST_HANDLER:-}" \
+		-e CERVER_TEST_BACKEND="${CERVER_TEST_BACKEND:-}" \
 		-e ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" \
 		-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
 		-e TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1}" \

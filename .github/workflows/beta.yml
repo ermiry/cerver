@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: gcc:16.2
-      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0 --security-opt seccomp=unconfined
     steps:
       - name: Checkout
         uses: actions/checkout@v6

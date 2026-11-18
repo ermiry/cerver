@@ -249,6 +249,7 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (features_cerver, FEATURES_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (features_cerver, FEATURES_THREADS);
 		cerver_set_handler_type (features_cerver, test_handler_type ());
+		cerver_set_events_backend (features_cerver, test_events_backend ());
 		cerver_set_io_threads (features_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (features_cerver, true);
 

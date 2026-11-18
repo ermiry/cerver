@@ -46,6 +46,7 @@
 
 #include <cerver/threads/thpool.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -91,6 +92,9 @@
 #define SERVER_TEST_POLL_TIMEOUT			256
 
 #define SERVER_TEST_HEADERS_TIMEOUT			1
+
+// the sleeps of SERVER_TEST_SLOW_SLEEP that leave a cerver idle for more than twice its headers timeout
+#define SERVER_TEST_IDLE_CERVER_SLEEPS		8
 #define SERVER_TEST_REQUEST_TIMEOUT			2
 #define SERVER_TEST_SEND_TIMEOUT			1
 #define SERVER_TEST_DRAIN_TIMEOUT			8
@@ -436,6 +440,10 @@ static void server_test_gate_wait_for (const unsigned int waiting) {
 
 #pragma region routes
 
+// the /ok requests that were answered: the test waits for it after reading a response, because with io_uring the
+// cerver sends without a syscall that TSan sees, so the response alone does not order what the cerver did before
+static unsigned int server_test_ok_answered = 0;
+
 // GET /ok
 static void server_test_ok_handler (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -444,6 +452,8 @@ static void server_test_ok_handler (
 	(void) request;
 
 	(void) http_response_send (oki_doki, http_receive);
+
+	(void) __atomic_add_fetch (&server_test_ok_answered, 1, __ATOMIC_SEQ_CST);
 
 }
 
@@ -783,6 +793,12 @@ typedef struct ServerTestOptions {
 	unsigned int io_threads;
 	unsigned int max_connections;
 
+	// the max size of the body of a request, 0 keeps the default
+	size_t max_body_size;
+
+	// the cerver keeps the files of the uploads instead of deleting them when their request is done
+	bool keep_uploads;
+
 } ServerTestOptions;
 
 typedef struct ServerTest {
@@ -810,7 +826,9 @@ static ServerTestOptions server_test_options_default (void) {
 		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT,
 		server_test_handler_type,
 		0,
-		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, 0, 0
+		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, 0, 0,
+		0,
+		false
 	};
 
 	return options;
@@ -1025,6 +1043,7 @@ static Cerver *server_test_cerver_create (
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, options->handler_type);
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
 	cerver_set_thpool_n_threads (cerver, options->threads);
@@ -1046,11 +1065,16 @@ static Cerver *server_test_cerver_create (
 	http_cerver_set_request_timeout (http_cerver, options->request_timeout);
 	http_cerver_set_send_timeout_milliseconds (http_cerver, options->response_send_timeout);
 
+	if (options->max_body_size) http_cerver_set_max_body_size (http_cerver, options->max_body_size);
+
 	// the clients of these tests read each response until the cerver closes its connection,
 	// the connections that are kept have their own tests (keepalive.c)
 	http_cerver_set_keep_alive (http_cerver, false);
 
 	server_test_routes (http_cerver);
+
+	// after the routes, which set the uploads to be deleted when their request is done
+	if (options->keep_uploads) http_cerver_set_uploads_delete_when_done (http_cerver, false);
 
 	return cerver;
 
@@ -1096,6 +1120,17 @@ static void server_test_send (const int fd, const char *data);
 
 static size_t server_test_read (const int fd, char *response);
 
+// waits until the handler of the next /ok request returned, after the count of answered ones that was read before it:
+// what the cerver did before that request is then ordered before what this thread reads of it
+static void server_test_ok_wait (const unsigned int answered) {
+
+	test_check (
+		test_wait_counter (&server_test_ok_answered, answered + 1, TEST_WAIT_SECONDS) > answered,
+		"the handler of the /ok request did not return"
+	);
+
+}
+
 static ServerTest *server_test_start (const ServerTestOptions *options) {
 
 	ServerTest *server = (ServerTest *) calloc (1, sizeof (ServerTest));
@@ -1103,6 +1138,8 @@ static ServerTest *server_test_start (const ServerTestOptions *options) {
 
 	server->port = (u16) server_test_port++;
 	server->cerver = server_test_cerver_create (server->port, options);
+
+	const unsigned int answered = __atomic_load_n (&server_test_ok_answered, __ATOMIC_SEQ_CST);
 
 	test_check_int_eq (pthread_create (&server->thread, NULL, server_test_thread, server), 0, NULL);
 	server->started = true;
@@ -1113,6 +1150,8 @@ static ServerTest *server_test_start (const ServerTestOptions *options) {
 	char response[SERVER_TEST_RESPONSE_SIZE];
 	(void) server_test_read (fd, response);
 	(void) close (fd);
+
+	server_test_ok_wait (answered);
 
 	return server;
 
@@ -1199,6 +1238,17 @@ static void server_test_request (const u16 port, const char *request, const char
 	server_test_send (fd, request);
 	server_test_expect (fd, status);
 	(void) close (fd);
+
+}
+
+// sends an /ok request and waits until its handler returned, like server_test_start ()
+static void server_test_request_ok (const u16 port) {
+
+	const unsigned int answered = __atomic_load_n (&server_test_ok_answered, __ATOMIC_SEQ_CST);
+
+	server_test_request (port, ok_request, status_ok);
+
+	server_test_ok_wait (answered);
 
 }
 
@@ -1453,10 +1503,13 @@ static void test_server_huge_body (void) {
 
 	server_test_huge_size = server_test_huge_body_size ();
 
+	// the handler reads the block in a thread of the cerver, so it is written before the cerver
+	// creates its threads: the body that it checks arrives through the socket, which with io_uring
+	// is not a synchronization that TSan sees
+	server_test_huge_block_create ();
+
 	ServerTestOptions options = server_test_options_default ();
 	ServerTest *server = server_test_start (&options);
-
-	server_test_huge_block_create ();
 
 	char *body = (char *) malloc (server_test_huge_size);
 	test_check_ptr (body);
@@ -1470,15 +1523,18 @@ static void test_server_huge_body (void) {
 	server_test_expect (fd, status_ok);
 	(void) close (fd);
 
-	// half of the body
-	http_cerver_set_max_body_size ((HttpCerver *) server->cerver->cerver_data, server_test_huge_size >> 1);
+	free (body);
+
+	server_test_stop (server);
+
+	// half of the body, set before the cerver starts: its loops read the limit without a lock
+	options.max_body_size = server_test_huge_size >> 1;
+	server = server_test_start (&options);
 
 	fd = server_test_connect (server->port);
 	server_test_huge_headers (fd);
 	server_test_expect (fd, status_payload_too_large);
 	(void) close (fd);
-
-	free (body);
 
 	server_test_stop (server);
 
@@ -1532,6 +1588,24 @@ static void test_server_idle (void) {
 
 }
 
+// a cerver that had nothing to do for longer than its timeouts answers the next request: the deadlines of a
+// connection count from the moment when it arrives, also in an event loop that slept all that time
+static void test_server_idle_cerver (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	options.headers_timeout = SERVER_TEST_HEADERS_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
+	for (unsigned int idx = 0; idx < SERVER_TEST_IDLE_CERVER_SLEEPS; idx++) {
+		server_test_sleep (SERVER_TEST_SLOW_SLEEP);
+	}
+
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
 static void server_test_send_slow_body (const int fd) {
 
 	server_test_send (fd, slow_body_headers);
@@ -1572,13 +1646,54 @@ static void test_server_request_timeout (void) {
 	server_test_expect (fd, status_request_timeout);
 	(void) close (fd);
 
-	HttpCerver *http_cerver = (HttpCerver *) server->cerver->cerver_data;
-	(void) pthread_mutex_lock (http_cerver->mutex);
-	const size_t n_timeout_requests = http_cerver->n_timeout_requests;
-	(void) pthread_mutex_unlock (http_cerver->mutex);
+	// the counter is read like the stats and the metrics read it, without the mutex of the cerver
+	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+	const size_t n_timeout_requests = CERVER_STATS_GET (http_cerver->n_timeout_requests);
 	test_check (n_timeout_requests == 1, NULL);
 
 	server_test_stop (server);
+
+}
+
+// the handler of a cerver with event loops gives its response to the loop of its connection, that sees its send
+// fail: the handler does not, and the cerver counts the response that failed
+static bool server_test_handler_sees_failures (void) {
+
+	return server_test_handler_type != CERVER_HANDLER_TYPE_EVENTS;
+
+}
+
+static u64 server_test_failed_responses (const ServerTest *server) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+
+	return (u64) CERVER_STATS_GET (http_cerver->n_failed_responses);
+
+}
+
+static void server_test_wait_failed_responses (const ServerTest *server, const u64 expected) {
+
+	const double deadline = server_test_now () + SERVER_TEST_JOIN_TIMEOUT;
+	while ((server_test_failed_responses (server) < expected) && (server_test_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	test_check (server_test_failed_responses (server) >= expected, "the response did not fail");
+
+}
+
+// a response that a handler wrote failed: the handler saw it, or the cerver counted it
+static void server_test_expect_failed (
+	const ServerTest *server, const unsigned int *handler_failed, const u64 failed_responses
+) {
+
+	if (server_test_handler_sees_failures ()) {
+		test_check_unsigned_eq (__atomic_load_n (handler_failed, __ATOMIC_SEQ_CST), 1, NULL);
+	}
+
+	else {
+		server_test_wait_failed_responses (server, failed_responses + 1);
+	}
 
 }
 
@@ -1597,6 +1712,8 @@ static void test_server_send_timeout (void) {
 	__atomic_store_n (&big_failed, 0, __ATOMIC_SEQ_CST);
 	__atomic_store_n (&big_started, 0, __ATOMIC_SEQ_CST);
 
+	const u64 failed_responses = server_test_failed_responses (server);
+
 	int slow_reader = server_test_connect (server->port);
 	server_test_send (slow_reader, big_request);
 
@@ -1607,7 +1724,7 @@ static void test_server_send_timeout (void) {
 	// the only thread is free again after the send timeout
 	server_test_request (server->port, ok_request, status_ok);
 
-	test_check (__atomic_load_n (&big_failed, __ATOMIC_SEQ_CST) == 1, "the big response did not fail");
+	server_test_expect_failed (server, &big_failed, failed_responses);
 
 	(void) close (slow_reader);
 
@@ -1876,23 +1993,27 @@ static void test_server_nonblocking (void) {
 // before, it failed right away after a few retries
 static void test_server_nonblocking_timeout (void) {
 
-	ServerTestOptions options = server_test_options_default ();
-	options.send_timeout = SERVER_TEST_SEND_TIMEOUT;
-	ServerTest *server = server_test_start (&options);
-
+	// the handler reads the response in a thread of the cerver, so it is written before the cerver creates its
+	// threads: the request that asks for it arrives through the socket, which with io_uring TSan does not see
 	big_response = (char *) malloc (SERVER_TEST_BIG_RESPONSE_SIZE);
 	test_check_ptr (big_response);
 	(void) memset (big_response, 'a', SERVER_TEST_BIG_RESPONSE_SIZE);
 
+	ServerTestOptions options = server_test_options_default ();
+	options.send_timeout = SERVER_TEST_SEND_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
 	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+	const u64 failed_responses = server_test_failed_responses (server);
 
 	int fd = server_test_connect_small (server->port);
 	server_test_send (fd, nonblocking_big_request);
 
 	server_test_wait_count (&nonblocking_done, done + 1);
-	(void) close (fd);
 
-	test_check_unsigned_eq (__atomic_load_n (&nonblocking_failed, __ATOMIC_SEQ_CST), 1, NULL);
+	// a client that leaves would fail the send at once
+	server_test_expect_failed (server, &nonblocking_failed, failed_responses);
+	(void) close (fd);
 
 	const unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
 	test_check (
@@ -1910,28 +2031,61 @@ static void test_server_nonblocking_timeout (void) {
 
 }
 
+// the milliseconds that a response took until it failed: the handler measured its sends, or, with event
+// loops, the test measures from its request until the cerver counted the failure
+static unsigned long server_test_response_failed_milliseconds (
+	const ServerTest *server, const double start, const u64 failed_responses
+) {
+
+	unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
+
+	if (!server_test_handler_sees_failures ()) {
+		server_test_wait_failed_responses (server, failed_responses + 1);
+
+		milliseconds = (unsigned long) ((server_test_now () - start) * SERVER_TEST_MILLISECONDS_PER_SECOND);
+	}
+
+	return milliseconds;
+
+}
+
+// the deadline of a response of an event loop is a timer of its wheel, that expires at most a tick later
+static unsigned long server_test_response_tolerance (void) {
+
+	return SERVER_TEST_RESPONSE_SEND_TOLERANCE + (server_test_handler_sees_failures () ? 0 : EVENT_WHEEL_TICK);
+
+}
+
 // sends the request with a client that never reads,
 // and checks that its response failed within the deadline of the response
-static void server_test_response_deadline (const u16 port, const char *request) {
+static void server_test_response_deadline (const ServerTest *server, const char *request) {
 
 	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+	const u64 failed_responses = server_test_failed_responses (server);
 
-	int fd = server_test_connect_small (port);
+	const double start = server_test_now ();
+
+	int fd = server_test_connect_small (server->port);
 	server_test_send (fd, request);
 
 	server_test_wait_count (&nonblocking_done, done + 1);
+
+	// a client that leaves would fail the send at once
+	server_test_expect_failed (server, &nonblocking_failed, failed_responses);
 	(void) close (fd);
 
-	test_check_unsigned_eq (__atomic_load_n (&nonblocking_failed, __ATOMIC_SEQ_CST), 1, NULL);
-
-	const unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
+	const unsigned long milliseconds = server_test_response_failed_milliseconds (server, start, failed_responses);
 	test_check (
 		milliseconds >= (SERVER_TEST_RESPONSE_SEND_TIMEOUT - SERVER_TEST_SEND_TIMEOUT_MARGIN),
 		"the response did not wait for its deadline"
 	);
 
+	if (milliseconds > (SERVER_TEST_RESPONSE_SEND_TIMEOUT + server_test_response_tolerance ())) {
+		(void) fprintf (stderr, "the response failed after %lu milliseconds\n", milliseconds);
+	}
+
 	test_check (
-		milliseconds <= (SERVER_TEST_RESPONSE_SEND_TIMEOUT + SERVER_TEST_RESPONSE_SEND_TOLERANCE),
+		milliseconds <= (SERVER_TEST_RESPONSE_SEND_TIMEOUT + server_test_response_tolerance ()),
 		"the response waited longer than its deadline"
 	);
 
@@ -1952,8 +2106,8 @@ static void test_server_response_send_timeout (void) {
 	options.response_send_timeout = SERVER_TEST_RESPONSE_SEND_TIMEOUT;
 	ServerTest *server = server_test_start (&options);
 
-	server_test_response_deadline (server->port, deadline_big_request);
-	server_test_response_deadline (server->port, deadline_video_request);
+	server_test_response_deadline (server, deadline_big_request);
+	server_test_response_deadline (server, deadline_video_request);
 
 	// the only thread is free again
 	server_test_request (server->port, ok_request, status_ok);
@@ -2501,18 +2655,19 @@ static void test_server_two_cervers (void) {
 	ServerTest *first = server_test_start (&options);
 	ServerTest *second = server_test_start (&options);
 
-	server_test_request (first->port, ok_request, status_ok);
-	server_test_request (second->port, ok_request, status_ok);
+	// the responses of the second cerver read what the first one owns, which its end releases
+	server_test_request_ok (first->port);
+	server_test_request_ok (second->port);
 
 	server_test_stop (first);
 
-	server_test_request (second->port, ok_request, status_ok);
+	server_test_request_ok (second->port);
 
 	server_test_stop (second);
 
 	ServerTest *third = server_test_start (&options);
 
-	server_test_request (third->port, ok_request, status_ok);
+	server_test_request_ok (third->port);
 
 	server_test_stop (third);
 
@@ -2679,6 +2834,7 @@ static void test_server_events_requirements (void) {
 
 	test_check_ptr (custom);
 	cerver_set_handler_type (custom, CERVER_HANDLER_TYPE_EVENTS);
+	cerver_set_events_backend (custom, test_events_backend ());
 	cerver_set_reusable_address_flags (custom, true);
 
 	test_check_unsigned_eq (cerver_start (custom), 1, NULL);
@@ -2986,9 +3142,11 @@ static void test_server_events_rejected_uploads (void) {
 
 	ServerTestOptions options = server_test_options_default ();
 	options.overload_wait_timeout = SERVER_TEST_WAIT_TIMEOUT;
-	ServerTest *server = server_test_start (&options);
 
-	http_cerver_set_uploads_delete_when_done ((HttpCerver *) server->cerver->cerver_data, false);
+	// set before the cerver starts: its loops read it without a lock when they accept a connection
+	options.keep_uploads = true;
+
+	ServerTest *server = server_test_start (&options);
 
 	// the file of a request that is handled stays
 	server_test_request (server->port, upload_request, status_ok);
@@ -3284,6 +3442,7 @@ static void server_tests_model (const CerverHandlerType handler_type) {
 	test_run (test_server_huge_body);
 	test_run (test_server_slowloris);
 	test_run (test_server_idle);
+	test_run (test_server_idle_cerver);
 	test_run (test_server_slow_body);
 	test_run (test_server_request_timeout);
 	test_run (test_server_send_timeout);

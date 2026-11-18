@@ -118,6 +118,7 @@ int main (void) {
 		cerver_set_receive_buffer_size (api_cerver, 4096);
 		cerver_set_thpool_n_threads (api_cerver, 4);
 		cerver_set_handler_type (api_cerver, test_handler_type ());
+		cerver_set_events_backend (api_cerver, test_events_backend ());
 		cerver_set_io_threads (api_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (api_cerver, true);

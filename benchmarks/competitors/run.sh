@@ -12,6 +12,6 @@ ARCHITECTURE=$(docker run --rm "$IMAGE" uname -m)
 RESULTS=benchmarks/competitors/results/$ARCHITECTURE.txt
 
 mkdir -p benchmarks/competitors/results
-docker run --rm "$IMAGE" > "$RESULTS"
+docker run --rm --security-opt seccomp=unconfined "$IMAGE" > "$RESULTS"
 
 cat "$RESULTS"

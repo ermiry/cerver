@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -6,8 +7,15 @@
 
 #include <dlfcn.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "faults.h"
+
+// the arguments that a system call has at most
+#define FAULTS_SYSCALL_ARGUMENTS		6
+
+// what a system call that fails returns
+#define FAULTS_SYSCALL_FAILED			(-1L)
 
 // the allocators of glibc, exported for the programs that replace malloc ()
 #ifdef __cplusplus
@@ -35,6 +43,11 @@ typedef int (*FaultsThreadCreate) (
 	pthread_t *thread, const pthread_attr_t *attributes,
 	void *(*work) (void *), void *arguments
 );
+
+typedef long (*FaultsSyscall) (long number, ...);
+
+// the errno of the system call that is armed to fail
+static int faults_syscall_error = 0;
 
 typedef struct FaultsArm {
 
@@ -210,6 +223,68 @@ FAULTS_LINKAGE int pthread_create (
 	if (!faults_fails (FAULTS_FUNCTION_THREAD, FAULTS_ANY_SIZE)) {
 		FaultsThreadCreate next = faults_thread_create_next ();
 		result = next ? next (thread, attributes, work, arguments) : EAGAIN;
+	}
+
+	return result;
+
+}
+
+// the number of the system call is what its arm matches, like the size of an allocation
+void faults_arm_syscall (const long number, const int error, const unsigned int passed) {
+
+	__atomic_store_n (&faults_syscall_error, error, __ATOMIC_RELEASE);
+
+	faults_arm_after (FAULTS_FUNCTION_SYSCALL, false, (size_t) number, passed);
+
+}
+
+// the syscall () of the system, the one after this program
+static FaultsSyscall faults_syscall_next (void) {
+
+	static FaultsSyscall next = NULL;
+
+	FaultsSyscall found = __atomic_load_n (&next, __ATOMIC_ACQUIRE);
+	if (!found) {
+		void *symbol = dlsym (RTLD_NEXT, "syscall");
+		(void) memcpy (&found, &symbol, sizeof (FaultsSyscall));
+		__atomic_store_n (&next, found, __ATOMIC_RELEASE);
+	}
+
+	return found;
+
+}
+
+// a system call takes up to six arguments of the size of a register: the ones that its caller did not pass
+// are not read by the kernel
+FAULTS_LINKAGE long syscall (long number, ...) FAULTS_NO_THROW {
+
+	long result = FAULTS_SYSCALL_FAILED;
+
+	long arguments[FAULTS_SYSCALL_ARGUMENTS];
+
+	va_list list;
+	va_start (list, number);
+	for (unsigned int i = 0; i < FAULTS_SYSCALL_ARGUMENTS; i++) {
+		arguments[i] = va_arg (list, long);
+	}
+	va_end (list);
+
+	if (faults_fails (FAULTS_FUNCTION_SYSCALL, (size_t) number)) {
+		errno = __atomic_load_n (&faults_syscall_error, __ATOMIC_ACQUIRE);
+	}
+
+	else {
+		FaultsSyscall next = faults_syscall_next ();
+
+		if (next) {
+			result = next (
+				number, arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], arguments[5]
+			);
+		}
+
+		else {
+			errno = ENOSYS;
+		}
 	}
 
 	return result;

@@ -79,6 +79,7 @@ int main (int argc, char **argv) {
 		(void) cerver_set_bind_address (autobahn_cerver, test_address ());
 		cerver_set_thpool_n_threads (autobahn_cerver, AUTOBAHN_THREADS);
 		cerver_set_handler_type (autobahn_cerver, test_handler_type ());
+		cerver_set_events_backend (autobahn_cerver, test_events_backend ());
 		cerver_set_io_threads (autobahn_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (autobahn_cerver, true);
 

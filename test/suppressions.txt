@@ -3,6 +3,7 @@ clang-tidy src/cerver/http/responses/compression.c bugprone-macro-parentheses
 clang-tidy src/cerver/http/responses/response.c bugprone-macro-parentheses
 clang-tidy src/cerver/http/websockets/websocket.c cert-msc30-c
 cppcheck src/cerver/crypto/provider.h preprocessorErrorDirective
+cppcheck src/cerver/events/ring.h preprocessorErrorDirective
 gcc src/cerver/http/core/pairs.c analyzer-malloc-leak
 gcc src/cerver/http/core/upgrade.c analyzer-malloc-leak
 gcc src/cerver/http/headers/types.c analyzer-infinite-loop

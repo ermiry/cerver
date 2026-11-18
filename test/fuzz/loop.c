@@ -8,11 +8,14 @@
 #include <unistd.h>
 
 #include <cerver/core/cerver.h>
+#include <cerver/events/events.h>
 #include "cerver/events/internal.h"
 
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
+#include <cerver/http/core/pool.h>
 
+#include "../handler.h"
 #include "fuzz.h"
 
 // raw bytes to a connection of an event loop: the loop reads them from its socket in pieces,
@@ -22,15 +25,18 @@
 // the responses that the loop writes and the closes of each state
 // the cerver keeps its connections: the requests that follow one that was answered are handled too,
 // the ones that arrived behind it (pipelined) and the ones that an idle connection receives
-// the first byte selects the size of the pieces the bytes are split in
+// the first byte selects the size of the pieces the bytes are split in, and whether the handlers run in
+// the loop itself (its pool, where the requests of a pipeline are handled in a row) or through the dispatcher
+// the backend of the loop is the one that CERVER_TEST_BACKEND asks for (test/handler.h)
 
 // the steps that the loop takes at most to end a connection whose client is done,
-// and one more for each byte: every pipelined request that is left takes a step
+// and some more for each byte: every pipelined request that is left takes them
 #define LOOP_STEPS_MAX					64
+#define LOOP_STEPS_PER_BYTE				4
 
-// the microseconds that the job of a request looks for the next one of its connection: the bytes that the
-// client already sent are found at once, and a run does not wait for the ones that it has not sent
-#define LOOP_FOLLOW_TIME				1
+// the bit of the first byte that runs the handlers in the loop, the others are the size of the pieces
+#define LOOP_HANDLERS_BIT				0x80
+#define LOOP_PIECE_MASK					0x7F
 
 static EventDispatcher loop_dispatcher;
 static EventLoop *loop_events = NULL;
@@ -49,7 +55,8 @@ static void loop_create (void) {
 	cerver_set_send_timeout (fuzz_cerver, FUZZ_SEND_TIMEOUT_SECONDS);
 
 	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
-	http_cerver_set_keep_alive_follow ((HttpCerver *) fuzz_cerver->cerver_data, LOOP_FOLLOW_TIME);
+
+	cerver_set_events_backend (fuzz_cerver, test_events_backend ());
 
 	event_dispatcher_inline (&loop_dispatcher);
 
@@ -115,7 +122,7 @@ static void loop_feed (
 
 	for (
 		size_t steps = 0;
-		event_loop_connections (loop_events) && (steps < (LOOP_STEPS_MAX + data_len));
+		event_loop_connections (loop_events) && (steps < (LOOP_STEPS_MAX + (data_len * LOOP_STEPS_PER_BYTE)));
 		steps++
 	) {
 		(void) event_loop_step (loop_events, 0);
@@ -136,7 +143,13 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 
 	loop_create ();
 
-	loop_feed (data + 1, size - 1, (size_t) data[0]);
+	// each input chooses where its handlers run: the cerver reads its pool with each request
+	(void) http_cerver_set_handlers_pool (
+		(HttpCerver *) fuzz_cerver->cerver_data,
+		(data[0] & LOOP_HANDLERS_BIT) ? HTTP_POOL_LOOP_NAME : NULL
+	);
+
+	loop_feed (data + 1, size - 1, (size_t) (data[0] & LOOP_PIECE_MASK));
 
 	return 0;
 

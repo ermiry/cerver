@@ -62,8 +62,10 @@ EXAMPLES_ADDRESS=127.0.0.1
 
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
 
-HANDLERS=(${HANDLERS:-threads events})
+HANDLERS=(${HANDLERS:-threads uring epoll})
 DEFAULT_HANDLER=threads
+EVENTS_HANDLER=events
+BACKENDS=(uring epoll)
 WEB_PAIRS=web/
 
 TAG=test
@@ -139,6 +141,14 @@ pair_handlers () {
 	fi
 }
 
+handler_backend () {
+	[[ " ${BACKENDS[*]} " == *" $1 "* ]] && echo "$1"
+}
+
+handler_type () {
+	[ -n "$(handler_backend "$1")" ] && echo "$EVENTS_HANDLER" || echo "$1"
+}
+
 FAILED=()
 RUNS=0
 for address in "${ADDRESSES[@]}"; do
@@ -154,7 +164,8 @@ for address in "${ADDRESSES[@]}"; do
 			if ! $DOCKER run "${RUN_FLAGS[@]}" \
 				--add-host "service-1:$address" --add-host "service-2:$address" \
 				-e CERVER_TEST_ADDRESS="$address" \
-				-e CERVER_TEST_HANDLER="$handler" \
+				-e CERVER_TEST_HANDLER="$(handler_type "$handler")" \
+				-e CERVER_TEST_BACKEND="$(handler_backend "$handler")" \
 				"$IMAGE" bash test/pair.sh "$pair"; then
 				FAILED+=("$pair@$address/$handler")
 			fi

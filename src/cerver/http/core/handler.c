@@ -248,6 +248,9 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->response_failed = false;
 	http_receive->response_error = 0;
 
+	http_receive->response_written = false;
+	http_receive->response_written_bytes = 0;
+
 	http_receive->send_deadline.tv_sec = 0;
 	http_receive->send_deadline.tv_nsec = 0;
 	http_receive->send_deadline_set = false;
@@ -789,6 +792,58 @@ void http_receive_response_failed (
 			http_receive_count_gone (receive, error);
 		}
 	}
+
+}
+
+void http_receive_response_bytes (HttpReceive *http_receive, const size_t bytes) {
+
+	if (http_receive->cr->cerver) {
+		CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, bytes);
+	}
+
+	http_receive->cr->connection->stats->total_bytes_sent += bytes;
+
+	http_receive->sent += bytes;
+
+	// the first bytes of the response that its handler sends start the response stage
+	if (bytes && (http_receive->stage == HTTP_STAGE_HANDLER)) http_receive->stage = HTTP_STAGE_RESPONSE;
+
+}
+
+// what was written for the loop of the connection is not counted twice
+static size_t http_receive_response_written_take (HttpReceive *http_receive) {
+
+	const size_t bytes = http_receive->response_written_bytes;
+
+	http_receive->response_written = false;
+	http_receive->response_written_bytes = 0;
+
+	return bytes;
+
+}
+
+void http_receive_response_sent (HttpReceive *http_receive) {
+
+	const bool written = http_receive->response_written;
+	const size_t bytes = http_receive_response_written_take (http_receive);
+
+	if (bytes) http_receive_response_bytes (http_receive, bytes);
+
+	if (
+		written && http_receive->http_cerver
+		&& ((size_t) http_receive->status < HTTP_CERVER_RESPONSES_STATUS_SIZE)
+	) {
+		CERVER_STATS_ADD (http_receive->http_cerver->n_responses_by_status[http_receive->status], 1);
+	}
+
+}
+
+void http_receive_response_cut (HttpReceive *http_receive, const size_t sent) {
+
+	// a handler whose last write failed did not give that part to the loop, the bytes before it left anyway
+	(void) http_receive_response_written_take (http_receive);
+
+	if (sent) http_receive_response_bytes (http_receive, sent);
 
 }
 
@@ -2347,9 +2402,8 @@ void http_receive_timed_out (
 ) {
 
 	if (received && !http_receive->responded) {
-		(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-		http_receive->http_cerver->n_timeout_requests += 1;
-		(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		// its readers (the stats, the metrics) load it without the mutex of the cerver, like every counter
+		CERVER_STATS_ADD (http_receive->http_cerver->n_timeout_requests, 1);
 
 		(void) http_receive_reject (
 			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT

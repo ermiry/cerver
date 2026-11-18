@@ -1,5 +1,5 @@
-# cerver 3.0b-9 against its competitors
-# date: 2026-11-16T15:21:49Z
+# cerver 3.0b-11 against its competitors
+# date: 2026-11-17T13:20:40Z
 # architecture: aarch64, cpus: 10, kernel: 7.2.12-orbstack-00394-gbecdd6130068
 # cpu: -
 # compiler: gcc (GCC) 16.2.0, -O3 -march=native
@@ -9,136 +9,181 @@
 # the median of 5 runs of 0.25 s, with the slowest and the fastest of them; allocations of one item; rss of the process until then
 # picohttpparser reads the head, its body is the Content-Length after it or a copy decoded by phr_decode_chunked ()
 module    case       implementation     operation         items/s       MB/s     lowest    highest allocations    rss-KiB
-json      small      cerver             parse           5915414.4     1077.5     1035.2     1110.6       0.00       3760
-json      small      cerver             serialize       4855773.4      884.5      837.9      889.9       0.00       3896
-json      small      cerver             search         58762867.7    10703.8    10527.6    10897.4       0.00       3896
-json      records    cerver             parse             21429.2     1072.1     1036.3     1083.6       2.00       4288
-json      records    cerver             serialize         18574.1      929.3      830.1      934.0       0.00       4288
-json      numbers    cerver             parse               999.2     1330.0     1303.2     1341.7       2.00      10432
-json      numbers    cerver             serialize           987.8     1314.8     1298.4     1317.6       0.00      10432
-json      strings    cerver             parse              3009.4     1792.9     1785.3     1794.3       2.00      10432
-json      strings    cerver             serialize          2743.1     1634.3     1519.5     1665.6       0.00      10432
-json      texts      cerver             parse             11545.2    10053.8     9725.7    10056.5       2.00      10432
-json      texts      cerver             serialize         10420.1     9074.1     9056.5     9088.8       0.00      10432
-json      small      jansson            parse            613951.4      111.8      109.3      113.3      54.00       1296
-json      small      jansson            serialize       1176063.7      214.2      191.2      217.8      11.00       1560
-json      small      jansson            search         41957384.5     7642.6     7616.0     7706.9       0.00       1560
-json      records    jansson            parse              2119.5      106.0      102.6      108.1   13321.00       2328
-json      records    jansson            serialize          4794.9      239.9      220.5      244.4    1040.00       2328
-json      numbers    jansson            parse                95.4      127.0      126.9      127.3   65553.00       8308
-json      numbers    jansson            serialize           284.5      378.7      359.6      379.7      21.00       8308
-json      strings    jansson            parse               249.5      148.6      135.6      161.2   16400.00       8308
-json      strings    jansson            serialize           678.5      404.2      378.6      405.4      20.00       8308
-json      texts      jansson            parse               229.8      200.1      195.3      208.8    4112.00       8308
-json      texts      jansson            serialize           569.5      495.9      478.8      525.8      17.00       8308
-json      small      yyjson             parse          17230144.1     3138.5     2880.2     3145.3       2.00       1424
-json      small      yyjson             serialize      16950317.0     3087.5     3051.4     3164.5       1.00       1424
-json      small      yyjson             search         41982178.8     7647.1     7269.7     7953.3       0.00       1424
-json      records    yyjson             parse             55071.8     2755.3     2706.0     2796.5       2.00       1692
-json      records    yyjson             serialize         61929.1     3098.4     2887.0     3141.7       1.00       1692
-json      numbers    yyjson             parse              1647.2     2192.5     2171.6     2195.9       2.00       8008
-json      numbers    yyjson             serialize          2037.9     2712.5     2677.3     2726.3       2.00       8008
-json      strings    yyjson             parse              6476.3     3858.4     3762.3     3873.0       2.00       8008
-json      strings    yyjson             serialize          6585.0     3923.2     3715.9     3955.4       5.00       8008
-json      texts      yyjson             parse              5827.8     5074.9     5067.8     5083.4       2.00       8008
-json      texts      yyjson             serialize         44472.9    38727.9    35573.2    39159.9       9.00       8008
-json      small      simdjson           parse          13758107.3     2506.1     2375.5     2512.8       0.00       3128
-json      small      simdjson           serialize       5249762.3      956.3      950.3      960.1       3.00       3128
-json      small      simdjson           search         43150604.8     7860.0     7668.5     7934.0       0.00       3128
-json      records    simdjson           parse             54001.6     2701.7     2692.8     2708.3       0.00       3532
-json      records    simdjson           serialize         19478.7      974.5      942.2      995.7      11.00       3660
-json      numbers    simdjson           parse              1278.0     1701.1     1678.0     1704.9       0.00       9456
-json      numbers    simdjson           serialize           981.5     1306.4     1289.5     1307.7      16.00      11276
-json      strings    simdjson           parse              3929.7     2341.2     2169.9     2349.3       0.00      11276
-json      strings    simdjson           serialize          6164.2     3672.5     3477.8     3743.0      13.00      11276
-json      texts      simdjson           parse             10146.1     8835.4     8751.6     8847.8       0.00      11276
-json      texts      simdjson           serialize         15621.1    13603.2    12870.0    13651.7      11.00      11424
-json      small      rapidjson          parse           2601364.9      473.8      441.7      478.0       9.00       3044
-json      small      rapidjson          serialize       3842850.2      700.0      695.6      701.4       2.00       3180
-json      small      rapidjson          search         45073026.3     8210.1     8006.6     8472.4       0.00       3180
-json      records    rapidjson          parse             11089.9      554.8      545.1      557.2      16.00       3564
-json      records    rapidjson          serialize         15518.6      776.4      733.8      777.9       2.00       3564
-json      numbers    rapidjson          parse               934.5     1243.8     1227.3     1253.4      26.00      10624
-json      numbers    rapidjson          serialize           667.4      888.3      874.7      897.2       2.00      10624
-json      strings    rapidjson          parse               593.5      353.6      353.5      354.6      31.00      10624
-json      strings    rapidjson          serialize          2166.8     1290.9     1200.2     1292.3       2.00      10624
-json      texts      rapidjson          parse               430.9      375.3      371.5      382.1      35.00      10624
-json      texts      rapidjson          serialize          1754.7     1528.0     1493.6     1530.2       2.00      10624
-jwt       HS256      cerver             sign            1466785.8      264.4      250.0      268.9      10.00       6708
-jwt       HS256      cerver             verify          1138951.1      205.3      201.4      206.4      10.00       6708
-jwt       HS512      cerver             sign            1203413.5      266.3      263.6      267.0      10.00       6708
-jwt       HS512      cerver             verify           909854.9      201.3      186.2      203.6      10.00       6708
-jwt       RS256      cerver             sign               3053.2        1.4        1.3        1.4      51.42       7488
-jwt       RS256      cerver             verify           101548.5       47.3       42.4       48.4      22.00       7488
-jwt       PS256      cerver             sign               3055.3        1.4        1.4        1.4      68.43       7488
-jwt       PS256      cerver             verify            96883.2       45.1       44.1       45.1      30.00       7488
-jwt       ES256      cerver             sign              86922.5       19.2       18.8       19.3      58.00       7744
-jwt       ES256      cerver             verify            30613.0        6.8        5.3        6.9      64.00       7744
-jwt       ES384      cerver             sign              10427.4        2.7        2.7        2.8      73.00       7744
-jwt       ES384      cerver             verify             5016.8        1.3        1.2        1.3      76.00       7744
-jwt       EdDSA      cerver             sign              65118.3       14.4       14.0       14.4       7.00       7744
-jwt       EdDSA      cerver             verify            26982.4        6.0        5.9        6.0       7.00       7744
-jwt       HS256      libjwt             sign             398657.6       71.9       71.3       71.9      70.00       5932
-jwt       HS256      libjwt             verify           430438.7       77.6       72.6       78.8      62.00       5932
-jwt       HS512      libjwt             sign             363168.5       80.4       79.8       80.6      70.00       5932
-jwt       HS512      libjwt             verify           397611.2       88.0       87.3       88.5      62.00       5932
-jwt       RS256      libjwt             sign               2023.1        0.9        0.9        0.9     337.38       6704
-jwt       RS256      libjwt             verify            41486.7       19.3       19.1       19.4     239.00       6704
-jwt       ES256      libjwt             sign              34138.0        7.6        7.4        7.7     458.00       6960
-jwt       ES256      libjwt             verify            21299.8        4.7        4.3        4.8     418.00       6960
-jwt       ES384      libjwt             sign               8460.8        2.2        2.1        2.2     516.00       6960
-jwt       ES384      libjwt             verify             4543.3        1.2        1.2        1.2     473.00       6960
-jwt       HS256      l8w8jwt            sign             303906.3       54.8       53.9       55.1      12.00       1764
-jwt       HS256      l8w8jwt            verify           626531.2      112.9      112.3      113.3      20.00       1764
-jwt       HS512      l8w8jwt            sign             283045.5       62.6       58.1       63.0      12.00       1764
-jwt       HS512      l8w8jwt            verify           533307.0      118.0      116.3      119.0      20.00       1764
-jwt       RS256      l8w8jwt            sign                712.6        0.3        0.3        0.3     145.88       1764
-jwt       RS256      l8w8jwt            verify            23430.3       10.9       10.3       10.9      36.00       1764
-jwt       PS256      l8w8jwt            sign                725.9        0.3        0.3        0.3     144.09       1764
-jwt       PS256      l8w8jwt            verify            22775.7       10.6       10.5       10.6      36.00       1764
-jwt       ES256      l8w8jwt            sign               7219.1        1.6        1.5        1.6     559.04       1764
-jwt       ES256      l8w8jwt            verify             2154.5        0.5        0.4        0.5    1581.00       1764
-jwt       ES384      l8w8jwt            sign               4655.3        1.2        1.2        1.2     655.17       1764
-jwt       ES384      l8w8jwt            verify             1274.8        0.3        0.3        0.3    2032.00       1764
-jwt       HS256      jwt-cpp            sign             556675.6      100.3       93.8      103.6      59.00       7956
-jwt       HS256      jwt-cpp            verify           542705.9       97.8       92.2       98.9      58.00       7956
-jwt       HS512      jwt-cpp            sign             505983.8      112.0      111.4      112.4      60.00       7956
-jwt       HS512      jwt-cpp            verify           475920.7      105.3      103.0      106.8      59.00       7956
-jwt       RS256      jwt-cpp            sign               3122.8        1.5        1.4        1.5      78.42       8600
-jwt       RS256      jwt-cpp            verify            95658.2       44.5       44.1       44.6      66.00       8600
-jwt       PS256      jwt-cpp            sign               3113.0        1.4        1.4        1.5      90.43       8600
-jwt       PS256      jwt-cpp            verify            86576.8       40.3       38.5       40.6      78.00       8600
-jwt       ES256      jwt-cpp            sign              76344.6       16.9       16.3       17.0     113.01       8856
-jwt       ES256      jwt-cpp            verify            30176.6        6.7        6.5        6.7     115.00       8856
-jwt       ES384      jwt-cpp            sign              10608.1        2.8        2.8        2.8     129.00       8856
-jwt       ES384      jwt-cpp            verify             4977.6        1.3        1.0        1.3     124.00       8856
-jwt       EdDSA      jwt-cpp            sign              59650.3       13.2       13.0       13.3      57.00       8856
-jwt       EdDSA      jwt-cpp            verify            26304.5        5.8        5.8        5.8      55.00       8856
-parser    small      cerver             parse          60411019.5     2016.4     1978.6     2029.9       0.00       3504
-parser    browser    cerver             parse           7211587.9     3920.2     3515.3     3922.4       0.00       3896
-parser    post       cerver             parse          15716668.6     5830.6     5798.1     5845.8       0.00       3896
-parser    cookies    cerver             parse           9107398.9    18074.5    17947.5    18154.5       0.00       3896
-parser    chunked    cerver             parse          10427986.8     6822.2     6778.5     6974.3       0.00       3896
-parser    pipeline   cerver             parse           3987010.6     2129.3     2059.4     2186.2       0.00       3896
-parser    small      llhttp             parse          27083997.7      904.0      880.9      905.0       0.00       1100
-parser    browser    llhttp             parse           5065611.4     2753.6     2716.6     2781.6       0.00       1260
-parser    post       llhttp             parse          10786216.4     4001.5     3994.5     4011.1       0.00       1260
-parser    cookies    llhttp             parse           5920683.8    11750.2    11237.0    11768.9       0.00       1260
-parser    chunked    llhttp             parse           7295387.5     4772.8     4626.2     4778.4       0.00       1260
-parser    pipeline   llhttp             parse           1578581.5      843.1      842.7      843.7       0.00       1260
-parser    small      picohttpparser     parse          75300800.8     2513.4     2461.9     2583.1       0.00       1100
-parser    browser    picohttpparser     parse           7404303.6     4024.9     4008.3     4072.0       0.00       1108
-parser    post       picohttpparser     parse          14846366.7     5507.7     5465.8     5561.1       0.00       1108
-parser    cookies    picohttpparser     parse           3537552.6     7020.6     6913.1     7090.2       0.00       1108
-parser    chunked    picohttpparser     parse          11378517.3     7444.1     6985.6     7501.0       0.00       1108
-parser    pipeline   picohttpparser     parse           4685341.8     2502.2     2497.6     2507.0       0.00       1108
-parser    small      http_parser        parse          23030248.0      768.7      758.2      772.7       0.00       1100
-parser    browser    http_parser        parse           1987087.1     1080.2     1058.4     1097.8       0.00       1428
-parser    post       http_parser        parse           4241232.3     1573.4     1529.3     1574.0       0.00       1428
-parser    cookies    http_parser        parse            735759.2     1460.2     1457.3     1488.7       0.00       1428
-parser    chunked    http_parser        parse           4171973.4     2729.4     2678.7     2736.0       0.00       1428
-parser    pipeline   http_parser        parse           1568594.9      837.7      823.4      847.2       0.00       1428
-multipart form       cerver             parse           1949423.3      725.1      710.3      729.5       0.00       3564
-multipart upload     cerver             parse            317272.2    19978.4    19855.0    20131.7       0.00       3956
-multipart form       multipart-parser-c parse           1833465.3      681.9      663.9      687.3       1.00       1100
-multipart upload     multipart-parser-c parse             16042.5     1010.2      965.5     1108.0       1.00       1320
+json      small      cerver             parse           5967190.0     1086.9     1076.7     1092.9       0.00       3884
+json      small      cerver             serialize       4647834.6      846.6      806.1      859.6       0.00       3884
+json      small      cerver             search         56684194.5    10325.1     6267.0    10606.4       0.00       3884
+json      records    cerver             parse             20476.4     1024.4     1010.6     1034.9       2.00       4148
+json      records    cerver             serialize         17719.2      886.5      870.5      901.0       0.00       4148
+json      numbers    cerver             parse               964.4     1283.6     1236.1     1289.1       2.00      10408
+json      numbers    cerver             serialize           965.0     1284.5     1276.9     1285.8       0.00      10408
+json      strings    cerver             parse              2846.4     1695.8     1671.6     1725.3       2.00      10408
+json      strings    cerver             serialize          2657.4     1583.2     1504.8     1595.6       0.00      10408
+json      texts      cerver             parse             11037.2     9611.4     9025.0     9843.7       2.00      10408
+json      texts      cerver             serialize         10141.5     8831.4     8762.1     8924.3       0.00      10408
+json      small      jansson            parse            604047.3      110.0      105.2      111.1      54.00       1296
+json      small      jansson            serialize       1152447.3      209.9      204.6      211.5      11.00       1564
+json      small      jansson            search         40421206.5     7362.8     7083.5     7441.8       0.00       1564
+json      records    jansson            parse              2125.6      106.3      104.0      109.0   13321.00       2208
+json      records    jansson            serialize          4925.6      246.4      230.0      249.1    1040.00       2208
+json      numbers    jansson            parse                93.2      124.0      121.6      124.5   65553.00       8176
+json      numbers    jansson            serialize           272.1      362.2      352.7      373.6      21.00       8176
+json      strings    jansson            parse               278.2      165.7      145.5      166.3   16400.00       8176
+json      strings    jansson            serialize           669.5      398.8      389.6      400.0      20.00       8176
+json      texts      jansson            parse               238.7      207.9      200.9      209.1    4112.00       8176
+json      texts      jansson            serialize           592.2      515.7      508.8      525.1      17.00       8176
+json      small      yyjson             parse          17215483.4     3135.8     3070.3     3148.9       2.00       1436
+json      small      yyjson             serialize      16650969.5     3033.0     3012.5     3096.5       1.00       1436
+json      small      yyjson             search         40502474.4     7377.6     7141.3     7439.2       0.00       1436
+json      records    yyjson             parse             53191.4     2661.2     2567.8     2747.2       2.00       1960
+json      records    yyjson             serialize         61838.5     3093.8     3093.2     3109.7       1.00       1960
+json      numbers    yyjson             parse              1632.5     2172.9     1912.1     2182.4       2.00       8280
+json      numbers    yyjson             serialize          2021.7     2690.9     2645.0     2707.1       2.00       8280
+json      strings    yyjson             parse              6455.9     3846.3     3786.7     3852.7       2.00       8280
+json      strings    yyjson             serialize          6558.4     3907.3     3810.3     3960.0       5.00       8280
+json      texts      yyjson             parse              5777.8     5031.4     4909.4     5077.2       2.00       8280
+json      texts      yyjson             serialize         43994.2    38311.0    36684.6    38850.8       9.00       8280
+json      small      simdjson           parse          13744025.7     2503.5     2451.5     2516.9       0.00       3128
+json      small      simdjson           serialize       5176738.1      943.0      936.2      949.5       3.00       3128
+json      small      simdjson           search         44232811.5     8057.1     7866.9     8249.3       0.00       3128
+json      records    simdjson           parse             53902.1     2696.8     2655.5     2713.4       0.00       3532
+json      records    simdjson           serialize         19489.3      975.1      971.7      979.4      11.00       3660
+json      numbers    simdjson           parse              1265.1     1683.9     1618.7     1692.3       0.00       9440
+json      numbers    simdjson           serialize           966.2     1286.1     1265.6     1298.8      16.00      11244
+json      strings    simdjson           parse              3872.4     2307.1     2303.7     2309.7       0.00      11244
+json      strings    simdjson           serialize          6368.3     3794.1     3663.5     3816.7      13.00      11244
+json      texts      simdjson           parse             10082.6     8780.1     8578.1     8818.0       0.00      11244
+json      texts      simdjson           serialize         15524.3    13518.9    13003.9    13621.8      11.00      11520
+json      small      rapidjson          parse           2626906.3      478.5      470.8      479.2       9.00       3044
+json      small      rapidjson          serialize       3821460.6      696.1      670.1      698.1       2.00       3180
+json      small      rapidjson          search         47194261.0     8596.5     8428.0     8640.7       0.00       3180
+json      records    rapidjson          parse             11070.6      553.9      549.9      556.7      16.00       3436
+json      records    rapidjson          serialize         15420.3      771.5      758.4      771.7       2.00       3436
+json      numbers    rapidjson          parse               929.5     1237.2     1212.4     1251.6      26.00      10560
+json      numbers    rapidjson          serialize           663.9      883.7      866.1      891.3       2.00      10560
+json      strings    rapidjson          parse               579.7      345.4      340.5      346.0      31.00      10560
+json      strings    rapidjson          serialize          2161.3     1287.7     1264.0     1291.4       2.00      10560
+json      texts      rapidjson          parse               426.7      371.6      361.7      373.4      35.00      10560
+json      texts      rapidjson          serialize          1722.9     1500.3     1469.9     1517.1       2.00      10560
+jwt       HS256      cerver             sign            1470632.5      265.1      262.8      265.7      10.00       6704
+jwt       HS256      cerver             verify          1108607.9      199.8      197.3      203.4      10.00       6704
+jwt       HS512      cerver             sign            1194961.6      264.4      257.0      265.2      10.00       6704
+jwt       HS512      cerver             verify           919443.4      203.4      202.2      204.3      10.00       6704
+jwt       RS256      cerver             sign               3027.1        1.4        1.4        1.4      51.42       7492
+jwt       RS256      cerver             verify           104458.5       48.6       46.0       48.8      22.00       7492
+jwt       PS256      cerver             sign               3042.3        1.4        1.4        1.4      68.42       7492
+jwt       PS256      cerver             verify            96273.0       44.8       44.1       45.2      30.00       7492
+jwt       ES256      cerver             sign              87421.4       19.3       17.7       19.5      58.00       7748
+jwt       ES256      cerver             verify            31295.2        6.9        6.9        6.9      64.00       7748
+jwt       ES384      cerver             sign              10793.2        2.8        2.8        2.8      73.00       7748
+jwt       ES384      cerver             verify             5031.7        1.3        1.3        1.3      76.00       7748
+jwt       EdDSA      cerver             sign              63677.6       14.1       13.7       14.3       7.00       7748
+jwt       EdDSA      cerver             verify            26204.3        5.8        5.5        6.0       7.00       7748
+jwt       HS256      libjwt             sign             398456.9       71.8       70.5       72.3      70.00       5932
+jwt       HS256      libjwt             verify           443501.7       79.9       78.9       80.3      62.00       5932
+jwt       HS512      libjwt             sign             363186.8       80.4       76.9       81.9      70.00       6060
+jwt       HS512      libjwt             verify           408270.1       90.3       88.3       90.5      62.00       6060
+jwt       RS256      libjwt             sign               1990.3        0.9        0.9        0.9     337.29       6840
+jwt       RS256      libjwt             verify            41507.4       19.3       18.7       19.6     239.00       6840
+jwt       ES256      libjwt             sign              34398.7        7.6        6.7        7.8     458.00       7096
+jwt       ES256      libjwt             verify            21781.0        4.8        4.7        4.8     418.00       7096
+jwt       ES384      libjwt             sign               8525.1        2.2        2.1        2.3     516.00       7096
+jwt       ES384      libjwt             verify             4563.8        1.2        1.2        1.2     473.00       7096
+jwt       HS256      l8w8jwt            sign             308577.4       55.6       54.8       55.8      12.00       1772
+jwt       HS256      l8w8jwt            verify           617999.9      111.4      109.9      111.9      20.00       1772
+jwt       HS512      l8w8jwt            sign             288257.0       63.8       60.0       64.3      12.00       1772
+jwt       HS512      l8w8jwt            verify           534758.7      118.3      117.7      118.6      20.00       1772
+jwt       RS256      l8w8jwt            sign                708.7        0.3        0.3        0.3     145.90       1772
+jwt       RS256      l8w8jwt            verify            23391.3       10.9       10.6       10.9      36.00       1772
+jwt       PS256      l8w8jwt            sign                722.4        0.3        0.3        0.3     143.73       1772
+jwt       PS256      l8w8jwt            verify            22645.3       10.5       10.1       10.6      36.00       1772
+jwt       ES256      l8w8jwt            sign               7246.9        1.6        1.6        1.6     559.11       1772
+jwt       ES256      l8w8jwt            verify             2170.5        0.5        0.5        0.5    1584.00       1772
+jwt       ES384      l8w8jwt            sign               4651.1        1.2        1.2        1.2     655.19       1772
+jwt       ES384      l8w8jwt            verify             1254.4        0.3        0.3        0.3    2024.00       1772
+jwt       HS256      jwt-cpp            sign             567120.4      102.2      101.6      103.0      59.00       7960
+jwt       HS256      jwt-cpp            verify           530991.1       95.7       94.0       97.9      58.00       7960
+jwt       HS512      jwt-cpp            sign             498444.7      110.3      107.1      112.7      60.00       7960
+jwt       HS512      jwt-cpp            verify           475166.3      105.1      103.6      105.4      59.00       7960
+jwt       RS256      jwt-cpp            sign               3119.3        1.5        1.4        1.5      78.41       8604
+jwt       RS256      jwt-cpp            verify            95107.8       44.3       44.0       44.6      66.00       8604
+jwt       PS256      jwt-cpp            sign               3109.1        1.4        1.4        1.5      90.41       8604
+jwt       PS256      jwt-cpp            verify            88275.9       41.1       40.4       41.3      78.00       8604
+jwt       ES256      jwt-cpp            sign              76991.5       17.0       16.6       17.1     113.01       8860
+jwt       ES256      jwt-cpp            verify            30326.0        6.7        6.7        6.7     115.00       8860
+jwt       ES384      jwt-cpp            sign              10504.8        2.7        2.7        2.8     129.01       8860
+jwt       ES384      jwt-cpp            verify             5043.1        1.3        1.3        1.3     124.00       8860
+jwt       EdDSA      jwt-cpp            sign              59758.6       13.2       13.0       13.3      57.00       8860
+jwt       EdDSA      jwt-cpp            verify            25872.8        5.7        5.7        5.8      55.00       8860
+parser    small      cerver             parse          60705226.2     2026.3     1966.0     2038.0       0.00       3504
+parser    browser    cerver             parse           7253419.5     3942.9     3924.7     3950.2       0.00       3896
+parser    post       cerver             parse          15572144.3     5776.9     5686.1     5820.7       0.00       3896
+parser    cookies    cerver             parse           8987872.2    17837.3    17522.0    18058.4       0.00       3896
+parser    chunked    cerver             parse          10539900.6     6895.4     6556.8     6951.2       0.00       3896
+parser    pipeline   cerver             parse           3883226.2     2073.9     2045.6     2219.4       0.00       3896
+parser    small      llhttp             parse          27571868.6      920.3      907.8      923.2       0.00       1224
+parser    browser    llhttp             parse           5180740.4     2816.2     2758.4     2828.2       0.00       1324
+parser    post       llhttp             parse          10647986.5     3950.2     3862.1     3977.1       0.00       1324
+parser    cookies    llhttp             parse           5909479.2    11727.9    11630.1    11800.6       0.00       1324
+parser    chunked    llhttp             parse           7250821.8     4743.6     4649.2     4782.8       0.00       1324
+parser    pipeline   llhttp             parse           1589638.6      849.0      832.2      853.0       0.00       1324
+parser    small      picohttpparser     parse          78883016.7     2633.0     2585.7     2779.7       0.00       1224
+parser    browser    picohttpparser     parse           7582867.9     4122.0     4101.0     4171.7       0.00       1280
+parser    post       picohttpparser     parse          14756530.0     5474.4     5402.5     5586.4       0.00       1280
+parser    cookies    picohttpparser     parse           3550815.2     7046.9     7037.2     7076.6       0.00       1280
+parser    chunked    picohttpparser     parse          11542634.6     7551.4     7356.4     7631.1       0.00       1280
+parser    pipeline   picohttpparser     parse           4620241.4     2467.5     2455.8     2486.6       0.00       1280
+parser    small      http_parser        parse          22715404.9      758.2      736.6      763.0       0.00       1224
+parser    browser    http_parser        parse           1953348.4     1061.8     1046.9     1080.8       0.00       1224
+parser    post       http_parser        parse           4197078.9     1557.0     1530.2     1562.0       0.00       1224
+parser    cookies    http_parser        parse            748006.2     1484.5     1453.3     1489.4       0.00       1224
+parser    chunked    http_parser        parse           4218491.7     2759.8     2689.0     2765.8       0.00       1224
+parser    pipeline   http_parser        parse           1608741.0      859.2      760.5      867.2       0.00       1224
+multipart form       cerver             parse           1951844.4      726.0      713.8      737.4       0.00       3560
+multipart upload     cerver             parse            314030.6    19774.3    19385.2    19820.1       0.00       3944
+multipart form       multipart-parser-c parse           1815494.9      675.2      663.0      680.6       1.00       1224
+multipart upload     multipart-parser-c parse             18388.8     1157.9     1088.4     1195.6       1.00       1412
+# server: GET /plaintext and GET /json, 256 kept connections from 5 threads of benchmarks/flood in the same machine
+# server: the median of 5 loads of 2097152 requests, with the slowest and the fastest of them, and its latencies; wrk 4.2.0 without pipelining
+# server: cerver-uring and cerver-epoll run their handlers in their event loops, cerver-pool in a pool of 4 threads; workers are the I/O threads
+# server: nginx 1.31.6 answers both with return; h2o d3e43fcf00c3e6b17826b95d2d362d646185918a serves two files; only cerver serializes its JSON in each request; no server logs its requests
+module    case       implementation     workers pipeline        req/s     lowest    highest   p50-ms   p99-ms  wrk-req/s
+server    plaintext  cerver-uring             1        1       674592     665811     691789    0.357    0.525     691226
+server    plaintext  cerver-uring             1       16      2614273    2541378    3119776    1.543    2.664          -
+server    json       cerver-uring             1        1       519816     496169     607983    0.488    0.807     616449
+server    json       cerver-uring             1       16      1834127    1661080    1913420    2.203    3.240          -
+server    plaintext  cerver-uring             4        1      1432596    1096087    1466614    0.158    0.491    1140111
+server    plaintext  cerver-uring             4       16      5149083    3845850    5489414    0.720    2.259          -
+server    json       cerver-uring             4        1      1407899    1358724    1452460    0.162    0.424    1314863
+server    json       cerver-uring             4       16      4759266    4176353    5538762    0.787    2.646          -
+server    plaintext  cerver-epoll             1        1       569959     564317     588109    0.391    1.383     587582
+server    plaintext  cerver-epoll             1       16      2467096    2200205    2615639    1.546    4.039          -
+server    json       cerver-epoll             1        1       526358     501204     528229    0.437    1.261     517710
+server    json       cerver-epoll             1       16      1792363    1633326    1820802    2.232    5.150          -
+server    plaintext  cerver-epoll             4        1      1317510    1267042    1341048    0.165    0.643    1215132
+server    plaintext  cerver-epoll             4       16      5103144    5028438    5440719    0.737    2.693          -
+server    json       cerver-epoll             4        1      1271084    1211520    1348367    0.169    0.677    1221637
+server    json       cerver-epoll             4       16      4996852    4398582    5139150    0.757    2.549          -
+server    plaintext  cerver-pool              1        1       261436     257584     265421    0.957    1.354     256652
+server    plaintext  cerver-pool              1       16       276119     273348     279176    7.834   15.805          -
+server    json       cerver-pool              1        1       259644     256249     262189    0.968    1.422     254344
+server    json       cerver-pool              1       16       272898     270826     274452    7.932   16.062          -
+server    plaintext  cerver-pool              4        1       427192     420081     433807    0.573    1.192     421224
+server    plaintext  cerver-pool              4       16       444390     440389     447691    4.825   11.269          -
+server    json       cerver-pool              4        1       425109     407178     425907    0.576    1.194     423892
+server    json       cerver-pool              4       16       443443     430234     448913    4.848   10.971          -
+server    plaintext  nginx                    1        1       556588     540632     571707    0.426    1.160     600192
+server    plaintext  nginx                    1       16       646111     633913     654962    3.576   10.682          -
+server    json       nginx                    1        1       531541     524138     567662    0.434    1.241     573577
+server    json       nginx                    1       16       651289     636939     658369    3.573   10.615          -
+server    plaintext  nginx                    4        1      1321298    1234358    1448367    0.152    1.034    1108813
+server    plaintext  nginx                    4       16      2354297    2210931    2456547    1.235    4.054          -
+server    json       nginx                    4        1      1342584    1249116    1464057    0.163    0.703    1103772
+server    json       nginx                    4       16      2230997    2114859    2261164    1.207    4.264          -
+server    plaintext  h2o                      1        1       389083     382706     398722    0.632    1.358     394204
+server    plaintext  h2o                      1       16       389010     385339     404754   10.757   12.543          -
+server    json       h2o                      1        1       390500     382285     396282    0.635    1.307     396604
+server    json       h2o                      1       16       415084     413270     420872    9.914   11.817          -
+server    plaintext  h2o                      4        1      1040770     947056    1042927    0.239    0.618     881166
+server    plaintext  h2o                      4       16      1426905    1396025    1507047    3.007    5.752          -
+server    json       h2o                      4        1       978632     962094    1029695    0.238    0.882     943600
+server    json       h2o                      4       16      1453412    1345634    1477532    2.812    5.488          -

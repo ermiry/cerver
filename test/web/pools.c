@@ -157,6 +157,7 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (pools_cerver, POOLS_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (pools_cerver, POOLS_THREADS);
 		cerver_set_handler_type (pools_cerver, test_handler_type ());
+		cerver_set_events_backend (pools_cerver, test_events_backend ());
 		cerver_set_io_threads (pools_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (pools_cerver, true);
 

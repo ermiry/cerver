@@ -1,6 +1,7 @@
 #!/bin/bash
 
 RUNNER=${RUNNER:-}
+BACKENDS=(${BACKENDS:-uring epoll})
 
 if [ -n "$RUNNER" ]; then
 	export TEST_TIME_SCALE=${TEST_TIME_SCALE:-4}
@@ -10,10 +11,16 @@ run () {
 	$RUNNER "$@" || { echo "$1 failed"; exit 1; }
 }
 
+run_backends () {
+	for backend in "${BACKENDS[@]}"; do
+		CERVER_TEST_BACKEND=$backend run "$@"
+	done
+}
+
 run_models () {
 	run "$@"
 
-	CERVER_TEST_HANDLER=events run "$@"
+	CERVER_TEST_HANDLER=events run_backends "$@"
 }
 
 run ./test/bin/types
@@ -64,7 +71,7 @@ if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
 	run_models ./test/bin/faults
 fi
 
-run ./test/bin/http
+run_backends ./test/bin/http
 
 run_models ./test/bin/websockets
 

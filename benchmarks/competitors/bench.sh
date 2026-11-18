@@ -31,3 +31,5 @@ done
 for implementation in cerver legacy; do
 	"$OUTPUT/multipart-$implementation"
 done
+
+bash benchmarks/competitors/server/bench.sh

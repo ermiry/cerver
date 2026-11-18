@@ -53,6 +53,7 @@
 #include "cerver/core/start.h"
 #include "cerver/core/types.h"
 #include "cerver/core/update.h"
+#include "cerver/events/events.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
 #include "cerver/files/images.h"

@@ -46,6 +46,7 @@
 #include <cerver/threads/jobs.h>
 #include <cerver/threads/thpool.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -1412,6 +1413,14 @@ static void disconnect_server_ready (DisconnectServer *server) {
 // the tests run with a thread for each connection and with event loops
 static CerverHandlerType disconnect_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
+// with event loops the status of a response is counted when its loop sent it whole: a response that failed is
+// never counted with its status. A thread counts the status of a response when it sent its header
+static bool disconnect_counts_when_sent (void) {
+
+	return disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS;
+
+}
+
 static DisconnectOptions disconnect_options_default (void) {
 
 	DisconnectOptions options;
@@ -1444,6 +1453,7 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, options->handler_type);
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 
@@ -1776,12 +1786,15 @@ static void disconnect_case_expect (const DisconnectCase *dc, DisconnectCounters
 			expected->before_middlewares += 1;
 		}
 
-		if (dc->form == DISCONNECT_FORM_RESET) expected->either += 1;
+		// a client that left right after its request can make the pieces after the header fail: a thread
+		// counted the 200 of that header, an event loop counts a response that it sent whole or one that failed
+		const bool left = (dc->form == DISCONNECT_FORM_RESET) || (dc->form == DISCONNECT_FORM_CLOSE);
+		const bool cut = model->many_sends && left;
+
+		if ((dc->form == DISCONNECT_FORM_RESET) || (cut && disconnect_counts_when_sent ())) expected->either += 1;
 		else expected->ok_responses += 1;
 
-		// a client that left right after its request can make the pieces after the header fail
-		const bool left = (dc->form == DISCONNECT_FORM_RESET) || (dc->form == DISCONNECT_FORM_CLOSE);
-		if (model->many_sends && left) expected->maybe_failed += 1;
+		if (cut && !disconnect_counts_when_sent ()) expected->maybe_failed += 1;
 	}
 
 }
@@ -2199,6 +2212,14 @@ static const DisconnectResponse disconnect_responses[] = {
 
 static const size_t disconnect_n_responses = sizeof (disconnect_responses) / sizeof (DisconnectResponse);
 
+// whether the 200 of a response that failed was counted: the ones whose header a thread sends first; an event
+// loop counts none of them
+static bool disconnect_response_ok_counted (const DisconnectResponse *response) {
+
+	return response->header_counted && !disconnect_counts_when_sent ();
+
+}
+
 static void disconnect_response_expect (
 	const DisconnectResponse *response, const DisconnectForm form, DisconnectCounters *expected
 ) {
@@ -2214,13 +2235,13 @@ static void disconnect_response_expect (
 		case DISCONNECT_FORM_VANISH:
 			expected->failed_responses += 1;
 			expected->vanished[HTTP_STAGE_RESPONSE] += 1;
-			if (response->header_counted) expected->ok_responses += 1;
+			if (disconnect_response_ok_counted (response)) expected->ok_responses += 1;
 			break;
 
 		default:
 			expected->failed_responses += 1;
 			expected->aborted[HTTP_STAGE_RESPONSE][HTTP_ABORT_REASON_RESET] += 1;
-			if (response->header_counted) expected->ok_responses += 1;
+			if (disconnect_response_ok_counted (response)) expected->ok_responses += 1;
 			break;
 	}
 
@@ -2466,15 +2487,50 @@ static void disconnect_receive_probe_poller (const int fd) {
 
 }
 
+static void disconnect_receive_probe_completion (const EventCompletion *completion, void *args) {
+
+	(void) completion;
+	(void) args;
+
+}
+
+// the thread of an event loop with io_uring waits for its connections in the system call of its ring
+static void disconnect_receive_probe_ring (const int fd) {
+
+	EventBackend *backend = event_backend_uring_create (NULL);
+	if (backend) {
+		EventHandle handle;
+		event_handle_init (&handle, EVENT_HANDLE_TYPE_CONNECTION, fd, NULL);
+
+		if (!event_backend_receive (backend, &handle)) {
+			while (handle.operations) {
+				(void) event_backend_wait (
+					backend, EVENT_BACKEND_WAIT_FOREVER, disconnect_receive_probe_completion, NULL
+				);
+			}
+		}
+
+		event_backend_delete (backend);
+	}
+
+}
+
 // keeps its task id and waits like the thread that reads the connections of the cerver:
-// in the same recv (), or in the poller of an event loop
+// in the same recv (), or in the backend of an event loop
 static void *disconnect_receive_probe (void *fd_ptr) {
 
 	const int fd = *(const int *) fd_ptr;
 
 	__atomic_store_n (&disconnect_probe_task, (pid_t) syscall (SYS_gettid), __ATOMIC_SEQ_CST);
 
-	if (disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS) {
+	if (
+		(disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS)
+		&& (cerver_get_events_backend (disconnect_server->cerver) == CERVER_EVENTS_BACKEND_URING)
+	) {
+		disconnect_receive_probe_ring (fd);
+	}
+
+	else if (disconnect_handler_type == CERVER_HANDLER_TYPE_EVENTS) {
 		disconnect_receive_probe_poller (fd);
 	}
 

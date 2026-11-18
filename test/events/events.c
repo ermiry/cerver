@@ -10,7 +10,11 @@ int main (void) {
 
 	(void) printf ("Testing EVENTS...\n");
 
-	events_tests_poller ();
+	events_tests_ring ();
+
+	events_tests_backend ();
+
+	events_tests_settings ();
 
 	events_tests_wheel ();
 

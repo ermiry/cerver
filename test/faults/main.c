@@ -5,6 +5,7 @@
 #include "../test.h"
 #include "core.h"
 #include "crypto.h"
+#include "events.h"
 #include "http.h"
 #include "json.h"
 #include "jwt.h"
@@ -21,6 +22,7 @@ int main (void) {
 
 	faults_tests_core ();
 	faults_tests_crypto ();
+	faults_tests_events ();
 	faults_tests_http ();
 	faults_tests_json ();
 	faults_tests_jwt ();
