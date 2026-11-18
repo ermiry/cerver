@@ -35,6 +35,7 @@
 #include <cerver/http/responses/stream.h>
 #include <cerver/http/routes/tree.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -434,12 +435,16 @@ static int features_connect (void) {
 // the tests run with a thread for each connection and with event loops
 static CerverHandlerType features_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
+// the cerver adds the Date header, it is set before the cerver starts because its threads read it without a lock
+static bool features_date_header = true;
+
 static void features_cerver_start (void) {
 
 	features_cerver = cerver_create_web ("features-test", FEATURES_TEST_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (features_cerver);
 
 	cerver_set_handler_type (features_cerver, features_handler_type);
+	cerver_set_events_backend (features_cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (features_cerver, true);
 	cerver_set_thpool_n_threads (features_cerver, 2);
 
@@ -450,6 +455,8 @@ static void features_cerver_start (void) {
 	http_cerver_set_keep_alive (http_cerver, false);
 
 	http_cerver_set_request_id (http_cerver, true);
+
+	http_cerver_set_date_header (http_cerver, features_date_header);
 
 	// a path without a route is answered with 404 instead of the catch all
 	http_cerver_set_not_found_handler (http_cerver);
@@ -1263,16 +1270,22 @@ static void test_features_repeated_headers (void) {
 
 }
 
+// a cerver without the Date header, the cerver of the other tests is started again with it
 static void test_features_without_date (void) {
 
-	HttpCerver *http_cerver = (HttpCerver *) features_cerver->cerver_data;
-	http_cerver_set_date_header (http_cerver, false);
+	features_cerver_stop ();
+
+	features_date_header = false;
+	features_cerver_start ();
 
 	FeaturesResponse response;
 	features_get ("/plain/small", NULL, &response);
 	features_expect_no_header (&response, "Date");
 
-	http_cerver_set_date_header (http_cerver, true);
+	features_cerver_stop ();
+
+	features_date_header = true;
+	features_cerver_start ();
 
 }
 
