@@ -48,16 +48,16 @@ static const HttpWebSocketHandlers autobahn_handlers = {
 	NULL, NULL, autobahn_on_message, NULL, NULL, NULL, NULL, NULL
 };
 
-static void autobahn_configure (HttpCerver *http_cerver) {
+static void autobahn_configure (CerverHttp *http_cerver) {
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "ws");
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "ws");
 
-	HttpEndpoint *echo = http_group_web_socket_add (group, "echo", &autobahn_handlers);
-	http_endpoint_set_web_socket_max_message (echo, AUTOBAHN_MAX_MESSAGE);
-	http_endpoint_set_web_socket_compression (echo, true);
+	CerverHttpEndpoint *echo = cerver_http_group_web_socket_add (group, "echo", &autobahn_handlers);
+	cerver_http_endpoint_set_web_socket_max_message (echo, AUTOBAHN_MAX_MESSAGE);
+	cerver_http_endpoint_set_web_socket_compression (echo, true);
 
 	// autobahn never answers pings of the server
-	http_endpoint_set_web_socket_ping_milliseconds (echo, 0, 0);
+	cerver_http_endpoint_set_web_socket_ping_milliseconds (echo, 0, 0);
 
 }
 
@@ -78,12 +78,11 @@ int main (int argc, char **argv) {
 	if (autobahn_cerver) {
 		(void) cerver_set_bind_address (autobahn_cerver, test_address ());
 		cerver_set_thpool_n_threads (autobahn_cerver, AUTOBAHN_THREADS);
-		cerver_set_handler_type (autobahn_cerver, test_handler_type ());
 		cerver_set_events_backend (autobahn_cerver, test_events_backend ());
 		cerver_set_io_threads (autobahn_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (autobahn_cerver, true);
 
-		autobahn_configure ((HttpCerver *) autobahn_cerver->cerver_data);
+		autobahn_configure (cerver_http_get (autobahn_cerver));
 
 		if (!cerver_start (autobahn_cerver)) {
 			(void) cerver_teardown (autobahn_cerver);

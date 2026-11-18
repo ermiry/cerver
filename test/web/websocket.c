@@ -9,7 +9,7 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/routes/tree.h>
@@ -94,30 +94,26 @@ static const HttpWebSocketHandlers websocket_chat_handlers = {
 	NULL, NULL, websocket_chat, NULL, NULL, NULL, NULL, NULL
 };
 
-static unsigned int websocket_authenticate (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int websocket_authenticate (CerverHttpContext *context) {
 
-	(void) http_receive;
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
-
-	return (authorization && !strcmp (authorization->str, websocket_token)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, websocket_token) ? 0 : 1;
 
 }
 
-static void websocket_configure (HttpCerver *http_cerver) {
+static void websocket_configure (CerverHttp *http_cerver) {
 
-	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
+	CerverHttpGroup *ws = cerver_http_group_create (http_cerver, "ws");
 
-	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &websocket_echo_handlers);
-	http_endpoint_set_web_socket_compression (echo, true);
+	CerverHttpEndpoint *echo = cerver_http_group_web_socket_add (ws, "echo", &websocket_echo_handlers);
+	cerver_http_endpoint_set_web_socket_compression (echo, true);
 
-	(void) http_group_web_socket_add (ws, "chat", &websocket_chat_handlers);
+	(void) cerver_http_group_web_socket_add (ws, "chat", &websocket_chat_handlers);
 
-	HttpEndpoint *auth = http_group_web_socket_add (ws, "auth", &websocket_echo_handlers);
-	http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (auth, websocket_authenticate);
+	CerverHttpEndpoint *auth = cerver_http_group_web_socket_add (ws, "auth", &websocket_echo_handlers);
+	cerver_http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (auth, websocket_authenticate);
 
 }
 
@@ -138,12 +134,11 @@ int main (int argc, char **argv) {
 	if (websocket_cerver) {
 		(void) cerver_set_bind_address (websocket_cerver, test_address ());
 		cerver_set_thpool_n_threads (websocket_cerver, WEBSOCKET_THREADS);
-		cerver_set_handler_type (websocket_cerver, test_handler_type ());
 		cerver_set_events_backend (websocket_cerver, test_events_backend ());
 		cerver_set_io_threads (websocket_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (websocket_cerver, true);
 
-		websocket_configure ((HttpCerver *) websocket_cerver->cerver_data);
+		websocket_configure (cerver_http_get (websocket_cerver));
 
 		if (!cerver_start (websocket_cerver)) {
 			(void) cerver_teardown (websocket_cerver);
