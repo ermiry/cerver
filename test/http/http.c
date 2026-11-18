@@ -754,6 +754,9 @@ static void http_tests_main (void) {
 // the pools of threads run alone to be repeated, their requests wait and move between threads
 #define POOLS_ONLY_VARIABLE					"POOLS_ONLY"
 
+// the remote authentication runs alone to be repeated, its requests wait in the loop
+#define REMOTE_ONLY_VARIABLE				"REMOTE_ONLY"
+
 int main (void) {
 
 	test_output_init ();
@@ -770,6 +773,11 @@ int main (void) {
 
 	if (getenv (POOLS_ONLY_VARIABLE)) {
 		http_tests_pools ();
+		return 0;
+	}
+
+	if (getenv (REMOTE_ONLY_VARIABLE)) {
+		http_tests_remote ();
 		return 0;
 	}
 
@@ -818,6 +826,9 @@ int main (void) {
 
 	// the pools of threads of the routes, and the health and ready routes
 	http_tests_pools ();
+
+	// a custom authentication that asks another service, without a thread while it waits in a loop
+	http_tests_remote ();
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();
