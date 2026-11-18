@@ -555,6 +555,16 @@ static void crypto_tls_ticket_keys_rotate_locked (CryptoTlsContext *context, con
 
 }
 
+void cerver_crypto_provider_tls_context_rotate_ticket_keys (CryptoTlsContext *context) {
+
+	(void) pthread_mutex_lock (&context->mutex);
+
+	if (!context->shared_ticket_keys) crypto_tls_ticket_keys_rotate_locked (context, time (NULL));
+
+	(void) pthread_mutex_unlock (&context->mutex);
+
+}
+
 static bool crypto_tls_ticket_hmac (EVP_MAC_CTX *hmac, const CryptoTlsTicketKey *key) {
 
 	OSSL_PARAM parameters[] = {
