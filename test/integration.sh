@@ -62,10 +62,8 @@ EXAMPLES_ADDRESS=127.0.0.1
 
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
 
-HANDLERS=(${HANDLERS:-threads uring epoll})
-DEFAULT_HANDLER=threads
-EVENTS_HANDLER=events
-BACKENDS=(uring epoll)
+BACKENDS=(${BACKENDS:-uring epoll})
+CORE_BACKEND=none
 WEB_PAIRS=web/
 
 TAG=test
@@ -133,20 +131,16 @@ if [ "$COVERAGE" -ne 0 ]; then
 	coverage_init
 fi
 
-pair_handlers () {
+pair_backends () {
 	if [[ "$1" == "$WEB_PAIRS"* ]]; then
-		echo "${HANDLERS[@]}"
+		echo "${BACKENDS[@]}"
 	else
-		echo "$DEFAULT_HANDLER"
+		echo "$CORE_BACKEND"
 	fi
 }
 
-handler_backend () {
-	[[ " ${BACKENDS[*]} " == *" $1 "* ]] && echo "$1"
-}
-
-handler_type () {
-	[ -n "$(handler_backend "$1")" ] && echo "$EVENTS_HANDLER" || echo "$1"
+backend_name () {
+	[ "$1" != "$CORE_BACKEND" ] && echo "$1"
 }
 
 FAILED=()
@@ -158,16 +152,15 @@ for address in "${ADDRESSES[@]}"; do
 	fi
 
 	for pair in "${ADDRESS_PAIRS[@]}"; do
-		for handler in $(pair_handlers "$pair"); do
-			echo "Integration test $pair in $address with $handler..."
+		for backend in $(pair_backends "$pair"); do
+			echo "Integration test $pair in $address with $backend..."
 			RUNS=$(( RUNS + 1 ))
 			if ! $DOCKER run "${RUN_FLAGS[@]}" \
 				--add-host "service-1:$address" --add-host "service-2:$address" \
 				-e CERVER_TEST_ADDRESS="$address" \
-				-e CERVER_TEST_HANDLER="$(handler_type "$handler")" \
-				-e CERVER_TEST_BACKEND="$(handler_backend "$handler")" \
+				-e CERVER_TEST_BACKEND="$(backend_name "$backend")" \
 				"$IMAGE" bash test/pair.sh "$pair"; then
-				FAILED+=("$pair@$address/$handler")
+				FAILED+=("$pair@$address/$backend")
 			fi
 		done
 	done

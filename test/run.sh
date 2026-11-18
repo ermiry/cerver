@@ -17,12 +17,6 @@ run_backends () {
 	done
 }
 
-run_models () {
-	run "$@"
-
-	CERVER_TEST_HANDLER=events run_backends "$@"
-}
-
 run ./test/bin/types
 
 run ./test/bin/cerver/test
@@ -68,12 +62,12 @@ run ./test/bin/crypto
 run ./test/bin/events
 
 if [ -z "$RUNNER" ] && [ -x ./test/bin/faults ]; then
-	run_models ./test/bin/faults
+	run_backends ./test/bin/faults
 fi
 
 run_backends ./test/bin/http
 
-run_models ./test/bin/websockets
+run_backends ./test/bin/websockets
 
 run ./test/bin/json
 
