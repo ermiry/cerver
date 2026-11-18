@@ -12,14 +12,15 @@
 #include <cerver/files/files.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -28,6 +29,9 @@
 #include "../handler.h"
 
 static Cerver *web_cerver = NULL;
+
+// the public API does not give the socket of a request: the generators number the uploads
+static unsigned int uploads_sequence = 0;
 
 #pragma region end
 
@@ -44,7 +48,7 @@ static void multiple_finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -54,234 +58,157 @@ static void multiple_finish (void) {
 
 #pragma region routes
 
+static const char *multiple_view_text (const CerverHttpView view) {
+
+	return cerver_http_view_is_missing (view) ? "" : view.data;
+
+}
+
+// prints the names that the client gave to the files of the request
+static void multiple_print_filenames (const CerverHttpContext *context) {
+
+	if (!cerver_http_request_files_count (context)) return;
+
+	(void) printf ("\nAll filenames: \n");
+	int count = 0;
+	for (
+		const CerverHttpPart *part = cerver_http_request_part_next (context, NULL);
+		part;
+		part = cerver_http_request_part_next (context, part)
+	) {
+		if (cerver_http_part_is_file (part)) {
+			(void) printf ("[%d]: %s\n", count, multiple_view_text (cerver_http_part_filename (part)));
+			count += 1;
+		}
+	}
+
+}
+
+// prints where the files of the request were saved
+static void multiple_print_saved_filenames (const CerverHttpContext *context) {
+
+	if (!cerver_http_request_files_count (context)) return;
+
+	(void) printf ("\nAll saved filenames: \n");
+	int count = 0;
+	for (
+		const CerverHttpPart *part = cerver_http_request_part_next (context, NULL);
+		part;
+		part = cerver_http_request_part_next (context, part)
+	) {
+		const CerverHttpView saved_filename = cerver_http_part_saved_filename (part);
+		if (!cerver_http_view_is_missing (saved_filename)) {
+			(void) printf ("[%d]: %s\n", count, saved_filename.data);
+			count += 1;
+		}
+	}
+
+}
+
+static void multiple_print_part (const CerverHttpPart *part) {
+
+	if (cerver_http_part_is_file (part)) {
+		const CerverHttpView filename = cerver_http_part_filename (part);
+		const CerverHttpView saved_filename = cerver_http_part_saved_filename (part);
+
+		(void) printf (
+			"FILE: %s - [%zu] %s -> [%zu] %s\n",
+			multiple_view_text (cerver_http_part_name (part)),
+			filename.length, multiple_view_text (filename),
+			saved_filename.length, multiple_view_text (saved_filename)
+		);
+	}
+
+	else {
+		const CerverHttpView value = cerver_http_part_value (part);
+
+		(void) printf (
+			"VALUE: %s - [%zu] %s\n",
+			multiple_view_text (cerver_http_part_name (part)),
+			value.length, multiple_view_text (value)
+		);
+	}
+
+}
+
 // POST /upload
-static void upload_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void upload_handler (CerverHttpContext *context) {
 
-	http_request_multi_parts_print (request);
+	multiple_print_filenames (context);
 
-	DoubleList *all_filenames = http_request_multi_parts_get_all_filenames (request);
-	if (all_filenames) {
-		(void) printf ("\nAll filenames: \n");
-		int count = 0;
-		char *filename = NULL;
-		for (ListElement *le = dlist_start (all_filenames); le; le = le->next) {
-			filename = (char *) le->data;
-
-			(void) printf ("[%d]: %s\n", count, filename);
-			count += 1;
-		}
-
-		http_request_multi_parts_all_filenames_delete (all_filenames);
-	}
-
-	DoubleList *all_saved_filenames = http_request_multi_parts_get_all_saved_filenames (request);
-	if (all_saved_filenames) {
-		(void) printf ("\nAll saved filenames: \n");
-		int count = 0;
-		char *filename = NULL;
-		for (ListElement *le = dlist_start (all_saved_filenames); le; le = le->next) {
-			filename = (char *) le->data;
-
-			(void) printf ("[%d]: %s\n", count, filename);
-			count += 1;
-		}
-
-		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
-	}
+	multiple_print_saved_filenames (context);
 
 	const static char *json = { "{ \"msg\": \"Upload route works!\" }" };
 	const size_t json_len = strlen (json);
 
-	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
-	if (res) {
-		(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
-		(void) http_response_add_content_length_header (res, json_len);
-		// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-		(void) http_response_compile (res);
-
-		#ifdef TEST_DEBUG
-		http_response_print (res);
-		#endif
-
-		(void) http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
+	(void) cerver_http_response_send_json (context, json, json_len);
 
 }
 
 // POST /multiple
-static void multiple_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void multiple_handler (CerverHttpContext *context) {
 
-	DoubleList *all_filenames = http_request_multi_parts_get_all_filenames (request);
-	if (all_filenames) {
-		(void) printf ("\nAll filenames: \n");
-		int count = 0;
-		char *filename = NULL;
-		for (ListElement *le = dlist_start (all_filenames); le; le = le->next) {
-			filename = (char *) le->data;
+	multiple_print_filenames (context);
 
-			(void) printf ("[%d]: %s\n", count, filename);
-			count += 1;
-		}
-
-		http_request_multi_parts_all_filenames_delete (all_filenames);
-	}
-
-	DoubleList *all_saved_filenames = http_request_multi_parts_get_all_saved_filenames (request);
-	if (all_saved_filenames) {
-		(void) printf ("\nAll saved filenames: \n");
-		int count = 0;
-		char *filename = NULL;
-		for (ListElement *le = dlist_start (all_saved_filenames); le; le = le->next) {
-			filename = (char *) le->data;
-
-			(void) printf ("[%d]: %s\n", count, filename);
-			count += 1;
-		}
-
-		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
-	}
+	multiple_print_saved_filenames (context);
 
 	const static char *json = { "{ \"msg\": \"Multiple route works!\" }" };
 	const size_t json_len = strlen (json);
 
-	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
-	if (res) {
-		(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
-		(void) http_response_add_content_length_header (res, json_len);
-		// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-		(void) http_response_compile (res);
-
-		#ifdef TEST_DEBUG
-		http_response_print (res);
-		#endif
-
-		(void) http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
+	(void) cerver_http_response_send_json (context, json, json_len);
 
 }
 
 // POST /iter/good
-static void iter_good_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void iter_good_handler (CerverHttpContext *context) {
 
-	if (http_request_multi_parts_iter_start (request)) {
-		const MultiPart *mpart = http_request_multi_parts_iter_get_next (request);
-		while (mpart) {
-			if (http_multi_part_is_file (mpart)) {
-				(void) printf (
-					"FILE: %s - [%d] %s -> [%d] %s\n",
-					http_multi_part_get_name (mpart)->str,
-					http_multi_part_get_filename_len (mpart),
-					http_multi_part_get_filename (mpart),
-					http_multi_part_get_generated_filename_len (mpart),
-					http_multi_part_get_saved_filename (mpart)
-				);
-			}
-
-			else if (http_multi_part_is_value (mpart)) {
-				(void) printf (
-					"VALUE: %s - [%d] %s\n",
-					http_multi_part_get_name (mpart)->str,
-					http_multi_part_get_value_len (mpart),
-					http_multi_part_get_value (mpart)
-				);
-			}
-
-			mpart = http_request_multi_parts_iter_get_next (request);
+	const CerverHttpPart *first = cerver_http_request_part_next (context, NULL);
+	if (first) {
+		for (
+			const CerverHttpPart *part = first;
+			part;
+			part = cerver_http_request_part_next (context, part)
+		) {
+			multiple_print_part (part);
 		}
 
 		const static char *json = { "{ \"msg\": \"Iter good route works!\" }" };
 		const size_t json_len = strlen (json);
 
-		HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
-		if (res) {
-			(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
-			(void) http_response_add_content_length_header (res, json_len);
-			// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-			(void) http_response_compile (res);
-
-			#ifdef TEST_DEBUG
-			http_response_print (res);
-			#endif
-
-			(void) http_response_send (res, http_receive);
-			http_response_delete (res);
-		}
+		(void) cerver_http_response_send_json (context, json, json_len);
 	}
 
 }
 
 // POST /iter/empty
-static void iter_empty_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void iter_empty_handler (CerverHttpContext *context) {
 
-	if (!http_request_multi_parts_iter_start (request)) {
+	if (!cerver_http_request_part_next (context, NULL)) {
 		const static char *json = { "{ \"msg\": \"Iter empty route works!\" }" };
 		const size_t json_len = strlen (json);
 
-		HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
-		if (res) {
-			(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
-			(void) http_response_add_content_length_header (res, json_len);
-			// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-			(void) http_response_compile (res);
-
-			#ifdef TEST_DEBUG
-			http_response_print (res);
-			#endif
-
-			(void) http_response_send (res, http_receive);
-			http_response_delete (res);
-		}
+		(void) cerver_http_response_send_json (context, json, json_len);
 	}
 
 }
 
 // POST /discard
-static void discard_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void discard_handler (CerverHttpContext *context) {
 
-	http_request_multi_parts_print (request);
-
-	const char *key = http_request_multi_parts_get_value (request, "key");
-	if (!strcmp (key, "value")) {
+	const CerverHttpView key = cerver_http_request_part_value (context, "key");
+	if (cerver_http_view_equals (key, "value")) {
 		cerver_log_success ("Success request, keeping multi part files...");
 
-		HttpResponse *res = http_response_json_msg (
-			HTTP_STATUS_OK, "Success request!"
+		(void) cerver_http_response_send_json_message (
+			context, HTTP_STATUS_OK, "Success request!"
 		);
-		if (res) {
-			#ifdef TEST_DEBUG
-			http_response_print (res);
-			#endif
-			http_response_send (res, http_receive);
-			http_response_delete (res);
-		}
 	}
 
 	else {
 		cerver_log_error ("key != value");
 		cerver_log_debug ("Discarding multi part files...");
-		http_request_multi_part_discard_files (request);
-		http_response_json_error_send (http_receive, HTTP_STATUS_BAD_REQUEST, "Bad request!");
+		cerver_http_request_discard_files (context);
+		(void) cerver_http_response_send_json_error (context, HTTP_STATUS_BAD_REQUEST, "Bad request!");
 	}
 
 }
@@ -290,33 +217,27 @@ static void discard_handler (
 
 #pragma region start
 
-static void custom_uploads_dirname_generator (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void custom_uploads_dirname_generator (CerverHttpContext *context) {
 
-	http_request_set_dirname (
-		request,
-		"%d-%ld",
-		http_receive->cr->connection->socket->sock_fd,
+	cerver_http_request_set_uploads_directory (
+		context,
+		"%u-%ld",
+		__atomic_add_fetch (&uploads_sequence, 1, __ATOMIC_SEQ_CST),
 		time (NULL)
 	);
 
 }
 
-static void custom_uploads_filename_generator (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void custom_uploads_filename_generator (CerverHttpContext *context) {
 
-	const MultiPart *mpart = http_request_get_current_mpart (request);
+	const CerverHttpPart *part = cerver_http_request_current_part (context);
 
-	http_multi_part_set_generated_filename (
-		mpart,
-		"%d-%ld-%s",
-		http_receive->cr->connection->socket->sock_fd,
+	cerver_http_part_set_generated_filename (
+		part,
+		"%u-%ld-%s",
+		__atomic_add_fetch (&uploads_sequence, 1, __ATOMIC_SEQ_CST),
 		time (NULL),
-		http_multi_part_get_filename (mpart)
+		multiple_view_text (cerver_http_part_filename (part))
 	);
 
 }
@@ -348,50 +269,44 @@ int main (void) {
 		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, test_handler_type ());
 		cerver_set_events_backend (web_cerver, test_events_backend ());
 		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
 
 		(void) files_create_dir ("uploads", 0777);
-		http_cerver_set_uploads_path (http_cerver, "uploads");
+		cerver_http_set_uploads_path (http_cerver, "uploads");
 
-		http_cerver_set_uploads_filename_generator (
+		cerver_http_set_uploads_filename_generator (
 			http_cerver, custom_uploads_filename_generator
 		);
 
-		http_cerver_set_uploads_dirname_generator (
+		cerver_http_set_uploads_dirname_generator (
 			http_cerver, custom_uploads_dirname_generator
 		);
 
+		// every endpoint receives a multi-part body
+		CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
+		cerver_http_group_set_modifier (main_group, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
 		// POST /upload
-		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
-		http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, upload_route);
+		(void) cerver_http_group_post (main_group, "upload", upload_handler);
 
 		// POST /multiple
-		HttpRoute *multiple_route = http_route_create (REQUEST_METHOD_POST, "multiple", multiple_handler);
-		http_route_set_modifier (multiple_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, multiple_route);
+		(void) cerver_http_group_post (main_group, "multiple", multiple_handler);
 
 		// POST /iter/good
-		HttpRoute *iter_good_route = http_route_create (REQUEST_METHOD_POST, "iter/good", iter_good_handler);
-		http_route_set_modifier (iter_good_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, iter_good_route);
+		(void) cerver_http_group_post (main_group, "iter/good", iter_good_handler);
 
 		// POST /iter/empty
-		HttpRoute *iter_empty_route = http_route_create (REQUEST_METHOD_POST, "iter/empty", iter_empty_handler);
-		http_route_set_modifier (iter_empty_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, iter_empty_route);
+		(void) cerver_http_group_post (main_group, "iter/empty", iter_empty_handler);
 
-		// POST /discard
-		HttpRoute *discard_route = http_route_create (REQUEST_METHOD_POST, "discard", discard_handler);
-		http_route_set_modifier (discard_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, discard_route);
+		// POST /discard, its handler deletes the files of the request: it runs in a thread
+		CerverHttpEndpoint *discard = cerver_http_group_post (main_group, "discard", discard_handler);
+		cerver_http_endpoint_set_pool (discard, HTTP_POOL_DEFAULT_NAME);
 
 		if (!cerver_start (web_cerver)) {
 			multiple_finish ();
