@@ -65,36 +65,9 @@
 
 #pragma region routes
 
-// sets the HTTP cerver's main route (top level route)
-// used to enable admin routes
-// if no route has been set, the first top level route
-// will be used
-void http_cerver_set_main_route (
-	HttpCerver *http_cerver, const HttpRoute *route
-) {
-
-	if (http_cerver) {
-		http_cerver->main_route = route;
-	}
-
-}
-
-void http_cerver_route_register (
-	HttpCerver *http_cerver, HttpRoute *route
-) {
-
-	if (http_cerver && route) {
-		(void) dlist_insert_at_end (http_cerver->routes, route);
-	}
-
-}
-
-void http_cerver_set_catch_all_route (
+void cerver_http_set_catch_all_route (
 	HttpCerver *http_cerver,
-	void (*catch_all_route)(
-		const HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+	CerverHttpHandler catch_all_route
 ) {
 
 	if (http_cerver && catch_all_route) {
@@ -107,7 +80,7 @@ void http_cerver_set_catch_all_route (
 // which returns 404 status on no matching routes
 // by default this option is disabled
 // as the catch all handler is used instead
-void http_cerver_set_not_found_handler (
+void cerver_http_set_not_found_handler (
 	HttpCerver *http_cerver
 ) {
 
@@ -118,12 +91,9 @@ void http_cerver_set_not_found_handler (
 
 // sets a custom handler to be executed on no matching routes
 // it should return status 404
-void http_cerver_set_not_found_route (
+void cerver_http_set_not_found_route (
 	HttpCerver *http_cerver,
-	void (*not_found)(
-		const HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+	CerverHttpHandler not_found
 ) {
 
 	if (http_cerver && not_found) {
@@ -133,7 +103,7 @@ void http_cerver_set_not_found_route (
 
 }
 
-void http_cerver_set_method_not_allowed (
+void cerver_http_set_method_not_allowed (
 	HttpCerver *http_cerver, const bool method_not_allowed
 ) {
 
@@ -143,7 +113,7 @@ void http_cerver_set_method_not_allowed (
 
 }
 
-void http_cerver_set_method_not_allowed_handler (
+void cerver_http_set_method_not_allowed_handler (
 	HttpCerver *http_cerver, const HttpHandler handler
 ) {
 
@@ -153,8 +123,8 @@ void http_cerver_set_method_not_allowed_handler (
 
 }
 
-void http_cerver_set_trailing_slash (
-	HttpCerver *http_cerver, const HttpTrailingSlash trailing_slash
+void cerver_http_set_trailing_slash (
+	HttpCerver *http_cerver, const CerverHttpTrailingSlash trailing_slash
 ) {
 
 	if (
@@ -167,7 +137,7 @@ void http_cerver_set_trailing_slash (
 
 }
 
-void http_cerver_set_max_route_params (
+void cerver_http_set_max_route_params (
 	HttpCerver *http_cerver, const unsigned int max_params
 ) {
 
@@ -177,14 +147,14 @@ void http_cerver_set_max_route_params (
 
 }
 
-u8 http_cerver_register_param_validator (
+u8 cerver_http_register_param_validator (
 	HttpCerver *http_cerver, const char *name, const HttpParamValidate validate
 ) {
 
 	u8 retval = 1;
 
 	if (http_cerver) {
-		HttpParamValidator *validator = http_param_validator_create (name, validate);
+		HttpParamValidator *validator = cerver_http_param_validator_create (name, validate);
 		if (validator) {
 			retval = (u8) dlist_insert_at_end_unsafe (http_cerver->tree->validators, validator);
 		}
@@ -194,7 +164,7 @@ u8 http_cerver_register_param_validator (
 
 }
 
-u8 http_cerver_add_before (
+u8 cerver_http_add_before (
 	HttpCerver *http_cerver, const HttpBeforeMiddleware middleware
 ) {
 
@@ -202,7 +172,7 @@ u8 http_cerver_add_before (
 
 }
 
-u8 http_cerver_add_after (
+u8 cerver_http_add_after (
 	HttpCerver *http_cerver, const HttpAfterMiddleware middleware
 ) {
 
@@ -210,7 +180,7 @@ u8 http_cerver_add_after (
 
 }
 
-const char *http_cerver_routes_error (
+const char *cerver_http_routes_error (
 	const HttpCerver *http_cerver
 ) {
 
@@ -218,7 +188,7 @@ const char *http_cerver_routes_error (
 
 }
 
-size_t http_cerver_routes_errors_count (
+size_t cerver_http_routes_errors_count (
 	const HttpCerver *http_cerver
 ) {
 
@@ -226,14 +196,14 @@ size_t http_cerver_routes_errors_count (
 
 }
 
-u8 http_cerver_routes_compile (
+u8 cerver_http_routes_compile (
 	HttpCerver *http_cerver
 ) {
 
 	u8 retval = 1;
 
 	if (http_cerver) {
-		http_cerver_init_admin_routes (http_cerver);
+		cerver_http_init_admin_routes (http_cerver);
 
 		retval = http_tree_compile (http_cerver->tree);
 	}
@@ -242,7 +212,7 @@ u8 http_cerver_routes_compile (
 
 }
 
-void http_cerver_routes_print (
+void cerver_http_routes_print (
 	const HttpCerver *http_cerver
 ) {
 
@@ -250,7 +220,7 @@ void http_cerver_routes_print (
 
 }
 
-char *http_cerver_routes_generate_json (
+char *cerver_http_routes_generate_json (
 	const HttpCerver *http_cerver
 ) {
 
@@ -258,7 +228,7 @@ char *http_cerver_routes_generate_json (
 
 }
 
-void http_cerver_routes_json_delete (char *json) {
+void cerver_http_routes_json_delete (char *json) {
 
 	free (json);
 
