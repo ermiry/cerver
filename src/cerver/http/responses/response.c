@@ -32,6 +32,7 @@
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/internal.h"
 #include "cerver/http/core/recycle.h"
+#include "cerver/http/core/settings.h"
 #include "cerver/http/core/utils.h"
 #include "cerver/http/headers/buffer.h"
 #include "cerver/http/headers/fields.h"
@@ -61,64 +62,9 @@
 #define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MAJOR		1
 #define HTTP_RESPONSE_KEEP_ALIVE_VERSION_MINOR		0
 
-typedef struct HttpResponseProducer {
-
-	Pool *pool;
-	const HttpCerver *http_cerver;
-
-} HttpResponseProducer;
-
-static HttpResponseProducer *producer = NULL;
-
-static HttpResponseProducer *http_response_producer_new (
-	const HttpCerver *http_cerver
-) {
-
-	HttpResponseProducer *producer = (HttpResponseProducer *) malloc (
-		sizeof (HttpResponseProducer)
-	);
-
-	if (producer) {
-		producer->pool = NULL;
-		producer->http_cerver = http_cerver;
-	}
-
-	return producer;
-
-}
-
-static void http_response_producer_delete (
-	HttpResponseProducer *producer
-) {
-
-	if (producer) {
-		pool_delete (producer->pool);
-		producer->pool = NULL;
-
-		producer->http_cerver = NULL;
-
-		free (producer);
-	}
-
-}
-
-// the cerver can change when its own one ends while another HTTP cerver is alive,
-// so each function loads it once
-static const HttpCerver *http_response_producer_cerver (void) {
-
-	return __atomic_load_n (&producer->http_cerver, __ATOMIC_ACQUIRE);
-
-}
-
-// the headers that the cerver adds to every response that does not have them,
-// NULL when no HTTP cerver has been created
-static const HttpHeaders *http_response_default_headers (void) {
-
-	const HttpCerver *http_cerver = producer ? http_response_producer_cerver () : NULL;
-
-	return http_cerver ? &http_cerver->response_headers : NULL;
-
-}
+// the responses that the HTTP cervers of the process share, it exists while one of them does;
+// a response belongs to no cerver: the headers and the origins of a cerver are the ones of the request that sends it
+static Pool *http_responses_pool = NULL;
 
 #pragma region responses
 
@@ -211,10 +157,10 @@ void http_response_delete (void *res_ptr) {
 }
 
 // get a new HTTP response ready to be used,
-// without an HTTP cerver there is no producer and no pool to take it from (it crashed)
+// without an HTTP cerver there is no pool to take it from (it crashed)
 HttpResponse *http_response_get (void) {
 
-	return producer ? (HttpResponse *) pool_pop (producer->pool) : NULL;
+	return http_responses_pool ? (HttpResponse *) pool_pop (http_responses_pool) : NULL;
 
 }
 
@@ -225,7 +171,7 @@ void http_response_return (HttpResponse *response) {
 	if (response) {
 		http_response_reset (response);
 
-		if (!producer || pool_push (producer->pool, response)) {
+		if (!http_responses_pool || pool_push (http_responses_pool, response)) {
 			http_response_delete (response);
 		}
 	}
@@ -236,7 +182,7 @@ static void http_response_headers_changed (HttpResponse *response);
 
 // sets the HTTP response's status code to be used in the header
 void http_response_set_status (
-	HttpResponse *response, const http_status status
+	HttpResponse *response, const CerverHttpStatus status
 ) {
 
 	if (response && (response->status != status)) {
@@ -284,7 +230,7 @@ static void http_response_headers_changed (HttpResponse *response) {
 }
 
 u8 http_response_header_set (
-	HttpResponse *response, const http_header type, const char *value
+	HttpResponse *response, const CerverHttpHeader type, const char *value
 ) {
 
 	u8 retval = 1;
@@ -300,7 +246,7 @@ u8 http_response_header_set (
 }
 
 u8 http_response_header_add (
-	HttpResponse *response, const http_header type, const char *value
+	HttpResponse *response, const CerverHttpHeader type, const char *value
 ) {
 
 	u8 retval = 1;
@@ -316,7 +262,7 @@ u8 http_response_header_add (
 }
 
 unsigned int http_response_header_remove (
-	HttpResponse *response, const http_header type
+	HttpResponse *response, const CerverHttpHeader type
 ) {
 
 	unsigned int removed = 0;
@@ -332,7 +278,7 @@ unsigned int http_response_header_remove (
 }
 
 unsigned int http_response_header_count (
-	const HttpResponse *response, const http_header type
+	const HttpResponse *response, const CerverHttpHeader type
 ) {
 
 	return response ? http_headers_count (&response->headers, type) : 0;
@@ -350,7 +296,7 @@ static const char *http_response_header_field_value (
 }
 
 const char *http_response_header_get (
-	const HttpResponse *response, const http_header type,
+	const HttpResponse *response, const CerverHttpHeader type,
 	const unsigned int position, size_t *value_length
 ) {
 
@@ -442,7 +388,7 @@ const char *http_response_header_get_with_name (
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
 	HttpResponse *response,
-	const http_header type, const char *actual_header
+	const CerverHttpHeader type, const char *actual_header
 ) {
 
 	return http_response_header_set (response, type, actual_header);
@@ -453,7 +399,7 @@ u8 http_response_add_header (
 // but generates the header values in the fly
 u8 http_response_add_custom_header (
 	HttpResponse *response,
-	const http_header type, const char *format, ...
+	const CerverHttpHeader type, const char *format, ...
 ) {
 
 	u8 retval = 1;
@@ -480,11 +426,11 @@ u8 http_response_add_custom_header (
 // adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_content_type_header (
-	HttpResponse *response, const ContentType type
+	HttpResponse *response, const CerverHttpContentType type
 ) {
 
 	return http_response_header_set (
-		response, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
+		response, HTTP_HEADER_CONTENT_TYPE, cerver_http_content_type_mime (type)
 	);
 
 }
@@ -561,16 +507,17 @@ u8 http_response_add_cors_header_from_origin (
 }
 
 // works like http_response_add_cors_header () but first
-// checks if the domain matches any entry in the whitelist
+// checks if the domain matches any entry in the whitelist of the cerver
 // returns 0 on success, 1 on error
 u8 http_response_add_whitelist_cors_header (
+	const HttpCerver *http_cerver,
 	HttpResponse *response, const char *domain
 ) {
 
 	u8 retval = 1;
 
 	// without an HTTP cerver there is no whitelist
-	const HttpCerver *http_cerver = domain ? http_response_producer_cerver () : NULL;
+	if (!domain) http_cerver = NULL;
 
 	for (u8 idx = 0; http_cerver && (idx < http_cerver->n_origins); idx++) {
 		if (!strcmp (
@@ -592,11 +539,12 @@ u8 http_response_add_whitelist_cors_header (
 // works like http_response_add_whitelist_cors_header ()
 // but takes a HttpOrigin instead of a c string
 u8 http_response_add_whitelist_cors_header_from_origin (
+	const HttpCerver *http_cerver,
 	HttpResponse *response, const HttpOrigin *origin
 ) {
 
 	return origin ? http_response_add_whitelist_cors_header (
-		response, origin->value
+		http_cerver, response, origin->value
 	) : 1;
 
 }
@@ -614,7 +562,7 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 	if (http_receive && http_receive->request && http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
 		retval = http_response_add_whitelist_cors_header (
-			response, http_receive->request->headers[
+			http_receive->http_cerver, response, http_receive->request->headers[
 				HTTP_HEADER_ORIGIN
 			]->str
 		);
@@ -658,7 +606,7 @@ u8 http_response_add_cors_allow_methods_header (
 // adds a "Content-Range: bytes ${start}-${end}/${file_size}"
 // header to the response
 u8 http_response_add_content_range_header (
-	HttpResponse *response, const BytesRange *bytes_range
+	HttpResponse *response, const CerverHttpBytesRange *bytes_range
 ) {
 
 	return bytes_range ? http_response_add_custom_header (
@@ -675,7 +623,7 @@ u8 http_response_add_content_range_header (
 // adds a "Content-Range: bytes ${start}-${end}/${file_size}"
 void http_response_add_video_headers (
 	HttpResponse *response,
-	const ContentType content_type, const BytesRange *bytes_range
+	const CerverHttpContentType content_type, const CerverHttpBytesRange *bytes_range
 ) {
 
 	(void) http_response_add_header (
@@ -750,7 +698,7 @@ u8 http_response_set_data_ref (
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted
 HttpResponse *http_response_create (
-	const http_status status, const void *data, size_t data_len
+	const CerverHttpStatus status, const void *data, size_t data_len
 ) {
 
 	HttpResponse *response = (HttpResponse *) http_response_new ();
@@ -776,13 +724,13 @@ static const size_t http_response_header_end_length = 2;
 // the status line and the Server header, the start of the header that HTTP/1.1 sends
 // returns the length that was written
 static size_t http_response_main_header (
-	const http_status status, char *main_header
+	const CerverHttpStatus status, char *main_header
 ) {
 
 	const int written = snprintf (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
-		(unsigned int) status, http_status_string (status),
+		(unsigned int) status, cerver_http_status_to_string (status),
 		CERVER_VERSION
 	);
 
@@ -809,54 +757,12 @@ static bool http_response_default_applies (
 
 }
 
-// the length of the lines of the headers of the cerver that the response does not have
-static size_t http_response_defaults_length (
-	const HttpHeaders *headers, const HttpHeaders *defaults
-) {
-
-	size_t length = 0;
-
-	const HttpHeaderField *field = NULL;
-	for (unsigned int idx = 0; (field = http_headers_get (defaults, idx)) != NULL; idx++) {
-		if (http_response_default_applies (headers, defaults, field)) {
-			size_t line_length = 0;
-			(void) http_headers_field_line (defaults, field, &line_length);
-
-			length += line_length;
-		}
-	}
-
-	return length;
-
-}
-
-// writes the lines of the headers of the cerver that the response does not have
-// returns the end of what was written
-static char *http_response_defaults_write (
-	char *end, const HttpHeaders *headers, const HttpHeaders *defaults
-) {
-
-	const HttpHeaderField *field = NULL;
-	for (unsigned int idx = 0; (field = http_headers_get (defaults, idx)) != NULL; idx++) {
-		if (http_response_default_applies (headers, defaults, field)) {
-			size_t line_length = 0;
-			const char *line = http_headers_field_line (defaults, field, &line_length);
-
-			(void) memcpy (end, line, line_length);
-			end += line_length;
-		}
-	}
-
-	return end;
-
-}
-
 // writes the header as HTTP/1.1 sends it: the main header, the headers of the response
-// in the order they were added, the ones of the cerver that it does not have and the empty line
+// in the order they were added and the empty line
 static void http_response_header_write (
 	char *end,
 	const char *main_header, const size_t main_length,
-	const HttpHeaders *headers, const HttpHeaders *defaults
+	const HttpHeaders *headers
 ) {
 
 	(void) memcpy (end, main_header, main_length);
@@ -868,8 +774,6 @@ static void http_response_header_write (
 	(void) memcpy (end, lines, lines_length);
 	end += lines_length;
 
-	end = http_response_defaults_write (end, headers, defaults);
-
 	(void) memcpy (end, http_response_header_end, http_response_header_end_length);
 	end += http_response_header_end_length;
 
@@ -879,16 +783,14 @@ static void http_response_header_write (
 
 // uses the status and the headers of the response to create its header
 // as HTTP/1.1 sends it, in a continuos buffer ready to be sent by the response,
-// it is the only place where a header is serialized, in the buffer of the response when it fits
+// it is the only place where a header is serialized, in the buffer of the response when it fits;
+// the headers of a cerver are not in it: the cerver of the request that sends the response adds them
 void http_response_compile_header (HttpResponse *response) {
-
-	const HttpHeaders *defaults = http_response_default_headers ();
 
 	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE];
 	const size_t main_length = http_response_main_header (response->status, main_header);
 
 	const size_t header_len = main_length + response->headers.length
-		+ http_response_defaults_length (&response->headers, defaults)
 		+ http_response_header_end_length;
 
 	http_response_header_release (response);
@@ -900,7 +802,7 @@ void http_response_compile_header (HttpResponse *response) {
 
 	if (header) {
 		http_response_header_write (
-			header, main_header, main_length, &response->headers, defaults
+			header, main_header, main_length, &response->headers
 		);
 
 		response->header = header;
@@ -912,7 +814,7 @@ void http_response_compile_header (HttpResponse *response) {
 // the type and the length of a json body are headers of the response
 static void http_response_json_header (HttpResponse *response) {
 
-	const char *type = http_content_type_mime (HTTP_CONTENT_TYPE_JSON);
+	const char *type = cerver_http_content_type_mime (HTTP_CONTENT_TYPE_JSON);
 
 	(void) http_headers_set (
 		&response->headers, HTTP_HEADER_CONTENT_TYPE, type, strlen (type)
@@ -1185,7 +1087,7 @@ static void http_response_sent_bytes (
 // when it sent it, so a response that failed is never counted with its status
 static void http_response_sent (
 	const HttpReceive *http_receive,
-	const http_status status, const size_t total_size
+	const CerverHttpStatus status, const size_t total_size
 ) {
 
 	HttpReceive *receive = (HttpReceive *) http_receive;
@@ -1203,7 +1105,7 @@ static void http_response_sent (
 
 		http_response_sent_bytes (http_receive, total_size);
 
-		if (http_receive->http_cerver && ((size_t) status < HTTP_CERVER_RESPONSES_STATUS_SIZE)) {
+		if (http_receive->http_cerver && ((size_t) status < CERVER_HTTP_RESPONSES_STATUS_SIZE)) {
 			CERVER_STATS_ADD (http_receive->http_cerver->n_responses_by_status[status], 1);
 		}
 	}
@@ -1226,7 +1128,7 @@ u8 http_response_send_pieces (
 }
 
 u8 http_response_send_pieces_status (
-	const HttpReceive *http_receive, const http_status status,
+	const HttpReceive *http_receive, const CerverHttpStatus status,
 	struct iovec *parts, const int n_parts
 ) {
 
@@ -1274,7 +1176,7 @@ static const char http_response_vary_origin_and_encoding[] = { "Origin, Accept-E
 static const char http_response_vary_name[] = { "Vary" };
 
 // the headers of a response that a 304 keeps (RFC 9110 section 15.4.5)
-static const http_header http_response_not_modified_headers[] = {
+static const CerverHttpHeader http_response_not_modified_headers[] = {
 	HTTP_HEADER_CACHE_CONTROL,
 	HTTP_HEADER_CONTENT_LOCATION,
 	HTTP_HEADER_ETAG,
@@ -1305,12 +1207,16 @@ typedef enum HttpResponseFilter {
 // (without the empty line that ends it), the lines of the added ones and the empty line
 typedef struct HttpResponseMessage {
 
-	http_status status;
+	CerverHttpStatus status;
 
-	// the headers of the response and the ones of its cerver,
+	// the headers of the response and the ones of the cerver of the request,
 	// NULL when only its compiled header is known (it was set as bytes)
 	const HttpHeaders *headers;
 	const HttpHeaders *defaults;
+
+	// the compiled header of a response has no headers of a cerver: they are added to the extra ones,
+	// unless the header was written again with them for a filter
+	bool defaults_in_header;
 
 	// the headers of those lists that the message sends, the others are not found in it
 	HttpResponseFilter filter;
@@ -1348,14 +1254,14 @@ static void http_response_extra_add_with_name (
 }
 
 static void http_response_extra_add_header (
-	HttpHeaders *extra, const http_header type,
+	HttpHeaders *extra, const CerverHttpHeader type,
 	const char *value, const size_t value_length
 ) {
 
 	if (http_headers_add (extra, type, value, value_length)) {
 		cerver_log_warning (
 			"http_response_send () - The %s header could not be added to the response",
-			http_header_string (type)
+			cerver_http_header_to_string (type)
 		);
 	}
 
@@ -1363,7 +1269,7 @@ static void http_response_extra_add_header (
 
 // a 304 keeps the headers of its list and the Vary of the response, that has no type
 static bool http_response_not_modified_keeps_header (
-	const http_header type, const char *name, const size_t name_length
+	const CerverHttpHeader type, const char *name, const size_t name_length
 ) {
 
 	bool keeps = (name_length == (sizeof (http_response_vary_name) - 1))
@@ -1380,7 +1286,7 @@ static bool http_response_not_modified_keeps_header (
 // the header is one that a message with the filter sends
 static bool http_response_filter_keeps (
 	const HttpResponseFilter filter,
-	const http_header type, const char *name, const size_t name_length
+	const CerverHttpHeader type, const char *name, const size_t name_length
 ) {
 
 	bool keeps = true;
@@ -1417,7 +1323,7 @@ static bool http_response_message_keeps (
 // the value of a header of the list or of the ones of the cerver, when the message sends it
 static bool http_response_message_find_in_lists (
 	const HttpResponseMessage *message,
-	const http_header type, const char *name, const size_t name_length,
+	const CerverHttpHeader type, const char *name, const size_t name_length,
 	const char **value, size_t *value_length
 ) {
 
@@ -1453,7 +1359,7 @@ static bool http_response_message_find_in_lists (
 // or in its compiled header, a header that has no type is found by its name
 static bool http_response_message_find (
 	const HttpResponseMessage *message,
-	const http_header type, const char *name, const size_t name_length,
+	const CerverHttpHeader type, const char *name, const size_t name_length,
 	const char **value, size_t *value_length
 ) {
 
@@ -1466,18 +1372,18 @@ static bool http_response_message_find (
 }
 
 static bool http_response_message_find_type (
-	const HttpResponseMessage *message, const http_header type,
+	const HttpResponseMessage *message, const CerverHttpHeader type,
 	const char **value, size_t *value_length
 ) {
 
-	const char *name = http_header_string (type);
+	const char *name = cerver_http_header_to_string (type);
 
 	return http_response_message_find (message, type, name, strlen (name), value, value_length);
 
 }
 
 static bool http_response_message_has (
-	const HttpResponseMessage *message, const http_header type
+	const HttpResponseMessage *message, const CerverHttpHeader type
 ) {
 
 	return http_response_message_find_type (message, type, NULL, NULL);
@@ -1493,7 +1399,7 @@ static void http_response_extra_date (
 		&& !http_response_message_has (message, HTTP_HEADER_DATE)
 	) {
 		http_response_extra_add_header (
-			&message->extra, HTTP_HEADER_DATE, http_date_current (), HTTP_DATE_LENGTH
+			&message->extra, HTTP_HEADER_DATE, cerver_http_date_current (), HTTP_DATE_LENGTH
 		);
 	}
 
@@ -1677,10 +1583,10 @@ static bool http_response_header_line_is_name (
 }
 
 static bool http_response_header_line_is (
-	const char *line, const size_t line_length, const http_header type
+	const char *line, const size_t line_length, const CerverHttpHeader type
 ) {
 
-	const char *name = http_header_string (type);
+	const char *name = cerver_http_header_to_string (type);
 
 	return http_response_header_line_is_name (line, line_length, name, strlen (name));
 
@@ -1691,7 +1597,7 @@ static bool http_response_header_line_is (
 // returns NULL on error
 static char *http_response_header_copy_without (
 	Arena *arena, const char *header, const size_t header_length,
-	const http_header type, size_t *copy_length
+	const CerverHttpHeader type, size_t *copy_length
 ) {
 
 	char *copy = arena ? (char *) arena_alloc (arena, header_length + 1) : NULL;
@@ -1789,12 +1695,12 @@ static bool http_response_is_compressible (
 	size_t content_type_length = 0;
 
 	return accept_encoding
-		&& http_compression_accepts_gzip (accept_encoding->str, accept_encoding->len)
+		&& cerver_http_compression_accepts_gzip (accept_encoding->str, accept_encoding->len)
 		&& !http_response_message_has (message, HTTP_HEADER_CONTENT_ENCODING)
 		&& http_response_message_find_type (
 			message, HTTP_HEADER_CONTENT_TYPE, &content_type, &content_type_length
 		)
-		&& http_compression_is_compressible (content_type, content_type_length);
+		&& cerver_http_compression_is_compressible (content_type, content_type_length);
 
 }
 
@@ -1802,9 +1708,9 @@ static bool http_response_should_compress (
 	const HttpReceive *http_receive, const HttpResponseMessage *message
 ) {
 
-	const http_status status = message->status;
+	const CerverHttpStatus status = message->status;
 
-	return http_compression_available ()
+	return cerver_http_compression_available ()
 		&& message->body && message->body_length
 		&& (message->body_length >= http_receive->http_cerver->compression_min_size)
 		&& (status >= HTTP_STATUS_OK)
@@ -1831,7 +1737,7 @@ static void http_response_message_etag (HttpResponseMessage *message) {
 	}
 
 	else {
-		message->etag_length = http_etag_from_data (
+		message->etag_length = cerver_http_etag_from_data (
 			message->body, message->body_length, message->compress, message->etag
 		);
 	}
@@ -1842,7 +1748,7 @@ static bool http_response_message_uses_etag (
 	const HttpReceive *http_receive, const HttpResponseMessage *message
 ) {
 
-	const RequestMethod method = http_receive->request->method;
+	const CerverHttpMethod method = http_receive->request->method;
 
 	return (message->status == HTTP_STATUS_OK)
 		&& ((method == REQUEST_METHOD_GET) || (method == REQUEST_METHOD_HEAD));
@@ -1862,7 +1768,7 @@ static void http_response_message_compress (
 	void *compressed = NULL;
 	size_t compressed_length = 0;
 	if (
-		http_compression_gzip (
+		cerver_http_compression_gzip (
 			arena, message->body, message->body_length,
 			http_receive->http_cerver->compression_level,
 			&compressed, &compressed_length
@@ -1895,7 +1801,7 @@ static void http_response_extra_compression (HttpResponseMessage *message) {
 }
 
 // the status of a response that never has a body (RFC 9110 section 6.4.1)
-static bool http_response_status_has_no_body (const http_status status) {
+static bool http_response_status_has_no_body (const CerverHttpStatus status) {
 
 	return (status < HTTP_STATUS_OK)
 		|| (status == HTTP_STATUS_NO_CONTENT)
@@ -2061,6 +1967,9 @@ static u8 http_response_message_filter (
 		message->header = header;
 		message->header_length = header_length;
 
+		// the header that was written from the lists has the headers of the cerver
+		message->defaults_in_header = (message->headers != NULL);
+
 		retval = 0;
 	}
 
@@ -2127,7 +2036,7 @@ static bool http_response_message_transform (
 
 		if (
 			message->etag_length
-			&& http_conditional_not_modified (http_receive->request, message->etag, message->etag_length, 0)
+			&& cerver_http_conditional_not_modified (http_receive->request, message->etag, message->etag_length, 0)
 		) {
 			*retval = http_response_send_not_modified (http_receive, message);
 			answered = true;
@@ -2139,7 +2048,7 @@ static bool http_response_message_transform (
 
 		// a body that was not compressed has the entity tag of its plain bytes
 		if (!message->compressed && message->etag_length && !message->etag_in_header) {
-			message->etag_length = http_etag_from_data (
+			message->etag_length = cerver_http_etag_from_data (
 				message->body, message->body_length, false, message->etag
 			);
 		}
@@ -2163,7 +2072,7 @@ static bool http_response_header_is_complete (
 
 // a header that cerver can not complete is sent as it is, with its data
 static u8 http_response_send_raw (
-	const HttpReceive *http_receive, const http_status status,
+	const HttpReceive *http_receive, const CerverHttpStatus status,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
 ) {
@@ -2187,9 +2096,10 @@ static u8 http_response_send_raw (
 
 }
 
+// a response whose header was set as bytes has no list of headers, and the ones of the cerver are not added to it
 static void http_response_message_init (
-	HttpResponseMessage *message, const http_status status,
-	const HttpHeaders *headers,
+	HttpResponseMessage *message, const CerverHttpStatus status,
+	const HttpHeaders *headers, const HttpHeaders *defaults,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
 ) {
@@ -2197,7 +2107,8 @@ static void http_response_message_init (
 	message->status = status;
 
 	message->headers = headers;
-	message->defaults = headers ? http_response_default_headers () : NULL;
+	message->defaults = headers ? defaults : NULL;
+	message->defaults_in_header = false;
 
 	message->filter = HTTP_RESPONSE_FILTER_NONE;
 
@@ -2230,6 +2141,41 @@ static bool http_response_message_ends_with_close (
 
 }
 
+static void http_response_extra_default (
+	HttpResponseMessage *message, const HttpHeaderField *field
+) {
+
+	size_t name_length = 0;
+	const char *name = http_headers_field_name (message->defaults, field, &name_length);
+
+	size_t value_length = 0;
+	const char *value = http_headers_field_value (message->defaults, field, &value_length);
+
+	if (field->type != HTTP_HEADER_UNDEFINED) {
+		http_response_extra_add_header (&message->extra, field->type, value, value_length);
+	}
+
+	else {
+		http_response_extra_add_with_name (&message->extra, name, name_length, value, value_length);
+	}
+
+}
+
+// the headers of the cerver of the request that the response does not have go after the ones of the response,
+// when the header of the message is the one that the response compiled
+static void http_response_extra_defaults (HttpResponseMessage *message) {
+
+	const HttpHeaders *defaults = message->defaults_in_header ? NULL : message->defaults;
+
+	const HttpHeaderField *field = NULL;
+	for (unsigned int idx = 0; (field = http_headers_get (defaults, idx)) != NULL; idx++) {
+		if (http_response_default_applies (message->headers, defaults, field)) {
+			http_response_extra_default (message, field);
+		}
+	}
+
+}
+
 static void http_response_message_extra (
 	const HttpReceive *http_receive, HttpResponseMessage *message,
 	const unsigned int options
@@ -2239,6 +2185,8 @@ static void http_response_message_extra (
 	if (http_response_message_ends_with_close (http_receive, message, options)) {
 		((HttpReceive *) http_receive)->keep_alive = false;
 	}
+
+	http_response_extra_defaults (message);
 
 	if (message->compressed) http_response_extra_compression (message);
 
@@ -2260,7 +2208,7 @@ static void http_response_message_extra (
 }
 
 u8 http_response_send_message (
-	const HttpReceive *http_receive, const http_status status,
+	const HttpReceive *http_receive, const CerverHttpStatus status,
 	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len,
@@ -2282,7 +2230,10 @@ u8 http_response_send_message (
 
 	else {
 		HttpResponseMessage message;
-		http_response_message_init (&message, status, headers, header, header_len, data, data_len);
+		http_response_message_init (
+			&message, status, headers, &http_receive->http_cerver->response_headers,
+			header, header_len, data, data_len
+		);
 
 		bool answered = false;
 		if (
@@ -2317,7 +2268,7 @@ u8 http_response_send_not_modified_header (
 
 	if (http_receive->request && http_response_header_is_complete (header, header_len)) {
 		HttpResponseMessage message;
-		http_response_message_init (&message, HTTP_STATUS_OK, NULL, header, header_len, NULL, 0);
+		http_response_message_init (&message, HTTP_STATUS_OK, NULL, NULL, header, header_len, NULL, 0);
 
 		// the entity tag is copied from the header
 		message.etag_in_header = true;
@@ -2340,7 +2291,7 @@ u8 http_response_send_not_modified_header (
 // the response to a HEAD request is sent without its data
 // returns 0 on success, 1 on error
 static u8 http_response_send_parts (
-	const HttpReceive *http_receive, const http_status status,
+	const HttpReceive *http_receive, const CerverHttpStatus status,
 	const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
@@ -2433,7 +2384,7 @@ u8 http_response_send_split (
 // creates & sends a response through the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_create_and_send (
-	const http_status status, const void *data, size_t data_len,
+	const CerverHttpStatus status, const void *data, size_t data_len,
 	const HttpReceive *http_receive
 ) {
 
@@ -2509,11 +2460,11 @@ static size_t http_response_file_validators (
 	HttpResponse *response, const struct stat *filestatus, char *etag
 ) {
 
-	const size_t etag_length = http_etag_from_file (filestatus, etag);
+	const size_t etag_length = cerver_http_etag_from_file (filestatus, etag);
 	if (etag_length) (void) http_response_add_header (response, HTTP_HEADER_ETAG, etag);
 
 	char last_modified[HTTP_DATE_SIZE] = { 0 };
-	if (http_date_format (filestatus->st_mtime, last_modified)) {
+	if (cerver_http_date_format (filestatus->st_mtime, last_modified)) {
 		(void) http_response_add_header (response, HTTP_HEADER_LAST_MODIFIED, last_modified);
 	}
 
@@ -2558,21 +2509,23 @@ static u8 http_response_send_file_actual (
 
 u8 http_response_send_file_internal (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *filename,
 	struct stat *filestatus
 ) {
 
 	u8 retval = 1;
 
-	// create response
-	HttpResponse *response = http_response_get ();
+	// the response that the handler wrote in its context goes with the file, with its headers;
+	// a request without one takes a new response
+	HttpResponse *written = http_response_writer_take ((HttpReceive *) http_receive);
+	HttpResponse *response = written ? written : http_response_get ();
 	if (!response) return retval;
 
 	// generate header
 	response->status = status;
 	http_response_add_content_type_header (
-		response, http_content_type_from_filename (filename)
+		response, cerver_http_content_type_from_filename (filename)
 	);
 
 	http_response_add_content_length_header (response, filestatus->st_size);
@@ -2588,7 +2541,7 @@ u8 http_response_send_file_internal (
 
 	if (
 		(status == HTTP_STATUS_OK)
-		&& http_conditional_not_modified (
+		&& cerver_http_conditional_not_modified (
 			http_receive->request, etag, etag_length, filestatus->st_mtime
 		)
 	) {
@@ -2616,7 +2569,9 @@ u8 http_response_send_file_internal (
 		);
 	}
 
-	http_response_return (response);
+	// a written response goes back to the cache of its thread, the other one to its pool
+	if (written) http_response_delete (written);
+	else http_response_return (response);
 
 	return retval;
 
@@ -2627,7 +2582,7 @@ u8 http_response_send_file_internal (
 // returns 0 on success, 1 on error
 u8 http_response_send_file (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *filename
 ) {
 
@@ -2657,7 +2612,7 @@ u8 http_response_send_file (
 // but generates filename on the fly
 u8 http_response_send_file_generate (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *format, ...
 ) {
 
@@ -2690,7 +2645,7 @@ u8 http_response_send_file_generate (
 // the data is not copied and the response is used again
 static u8 http_response_render (
 	const HttpReceive *http_receive,
-	const http_status status, const ContentType type,
+	const CerverHttpStatus status, const CerverHttpContentType type,
 	const char *data, const size_t data_len
 ) {
 
@@ -2731,7 +2686,7 @@ static u8 http_response_render (
 // returns 0 on success, 1 on error
 u8 http_response_render_text (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *text, const size_t text_len
 ) {
 
@@ -2752,7 +2707,7 @@ u8 http_response_render_text (
 // returns 0 on success, 1 on error
 u8 http_response_render_json (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *json, const size_t json_len
 ) {
 
@@ -2772,11 +2727,11 @@ u8 http_response_render_json (
 
 #pragma region videos
 
-static ContentType http_response_handle_video_content (
+static CerverHttpContentType http_response_handle_video_content (
 	const char *filename
 ) {
 
-	ContentType content_type = HTTP_CONTENT_TYPE_MP4;
+	CerverHttpContentType content_type = HTTP_CONTENT_TYPE_MP4;
 
 	unsigned int ext_len = 0;
 	const char *ext = files_get_file_extension_reference (
@@ -2784,7 +2739,7 @@ static ContentType http_response_handle_video_content (
 	);
 
 	if (ext) {
-		content_type = http_content_type_with_extension (ext);
+		content_type = cerver_http_content_type_with_extension (ext);
 	}
 
 	return content_type;
@@ -2794,7 +2749,7 @@ static ContentType http_response_handle_video_content (
 // the headers of the whole video, a 200 has no Content-Range
 static void http_response_add_video_whole_headers (
 	HttpResponse *response,
-	const ContentType content_type, const BytesRange *bytes_range
+	const CerverHttpContentType content_type, const CerverHttpBytesRange *bytes_range
 ) {
 
 	(void) http_response_add_header (response, HTTP_HEADER_ACCEPT_RANGES, "bytes");
@@ -2809,7 +2764,7 @@ static void http_response_add_video_whole_headers (
 static u8 http_response_handle_video_pipe (
 	const HttpReceive *http_receive,
 	const char *filename,
-	BytesRange *bytes_range
+	CerverHttpBytesRange *bytes_range
 ) {
 
 	u8 retval = 1;
@@ -2850,8 +2805,8 @@ static u8 http_response_handle_video_pipe (
 static u8 http_response_handle_video_internal (
 	const HttpReceive *http_receive,
 	const char *filename,
-	BytesRange *bytes_range,
-	const http_status status
+	CerverHttpBytesRange *bytes_range,
+	const CerverHttpStatus status
 ) {
 
 	u8 retval = 1;
@@ -2860,7 +2815,7 @@ static u8 http_response_handle_video_internal (
 	if (response) {
 		response->status = status;
 
-		const ContentType content_type = http_response_handle_video_content (filename);
+		const CerverHttpContentType content_type = http_response_handle_video_content (filename);
 		if (status == HTTP_STATUS_PARTIAL_CONTENT) http_response_add_video_headers (response, content_type, bytes_range);
 		else http_response_add_video_whole_headers (response, content_type, bytes_range);
 
@@ -2885,7 +2840,7 @@ static u8 http_response_handle_video_internal (
 
 // a range that starts after the end of the video gets a 416 with the size of the video
 static u8 http_response_handle_video_unsatisfiable (
-	const HttpReceive *http_receive, const BytesRange *bytes_range
+	const HttpReceive *http_receive, const CerverHttpBytesRange *bytes_range
 ) {
 
 	u8 retval = 1;
@@ -2916,7 +2871,7 @@ static u8 http_response_handle_video_unsatisfiable (
 }
 
 // bytes=N- sends at most HTTP_RESPONSE_VIDEO_CHUNK_SIZE bytes, and never after the last one of the video
-static void http_response_video_range_open (BytesRange *bytes_range) {
+static void http_response_video_range_open (CerverHttpBytesRange *bytes_range) {
 
 	const long last = bytes_range->file_size - 1;
 	const long end = bytes_range->start + HTTP_RESPONSE_VIDEO_CHUNK_SIZE - 1;
@@ -2926,7 +2881,7 @@ static void http_response_video_range_open (BytesRange *bytes_range) {
 }
 
 // bytes=N-M includes M, and ends with the video (it sent one byte less and read after its end)
-static void http_response_video_range_full (BytesRange *bytes_range) {
+static void http_response_video_range_full (CerverHttpBytesRange *bytes_range) {
 
 	const long last = bytes_range->file_size - 1;
 	if (bytes_range->end > last) bytes_range->end = last;
@@ -2935,7 +2890,7 @@ static void http_response_video_range_full (BytesRange *bytes_range) {
 
 // the last bytes of the file, all of it when the file is smaller than the suffix:
 // the end of the range was the number of bytes, it becomes the last byte of the video
-static void http_response_video_range_suffix (BytesRange *bytes_range) {
+static void http_response_video_range_suffix (CerverHttpBytesRange *bytes_range) {
 
 	const long suffix = (bytes_range->end < bytes_range->file_size) ?
 		bytes_range->end : bytes_range->file_size;
@@ -2946,7 +2901,7 @@ static void http_response_video_range_suffix (BytesRange *bytes_range) {
 }
 
 // the range of the video with its last byte, its size is what is sent
-static void http_response_video_range_resolve (BytesRange *bytes_range) {
+static void http_response_video_range_resolve (CerverHttpBytesRange *bytes_range) {
 
 	switch (bytes_range->type) {
 		case HTTP_RANGE_TYPE_EMPTY:
@@ -2978,7 +2933,7 @@ static void http_response_video_range_resolve (BytesRange *bytes_range) {
 static u8 http_response_handle_video_answer (
 	const HttpReceive *http_receive,
 	const char *filename,
-	BytesRange *bytes_range
+	CerverHttpBytesRange *bytes_range
 ) {
 
 	u8 retval = 1;
@@ -3002,7 +2957,7 @@ static u8 http_response_handle_video_answer (
 }
 
 // bytes=N-M with M before N is not a range, the request gets the whole video
-static void http_response_video_range_check (BytesRange *bytes_range) {
+static void http_response_video_range_check (CerverHttpBytesRange *bytes_range) {
 
 	if ((bytes_range->type == HTTP_RANGE_TYPE_FULL) && (bytes_range->end < bytes_range->start)) {
 		bytes_range->type = HTTP_RANGE_TYPE_NONE;
@@ -3022,7 +2977,7 @@ u8 http_response_handle_video (
 	// check that video exists
 	struct stat filestats = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestats)) {
-		BytesRange bytes_range = {
+		CerverHttpBytesRange bytes_range = {
 			.file_size = filestats.st_size,
 			.type = HTTP_RANGE_TYPE_NONE,
 			.start = 0, .end = 0,
@@ -3081,7 +3036,7 @@ u8 http_response_handle_video_generate (
 #pragma region json
 
 static HttpResponse *http_response_create_json_common (
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *json, const size_t json_len
 ) {
 
@@ -3115,7 +3070,7 @@ static HttpResponse *http_response_create_json_common (
 // with a custom json message body
 // returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_create_json (
-	const http_status status, const char *json, const size_t json_len
+	const CerverHttpStatus status, const char *json, const size_t json_len
 ) {
 
 	return json ? http_response_create_json_common (
@@ -3274,7 +3229,7 @@ static char *http_response_json_body_boolean (const char *key, const bool value)
 // the response owns the json, so its data is never left dangling,
 // a response that is compiled again or sent in parts still has its body
 static HttpResponse *http_response_create_json_owned (
-	const http_status status, char *json
+	const CerverHttpStatus status, char *json
 ) {
 
 	HttpResponse *response = NULL;
@@ -3293,7 +3248,7 @@ static HttpResponse *http_response_create_json_owned (
 }
 
 HttpResponse *http_response_create_json_key_value (
-	const http_status status, const char *key, const char *value
+	const CerverHttpStatus status, const char *key, const char *value
 ) {
 
 	return (key && value) ? http_response_create_json_owned (
@@ -3306,7 +3261,7 @@ HttpResponse *http_response_create_json_key_value (
 // with a json body of type { "key": int_value }
 // returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_json_int_value (
-	const http_status status, const char *key, const int value
+	const CerverHttpStatus status, const char *key, const int value
 ) {
 
 	return key ? http_response_create_json_owned (
@@ -3320,7 +3275,7 @@ HttpResponse *http_response_json_int_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_int_value_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *key, const int value
+	const CerverHttpStatus status, const char *key, const int value
 ) {
 
 	u8 retval = 1;
@@ -3345,7 +3300,7 @@ u8 http_response_json_int_value_send (
 // with a json body of type { "key": large_int_value }
 // returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_json_large_int_value (
-	const http_status status, const char *key, const long value
+	const CerverHttpStatus status, const char *key, const long value
 ) {
 
 	return key ? http_response_create_json_owned (
@@ -3359,7 +3314,7 @@ HttpResponse *http_response_json_large_int_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_large_int_value_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *key, const long value
+	const CerverHttpStatus status, const char *key, const long value
 ) {
 
 	u8 retval = 1;
@@ -3384,7 +3339,7 @@ u8 http_response_json_large_int_value_send (
 // with a json body of type { "key": double_value }
 // returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_json_real_value (
-	const http_status status, const char *key, const double value
+	const CerverHttpStatus status, const char *key, const double value
 ) {
 
 	return key ? http_response_create_json_owned (
@@ -3398,7 +3353,7 @@ HttpResponse *http_response_json_real_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_real_value_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *key, const double value
+	const CerverHttpStatus status, const char *key, const double value
 ) {
 
 	u8 retval = 1;
@@ -3423,7 +3378,7 @@ u8 http_response_json_real_value_send (
 // with a json body of type { "key": bool_value }
 // returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_json_bool_value (
-	const http_status status, const char *key, const bool value
+	const CerverHttpStatus status, const char *key, const bool value
 ) {
 
 	return key ? http_response_create_json_owned (
@@ -3437,7 +3392,7 @@ HttpResponse *http_response_json_bool_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_bool_value_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *key, const bool value
+	const CerverHttpStatus status, const char *key, const bool value
 ) {
 
 	u8 retval = 1;
@@ -3460,7 +3415,7 @@ u8 http_response_json_bool_value_send (
 
 // a message that is not valid UTF-8 can not be json, there is no response
 static HttpResponse *http_response_json_internal (
-	const http_status status, const char *key, const char *value
+	const CerverHttpStatus status, const char *key, const char *value
 ) {
 
 	char *json = http_response_json_body_string (key, value);
@@ -3487,7 +3442,7 @@ static HttpResponse *http_response_json_internal (
 
 // the responses that are returned to be reused are compiled into a single buffer
 static HttpResponse *http_response_json_internal_compiled (
-	const http_status status, const char *key, const char *value
+	const CerverHttpStatus status, const char *key, const char *value
 ) {
 
 	HttpResponse *response = http_response_json_internal (status, key, value);
@@ -3500,7 +3455,7 @@ static HttpResponse *http_response_json_internal_compiled (
 // creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { msg: "your message" }
 HttpResponse *http_response_json_msg (
-	const http_status status, const char *msg
+	const CerverHttpStatus status, const char *msg
 ) {
 
 	return msg ? http_response_json_internal_compiled (status, "msg", msg) : NULL;
@@ -3511,7 +3466,7 @@ HttpResponse *http_response_json_msg (
 // returns 0 on success, 1 on error
 u8 http_response_json_msg_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *msg
+	const CerverHttpStatus status, const char *msg
 ) {
 
 	u8 retval = 1;
@@ -3532,7 +3487,7 @@ u8 http_response_json_msg_send (
 // creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { error: "your error message" }
 HttpResponse *http_response_json_error (
-	const http_status status, const char *error_msg
+	const CerverHttpStatus status, const char *error_msg
 ) {
 
 	return error_msg ? http_response_json_internal_compiled (status, "error", error_msg) : NULL;
@@ -3543,7 +3498,7 @@ HttpResponse *http_response_json_error (
 // returns 0 on success, 1 on error
 u8 http_response_json_error_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *error_msg
+	const CerverHttpStatus status, const char *error_msg
 ) {
 
 	u8 retval = 1;
@@ -3564,7 +3519,7 @@ u8 http_response_json_error_send (
 // creates a http response with the defined status code ready to be sent
 // and a data (body) with a json meesage of type { key: value }
 HttpResponse *http_response_json_key_value (
-	const http_status status, const char *key, const char *value
+	const CerverHttpStatus status, const char *key, const char *value
 ) {
 
 	return (key && value) ? http_response_json_internal_compiled (status, key, value) : NULL;
@@ -3575,7 +3530,7 @@ HttpResponse *http_response_json_key_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_key_value_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *key, const char *value
+	const CerverHttpStatus status, const char *key, const char *value
 ) {
 
 	u8 retval = 1;
@@ -3595,7 +3550,7 @@ u8 http_response_json_key_value_send (
 
 // a body that can not be copied is an error, not a response with uninitialized bytes
 static HttpResponse *http_response_json_custom_internal (
-	const http_status status, const char *json
+	const CerverHttpStatus status, const char *json
 ) {
 
 	char *body = strdup (json);
@@ -3623,7 +3578,7 @@ static HttpResponse *http_response_json_custom_internal (
 
 // creates a http response with the defined status code and the body with the custom json
 HttpResponse *http_response_json_custom (
-	const http_status status, const char *json
+	const CerverHttpStatus status, const char *json
 ) {
 
 	HttpResponse *response = NULL;
@@ -3641,7 +3596,7 @@ HttpResponse *http_response_json_custom (
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_send (
 	const HttpReceive *http_receive,
-	const http_status status, const char *json
+	const CerverHttpStatus status, const char *json
 ) {
 
 	u8 retval = 1;
@@ -3663,7 +3618,7 @@ u8 http_response_json_custom_send (
 }
 
 static HttpResponse *http_response_json_custom_reference_internal (
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *json, const size_t json_len
 ) {
 
@@ -3687,7 +3642,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 // creates a http response with the defined status code
 // and the body with a reference to a custom json
 HttpResponse *http_response_json_custom_reference (
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *json, const size_t json_len
 ) {
 
@@ -3709,7 +3664,7 @@ HttpResponse *http_response_json_custom_reference (
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_reference_send (
 	const HttpReceive *http_receive,
-	const http_status status,
+	const CerverHttpStatus status,
 	const char *json, const size_t json_len
 ) {
 
@@ -3739,16 +3694,17 @@ u8 http_response_json_custom_reference_send (
 
 #pragma region main
 
-static unsigned int http_responses_init_pool (void) {
+// a pool that could not be filled is released by http_responses_end ()
+unsigned int http_responses_init (void) {
 
 	unsigned int retval = 1;
 
-	producer->pool = pool_create (http_response_delete);
-	if (producer->pool) {
-		pool_set_create (producer->pool, http_response_new);
-		pool_set_produce_if_empty (producer->pool, true);
+	http_responses_pool = pool_create (http_response_delete);
+	if (http_responses_pool) {
+		pool_set_create (http_responses_pool, http_response_new);
+		pool_set_produce_if_empty (http_responses_pool, true);
 		if (!pool_init (
-			producer->pool, http_response_new, HTTP_RESPONSE_POOL_INIT
+			http_responses_pool, http_response_new, HTTP_RESPONSE_POOL_INIT
 		)) {
 			retval = 0;
 		}
@@ -3766,35 +3722,10 @@ static unsigned int http_responses_init_pool (void) {
 
 }
 
-unsigned int http_responses_init (
-	const HttpCerver *http_cerver
-) {
-
-	unsigned int retval = 1;
-
-	producer = http_response_producer_new (http_cerver);
-	if (producer) {
-		retval = http_responses_init_pool ();
-	}
-
-	return retval;
-
-}
-
-void http_responses_follow (
-	const HttpCerver *ended, const HttpCerver *alive
-) {
-
-	if (producer && (http_response_producer_cerver () == ended)) {
-		__atomic_store_n (&producer->http_cerver, alive, __ATOMIC_RELEASE);
-	}
-
-}
-
 void http_responses_end (void) {
 
-	http_response_producer_delete (producer);
-	producer = NULL;
+	pool_delete (http_responses_pool);
+	http_responses_pool = NULL;
 
 }
 
@@ -3831,6 +3762,571 @@ u8 http_response_send_unavailable (const HttpReceive *http_receive) {
 	return http_response_send_pieces_status (
 		http_receive, HTTP_STATUS_SERVICE_UNAVAILABLE, &part, 1
 	);
+
+}
+
+#pragma endregion
+
+#pragma region writer
+
+// the keys of the answers of one member that cerver writes
+static const char *http_response_json_message_key = { "msg" };
+static const char *http_response_json_error_key = { "error" };
+
+// the response that a handler writes in the context of its request: its status and its headers
+// it is taken from the cache of the thread the first time that the handler sets something of it,
+// and it goes back when the response is sent or when its request ends, so a request allocates nothing for it
+static HttpResponse *http_response_writer_get (HttpReceive *context) {
+
+	if (!context->writer) context->writer = (HttpResponse *) http_response_new ();
+
+	return context->writer;
+
+}
+
+// the response that the handler wrote, that is not of the context anymore; NULL when it wrote none
+HttpResponse *http_response_writer_take (HttpReceive *context) {
+
+	HttpResponse *writer = context->writer;
+
+	context->writer = NULL;
+
+	return writer;
+
+}
+
+void http_response_writer_release (HttpReceive *context) {
+
+	http_response_delete (http_response_writer_take (context));
+
+}
+
+// a request takes one response: the one that its handler sent or began as a stream, or the one that cerver
+// tried to send for it; another one is refused, and what the handler wrote for it is dropped,
+// so nothing of a second response follows the first one in its connection
+static bool http_response_writer_is_answered (HttpReceive *context) {
+
+	const bool answered = context->responded;
+
+	if (answered) {
+		cerver_log_warning ("cerver_http_response_send () - The request was already answered");
+
+		http_response_writer_release (context);
+	}
+
+	return answered;
+
+}
+
+void cerver_http_response_set_status (
+	CerverHttpContext *context, const CerverHttpStatus status
+) {
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+	if (writer) writer->status = status;
+
+}
+
+u8 cerver_http_response_set_header (
+	CerverHttpContext *context,
+	const CerverHttpHeader header, const char *value
+) {
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+
+	return writer ? http_response_header_set (writer, header, value) : 1;
+
+}
+
+u8 cerver_http_response_add_header (
+	CerverHttpContext *context,
+	const CerverHttpHeader header, const char *value
+) {
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+
+	return writer ? http_response_header_add (writer, header, value) : 1;
+
+}
+
+u8 cerver_http_response_set_header_with_name (
+	CerverHttpContext *context,
+	const char *name, const char *value
+) {
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+
+	return writer ? http_response_header_set_with_name (writer, name, value) : 1;
+
+}
+
+u8 cerver_http_response_add_header_with_name (
+	CerverHttpContext *context,
+	const char *name, const char *value
+) {
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+
+	return writer ? http_response_header_add_with_name (writer, name, value) : 1;
+
+}
+
+// a status whose response never has a body does not get a Content-Length
+static bool http_response_writer_has_length (const CerverHttpStatus status) {
+
+	return (status >= HTTP_STATUS_OK)
+		&& (status != HTTP_STATUS_NO_CONTENT)
+		&& (status != HTTP_STATUS_NOT_MODIFIED);
+
+}
+
+// sends what the handler wrote in its context with a body, and gives its response back:
+// the header is compiled in the response and the body is copied once, to the output of its connection
+static u8 http_response_writer_send (
+	HttpReceive *context, const void *data, const size_t length
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *writer = http_response_writer_is_answered (context) ?
+		NULL : http_response_writer_get (context);
+
+	if (writer) {
+		const size_t body_length = data ? length : 0;
+
+		if (http_response_writer_has_length (writer->status)) {
+			(void) http_response_add_content_length_header (writer, body_length);
+		}
+
+		http_response_compile_header (writer);
+
+		if (writer->header) {
+			retval = http_response_send_parts (
+				context, writer->status, &writer->headers,
+				writer->header, writer->header_len,
+				data, body_length
+			);
+		}
+
+		http_response_writer_release (context);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send (
+	CerverHttpContext *context,
+	const void *data, const size_t length
+) {
+
+	return context ? http_response_writer_send (context, data, length) : 1;
+
+}
+
+u8 cerver_http_response_send_content (
+	CerverHttpContext *context, const CerverHttpContentType type,
+	const void *data, const size_t length
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *writer = context ? http_response_writer_get (context) : NULL;
+	if (writer) {
+		(void) http_response_add_content_type_header (writer, type);
+
+		retval = http_response_writer_send (context, data, length);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send_text (
+	CerverHttpContext *context,
+	const char *text, const size_t length
+) {
+
+	return cerver_http_response_send_content (context, HTTP_CONTENT_TYPE_TXT, text, length);
+
+}
+
+u8 cerver_http_response_send_json (
+	CerverHttpContext *context,
+	const char *json, const size_t length
+) {
+
+	return cerver_http_response_send_content (context, HTTP_CONTENT_TYPE_JSON, json, length);
+
+}
+
+u8 cerver_http_response_send_file (
+	CerverHttpContext *context, const char *filename
+) {
+
+	u8 retval = 1;
+
+	if (context && filename && !http_response_writer_is_answered (context)) {
+		const CerverHttpStatus status = context->writer ?
+			context->writer->status : (CerverHttpStatus) HTTP_STATUS_OK;
+
+		// the response of the context goes with the file, a file that was not found leaves it there
+		retval = http_response_send_file (context, status, filename);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send_video (
+	CerverHttpContext *context, const char *filename
+) {
+
+	u8 retval = 1;
+
+	if (context && filename && !http_response_writer_is_answered (context)) {
+		retval = http_response_handle_video (context, filename);
+
+		// a video is answered with its own status and headers
+		if (!retval) http_response_writer_release (context);
+	}
+
+	return retval;
+
+}
+
+// a body { "key": value } that did not fit in the stack is written again in memory of its size
+static u8 http_response_writer_send_member_long (
+	HttpReceive *context, const HttpResponseJsonMember *member, const size_t length
+) {
+
+	u8 retval = 1;
+
+	char *body = http_response_json_body_long (member, length);
+	if (body) {
+		retval = cerver_http_response_send_json (context, body, length);
+
+		free (body);
+	}
+
+	return retval;
+
+}
+
+// answers a request with { "key": value } and a status: the body is written in the stack
+// and copied once to the output of its connection
+static u8 http_response_writer_send_member (
+	HttpReceive *context, const CerverHttpStatus status,
+	const HttpResponseJsonMember *member
+) {
+
+	u8 retval = 1;
+
+	char buffer[HTTP_RESPONSE_JSON_BODY_SIZE];
+	CerverJsonWriter writer;
+
+	cerver_json_writer_init (&writer, buffer, HTTP_RESPONSE_JSON_BODY_SIZE, CERVER_JSON_FLAGS_NONE);
+	http_response_json_body_write (&writer, member);
+
+	const CerverJsonErrorCode error = cerver_json_writer_end (&writer);
+
+	if ((error == CERVER_JSON_ERROR_NONE) || (error == CERVER_JSON_ERROR_TRUNCATED)) {
+		cerver_http_response_set_status (context, status);
+
+		retval = (error == CERVER_JSON_ERROR_NONE) ?
+			cerver_http_response_send_json (context, buffer, cerver_json_writer_length (&writer)) :
+			http_response_writer_send_member_long (context, member, cerver_json_writer_length (&writer));
+	}
+
+	return retval;
+
+}
+
+static u8 http_response_writer_send_string (
+	HttpReceive *context, const CerverHttpStatus status,
+	const char *key, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (context && key && value) {
+		HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+		member.key = key;
+		member.type = HTTP_RESPONSE_JSON_TYPE_STRING;
+		member.string = value;
+
+		retval = http_response_writer_send_member (context, status, &member);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send_json_message (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *message
+) {
+
+	return http_response_writer_send_string (context, status, http_response_json_message_key, message);
+
+}
+
+u8 cerver_http_response_send_json_error (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *error
+) {
+
+	return http_response_writer_send_string (context, status, http_response_json_error_key, error);
+
+}
+
+u8 cerver_http_response_send_json_key_value (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const char *value
+) {
+
+	return http_response_writer_send_string (context, status, key, value);
+
+}
+
+u8 cerver_http_response_send_json_integer (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const i64 value
+) {
+
+	u8 retval = 1;
+
+	if (context && key) {
+		HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+		member.key = key;
+		member.type = HTTP_RESPONSE_JSON_TYPE_INTEGER;
+		member.integer = value;
+
+		retval = http_response_writer_send_member (context, status, &member);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send_json_real (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const double value
+) {
+
+	u8 retval = 1;
+
+	if (context && key) {
+		HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+		member.key = key;
+		member.type = HTTP_RESPONSE_JSON_TYPE_REAL;
+		member.real = value;
+
+		retval = http_response_writer_send_member (context, status, &member);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_send_json_boolean (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const bool value
+) {
+
+	u8 retval = 1;
+
+	if (context && key) {
+		HttpResponseJsonMember member = CERVER_ZERO_INITIALIZER;
+		member.key = key;
+		member.type = HTTP_RESPONSE_JSON_TYPE_BOOLEAN;
+		member.boolean = value;
+
+		retval = http_response_writer_send_member (context, status, &member);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_stream_begin (CerverHttpContext *context) {
+
+	u8 retval = 1;
+
+	HttpResponse *writer = (context && !http_response_writer_is_answered (context)) ?
+		http_response_writer_get (context) : NULL;
+
+	if (writer) {
+		// the header of the stream is copied to the output of its connection
+		retval = http_response_stream_begin (context, writer);
+
+		http_response_writer_release (context);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_response_stream_write (
+	CerverHttpContext *context,
+	const void *data, const size_t length
+) {
+
+	return context ? http_response_stream_write (context, data, length) : 1;
+
+}
+
+u8 cerver_http_response_stream_end (CerverHttpContext *context) {
+
+	return context ? http_response_stream_end (context) : 1;
+
+}
+
+bool cerver_http_response_stream_is_active (const CerverHttpContext *context) {
+
+	return context ? http_response_stream_is_active (context) : false;
+
+}
+
+#pragma endregion
+
+#pragma region prepared
+
+// a prepared response is always compiled: its header and its body are ready to be sent by any thread
+static CerverHttpPrepared *http_response_prepared_ready (HttpResponse *response) {
+
+	if (response && http_response_compile (response)) {
+		http_response_delete (response);
+		response = NULL;
+	}
+
+	return response;
+
+}
+
+CerverHttpPrepared *cerver_http_prepared_create (
+	const CerverHttpStatus status, const CerverHttpContentType type,
+	const void *data, const size_t length
+) {
+
+	HttpResponse *response = http_response_create (status, data, data ? length : 0);
+	if (response) {
+		if (type != HTTP_CONTENT_TYPE_NONE) {
+			(void) http_response_add_content_type_header (response, type);
+		}
+
+		if (http_response_writer_has_length (status)) {
+			(void) http_response_add_content_length_header (response, response->data_len);
+		}
+	}
+
+	return http_response_prepared_ready (response);
+
+}
+
+CerverHttpPrepared *cerver_http_prepared_create_json_message (
+	const CerverHttpStatus status, const char *message
+) {
+
+	return http_response_json_msg (status, message);
+
+}
+
+CerverHttpPrepared *cerver_http_prepared_create_json_error (
+	const CerverHttpStatus status, const char *error
+) {
+
+	return http_response_json_error (status, error);
+
+}
+
+CerverHttpPrepared *cerver_http_prepared_create_json_key_value (
+	const CerverHttpStatus status, const char *key, const char *value
+) {
+
+	return http_response_json_key_value (status, key, value);
+
+}
+
+u8 cerver_http_prepared_set_header (
+	CerverHttpPrepared *prepared,
+	const CerverHttpHeader header, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (prepared && !http_response_header_set (prepared, header, value)) {
+		retval = http_response_compile (prepared);
+	}
+
+	return retval;
+
+}
+
+u8 cerver_http_prepared_set_header_with_name (
+	CerverHttpPrepared *prepared,
+	const char *name, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (prepared && !http_response_header_set_with_name (prepared, name, value)) {
+		retval = http_response_compile (prepared);
+	}
+
+	return retval;
+
+}
+
+void cerver_http_prepared_delete (CerverHttpPrepared *prepared) {
+
+	http_response_delete (prepared);
+
+}
+
+u8 cerver_http_response_send_prepared (
+	CerverHttpContext *context, const CerverHttpPrepared *prepared
+) {
+
+	u8 retval = 1;
+
+	if (context && prepared && !http_response_writer_is_answered (context)) {
+		// a prepared response is compiled, so sending it only reads it
+		retval = http_response_send ((HttpResponse *) prepared, context);
+
+		// what the handler wrote in its context is not sent
+		http_response_writer_release (context);
+	}
+
+	return retval;
+
+}
+
+// the common responses of cerver, created with the first HTTP cerver of the process
+static const CerverHttpPrepared *http_response_common (const CerverHttpCommonResponse common) {
+
+	const CerverHttpPrepared *prepared = NULL;
+
+	switch (common) {
+		case CERVER_HTTP_COMMON_RESPONSE_OK: prepared = oki_doki; break;
+		case CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST: prepared = bad_request_error; break;
+		case CERVER_HTTP_COMMON_RESPONSE_BAD_USER: prepared = bad_user_error; break;
+		case CERVER_HTTP_COMMON_RESPONSE_BAD_AUTH: prepared = bad_auth_error; break;
+		case CERVER_HTTP_COMMON_RESPONSE_NOT_FOUND: prepared = not_found_error; break;
+		case CERVER_HTTP_COMMON_RESPONSE_SERVER_ERROR: prepared = server_error; break;
+
+		default: break;
+	}
+
+	return prepared;
+
+}
+
+u8 cerver_http_response_send_common (
+	CerverHttpContext *context, const CerverHttpCommonResponse common
+) {
+
+	return cerver_http_response_send_prepared (context, http_response_common (common));
 
 }
 
