@@ -12,6 +12,9 @@ SANITIZER	:=
 # 1 compiles the gzip compression of the HTTP responses with zlib
 ZLIB		:= 0
 
+# 1 compiles the requests of the asynchronous authentication with libcurl
+CURL		:= 0
+
 # the provider of the cryptography of cerver/crypto: openssl
 CRYPTO		:= openssl
 
@@ -43,7 +46,7 @@ OPENSSL		:= -l ssl -l crypto
 
 ZLIBLIB		:= -l z
 
-CURL		:= -l curl
+CURLLIB		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
 
@@ -167,6 +170,11 @@ LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL) $(SANITIZERFLAGS)
 ifeq ($(ZLIB), 1)
 	CFLAGS += -D CERVER_ZLIB
 	LIB += $(ZLIBLIB)
+endif
+
+ifeq ($(CURL), 1)
+	CFLAGS += -D CERVER_CURL
+	LIB += $(CURLLIB)
 endif
 
 ifeq ($(TYPE), test)
@@ -364,6 +372,10 @@ ifeq ($(ZLIB), 1)
 	TESTZLIB += $(ZLIBLIB)
 endif
 
+ifeq ($(CURL), 1)
+	TESTFLAGS += -D CERVER_CURL
+endif
+
 TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(SANITIZERFLAGS)
 
 TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
@@ -521,7 +533,7 @@ integration-web:
 
 INTWEBCLIENTIN		:= ./$(TESTBUILD)/client/web
 INTWEBCLIENTOUT		:= ./$(TESTTARGET)/client/web
-INTWEBCLIENTLIBS	:= $(TESTLIBS) $(CURL)
+INTWEBCLIENTLIBS	:= $(TESTLIBS) $(CURLLIB)
 
 integration-web-client:
 	@mkdir -p ./$(TESTTARGET)/client/web
@@ -606,7 +618,7 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native
 endif
 
-BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) $(CURLLIB) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name '*.$(SRCEXT)' -not -path '$(BENCHDIR)/competitors/*')

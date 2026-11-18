@@ -86,7 +86,15 @@ typedef enum HttpConnectionState {
 	 *
 	 * @since 2.1b-23
 	 */
-	HTTP_CONNECTION_STATE_HANDSHAKE			= 8
+	HTTP_CONNECTION_STATE_HANDSHAKE			= 8,
+	/**
+	 * @internal
+	 * @brief Its authentication waits for the answer of a remote request in the loop, without a thread
+	 * (http/security/remote.c).
+	 *
+	 * @since 2.1b-24
+	 */
+	HTTP_CONNECTION_STATE_REMOTE			= 9
 
 } HttpConnectionState;
 
@@ -104,7 +112,15 @@ typedef enum HttpConnectionJob {
 	 * @brief The next request of a connection that waited idle and whose socket was reported: the thread reads,
 	 * parses and handles it, or gives the connection back with what it read.
 	 */
-	HTTP_CONNECTION_JOB_READ				= 3
+	HTTP_CONNECTION_JOB_READ				= 3,
+	/**
+	 * @internal
+	 * @brief The answer of the remote request of its authentication: its on_response () and the rest of its job, where
+	 * it was (#HttpRemoteStage).
+	 *
+	 * @since 2.1b-24
+	 */
+	HTTP_CONNECTION_JOB_REMOTE				= 4
 
 } HttpConnectionJob;
 
@@ -136,7 +152,14 @@ typedef enum HttpConnectionOutcome {
 	 * @brief Its socket was reported while it waited idle to a thread of its pool (or to another loop) that does
 	 * not read it: its loop reads its next request, or closes it when it stops.
 	 */
-	HTTP_CONNECTION_OUTCOME_REPORTED		= 8
+	HTTP_CONNECTION_OUTCOME_REPORTED		= 8,
+	/**
+	 * @internal
+	 * @brief Its authentication sent a remote request: the loop runs it, and the connection waits without a thread.
+	 *
+	 * @since 2.1b-24
+	 */
+	HTTP_CONNECTION_OUTCOME_REMOTE			= 9
 
 } HttpConnectionOutcome;
 
@@ -262,6 +285,23 @@ struct HttpConnection {
 	 * @since 2.1b-23
 	 */
 	bool reread;
+
+	/**
+	 * @internal
+	 * @brief The remote request of its authentication, from the call of the authentication until its answer runs;
+	 * NULL without one.
+	 *
+	 * @since 2.1b-24
+	 */
+	struct HttpRemote *remote;
+	/**
+	 * @internal
+	 * @brief Its authentication can leave a remote request to wait in the loop: only the one of
+	 * http_receive_headers_authorize () in a thread of the pool.
+	 *
+	 * @since 2.1b-24
+	 */
+	bool remote_allowed;
 
 	/** @internal @brief The job that the pool runs, or that waits for a place while it is parked. */
 	HttpConnectionJob job;
@@ -405,6 +445,16 @@ CERVER_HIDDEN unsigned int http_connection_unpark (HttpConnection *connection);
  * @param[in,out] connection the connection
  */
 CERVER_HIDDEN void http_connection_abort (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief The remote request of the authentication of a connection ended (with its answer or as a failure): the loop
+ * gives its answer to a thread of its pool.
+ *
+ * @param[in,out] connection the connection, in #HTTP_CONNECTION_STATE_REMOTE
+ * @since 2.1b-24
+ */
+CERVER_HIDDEN void http_connection_remote_answered (HttpConnection *connection);
 
 /**
  * @internal

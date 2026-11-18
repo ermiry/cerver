@@ -31,6 +31,7 @@
 #include "cerver/http/parser/api.h"
 #include "cerver/http/responses/internal.h"
 #include "cerver/http/responses/response.h"
+#include "cerver/http/security/internal.h"
 #include "cerver/http/websockets/internal.h"
 
 #include "cerver/tls/internal.h"
@@ -197,6 +198,7 @@ const char *http_connection_state_string (const HttpConnectionState state) {
 		case HTTP_CONNECTION_STATE_CLOSING: name = "Closing"; break;
 		case HTTP_CONNECTION_STATE_IDLE: name = "Idle"; break;
 		case HTTP_CONNECTION_STATE_HANDSHAKE: name = "Handshake"; break;
+		case HTTP_CONNECTION_STATE_REMOTE: name = "Remote"; break;
 		default: break;
 	}
 
@@ -487,6 +489,11 @@ static void http_connection_recycle (HttpConnection *connection) {
 	connection->drained = 0;
 
 	connection->handshake_deadline = 0;
+
+	// a remote request that its loop never answered (the loop stopped while it waited for a place in the pool)
+	http_remote_delete (connection->remote);
+	connection->remote = NULL;
+	connection->remote_allowed = false;
 
 	connection->job = HTTP_CONNECTION_JOB_NONE;
 	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
@@ -855,9 +862,14 @@ static void http_connection_flush (HttpConnection *connection) {
 
 // a job that ends the request in the thread that runs it: a request that is handled,
 // or the next request of an idle connection that the thread reads and handles
-static bool http_connection_job_is_handled (const HttpConnectionJob job) {
+// the answer of a remote authentication is handled where the request was: the job that handles a request without a
+// body ends it, the one of the authentication before the body comes back
+static bool http_connection_job_is_handled (const HttpConnection *connection) {
 
-	return (job == HTTP_CONNECTION_JOB_DISPATCH) || (job == HTTP_CONNECTION_JOB_READ);
+	const HttpConnectionJob job = connection->job;
+
+	return (job == HTTP_CONNECTION_JOB_DISPATCH) || (job == HTTP_CONNECTION_JOB_READ)
+		|| ((job == HTTP_CONNECTION_JOB_REMOTE) && (connection->remote->stage == HTTP_REMOTE_STAGE_DISPATCH));
 
 }
 
@@ -872,7 +884,7 @@ static unsigned int http_connection_dispatch (HttpConnection *connection) {
 	EventDispatcher *dispatcher = loop->lanes[connection->lane].dispatcher;
 
 	const HttpConnectionState previous = connection->state;
-	const bool handled = http_connection_job_is_handled (connection->job);
+	const bool handled = http_connection_job_is_handled (connection);
 
 	http_connection_set_state (
 		connection, handled ? HTTP_CONNECTION_STATE_DISPATCHED : HTTP_CONNECTION_STATE_AUTH
@@ -1871,6 +1883,16 @@ static HttpConnectionFollow http_connection_follow_give (
 
 }
 
+// the authentication of its next request, before its body, left a remote request: its loop sends it, and the loop
+// reads the body once it was authorized, like after the job that authorizes
+static HttpConnectionFollow http_connection_follow_remote (HttpConnection *connection) {
+
+	connection->remote->stage = HTTP_REMOTE_STAGE_AUTHORIZE;
+
+	return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_REMOTE);
+
+}
+
 // the parser stopped for a job that the thread can run: the complete request, or its authentication
 // before its body
 static bool http_connection_follow_pause_runs (const HttpReceivePause pause) {
@@ -1963,7 +1985,8 @@ static HttpConnectionFollow http_connection_follow_authorize (
 	HttpReceive *receive = &connection->receive;
 
 	if (http_receive_headers_authorize (receive)) {
-		return http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_FAILED);
+		return http_remote_is_waiting (receive) ?
+			http_connection_follow_remote (connection) : http_connection_follow_give (connection, HTTP_CONNECTION_OUTCOME_FAILED);
 	}
 
 	http_receive_resume (receive);
@@ -2109,25 +2132,102 @@ static bool http_connection_work_end (HttpConnection *connection) {
 
 }
 
-// handles the request of the connection, and the ones that the thread finds while it follows it
-static void http_connection_work_dispatch (HttpConnection *connection) {
+// the authentication of the request left a remote request: the connection goes back to its loop, that sends it, and
+// waits for its answer without a thread; the job continues where it is now
+static void http_connection_remote_give (HttpConnection *connection, const HttpRemoteStage stage) {
 
-	bool handles = true;
+	connection->remote->stage = stage;
+
+	connection->outcome = HTTP_CONNECTION_OUTCOME_REMOTE;
+
+	event_loop_complete (connection->loop, connection);
+
+}
+
+// the request was handled, or its authentication waits for a remote request in the loop
+// returns true when the thread has the next request of the connection to handle it
+static bool http_connection_work_handled (HttpConnection *connection) {
+
+	bool handles = false;
+
+	if (http_remote_is_waiting (&connection->receive)) http_connection_remote_give (connection, HTTP_REMOTE_STAGE_DISPATCH);
+	else handles = http_connection_work_end (connection);
+
+	return handles;
+
+}
+
+// the requests that the thread finds while it follows the connection
+static void http_connection_work_next_requests (HttpConnection *connection, bool handles) {
+
 	while (handles) {
 		http_receive_dispatch (&connection->receive);
 
-		handles = http_connection_work_end (connection);
+		handles = http_connection_work_handled (connection);
 	}
+
+}
+
+// handles the request of the connection, and the ones that the thread finds while it follows it
+static void http_connection_work_dispatch (HttpConnection *connection) {
+
+	http_connection_work_next_requests (connection, true);
 
 }
 
 // the request was authorized or rejected: the loop continues with its connection
 static void http_connection_work_authorize (HttpConnection *connection) {
 
-	connection->outcome = http_receive_headers_authorize (&connection->receive) ?
-		HTTP_CONNECTION_OUTCOME_REJECTED : HTTP_CONNECTION_OUTCOME_RESUME;
+	const int result = http_receive_headers_authorize (&connection->receive);
+
+	if (http_remote_is_waiting (&connection->receive)) {
+		http_connection_remote_give (connection, HTTP_REMOTE_STAGE_AUTHORIZE);
+	}
+
+	else {
+		connection->outcome = result ? HTTP_CONNECTION_OUTCOME_REJECTED : HTTP_CONNECTION_OUTCOME_RESUME;
+
+		event_loop_complete (connection->loop, connection);
+	}
+
+}
+
+// the answer of the remote authentication of a request before its body: the rest of its headers, then the loop
+// reads its body (or closes a request that was rejected, answered with 401)
+static void http_connection_work_remote_authorize (HttpConnection *connection, const unsigned int verdict) {
+
+	HttpReceive *receive = &connection->receive;
+
+	const int result = verdict ? http_receive_remote_rejected (receive) : http_receive_headers_authorized (receive);
+
+	connection->outcome = result ? HTTP_CONNECTION_OUTCOME_REJECTED : HTTP_CONNECTION_OUTCOME_RESUME;
 
 	event_loop_complete (connection->loop, connection);
+
+}
+
+// the answer of the remote authentication of a request without a body: the rest of its headers and the request
+// are handled in this job, like the job that sent it would have done
+static void http_connection_work_remote_dispatch (HttpConnection *connection, const unsigned int verdict) {
+
+	HttpReceive *receive = &connection->receive;
+
+	if (verdict) (void) http_receive_remote_rejected (receive);
+	else if (!http_receive_headers_authorized (receive)) http_receive_dispatch (receive);
+
+	http_connection_work_next_requests (connection, http_connection_work_handled (connection));
+
+}
+
+// the answer of the remote request of the authentication of the connection
+static void http_connection_work_remote (HttpConnection *connection) {
+
+	const HttpRemoteStage stage = connection->remote->stage;
+
+	const unsigned int verdict = http_remote_answer (&connection->receive);
+
+	if (stage == HTTP_REMOTE_STAGE_DISPATCH) http_connection_work_remote_dispatch (connection, verdict);
+	else http_connection_work_remote_authorize (connection, verdict);
 
 }
 
@@ -2204,6 +2304,10 @@ void http_connection_work (void *connection_ptr) {
 			http_connection_work_read (connection);
 			break;
 
+		case HTTP_CONNECTION_JOB_REMOTE:
+			http_connection_work_remote (connection);
+			break;
+
 		default:
 			http_connection_work_authorize (connection);
 			break;
@@ -2224,6 +2328,40 @@ void http_connection_work_dropped (void *connection_ptr) {
 #pragma endregion
 
 #pragma region completed
+
+// the connection waits for the answer of the remote request of its authentication without a thread, the loop can
+// end it again; the deadline of the request with a tick of the wheel more is the one of the loop, for a request that
+// libcurl never ends; a request that could not start is answered now, as a failure
+static void http_connection_remote_wait (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	connection->job = HTTP_CONNECTION_JOB_NONE;
+	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
+
+	event_loop_connection_attach (loop, connection);
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_REMOTE);
+
+	if (http_remote_loop_start (loop, connection)) {
+		http_connection_remote_answered (connection);
+	}
+
+	else {
+		http_connection_deadline_set (
+			connection, loop->now + connection->remote->timeout_milliseconds + EVENT_WHEEL_TICK
+		);
+	}
+
+}
+
+void http_connection_remote_answered (HttpConnection *connection) {
+
+	http_connection_deadline_clear (connection);
+
+	http_connection_submit (connection, HTTP_CONNECTION_JOB_REMOTE);
+
+}
 
 // the request was authorized: the parser continues with the bytes of the body that arrived with the headers,
 // without them it still has to be told to continue
@@ -2337,6 +2475,11 @@ void http_connection_completed (HttpConnection *connection) {
 		// a thread of its pool (or another loop) got its socket while it waited idle, and left it to the loop
 		case HTTP_CONNECTION_OUTCOME_REPORTED:
 			http_connection_reported_read (connection);
+			break;
+
+		// its authentication sent a remote request, the loop runs it
+		case HTTP_CONNECTION_OUTCOME_REMOTE:
+			http_connection_remote_wait (connection);
 			break;
 
 		default:
@@ -2485,6 +2628,12 @@ static void http_connection_expired (HttpConnection *connection) {
 			http_connection_handshake_expired (connection);
 			break;
 
+		// a remote request that libcurl did not end in its time is a failure
+		case HTTP_CONNECTION_STATE_REMOTE:
+			http_remote_loop_cancel (connection->loop, connection);
+			http_connection_remote_answered (connection);
+			break;
+
 		// an idle connection has no timer: its loop checks its idle ones (http_connection_idle_expired ())
 		default: break;
 	}
@@ -2540,6 +2689,13 @@ void http_connection_abort (HttpConnection *connection) {
 		// a client that is still in its handshake has sent no request
 		case HTTP_CONNECTION_STATE_HANDSHAKE:
 			http_connection_end (connection);
+			break;
+
+		// a request whose authentication waits for a remote request is answered, like one that waits for its pool
+		case HTTP_CONNECTION_STATE_REMOTE:
+			http_remote_loop_cancel (connection->loop, connection);
+			connection->job = HTTP_CONNECTION_JOB_AUTHORIZE;
+			http_connection_unavailable (connection);
 			break;
 
 		// the other states end by themselves: a write, a close, or a job of the pool

@@ -1,16 +1,16 @@
 FROM gcc:16.2 as builder
 
-RUN apt-get update && apt-get install -y libssl-dev
+RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev
 
 # build cerver with development flags
 WORKDIR /opt/cerver
 COPY . .
-RUN make -j4
+RUN make CURL=1 -j4
 
 ############
 FROM gcc:16.2
 
-RUN apt-get update && apt-get install -y libssl-dev
+RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev
 
 # cerver files
 COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/

@@ -1,8 +1,8 @@
-ARG CERVER_VERSION=2.1b-23
+ARG CERVER_VERSION=2.1b-24
 
 FROM gcc:16.2 as builder
 
-RUN apt-get update && apt-get install -y cmake libssl-dev
+RUN apt-get update && apt-get install -y cmake libssl-dev libcurl4-openssl-dev
 
 # cerver
 ARG CERVER_VERSION
@@ -10,12 +10,12 @@ RUN mkdir /opt/cerver && cd /opt/cerver \
     && wget -q --no-check-certificate https://github.com/ermiry/cerver/archive/${CERVER_VERSION}.zip \
     && unzip ${CERVER_VERSION}.zip \
     && cd cerver-${CERVER_VERSION} \
-    && make TYPE=production -j4
+    && make TYPE=production CURL=1 -j4
 
 ############
 FROM debian:trixie-slim
 
-ARG RUNTIME_DEPS='libssl-dev'
+ARG RUNTIME_DEPS='libssl-dev libcurl4-openssl-dev'
 
 RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
 

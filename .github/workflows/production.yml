@@ -21,15 +21,15 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: gcc make
-        run: make TYPE=production
+        run: make TYPE=production CURL=1
       - name: gcc examples
-        run: make TYPE=production examples
+        run: make TYPE=production CURL=1 examples
 
       - name: clean examples
         run: make clean-examples
 
       - name: g++ examples
-        run: make TYPE=production CC=g++ examples
+        run: make TYPE=production CURL=1 CC=g++ examples
 
       - name: Archive Shared Library
         uses: actions/upload-artifact@v7
@@ -54,7 +54,7 @@ jobs:
           path: ./bin
 
       - name: gcc tests
-        run: make TYPE=production test
+        run: make TYPE=production CURL=1 test
       - name: gcc run tests
         run: bash test/run.sh
 
@@ -62,7 +62,7 @@ jobs:
         run: make clean-tests
 
       - name: g++ tests
-        run: make TYPE=production CC=g++ test
+        run: make TYPE=production CURL=1 CC=g++ test
       - name: g++ run tests
         run: bash test/run.sh
 

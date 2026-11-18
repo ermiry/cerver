@@ -937,9 +937,32 @@ CERVER_HIDDEN void http_receive_timed_out (
  *
  * @param[in,out] http_receive the receive
  * @return 0 on success, #HTTP_RECEIVE_PARSER_STOP when the request was rejected (it was answered) or its client
- * is gone
+ * is gone, or when the authentication of an endpoint left a remote request to wait in the loop
+ * (http_remote_is_waiting ())
  */
 CERVER_HIDDEN int http_receive_headers_authorize (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief What the second part of the complete headers of an endpoint runs after its authentication: the validation
+ * of an upgrade, the directory of the uploads and "100 Continue"; the remote authentication continues there.
+ *
+ * @param[in,out] http_receive the receive, of a request of an endpoint that was authenticated
+ * @return 0 on success, #HTTP_RECEIVE_PARSER_STOP when the request was rejected (it was answered) or its client
+ * is gone
+ * @since 2.1b-24
+ */
+CERVER_HIDDEN int http_receive_headers_authorized (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief Answers a request whose remote authentication did not accept it, like a custom authentication that fails.
+ *
+ * @param[in,out] http_receive the receive
+ * @return #HTTP_RECEIVE_PARSER_STOP
+ * @since 2.1b-24
+ */
+CERVER_HIDDEN int http_receive_remote_rejected (HttpReceive *http_receive);
 
 /**
  * @internal

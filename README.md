@@ -44,6 +44,7 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 - **Named pools** for the endpoints that must not wait for the others, with health and ready routes
 - **WebSocket** (RFC 6455) with permessage-deflate (RFC 7692), in endpoints and groups, with subprotocols, the origins, ping and pong, rooms, broadcasts, a bounded output queue with backpressure in each connection, and a client with reconnection and `wss://`; with the event loop a connection lives in its loop and its methods run in the pool of its endpoint (or in its loop, for short methods)
 - **TLS for HTTP** with the threads model and with the event loop, whose handshakes never take a thread: the name that the client asked for, the certificate of the client in each request, endpoints and groups that require it, and the authentication by certificate
+- **A remote authentication** (`CURL=1`): a custom authentication asks another service by HTTP with libcurl, and with the event loop its request waits in the loop without a thread of the pool
 - **Routes** in a radix tree, with groups that pass their settings to their subgroups and endpoints, path parameters with validators, wildcards, middlewares, and automatic `OPTIONS`, 405 and 308 responses
 - **JWT authentication** with HMAC, RSA or ECDSA keys (HS, RS and ES of 256, 384 and 512 bits), validated against their algorithm when the cerver starts
 - **Uploads** of multipart forms, with their own limits and a path that never keeps the files of a request that failed

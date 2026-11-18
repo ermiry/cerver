@@ -80,7 +80,14 @@ typedef enum EventSourceType {
 	 *
 	 * @since 2.1b-21
 	 */
-	EVENT_SOURCE_TYPE_WEB_SOCKET		= 3
+	EVENT_SOURCE_TYPE_WEB_SOCKET		= 3,
+	/**
+	 * @internal
+	 * @brief A socket of the requests of the remote authentication of the loop (http/security/remote.c).
+	 *
+	 * @since 2.1b-24
+	 */
+	EVENT_SOURCE_TYPE_REMOTE			= 4
 
 } EventSourceType;
 
@@ -689,6 +696,15 @@ typedef struct EventLoop {
 	struct HttpWebSocketPark *web_socket_parks_free;
 	/** @internal @brief Every park of the loop, released with it. */
 	struct HttpWebSocketPark *web_socket_parks_all;
+
+	/**
+	 * @internal
+	 * @brief The requests of the remote authentication of its connections (http/security/remote.c), made with the
+	 * first one; only the loop uses it.
+	 *
+	 * @since 2.1b-24
+	 */
+	struct HttpRemoteLoop *remote;
 
 	/** @internal @brief The parked connections of all its lanes, atomic. */
 	unsigned int n_parked;

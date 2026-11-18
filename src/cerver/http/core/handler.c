@@ -62,7 +62,9 @@
 #include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/security/auth.h"
+#include "cerver/http/security/internal.h"
 #include "cerver/http/security/proxy.h"
+#include "cerver/http/security/remote.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/handshake.h"
 #include "cerver/http/websockets/internal.h"
@@ -1099,6 +1101,36 @@ static bool http_receive_handle_select_auth_bearer (
 
 }
 
+// what the custom authentication handler returned: a request that it left to wait in the loop, with
+// HTTP_AUTHENTICATION_PENDING, is not accepted nor answered yet; one that it left with another value is never sent
+// returns true when the handler accepted the request
+static bool http_receive_handle_auth_custom_result (HttpReceive *http_receive, const unsigned int result) {
+
+	bool authenticated = false;
+
+	const bool waits = (result == HTTP_AUTHENTICATION_PENDING) && http_remote_is_waiting (http_receive);
+	if (!waits) http_remote_discard (http_receive);
+
+	if (!result) {
+		#ifdef HTTP_AUTH_DEBUG
+		cerver_log_success ("Success authentication with custom method!");
+		#endif
+
+		authenticated = true;
+	}
+
+	else if (!waits) {
+		#ifdef HTTP_AUTH_DEBUG
+		cerver_log_error ("Failed authentication with custom method!");
+		#endif
+
+		http_receive_handle_select_failed_auth (http_receive);
+	}
+
+	return authenticated;
+
+}
+
 // returns true if the route's custom authentication handler accepts the request
 static bool http_receive_handle_select_auth_custom (
 	HttpReceive *http_receive,
@@ -1108,23 +1140,9 @@ static bool http_receive_handle_select_auth_custom (
 	bool authenticated = false;
 
 	if (found->authentication_handler) {
-		if (!found->authentication_handler (
-			http_receive, request
-		)) {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_success ("Success authentication with custom method!");
-			#endif
-
-			authenticated = true;
-		}
-
-		else {
-			#ifdef HTTP_AUTH_DEBUG
-			cerver_log_error ("Failed authentication with custom method!");
-			#endif
-
-			http_receive_handle_select_failed_auth (http_receive);
-		}
+		authenticated = http_receive_handle_auth_custom_result (
+			http_receive, found->authentication_handler (http_receive, request)
+		);
 	}
 
 	// no authentication method was provided
@@ -1729,14 +1747,55 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 
 }
 
+// the authentication of the endpoint, before its body; the one of a request of an event loop can leave a remote
+// request to wait in its loop (http/security/remote.c): it is not accepted yet, and the parser stops
+// returns true when the request is authenticated
+static bool http_receive_headers_authenticate (HttpReceive *http_receive, const HttpEndpoint *endpoint) {
+
+	http_remote_allow (http_receive, true);
+
+	const bool authenticated = http_receive_handle_authenticate (
+		http_receive->http_cerver, http_receive, &endpoint->resolved, http_receive->request
+	);
+
+	http_remote_allow (http_receive, false);
+
+	return authenticated;
+
+}
+
+int http_receive_headers_authorized (HttpReceive *http_receive) {
+
+	llhttp_t *parser = http_receive_parser (http_receive);
+
+	if (http_receive_handle_headers_web_socket (http_receive, parser)) {
+		return HTTP_RECEIVE_PARSER_STOP;
+	}
+
+	if (http_receive_handle_headers_multi_part (http_receive)) {
+		return HTTP_RECEIVE_PARSER_STOP;
+	}
+
+	// a client that is gone stops the parser, without a response
+	return http_receive_parser_result (http_receive_handle_expect_continue (http_receive));
+
+}
+
+int http_receive_remote_rejected (HttpReceive *http_receive) {
+
+	http_receive_handle_select_failed_auth (http_receive);
+
+	return HTTP_RECEIVE_PARSER_STOP;
+
+}
+
 // the second part of the complete headers, the one that can wait or run methods of the application:
 // the authentication, the upgrade, the directory of the uploads, the static path and "100 Continue"
 // it runs in the parser, or in a thread of the pool when the request is of an event loop
-// returns 0 on success, HTTP_RECEIVE_PARSER_STOP if the request was rejected or its client is gone
+// returns 0 on success, HTTP_RECEIVE_PARSER_STOP if the request was rejected or its client is gone, or when its
+// authentication waits for a remote request in its loop (http_remote_is_waiting ())
 int http_receive_headers_authorize (HttpReceive *http_receive) {
 
-	llhttp_t *parser = http_receive_parser (http_receive);
-	HttpCerver *http_cerver = http_receive->http_cerver;
 	HttpRequest *request = http_receive->request;
 
 	const HttpEndpoint *endpoint = http_receive->endpoint;
@@ -1749,20 +1808,11 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 		}
 
 		// the authentication handler can use the request's endpoint
-		if (
-			!endpoint->resolved.authentication_with_body
-			&& !http_receive_handle_authenticate (http_cerver, http_receive, &endpoint->resolved, request)
-		) {
+		if (!endpoint->resolved.authentication_with_body && !http_receive_headers_authenticate (http_receive, endpoint)) {
 			return HTTP_RECEIVE_PARSER_STOP;
 		}
 
-		if (http_receive_handle_headers_web_socket (http_receive, parser)) {
-			return HTTP_RECEIVE_PARSER_STOP;
-		}
-
-		if (http_receive_handle_headers_multi_part (http_receive)) {
-			return HTTP_RECEIVE_PARSER_STOP;
-		}
+		return http_receive_headers_authorized (http_receive);
 	}
 
 	// a request that no endpoint handles never saves its body

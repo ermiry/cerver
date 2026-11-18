@@ -48,6 +48,7 @@
 #include "cerver/http/security/auth.h"
 #include "cerver/http/security/origin.h"
 #include "cerver/http/security/proxy.h"
+#include "cerver/http/security/remote.h"
 #include "cerver/http/websockets/client.h"
 #include "cerver/http/websockets/deflate.h"
 #include "cerver/http/websockets/frame.h"
