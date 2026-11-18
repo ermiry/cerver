@@ -41,7 +41,7 @@ typedef struct RouterClientRequest {
 	const char *headers[ROUTER_CLIENT_HEADERS];
 	const char *body;
 
-	http_status status;
+	CerverHttpStatus status;
 	const char *expected_body;
 	const char *expected_header;
 
