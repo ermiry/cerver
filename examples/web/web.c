@@ -11,13 +11,15 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -40,7 +42,7 @@ static void finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -51,15 +53,10 @@ static void finish (void) {
 #pragma region routes
 
 // GET /
-void main_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void main_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	if (http_response_send_file (
-		http_receive, HTTP_STATUS_OK, "./examples/web/public/index.html"
+	if (cerver_http_response_send_file (
+		context, "./examples/web/public/index.html"
 	)) {
 		cerver_log_error (
 			"Failed to send ./examples/web/public/index.html"
@@ -69,99 +66,53 @@ void main_handler (
 }
 
 // GET /test
-void test_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void test_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Test route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
 // GET /text
-void text_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void text_handler (CerverHttpContext *context) {
 
 	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
-	if (http_response_render_text (http_receive, HTTP_STATUS_OK, text, text_len)) {
+	if (cerver_http_response_send_content (context, HTTP_CONTENT_TYPE_HTML, text, text_len)) {
 		cerver_log_error ("text_handler () has failed!");
 	}
 
 }
 
 // GET /json
-void json_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_handler (CerverHttpContext *context) {
 
 	char const *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
-	if (http_response_render_json (http_receive, HTTP_STATUS_OK, json, json_len)) {
+	if (cerver_http_response_send_json (context, json, json_len)) {
 		cerver_log_error ("json_handler () has failed!");
 	}
 
 }
 
 // GET /hola
-void hola_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void hola_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Hola route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Hola route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
 // GET /adios
-void adios_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void adios_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Adios route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Adios route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
@@ -200,38 +151,36 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
 
-		http_cerver_static_path_add (http_cerver, "./examples/web/public");
+		// the static paths and the handler of / send files, so they run in the threads of the pool
+		(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
+
+		cerver_http_static_path_add (http_cerver, "./examples/web/public");
+
+		CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
 		// GET /
-		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
-		http_cerver_route_register (http_cerver, main_route);
+		(void) cerver_http_group_root_add (main_group, REQUEST_METHOD_GET, main_handler);
 
 		// GET /test
-		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
-		http_cerver_route_register (http_cerver, test_route);
+		(void) cerver_http_group_get (main_group, "test", test_handler);
 
 		// GET /text
-		HttpRoute *text_route = http_route_create (REQUEST_METHOD_GET, "text", text_handler);
-		http_cerver_route_register (http_cerver, text_route);
+		(void) cerver_http_group_get (main_group, "text", text_handler);
 
 		// GET /json
-		HttpRoute *json_route = http_route_create (REQUEST_METHOD_GET, "json", json_handler);
-		http_cerver_route_register (http_cerver, json_route);
+		(void) cerver_http_group_get (main_group, "json", json_handler);
 
 		// GET /hola
-		HttpRoute *hola_route = http_route_create (REQUEST_METHOD_GET, "hola", hola_handler);
-		http_cerver_route_register (http_cerver, hola_route);
+		(void) cerver_http_group_get (main_group, "hola", hola_handler);
 
 		// GET /adios
-		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
-		http_cerver_route_register (http_cerver, adios_route);
+		(void) cerver_http_group_get (main_group, "adios", adios_handler);
 
 		if (!cerver_start (web_cerver)) {
 			finish ();

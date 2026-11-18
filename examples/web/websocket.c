@@ -9,8 +9,9 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/tree.h>
@@ -170,14 +171,12 @@ static const HttpWebSocketHandlers chat_handlers = {
 
 // the browsers can not send an Authorization in an upgrade, the token goes in the query
 static bool private_on_upgrade (
-	const HttpReceive *http_receive, const HttpRequest *request,
+	CerverHttpContext *context,
 	HttpWebSocketUpgrade *upgrade
 ) {
 
-	(void) http_receive;
-
-	const String *token = http_request_query_params_get_value (request, websocket_token_parameter);
-	const bool accepted = token && !strcmp (token->str, websocket_token);
+	const CerverHttpView token = cerver_http_request_query_value (context, websocket_token_parameter);
+	const bool accepted = cerver_http_view_equals (token, websocket_token);
 
 	if (!accepted) upgrade->status = HTTP_STATUS_UNAUTHORIZED;
 
@@ -198,29 +197,30 @@ static const HttpWebSocketHandlers private_handlers = {
 #pragma endregion
 
 // GET /
-static void page_handler (const HttpReceive *http_receive, const HttpRequest *request) {
+static void page_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	if (http_response_send_file (http_receive, HTTP_STATUS_OK, WEBSOCKET_PAGE)) {
+	if (cerver_http_response_send_file (context, WEBSOCKET_PAGE)) {
 		cerver_log_error ("Failed to send " WEBSOCKET_PAGE);
 	}
 
 }
 
-static void websocket_routes (HttpCerver *http_cerver) {
+static void websocket_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *root = http_cerver_group_create (http_cerver, "");
-	(void) http_group_root_add (root, REQUEST_METHOD_GET, page_handler);
+	CerverHttpGroup *root = cerver_http_group_create (http_cerver, "");
+	CerverHttpEndpoint *page = cerver_http_group_root_add (root, REQUEST_METHOD_GET, page_handler);
 
-	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
+	// the page is a file, so its handler runs in a thread of the pool
+	cerver_http_endpoint_set_pool (page, HTTP_POOL_DEFAULT_NAME);
 
-	HttpEndpoint *echo = http_group_web_socket_add (ws, "echo", &echo_handlers);
-	http_endpoint_set_web_socket_compression (echo, true);
+	CerverHttpGroup *ws = cerver_http_group_create (http_cerver, "ws");
 
-	(void) http_group_web_socket_add (ws, "chat", &chat_handlers);
+	CerverHttpEndpoint *echo = cerver_http_group_web_socket_add (ws, "echo", &echo_handlers);
+	cerver_http_endpoint_set_web_socket_compression (echo, true);
 
-	(void) http_group_web_socket_add (ws, "private", &private_handlers);
+	(void) cerver_http_group_web_socket_add (ws, "chat", &chat_handlers);
+
+	(void) cerver_http_group_web_socket_add (ws, "private", &private_handlers);
 
 }
 
@@ -240,10 +240,9 @@ int main (int argc, char **argv) {
 	websocket_cerver = cerver_create_web ("websocket-cerver", WEBSOCKET_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	if (websocket_cerver) {
 		cerver_set_thpool_n_threads (websocket_cerver, WEBSOCKET_THREADS);
-		cerver_set_handler_type (websocket_cerver, CERVER_HANDLER_TYPE_THREADS);
 		cerver_set_reusable_address_flags (websocket_cerver, true);
 
-		websocket_routes ((HttpCerver *) websocket_cerver->cerver_data);
+		websocket_routes (cerver_http_get (websocket_cerver));
 
 		if (!cerver_start (websocket_cerver)) {
 			(void) cerver_teardown (websocket_cerver);
