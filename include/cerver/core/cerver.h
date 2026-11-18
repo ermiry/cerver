@@ -523,6 +523,21 @@ struct _Cerver {
 	 */
 	struct EventLoopGroup *event_loops;
 
+	/**
+	 * @brief The backend that its event loops are asked to use, a CerverEventsBackend
+	 * (cerver_set_events_backend (), cerver/events/events.h).
+	 *
+	 * @since 3.0b-11
+	 */
+	unsigned int events_backend;
+
+	/**
+	 * @brief Each I/O thread of the cerver stays in one processor (cerver_set_io_threads_affinity ()).
+	 *
+	 * @since 3.0b-11
+	 */
+	bool io_threads_affinity;
+
 };
 
 /** @brief A cerver, see struct _Cerver. */
@@ -729,7 +744,8 @@ CERVER_EXPORT void cerver_set_overload_wait_timeout (
  * connections among them.
  *
  * @param[in,out] cerver the cerver
- * @param[in] n_threads the threads, 0 keeps the current value; the default is #CERVER_DEFAULT_IO_THREADS
+ * @param[in] n_threads the threads, 0 keeps the current value; the default is #CERVER_DEFAULT_IO_THREADS, and
+ * #CERVER_IO_THREADS_PER_CORE (cerver/events/events.h) is one for each processor that the process can use
  * @note Call it before cerver_start (). The other handler types ignore it.
  * @since 3.0b-5
  */

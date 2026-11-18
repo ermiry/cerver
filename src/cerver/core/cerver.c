@@ -176,6 +176,8 @@ Cerver *cerver_new (void) {
 		cerver->max_connections = CERVER_DEFAULT_MAX_CONNECTIONS;
 		cerver->overload_wait_timeout = CERVER_DEFAULT_OVERLOAD_WAIT_TIMEOUT;
 		cerver->event_loops = NULL;
+		cerver->events_backend = 0;
+		cerver->io_threads_affinity = false;
 
 		cerver->update_thread_id = 0;
 		cerver->update = NULL;
