@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <cerver/version.h>
 
@@ -10,6 +11,7 @@
 #include <cerver/core/info.h>
 
 #include <cerver/http/core/admin.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
 #include <cerver/http/core/routes.h>
@@ -55,12 +57,12 @@ static void test_http_admin_register_file_system_null (void) {
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
-	http_cerver_register_admin_file_system (http_cerver, NULL);
+	cerver_http_register_admin_file_system (http_cerver, NULL);
 	test_check_unsigned_eq (dlist_size (http_cerver->admin_file_systems_stats), 0, "registered a file system without a path");
 
-	http_cerver_register_admin_file_system (http_cerver, uploads_file_system);
+	cerver_http_register_admin_file_system (http_cerver, uploads_file_system);
 	test_check_unsigned_eq (dlist_size (http_cerver->admin_file_systems_stats), 1, NULL);
 
 	(void) cerver_teardown (test_cerver);
@@ -72,50 +74,30 @@ static void test_http_admin_register_file_system_null (void) {
 #pragma region generate
 
 // GET /api/users
-void main_users_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void main_users_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /api/users/login
-void users_login_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void users_login_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /api/users/register
-void users_register_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void users_register_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /api/users/upload
-void users_upload_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void users_upload_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -133,46 +115,44 @@ static void test_http_admin_generate_jsons (void) {
 	test_check_ptr (test_cerver);
 
 	/*** web cerver configuration ***/
-	test_check_ptr (test_cerver->cerver_data);
-	HttpCerver *http_cerver = (HttpCerver *) test_cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (test_cerver);
+	test_check_ptr (http_cerver);
 
-	http_cerver_enable_admin_routes (http_cerver, true);
+	cerver_http_enable_admin_routes (http_cerver, true);
 
 	// GET /api/users
-	HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
-	http_cerver_route_register (http_cerver, users_route);
+	CerverHttpGroup *users = cerver_http_group_create (http_cerver, "/api/users");
+	test_check_ptr (cerver_http_group_root_add (users, REQUEST_METHOD_GET, main_users_handler));
 
 	// register users child routes
 	// POST api/users/login
-	HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
-	http_route_child_add (users_route, users_login_route);
+	test_check_ptr (cerver_http_group_post (users, "login", users_login_handler));
 
 	// POST api/users/register
-	HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_POST, "register", users_register_handler);
-	http_route_child_add (users_route, users_register_route);
+	test_check_ptr (cerver_http_group_post (users, "register", users_register_handler));
 
 	// POST api/users/upload
-	HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", users_upload_handler);
-	http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-	http_route_child_add (users_route, upload_route);
+	CerverHttpEndpoint *upload = cerver_http_group_post (users, "upload", users_upload_handler);
+	test_check_ptr (upload);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	u8 result = http_cerver_init (http_cerver);
+	u8 result = cerver_http_init (http_cerver);
 	test_check_unsigned_eq (result, 0, NULL);
 
 	/*** test ***/
-	char *json = http_cerver_admin_generate_info_json (http_cerver);
+	char *json = cerver_http_admin_generate_info_json (http_cerver);
 	test_check_ptr (json);
 	free (json);
 
-	json = http_cerver_admin_generate_routes_stats_json (http_cerver);
+	json = cerver_http_admin_generate_routes_stats_json (http_cerver);
 	test_check_ptr (json);
 	free (json);
 
-	json = http_cerver_admin_generate_file_systems_stats_json (http_cerver);
+	json = cerver_http_admin_generate_file_systems_stats_json (http_cerver);
 	test_check_ptr (json);
 	free (json);
 
-	json = http_cerver_admin_generate_workers_json (http_cerver);
+	json = cerver_http_admin_generate_workers_json (http_cerver);
 	test_check_ptr (json);
 	free (json);
 
@@ -213,6 +193,10 @@ static const double test_admin_file_system_available = 1.5;
 static const double test_admin_file_system_used = 1.0;
 static const double test_admin_file_system_used_percentage = 40.0;
 
+// the secs since the cerver of the info started, and the uptime that it keeps, that the generator does not touch
+static const time_t test_admin_started_ago = 90;
+static const u64 test_admin_kept_uptime = 7;
+
 static const unsigned int test_admin_first_worker = 1;
 static const unsigned int test_admin_second_worker = 2;
 
@@ -227,42 +211,70 @@ static void test_http_admin_json_check (char *json, const char *expected) {
 
 }
 
-// the info of the cerver: its strings are escaped, and one that is not UTF-8 is left out
+// the info of a cerver, generated inside one second: its uptime is computed for each one, from the clock
+static char *test_http_admin_info_generate (HttpCerver *http_cerver, time_t *generated) {
+
+	char *json = NULL;
+
+	while (!json) {
+		*generated = time (NULL);
+
+		json = cerver_http_admin_generate_info_json (http_cerver);
+		test_check_ptr (json);
+
+		if (time (NULL) != *generated) {
+			free (json);
+			json = NULL;
+		}
+	}
+
+	return json;
+
+}
+
+// the info of the cerver: its strings are escaped, and one that is not UTF-8 is left out. Its uptime is the
+// time since the cerver started, and the generator does not write the one that the cerver keeps: the event
+// loops generate it at the same time
 static void test_http_admin_json_info (void) {
 
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
 	cerver_set_alias (test_cerver, test_admin_alias);
 
+	test_cerver->info->time_started = time (NULL) - test_admin_started_ago;
+	test_cerver->info->uptime = test_admin_kept_uptime;
+
 	char expected[TEST_ADMIN_JSON_SIZE] = { 0 };
 
-	// the uptime is the one that the generator left in the info of the cerver
-	char *json = http_cerver_admin_generate_info_json (http_cerver);
+	time_t generated = 0;
+	char *json = test_http_admin_info_generate (http_cerver, &generated);
 
 	(void) snprintf (
 		expected, TEST_ADMIN_JSON_SIZE,
 		"{\"name\": \"test-cerver\", \"alias\": \"the \\\"admin\\\" cerver\", "
 		"\"time_started\": %lld, \"uptime\": %lld, "
 		"\"version\": {\"name\": \"%s\", \"date\": \"%s\", \"time\": \"%s\", \"author\": \"%s\"}}",
-		(long long) test_cerver->info->time_started, (long long) test_cerver->info->uptime,
+		(long long) test_cerver->info->time_started, (long long) (generated - test_cerver->info->time_started),
 		CERVER_VERSION_NAME, CERVER_VERSION_DATE, CERVER_VERSION_TIME, CERVER_VERSION_AUTHOR
 	);
 
 	test_http_admin_json_check (json, expected);
 
+	test_check_true (test_cerver->info->uptime == test_admin_kept_uptime);
+
 	cerver_set_alias (test_cerver, test_admin_alias_invalid);
 
-	json = http_cerver_admin_generate_info_json (http_cerver);
+	json = test_http_admin_info_generate (http_cerver, &generated);
 
 	(void) snprintf (
 		expected, TEST_ADMIN_JSON_SIZE,
 		"{\"name\": \"test-cerver\", "
 		"\"time_started\": %lld, \"uptime\": %lld, "
 		"\"version\": {\"name\": \"%s\", \"date\": \"%s\", \"time\": \"%s\", \"author\": \"%s\"}}",
-		(long long) test_cerver->info->time_started, (long long) test_cerver->info->uptime,
+		(long long) test_cerver->info->time_started, (long long) (generated - test_cerver->info->time_started),
 		CERVER_VERSION_NAME, CERVER_VERSION_DATE, CERVER_VERSION_TIME, CERVER_VERSION_AUTHOR
 	);
 
@@ -272,51 +284,50 @@ static void test_http_admin_json_info (void) {
 
 }
 
-// the stats of the routes of the first API, of the endpoints of the groups and of the cerver
+// the stats of the endpoints of the groups and of the cerver
 static void test_http_admin_json_stats (void) {
 
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
-	HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
-	http_cerver_route_register (http_cerver, users_route);
+	HttpGroup *users = cerver_http_group_create (http_cerver, "/api/users");
+	test_check_ptr (users);
 
-	HttpRoute *login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
-	http_route_child_add (users_route, login_route);
+	HttpEndpoint *users_endpoint = cerver_http_group_root_add (users, REQUEST_METHOD_GET, main_users_handler);
+	test_check_ptr (users_endpoint);
 
-	// a method whose handler was taken away keeps its stats, and it is not one of the handlers of the route
-	http_route_set_handler (login_route, REQUEST_METHOD_PUT, users_login_handler);
-	http_route_set_handler (login_route, REQUEST_METHOD_PUT, NULL);
-	test_check_ptr (login_route->stats[REQUEST_METHOD_PUT]);
+	test_check_ptr (cerver_http_group_post (users, "login", users_login_handler));
 
-	HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", users_upload_handler);
-	http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-	http_route_child_add (users_route, upload_route);
+	HttpEndpoint *upload = cerver_http_group_post (users, "upload", users_upload_handler);
+	test_check_ptr (upload);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	// only the POST of a multi-part route has the stats of its files
-	http_route_set_handler (upload_route, REQUEST_METHOD_GET, main_users_handler);
+	// each endpoint with the modifier has the stats of its files
+	HttpEndpoint *upload_get = cerver_http_group_get (users, "upload", main_users_handler);
+	test_check_ptr (upload_get);
+	cerver_http_endpoint_set_modifier (upload_get, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "api/items");
+	HttpGroup *group = cerver_http_group_create (http_cerver, "api/items");
 	test_check_ptr (group);
 
-	HttpEndpoint *list = http_group_get (group, "list", main_users_handler);
+	HttpEndpoint *list = cerver_http_group_get (group, "list", main_users_handler);
 	test_check_ptr (list);
 
-	HttpEndpoint *files = http_group_post (group, "files", users_upload_handler);
+	HttpEndpoint *files = cerver_http_group_post (group, "files", users_upload_handler);
 	test_check_ptr (files);
-	http_endpoint_set_modifier (files, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_modifier (files, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_http_init (http_cerver), 0, NULL);
 
-	http_route_stats_update (
-		users_route->stats[REQUEST_METHOD_GET],
+	cerver_http_route_stats_update (
+		users_endpoint->stats,
 		test_admin_first_time, test_admin_first_request, test_admin_first_response
 	);
 
-	http_route_stats_update (
-		users_route->stats[REQUEST_METHOD_GET],
+	cerver_http_route_stats_update (
+		users_endpoint->stats,
 		test_admin_second_time, test_admin_second_request, test_admin_second_response
 	);
 
@@ -327,13 +338,13 @@ static void test_http_admin_json_stats (void) {
 	uploaded.max_file_size = test_admin_max_file_size;
 	uploaded.sum_file_size = test_admin_sum_file_size;
 
-	http_route_file_stats_update (upload_route->file_stats, &uploaded);
+	cerver_http_route_file_stats_update (upload->file_stats, &uploaded);
 
-	http_route_stats_update (
+	cerver_http_route_stats_update (
 		list->stats, test_admin_endpoint_time, test_admin_first_request, test_admin_first_response
 	);
 
-	http_route_file_stats_update (files->file_stats, &uploaded);
+	cerver_http_route_file_stats_update (files->file_stats, &uploaded);
 
 	http_cerver->n_incompleted_requests = 1;
 	http_cerver->n_failed_auth_requests = 2;
@@ -344,29 +355,33 @@ static void test_http_admin_json_stats (void) {
 	http_cerver->n_health_requests = 1;
 
 	test_http_admin_json_check (
-		http_cerver_admin_generate_routes_stats_json (http_cerver),
-		"{\"main_routes\": 1, \"children_routes\": 2, \"total_handlers\": 4, "
-		"\"routes\": [{\"route\": \"/api/users\", \"handlers\": [{\"method\": \"GET\", \"requests\": 2, "
+		cerver_http_admin_generate_routes_stats_json (http_cerver),
+		"{\"groups\": 2, \"total_handlers\": 6, "
+		"\"endpoints\": [{\"method\": \"GET\", \"requests\": 2, "
 		"\"min_process_time\": 0.5, \"max_process_time\": 1.5, \"mean_process_time\": 1.0, "
 		"\"min_request_size\": 100, \"max_request_size\": 300, \"mean_request_size\": 200, "
-		"\"min_response_size\": 200, \"max_response_size\": 400, \"mean_response_size\": 300}], "
-		"\"children\": [{\"route\": \"/api/users/login\", "
-		"\"handlers\": [{\"method\": \"POST\", \"requests\": 0, "
-		"\"min_process_time\": 0.0, \"max_process_time\": 0.0, \"mean_process_time\": 0.0, "
-		"\"min_request_size\": 0, \"max_request_size\": 0, \"mean_request_size\": 0, "
-		"\"min_response_size\": 0, \"max_response_size\": 0, \"mean_response_size\": 0}]}, "
-		"{\"route\": \"/api/users/upload\", \"modifier\": \"Multi-Part\", "
-		"\"handlers\": [{\"method\": \"GET\", \"requests\": 0, "
-		"\"min_process_time\": 0.0, \"max_process_time\": 0.0, \"mean_process_time\": 0.0, "
-		"\"min_request_size\": 0, \"max_request_size\": 0, \"mean_request_size\": 0, "
-		"\"min_response_size\": 0, \"max_response_size\": 0, \"mean_response_size\": 0}, "
+		"\"min_response_size\": 200, \"max_response_size\": 400, \"mean_response_size\": 300, "
+		"\"route\": \"/api/users\"}, "
 		"{\"method\": \"POST\", \"requests\": 0, "
 		"\"min_process_time\": 0.0, \"max_process_time\": 0.0, \"mean_process_time\": 0.0, "
 		"\"min_request_size\": 0, \"max_request_size\": 0, \"mean_request_size\": 0, "
 		"\"min_response_size\": 0, \"max_response_size\": 0, \"mean_response_size\": 0, "
+		"\"route\": \"/api/users/login\"}, "
+		"{\"method\": \"POST\", \"requests\": 0, "
+		"\"min_process_time\": 0.0, \"max_process_time\": 0.0, \"mean_process_time\": 0.0, "
+		"\"min_request_size\": 0, \"max_request_size\": 0, \"mean_request_size\": 0, "
+		"\"min_response_size\": 0, \"max_response_size\": 0, \"mean_response_size\": 0, "
+		"\"route\": \"/api/users/upload\", "
 		"\"files\": {\"n_uploaded_files\": 2, \"min_n_files\": 2, \"max_n_files\": 2, \"mean_n_files\": 2.0, "
-		"\"min_file_size\": 10, \"max_file_size\": 30, \"mean_file_size\": 20.0}}]}]}], "
-		"\"endpoints\": [{\"method\": \"GET\", \"requests\": 1, "
+		"\"min_file_size\": 10, \"max_file_size\": 30, \"mean_file_size\": 20.0}}, "
+		"{\"method\": \"GET\", \"requests\": 0, "
+		"\"min_process_time\": 0.0, \"max_process_time\": 0.0, \"mean_process_time\": 0.0, "
+		"\"min_request_size\": 0, \"max_request_size\": 0, \"mean_request_size\": 0, "
+		"\"min_response_size\": 0, \"max_response_size\": 0, \"mean_response_size\": 0, "
+		"\"route\": \"/api/users/upload\", "
+		"\"files\": {\"n_uploaded_files\": 0, \"min_n_files\": 0, \"max_n_files\": 0, \"mean_n_files\": 0.0, "
+		"\"min_file_size\": 0, \"max_file_size\": 0, \"mean_file_size\": 0.0}}, "
+		"{\"method\": \"GET\", \"requests\": 1, "
 		"\"min_process_time\": 0.25, \"max_process_time\": 0.25, \"mean_process_time\": 0.25, "
 		"\"min_request_size\": 100, \"max_request_size\": 100, \"mean_request_size\": 100, "
 		"\"min_response_size\": 200, \"max_response_size\": 200, \"mean_response_size\": 200, "
@@ -409,16 +424,16 @@ static void test_http_admin_json_file_systems (void) {
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
 	test_http_admin_json_check (
-		http_cerver_admin_generate_file_systems_stats_json (http_cerver),
+		cerver_http_admin_generate_file_systems_stats_json (http_cerver),
 		"{\"filesystems\": []}"
 	);
 
 	// the stats of a path that does not exist stay as they are
-	http_cerver_register_admin_file_system (http_cerver, test_admin_missing_file_system);
-	http_cerver_register_admin_file_system (http_cerver, test_admin_missing_file_system);
+	cerver_http_register_admin_file_system (http_cerver, test_admin_missing_file_system);
+	cerver_http_register_admin_file_system (http_cerver, test_admin_missing_file_system);
 
 	HttpAdminFileSystemStats *first = (HttpAdminFileSystemStats *) dlist_start (
 		http_cerver->admin_file_systems_stats
@@ -436,7 +451,7 @@ static void test_http_admin_json_file_systems (void) {
 	second->stats.used_percentage = (double) NAN;
 
 	test_http_admin_json_check (
-		http_cerver_admin_generate_file_systems_stats_json (http_cerver),
+		cerver_http_admin_generate_file_systems_stats_json (http_cerver),
 		"{\"filesystems\": ["
 		"{\"path\": \"/missing/file/system\", \"total\": 2.5, \"available\": 1.5, \"used\": 1.0, \"used_percentage\": 40.0}, "
 		"{\"path\": \"/missing/file/system\", \"total\": 0.0, \"available\": 0.0, \"used\": 0.0}"
@@ -453,10 +468,10 @@ static void test_http_admin_json_workers (void) {
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
 	test_http_admin_json_check (
-		http_cerver_admin_generate_workers_json (http_cerver),
+		cerver_http_admin_generate_workers_json (http_cerver),
 		"{\"workers\": []}"
 	);
 
@@ -468,11 +483,11 @@ static void test_http_admin_json_workers (void) {
 	test_check_ptr (second);
 	worker_set_name (second, "the \\ second");
 
-	http_cerver_register_admin_worker (http_cerver, first);
-	http_cerver_register_admin_worker (http_cerver, second);
+	cerver_http_register_admin_worker (http_cerver, first);
+	cerver_http_register_admin_worker (http_cerver, second);
 
 	test_http_admin_json_check (
-		http_cerver_admin_generate_workers_json (http_cerver),
+		cerver_http_admin_generate_workers_json (http_cerver),
 		"{\"workers\": ["
 		"{\"id\": 1, \"name\": \"first\", \"state\": \"None\"}, "
 		"{\"id\": 2, \"name\": \"the \\\\ second\", \"state\": \"None\"}"
