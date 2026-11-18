@@ -1,6 +1,8 @@
 /**
+ * @internal
  * @file cerver/http/core/pairs.h
- * @brief The key value pairs, and the pairs of the query of an url.
+ * @brief The key value pairs, and the pairs of the query of an url. A handler reads them as views, with the
+ * methods of cerver/http/requests/request.h.
  */
 
 #ifndef _CERVER_HTTP_CORE_PAIRS_H_
@@ -98,7 +100,7 @@ CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (
  * @param[in] key the key
  * @return the value, that belongs to the pair; NULL if it is not found
  */
-CERVER_PUBLIC const String *http_query_pairs_get_value (
+CERVER_PUBLIC const String *cerver_http_query_pairs_get_value (
 	const DoubleList *pairs, const char *key
 );
 
@@ -107,7 +109,7 @@ CERVER_PUBLIC const String *http_query_pairs_get_value (
  *
  * @param[in] pairs the list of KeyValuePair
  */
-CERVER_PUBLIC void http_query_pairs_print (
+CERVER_PUBLIC void cerver_http_query_pairs_print (
 	const DoubleList *pairs
 );
 
