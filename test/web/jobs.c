@@ -11,12 +11,14 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/threads/jobs.h>
 
@@ -44,7 +46,7 @@ static void jobs_finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -71,48 +73,26 @@ static void custom_handler_method (void *data_ptr) {
 #pragma region routes
 
 // GET /
-void main_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void main_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Test route works!"
 	);
-	if (res) {
-		#ifdef TEST_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
 // GET /jobs
-void jobs_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void jobs_handler (CerverHttpContext *context) {
 
-	http_request_multi_parts_print (request);
-
-	const char *value = http_request_multi_parts_get_value (request, "value");
+	const CerverHttpView value = cerver_http_request_part_value (context, "value");
 
 	job_handler_wait (
-		job_queue, (void *) value, NULL
+		job_queue, (void *) value.data, NULL
 	);
 
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Jobs route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Jobs route works!"
 	);
-
-	if (res) {
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
@@ -147,23 +127,25 @@ int main (void) {
 		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, test_handler_type ());
 		cerver_set_events_backend (web_cerver, test_events_backend ());
 		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
+
+		CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
 		// GET /
-		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
-		http_cerver_route_register (http_cerver, main_route);
+		(void) cerver_http_group_root_add (main_group, REQUEST_METHOD_GET, main_handler);
 
 		// GET /jobs
-		HttpRoute *jobs_route = http_route_create (REQUEST_METHOD_GET, "jobs", jobs_handler);
-		http_route_set_modifier (jobs_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, jobs_route);
+		CerverHttpEndpoint *jobs = cerver_http_group_get (main_group, "jobs", jobs_handler);
+		cerver_http_endpoint_set_modifier (jobs, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+		// its handler waits for its job: it runs in a thread
+		cerver_http_endpoint_set_pool (jobs, HTTP_POOL_DEFAULT_NAME);
 
 		/*** job queue ***/
 		job_queue = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);

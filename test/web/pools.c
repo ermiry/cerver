@@ -14,7 +14,7 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
@@ -24,7 +24,6 @@
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
@@ -63,17 +62,13 @@ static void end (int dummy) {
 
 static void pools_finish (void) {
 
-	http_cerver_all_stats_print ((HttpCerver *) pools_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (pools_cerver));
 	(void) cerver_teardown (pools_cerver);
 
 }
 
 // GET /api/fast, /api/slow/job, /api/slow/fast and /old: {"thread": "<the thread that handles the request>"}
-static void pools_thread_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void pools_thread_handler (CerverHttpContext *context) {
 
 	char name[POOLS_THREAD_NAME_SIZE] = { 0 };
 	(void) pthread_getname_np (pthread_self (), name, POOLS_THREAD_NAME_SIZE);
@@ -81,60 +76,59 @@ static void pools_thread_handler (
 	char json[POOLS_JSON_SIZE] = { 0 };
 	const int length = snprintf (json, POOLS_JSON_SIZE, "{\"thread\": \"%s\"}", name);
 
-	(void) http_response_render_json (http_receive, HTTP_STATUS_OK, json, (size_t) length);
+	(void) cerver_http_response_send_json (context, json, (size_t) length);
 
 }
 
 // GET /api/metrics, the metrics of the cerver
-static void pools_metrics_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void pools_metrics_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	String *metrics = http_cerver_metrics_generate (http_receive_get_cerver (http_receive));
+	String *metrics = cerver_http_metrics_generate (cerver_http_context_http (context));
 	if (metrics) {
-		(void) http_response_render_text (http_receive, HTTP_STATUS_OK, metrics->str, metrics->len);
+		(void) cerver_http_response_send_text (context, metrics->str, metrics->len);
 
 		str_delete (metrics);
 	}
 
 }
 
-static void pools_routes (HttpCerver *http_cerver) {
+static void pools_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
+	CerverHttpGroup *api = cerver_http_group_create (http_cerver, "api");
 
-	(void) http_group_get (api, "fast", pools_thread_handler);
-	(void) http_group_get (api, "metrics", pools_metrics_handler);
+	(void) cerver_http_group_get (api, "fast", pools_thread_handler);
+	(void) cerver_http_group_get (api, "metrics", pools_metrics_handler);
 
 	// the routes of the group run in the slow pool, one of them goes back to the thpool of the cerver
-	HttpGroup *slow = http_group_create (api, "slow");
-	http_group_set_pool (slow, pools_slow_name);
+	CerverHttpGroup *slow = cerver_http_group_subgroup_add (api, "slow");
+	cerver_http_group_set_pool (slow, pools_slow_name);
 
-	(void) http_group_get (slow, "job", pools_thread_handler);
-	http_endpoint_set_pool (http_group_get (slow, "fast", pools_thread_handler), HTTP_POOL_DEFAULT_NAME);
+	(void) cerver_http_group_get (slow, "job", pools_thread_handler);
+	cerver_http_endpoint_set_pool (cerver_http_group_get (slow, "fast", pools_thread_handler), HTTP_POOL_DEFAULT_NAME);
 
-	// a route of the first routes API in the slow pool
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", pools_thread_handler);
-	http_route_set_pool (old_route, pools_slow_name);
-	http_cerver_route_register (http_cerver, old_route);
+	// the route that was of the first routes API, in the slow pool
+	CerverHttpGroup *old = cerver_http_group_create (http_cerver, "/old");
+	CerverHttpEndpoint *old_endpoint = cerver_http_group_root_add (old, REQUEST_METHOD_GET, pools_thread_handler);
+	cerver_http_endpoint_set_pool (old_endpoint, pools_slow_name);
 
 }
 
-static void pools_configure (HttpCerver *http_cerver) {
+static void pools_configure (CerverHttp *http_cerver) {
 
-	HttpPool *slow = http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
-	http_pool_set_queue_size (slow, POOLS_SLOW_QUEUE_SIZE);
-	http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_WAIT);
-	http_pool_set_wait_timeout (slow, POOLS_SLOW_WAIT);
+	// the client expects the routes that do not choose a pool in the thpool of the cerver
+	(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
-	http_cerver_set_health_route (http_cerver, pools_health_route);
-	http_cerver_set_ready_route (http_cerver, pools_ready_route);
+	HttpPool *slow = cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
+	cerver_http_pool_set_queue_size (slow, POOLS_SLOW_QUEUE_SIZE);
+	cerver_http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_WAIT);
+	cerver_http_pool_set_wait_timeout (slow, POOLS_SLOW_WAIT);
 
-	http_cerver_set_not_found_handler (http_cerver);
+	cerver_http_set_health_route (http_cerver, pools_health_route);
+	cerver_http_set_ready_route (http_cerver, pools_ready_route);
 
-	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
+	cerver_http_set_not_found_handler (http_cerver);
+
+	if (test_keep_alive_is_set ()) cerver_http_set_keep_alive (http_cerver, test_keep_alive ());
 
 }
 
@@ -156,12 +150,11 @@ int main (int argc, char **argv) {
 		(void) cerver_set_bind_address (pools_cerver, test_address ());
 		cerver_set_receive_buffer_size (pools_cerver, POOLS_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (pools_cerver, POOLS_THREADS);
-		cerver_set_handler_type (pools_cerver, test_handler_type ());
 		cerver_set_events_backend (pools_cerver, test_events_backend ());
 		cerver_set_io_threads (pools_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (pools_cerver, true);
 
-		HttpCerver *http_cerver = (HttpCerver *) pools_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (pools_cerver);
 
 		pools_configure (http_cerver);
 

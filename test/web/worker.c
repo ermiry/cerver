@@ -11,13 +11,14 @@
 #include <cerver/core/start.h>
 
 #include <cerver/http/core/admin.h>
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/threads/worker.h>
 
@@ -46,7 +47,7 @@ static void worker_finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -77,40 +78,32 @@ static void worker_handler_method (void *data_ptr) {
 #pragma region routes
 
 // GET /
-void main_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void main_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_json_key_value_send (
-		http_receive, HTTP_STATUS_OK,
+	(void) cerver_http_response_send_json_key_value (
+		context, HTTP_STATUS_OK,
 		"oki", "doki"
 	);
 
 }
 
 // POST /work
-void worker_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void worker_handler (CerverHttpContext *context) {
 
-	const char *name = http_request_multi_parts_get_value (request, "name");
-	const char *value = http_request_multi_parts_get_value (request, "value");
+	const CerverHttpView name = cerver_http_request_part_value (context, "name");
+	const CerverHttpView value = cerver_http_request_part_value (context, "value");
 
-	if (name && value) {
-		if (!worker_push_job (worker, data_create (name, value))) {
-			(void) http_response_json_key_value_send (
-				http_receive, HTTP_STATUS_OK,
+	if (!cerver_http_view_is_missing (name) && !cerver_http_view_is_missing (value)) {
+		if (!worker_push_job (worker, data_create (name.data, value.data))) {
+			(void) cerver_http_response_send_json_key_value (
+				context, HTTP_STATUS_OK,
 				"oki", "doki"
 			);
 		}
 
 		else {
-			(void) http_response_json_error_send (
-				http_receive,
+			(void) cerver_http_response_send_json_error (
+				context,
 				HTTP_STATUS_INTERNAL_SERVER_ERROR,
 				"Failed to push to worker!"
 			);
@@ -118,8 +111,8 @@ void worker_handler (
 	}
 
 	else {
-		(void) http_response_json_error_send (
-			http_receive,
+		(void) cerver_http_response_send_json_error (
+			context,
 			HTTP_STATUS_BAD_REQUEST,
 			"Missing values!"
 		);
@@ -128,23 +121,18 @@ void worker_handler (
 }
 
 // GET /work/start
-void worker_start_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void worker_start_handler (CerverHttpContext *context) {
 
 	if (!worker_resume (worker)) {
-		(void) http_response_json_key_value_send (
-			http_receive, HTTP_STATUS_OK,
+		(void) cerver_http_response_send_json_key_value (
+			context, HTTP_STATUS_OK,
 			"oki", "doki"
 		);
 	}
 
 	else {
-		(void) http_response_json_error_send (
-			http_receive,
+		(void) cerver_http_response_send_json_error (
+			context,
 			HTTP_STATUS_INTERNAL_SERVER_ERROR,
 			"Worker is running!"
 		);
@@ -153,23 +141,18 @@ void worker_start_handler (
 }
 
 // GET /work/stop
-void worker_stop_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void worker_stop_handler (CerverHttpContext *context) {
 
 	if (!worker_stop (worker)) {
-		(void) http_response_json_key_value_send (
-			http_receive, HTTP_STATUS_OK,
+		(void) cerver_http_response_send_json_key_value (
+			context, HTTP_STATUS_OK,
 			"oki", "doki"
 		);
 	}
 
 	else {
-		(void) http_response_json_error_send (
-			http_receive,
+		(void) cerver_http_response_send_json_error (
+			context,
 			HTTP_STATUS_INTERNAL_SERVER_ERROR,
 			"Worker is NOT running!"
 		);
@@ -208,33 +191,32 @@ int main (void) {
 		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, test_handler_type ());
 		cerver_set_events_backend (web_cerver, test_events_backend ());
 		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
 
-		http_cerver_enable_admin_routes (http_cerver, true);
+		cerver_http_enable_admin_routes (http_cerver, true);
+
+		// the admin routes have their own group in the root: GET /cerver/stats/workers
+		CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
 		// GET /
-		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
-		http_cerver_route_register (http_cerver, main_route);
+		(void) cerver_http_group_root_add (main_group, REQUEST_METHOD_GET, main_handler);
 
 		// POST /work
-		HttpRoute *worker_route = http_route_create (REQUEST_METHOD_POST, "work", worker_handler);
-		http_route_set_modifier (worker_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-		http_cerver_route_register (http_cerver, worker_route);
+		CerverHttpEndpoint *work = cerver_http_group_post (main_group, "work", worker_handler);
+		cerver_http_endpoint_set_modifier (work, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
 		// GET /work/start
-		HttpRoute *worker_start_route = http_route_create (REQUEST_METHOD_GET, "work/start", worker_start_handler);
-		http_cerver_route_register (http_cerver, worker_start_route);
+		(void) cerver_http_group_get (main_group, "work/start", worker_start_handler);
 
-		// GET /work/stop
-		HttpRoute *worker_stop_route = http_route_create (REQUEST_METHOD_GET, "work/stop", worker_stop_handler);
-		http_cerver_route_register (http_cerver, worker_stop_route);
+		// GET /work/stop, its handler waits for the job of the worker: it runs in a thread
+		CerverHttpEndpoint *work_stop = cerver_http_group_get (main_group, "work/stop", worker_stop_handler);
+		cerver_http_endpoint_set_pool (work_stop, HTTP_POOL_DEFAULT_NAME);
 
 		/*** worker ***/
 		worker = worker_create ();
@@ -244,7 +226,7 @@ int main (void) {
 		(void) worker_start (worker);
 
 		// register worker to be handled by admin routes
-		http_cerver_register_admin_worker (http_cerver, worker);
+		cerver_http_register_admin_worker (http_cerver, worker);
 
 		if (!cerver_start (web_cerver)) {
 			worker_finish ();
