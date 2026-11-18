@@ -13,6 +13,7 @@
 #include <cerver/crypto/signature.h>
 
 #include <cerver/http/core/http.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/security/auth.h>
 
 #include <cerver/json/json.h>
@@ -106,7 +107,7 @@ static void jwt_fuzz_keys_load (void) {
 	arena = arena_create (0);
 
 	// a cerver that verifies with the HS256 key, without starting it
-	http_cerver = (HttpCerver *) http_cerver_new ();
+	http_cerver = (HttpCerver *) cerver_http_new ();
 	if (!hmac_key || !secret_key || !arena || !http_cerver) abort ();
 
 	http_cerver->jwt_alg = CERVER_JWT_ALGORITHM_HS256;
@@ -171,7 +172,7 @@ static void jwt_fuzz_hmac (const char *token, const size_t length) {
 static void jwt_fuzz_bearer (const char *bearer) {
 
 	void *decoded = NULL;
-	if (http_cerver_auth_validate_jwt (http_cerver, bearer, http_decode_data_into_json, &decoded)) {
+	if (cerver_http_auth_validate_jwt (http_cerver, bearer, http_decode_data_into_json, &decoded)) {
 		free (decoded);
 	}
 

@@ -15,13 +15,13 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 	(void) memcpy (value, data, size);
 	value[size] = '\0';
 
-	char *decoded = http_url_decode (value);
+	char *decoded = cerver_http_url_decode (value);
 	free (decoded);
 
 	// a destination of the exact size, a path segment never grows when it is decoded
 	char *segment = (char *) malloc (size ? size : 1);
 	if (segment) {
-		const size_t decoded_len = http_url_decode_path (segment, (const char *) data, size);
+		const size_t decoded_len = cerver_http_url_decode_path (segment, (const char *) data, size);
 		if (decoded_len > size) abort ();
 
 		free (segment);

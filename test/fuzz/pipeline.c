@@ -7,7 +7,7 @@
 
 #include <cerver/connection/end.h>
 
-#include <cerver/http/core/handler.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/parser/parser.h>
@@ -140,7 +140,7 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 	pipeline_resources_create ();
 
 	// the cerver keeps the connection after each request that it completes
-	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
+	cerver_http_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
 
 	pipeline_feed (data + 1, size - 1, (size_t) data[0]);
 
