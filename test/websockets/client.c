@@ -241,6 +241,7 @@ static ClientTestServer *client_test_server_start (const u16 port) {
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, test_handler_type ());
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
