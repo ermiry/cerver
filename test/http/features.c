@@ -18,21 +18,24 @@
 #include <cerver/network/network.h>
 
 #include <cerver/http/core/admin.h>
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/headers/buffer.h>
 #include <cerver/http/headers/fields.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/compression.h>
 #include <cerver/http/responses/conditional.h>
 #include <cerver/http/responses/date.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
-#include <cerver/http/responses/stream.h>
+#include "cerver/http/responses/stream.h"
 #include <cerver/http/routes/tree.h>
 
 #include "../handler.h"
@@ -68,6 +71,15 @@ static const char *features_other_origin = { "https://other.com" };
 static const char *features_stream_first = { "first" };
 static const char *features_stream_second = { "second" };
 
+static const char *features_twice_first = { "the response of the request" };
+static const char *features_twice_second = { "a second response" };
+
+// what the handler of /plain/views/:id answers to the request of its test
+static const char *features_views_body = {
+	"method=GET path=/plain/views/64 query=first=one&second=two%20words id=64 first=one second=two words "
+	"custom=custom value host=localhost params=1 values=2 terminated=7 missing=5 equal=5"
+};
+
 static const char *features_first_cookie = { "session=first; Path=/" };
 static const char *features_second_cookie = { "theme=dark; Path=/" };
 static const char *features_trace_name = { "X-Trace" };
@@ -84,25 +96,17 @@ static pthread_t features_thread;
 #pragma region routes
 
 // GET /features/small, a compiled response of cerver
-static void features_small_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_small_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /features/json, a body that is compressed
-static void features_json_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_json_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_OK, features_json, features_json_length
+	(void) cerver_http_response_send_json (
+		context, features_json, features_json_length
 	);
 
 }
@@ -117,223 +121,231 @@ static void features_json_handler (
 // and a 304 does not keep it, so its Date is the one of cerver
 #define FEATURES_TEST_OWN_DATE				"Sun, 06 Nov 1994 08:49:37 GMT"
 
-#define FEATURES_TEST_RAW_HEADER																	\
-	"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"					\
-	"Cache-Control: " FEATURES_TEST_CACHE_CONTROL "\r\n"											\
-	"Date: " FEATURES_TEST_OWN_DATE "\r\n"															\
-	FEATURES_TEST_KEPT_NAME ": " FEATURES_TEST_KEPT_VALUE "\r\n\r\n"
-
 // GET /features/listed, the body with headers of its own in the list of the response
-static void features_listed_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_listed_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	(void) http_response_add_header (response, HTTP_HEADER_CONTENT_TYPE, "application/json");
-	(void) http_response_add_content_length_header (response, features_json_length);
-	(void) http_response_add_header (response, HTTP_HEADER_CACHE_CONTROL, FEATURES_TEST_CACHE_CONTROL);
-	(void) http_response_add_header (response, HTTP_HEADER_DATE, FEATURES_TEST_OWN_DATE);
-	(void) http_response_header_add_with_name (response, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
-	(void) http_response_set_data_ref (response, features_json, features_json_length);
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_CACHE_CONTROL, FEATURES_TEST_CACHE_CONTROL);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_DATE, FEATURES_TEST_OWN_DATE);
+	(void) cerver_http_response_add_header_with_name (context, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	(void) cerver_http_response_send_json (context, features_json, features_json_length);
 
 }
 
 // GET /features/raw, the same response with its header set as bytes
-static void features_raw_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+// the application can not set the bytes of a header anymore: its headers are set one by one, like in the listed one
+static void features_raw_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	char header[FEATURES_TEST_VALUE_SIZE] = { 0 };
-	const int length = snprintf (header, FEATURES_TEST_VALUE_SIZE, FEATURES_TEST_RAW_HEADER, features_json_length);
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	http_response_set_header (response, strdup (header), (size_t) length);
-	(void) http_response_set_data_ref (response, features_json, features_json_length);
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_CACHE_CONTROL, FEATURES_TEST_CACHE_CONTROL);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_DATE, FEATURES_TEST_OWN_DATE);
+	(void) cerver_http_response_set_header_with_name (context, FEATURES_TEST_KEPT_NAME, FEATURES_TEST_KEPT_VALUE);
+	(void) cerver_http_response_send_json (context, features_json, features_json_length);
 
 }
 
 // GET /features/image, a body that is never compressed
-static void features_image_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_image_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	(void) http_response_add_header (response, HTTP_HEADER_CONTENT_TYPE, "image/png");
-	(void) http_response_add_content_length_header (response, features_json_length);
-	(void) http_response_set_data_ref (response, features_json, features_json_length);
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	(void) cerver_http_response_send_content (
+		context, HTTP_CONTENT_TYPE_PNG, features_json, features_json_length
+	);
 
 }
 
 // GET /features/stream, the handler does not end its stream
-static void features_stream_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_stream_handler (CerverHttpContext *context) {
 
-	(void) request;
+	(void) cerver_http_response_set_header (
+		context, HTTP_HEADER_CONTENT_TYPE, cerver_http_content_type_mime (HTTP_CONTENT_TYPE_TXT)
+	);
 
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
-
-	if (!http_response_stream_begin (http_receive, response)) {
-		(void) http_response_stream_write (http_receive, features_stream_first, strlen (features_stream_first));
+	if (!cerver_http_response_stream_begin (context)) {
+		(void) cerver_http_response_stream_write (context, features_stream_first, strlen (features_stream_first));
 
 		// an empty piece is not sent, it would end the chunked body
-		(void) http_response_stream_write (http_receive, "", 0);
+		(void) cerver_http_response_stream_write (context, "", 0);
 
-		(void) http_response_stream_write (http_receive, features_stream_second, strlen (features_stream_second));
+		(void) cerver_http_response_stream_write (context, features_stream_second, strlen (features_stream_second));
 
 		// a normal response can not be sent in the middle of a stream
-		test_check_unsigned_eq (http_response_send (oki_doki, http_receive), 1, NULL);
+		test_check_unsigned_eq (cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK), 1, NULL);
 	}
-
-	http_response_return (response);
 
 }
 
+// a Content-Length that a stream can not have
+#define FEATURES_TEST_STREAM_LENGTH			"1"
+
 // GET /features/stream/ended
-static void features_stream_ended_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
+static void features_stream_ended_handler (CerverHttpContext *context) {
 
 	// a stream can not announce its length
-	(void) http_response_add_content_length_header (response, 1);
-	test_check_unsigned_eq (http_response_stream_begin (http_receive, response), 1, NULL);
-	http_response_reset (response);
-	http_response_set_status (response, HTTP_STATUS_OK);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_CONTENT_LENGTH, FEATURES_TEST_STREAM_LENGTH);
+	test_check_unsigned_eq (cerver_http_response_stream_begin (context), 1, NULL);
 
-	test_check_unsigned_eq (http_response_stream_begin (http_receive, response), 0, NULL);
-	test_check_true (http_response_stream_is_active (http_receive));
-	test_check_unsigned_eq (http_response_stream_begin (http_receive, response), 1, NULL);
+	test_check_unsigned_eq (cerver_http_response_stream_begin (context), 0, NULL);
+	test_check_true (cerver_http_response_stream_is_active (context));
+	test_check_unsigned_eq (cerver_http_response_stream_begin (context), 1, NULL);
 
-	(void) http_response_stream_write (http_receive, features_stream_first, strlen (features_stream_first));
-	test_check_unsigned_eq (http_response_stream_end (http_receive), 0, NULL);
-	test_check_unsigned_eq (http_response_stream_end (http_receive), 0, NULL);
-	test_check_false (http_response_stream_is_active (http_receive));
+	(void) cerver_http_response_stream_write (context, features_stream_first, strlen (features_stream_first));
+	test_check_unsigned_eq (cerver_http_response_stream_end (context), 0, NULL);
+	test_check_unsigned_eq (cerver_http_response_stream_end (context), 0, NULL);
+	test_check_false (cerver_http_response_stream_is_active (context));
 
-	test_check_unsigned_eq (http_response_stream_write (http_receive, "x", 1), 1, NULL);
-
-	http_response_return (response);
+	test_check_unsigned_eq (cerver_http_response_stream_write (context, "x", 1), 1, NULL);
 
 }
 
 // POST /features/echo, the body is sent back as it was received
-static void features_echo_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_echo_handler (CerverHttpContext *context) {
 
-	const String *body = http_request_get_body (request);
+	const CerverHttpView body = cerver_http_request_body (context);
 
-	(void) http_response_render_text (
-		http_receive, HTTP_STATUS_OK, body ? body->str : "", body ? body->len : 0
+	(void) cerver_http_response_send_text (
+		context, cerver_http_view_is_missing (body) ? "" : body.data, body.length
 	);
 
 }
 
 // GET /features/client, the request's id and the client's address
-static void features_client_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_client_handler (CerverHttpContext *context) {
 
 	char json[FEATURES_TEST_VALUE_SIZE] = { 0 };
 	const int written = snprintf (
 		json, FEATURES_TEST_VALUE_SIZE, "{\"ip\":\"%s\",\"id\":\"%s\"}",
-		http_request_get_client_ip (request), http_request_get_id (request)
+		cerver_http_request_client_ip (context).data, cerver_http_request_id (context).data
 	);
 
-	(void) http_response_render_json (http_receive, HTTP_STATUS_OK, json, (size_t) written);
+	(void) cerver_http_response_send_json (context, json, (size_t) written);
 
 }
 
 // GET /features/cookies, a header that is repeated and one with a name of the application
-static void features_cookies_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_cookies_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_first_cookie), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_with_name (response, features_trace_name, features_trace_value), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_SET_COOKIE, features_second_cookie), 0, NULL);
-	(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
-	(void) http_response_add_content_length_header (response, strlen (features_stream_first));
-	(void) http_response_set_data_ref (response, features_stream_first, strlen (features_stream_first));
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	test_check_unsigned_eq (cerver_http_response_add_header (context, HTTP_HEADER_SET_COOKIE, features_first_cookie), 0, NULL);
+	test_check_unsigned_eq (cerver_http_response_add_header_with_name (context, features_trace_name, features_trace_value), 0, NULL);
+	test_check_unsigned_eq (cerver_http_response_add_header (context, HTTP_HEADER_SET_COOKIE, features_second_cookie), 0, NULL);
+	(void) cerver_http_response_send_text (context, features_stream_first, strlen (features_stream_first));
 
 }
 
 // GET /features/connection, a response that says what its connection does
-static void features_connection_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_connection_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_CONNECTION, HTTP_RESPONSE_CONNECTION_CLOSE), 0, NULL);
-	(void) http_response_add_content_length_header (response, strlen (features_stream_first));
-	(void) http_response_set_data_ref (response, features_stream_first, strlen (features_stream_first));
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	test_check_unsigned_eq (cerver_http_response_add_header (context, HTTP_HEADER_CONNECTION, HTTP_RESPONSE_CONNECTION_CLOSE), 0, NULL);
+	(void) cerver_http_response_send (context, features_stream_first, strlen (features_stream_first));
 
 }
 
-// GET /features/created, a body without its length, that ends when the connection is closed
-static void features_created_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+// GET /features/created, a body without its length, that ends when the connection is closed:
+// the responses of the context always have their length, so it is sent with the internal methods
+static void features_created_handler (CerverHttpContext *context) {
 
 	(void) http_response_create_and_send (
-		HTTP_STATUS_CREATED, features_stream_first, strlen (features_stream_first), http_receive
+		HTTP_STATUS_CREATED, features_stream_first, strlen (features_stream_first), context
 	);
 
 }
 
 // GET /features/video, a range of a file
-static void features_video_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_video_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_handle_video (http_receive, features_video_file);
+	(void) cerver_http_response_send_video (context, features_video_file);
 
 }
 
 // GET /plain/small, an endpoint without the settings of the features group
-static void features_plain_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_plain_handler (CerverHttpContext *context) {
 
-	(void) request;
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
-	(void) http_response_send (oki_doki, http_receive);
+}
+
+// what each send of the handler of /plain/twice returned
+static unsigned int features_twice_first_result = 0;
+static unsigned int features_twice_second_result = 0;
+static unsigned int features_twice_common_result = 0;
+static unsigned int features_twice_stream_result = 0;
+
+static void features_twice_result (unsigned int *result, const u8 value) {
+
+	__atomic_store_n (result, (unsigned int) value, __ATOMIC_SEQ_CST);
+
+}
+
+// GET /plain/twice, a request takes one response: the ones that its handler sends after it are refused
+static void features_twice_handler (CerverHttpContext *context) {
+
+	features_twice_result (
+		&features_twice_first_result,
+		cerver_http_response_send_text (context, features_twice_first, strlen (features_twice_first))
+	);
+
+	cerver_http_response_set_status (context, HTTP_STATUS_BAD_REQUEST);
+	features_twice_result (
+		&features_twice_second_result,
+		cerver_http_response_send_text (context, features_twice_second, strlen (features_twice_second))
+	);
+
+	features_twice_result (
+		&features_twice_common_result,
+		cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_NOT_FOUND)
+	);
+
+	features_twice_result (&features_twice_stream_result, cerver_http_response_stream_begin (context));
+
+}
+
+// 1 for a view that ends with '\0' right after its bytes, like every view of a request does
+static unsigned int features_view_is_terminated (const CerverHttpView view) {
+
+	return (view.data && (view.data[view.length] == '\0')) ? 1 : 0;
+
+}
+
+// GET /plain/views/:id, what the getters of the request give to a handler, as text
+static void features_views_handler (CerverHttpContext *context) {
+
+	const CerverHttpView path = cerver_http_request_path (context);
+	const CerverHttpView query = cerver_http_request_query (context);
+	const CerverHttpView id = cerver_http_request_param (context, "id");
+	const CerverHttpView first = cerver_http_request_query_value (context, "first");
+	const CerverHttpView second = cerver_http_request_query_value (context, "second");
+	const CerverHttpView custom = cerver_http_request_header_with_name (context, "X-Custom");
+	const CerverHttpView host = cerver_http_request_header (context, HTTP_HEADER_HOST);
+
+	const unsigned int terminated = features_view_is_terminated (path) + features_view_is_terminated (query)
+		+ features_view_is_terminated (id) + features_view_is_terminated (first)
+		+ features_view_is_terminated (second) + features_view_is_terminated (custom)
+		+ features_view_is_terminated (host);
+
+	// what the request does not have
+	const CerverHttpView none = cerver_http_request_param (context, "none");
+	const unsigned int missing = (unsigned int) cerver_http_view_is_missing (none)
+		+ (unsigned int) cerver_http_view_is_missing (cerver_http_request_query_value (context, "none"))
+		+ (unsigned int) cerver_http_view_is_missing (cerver_http_request_header_with_name (context, "X-None"))
+		+ (unsigned int) cerver_http_view_is_missing (cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION))
+		+ (unsigned int) cerver_http_view_is_missing (cerver_http_request_body (context));
+
+	// a view is equal only to the text of its whole value, and one without a value to none
+	const unsigned int equal = (unsigned int) cerver_http_view_equals (id, "64")
+		+ (unsigned int) !cerver_http_view_equals (id, "6")
+		+ (unsigned int) !cerver_http_view_equals (id, "645")
+		+ (unsigned int) !cerver_http_view_equals (none, "")
+		+ (unsigned int) !cerver_http_view_equals (id, NULL);
+
+	char body[FEATURES_TEST_VALUE_SIZE * 2] = { 0 };
+	const int length = snprintf (
+		body, sizeof (body),
+		"method=%s path=%s query=%s id=%s first=%s second=%s custom=%s host=%s "
+		"params=%u values=%zu terminated=%u missing=%u equal=%u",
+		cerver_http_method_to_string (cerver_http_request_method (context)),
+		path.data, query.data, id.data, first.data, second.data, custom.data, host.data,
+		cerver_http_request_params_count (context), cerver_http_request_query_values_count (context),
+		terminated, missing, equal
+	);
+
+	(void) cerver_http_response_send_text (context, body, (size_t) length);
 
 }
 
@@ -354,29 +366,34 @@ static void features_json_create (void) {
 
 }
 
-static void features_routes (HttpCerver *http_cerver) {
+static void features_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *features = http_cerver_group_create (http_cerver, "features");
-	http_group_set_cors (features, true);
-	http_group_set_etag (features, true);
-	http_group_set_compression (features, true);
+	CerverHttpGroup *features = cerver_http_group_create (http_cerver, "features");
+	cerver_http_group_set_cors (features, true);
+	cerver_http_group_set_etag (features, true);
+	cerver_http_group_set_compression (features, true);
 
-	test_check_ptr (http_group_get (features, "small", features_small_handler));
-	test_check_ptr (http_group_get (features, "json", features_json_handler));
-	test_check_ptr (http_group_get (features, "listed", features_listed_handler));
-	test_check_ptr (http_group_get (features, "raw", features_raw_handler));
-	test_check_ptr (http_group_get (features, "image", features_image_handler));
-	test_check_ptr (http_group_get (features, "stream", features_stream_handler));
-	test_check_ptr (http_group_get (features, "stream/ended", features_stream_ended_handler));
-	test_check_ptr (http_group_post (features, "echo", features_echo_handler));
-	test_check_ptr (http_group_get (features, "client", features_client_handler));
-	test_check_ptr (http_group_get (features, "cookies", features_cookies_handler));
-	test_check_ptr (http_group_get (features, "connection", features_connection_handler));
-	test_check_ptr (http_group_get (features, "created", features_created_handler));
-	test_check_ptr (http_group_get (features, "video", features_video_handler));
+	test_check_ptr (cerver_http_group_get (features, "small", features_small_handler));
+	test_check_ptr (cerver_http_group_get (features, "json", features_json_handler));
+	test_check_ptr (cerver_http_group_get (features, "listed", features_listed_handler));
+	test_check_ptr (cerver_http_group_get (features, "raw", features_raw_handler));
+	test_check_ptr (cerver_http_group_get (features, "image", features_image_handler));
+	test_check_ptr (cerver_http_group_get (features, "stream", features_stream_handler));
+	test_check_ptr (cerver_http_group_get (features, "stream/ended", features_stream_ended_handler));
+	test_check_ptr (cerver_http_group_post (features, "echo", features_echo_handler));
+	test_check_ptr (cerver_http_group_get (features, "client", features_client_handler));
+	test_check_ptr (cerver_http_group_get (features, "cookies", features_cookies_handler));
+	test_check_ptr (cerver_http_group_get (features, "connection", features_connection_handler));
+	test_check_ptr (cerver_http_group_get (features, "created", features_created_handler));
+	// the handler of the video reads a file, it does not run in the event loop
+	CerverHttpEndpoint *video = cerver_http_group_get (features, "video", features_video_handler);
+	test_check_ptr (video);
+	cerver_http_endpoint_set_pool (video, HTTP_POOL_DEFAULT_NAME);
 
-	HttpGroup *plain = http_cerver_group_create (http_cerver, "plain");
-	test_check_ptr (http_group_get (plain, "small", features_plain_handler));
+	CerverHttpGroup *plain = cerver_http_group_create (http_cerver, "plain");
+	test_check_ptr (cerver_http_group_get (plain, "small", features_plain_handler));
+	test_check_ptr (cerver_http_group_get (plain, "twice", features_twice_handler));
+	test_check_ptr (cerver_http_group_get (plain, "views/:id", features_views_handler));
 
 }
 
@@ -431,10 +448,6 @@ static int features_connect (void) {
 
 }
 
-// how the cerver of the tests that run now handles its connections,
-// the tests run with a thread for each connection and with event loops
-static CerverHandlerType features_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 // the cerver adds the Date header, it is set before the cerver starts because its threads read it without a lock
 static bool features_date_header = true;
 
@@ -443,34 +456,35 @@ static void features_cerver_start (void) {
 	features_cerver = cerver_create_web ("features-test", FEATURES_TEST_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (features_cerver);
 
-	cerver_set_handler_type (features_cerver, features_handler_type);
 	cerver_set_events_backend (features_cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (features_cerver, true);
 	cerver_set_thpool_n_threads (features_cerver, 2);
 
-	HttpCerver *http_cerver = (HttpCerver *) features_cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (features_cerver);
 
 	// the clients of these tests read each response until the cerver closes its connection,
 	// the connections that are kept have their own tests (keepalive.c)
-	http_cerver_set_keep_alive (http_cerver, false);
+	cerver_http_set_keep_alive (http_cerver, false);
 
-	http_cerver_set_request_id (http_cerver, true);
+	cerver_http_set_request_id (http_cerver, true);
 
-	http_cerver_set_date_header (http_cerver, features_date_header);
+	cerver_http_set_date_header (http_cerver, features_date_header);
 
 	// a path without a route is answered with 404 instead of the catch all
-	http_cerver_set_not_found_handler (http_cerver);
+	cerver_http_set_not_found_handler (http_cerver);
 
 	// the test client connects from 127.0.0.1, like nginx from its private network
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 
-	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, features_origin), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_origin_to_whitelist (http_cerver, features_origin), 0, NULL);
 
-	(void) http_cerver_static_path_add (http_cerver, "./test/web/public");
+	(void) cerver_http_static_path_add (http_cerver, "./test/web/public");
 
-	http_cerver_enable_admin_routes (http_cerver, true);
-	http_cerver_enable_admin_info_route (http_cerver, true);
-	http_cerver_enable_admin_head_handlers (http_cerver, true);
+	// GET /features/cerver/info, /features/cerver/stats…
+	cerver_http_enable_admin_routes (http_cerver, true);
+	cerver_http_admin_set_path (http_cerver, "/features");
+	cerver_http_enable_admin_info_route (http_cerver, true);
+	cerver_http_enable_admin_head_handlers (http_cerver, true);
 
 	features_routes (http_cerver);
 
@@ -643,7 +657,7 @@ static void test_features_date (void) {
 	test_check_ptr (date);
 
 	time_t parsed = 0;
-	test_check_true (http_date_parse (date, strlen (date), &parsed));
+	test_check_true (cerver_http_date_parse (date, strlen (date), &parsed));
 
 	// the errors that cerver sends also have it
 	features_get ("/features/missing", NULL, &response);
@@ -816,7 +830,7 @@ static void features_filtered (const char *path) {
 	test_check_unsigned_eq (features_header_count (&response, "\r\nContent-Length: "), 1, NULL);
 	test_check_unsigned_eq (response.body_length, features_content_length (&response), NULL);
 
-	if (http_compression_available ()) {
+	if (cerver_http_compression_available ()) {
 		features_expect_header (&response, "Content-Encoding", HTTP_COMPRESSION_ENCODING);
 		test_check (response.body_length < features_json_length, "the body was not compressed");
 	}
@@ -872,7 +886,7 @@ static void test_features_compression (void) {
 	features_expect_status (&response, "HTTP/1.1 200");
 	features_expect_header (&response, "Vary", "Origin, Accept-Encoding");
 
-	if (http_compression_available ()) {
+	if (cerver_http_compression_available ()) {
 		features_expect_header (&response, "Content-Encoding", HTTP_COMPRESSION_ENCODING);
 
 		// the Content-Length is the one of the compressed body
@@ -1165,7 +1179,7 @@ static void test_features_connection (void) {
 	features_expect_close (&response);
 	test_check_str_eq (response.body, features_stream_first, NULL);
 
-	// the admin routes, that are endpoints of the first group of the cerver
+	// the admin routes, that are endpoints of their own group
 	features_get ("/features/cerver/stats", NULL, &response);
 	features_expect_status (&response, "HTTP/1.1 200");
 	features_expect_close (&response);
@@ -1217,9 +1231,67 @@ static void features_admin_route (const char *path, const char *start, const cha
 static void test_features_admin (void) {
 
 	features_admin_route ("/features/cerver/info", "{\"name\": \"", NULL);
-	features_admin_route ("/features/cerver/stats", "{\"main_routes\": ", NULL);
+	features_admin_route ("/features/cerver/stats", "{\"groups\": ", NULL);
 	features_admin_route ("/features/cerver/stats/filesystems", "{\"filesystems\": [", "{\"filesystems\": []}");
 	features_admin_route ("/features/cerver/stats/workers", "{\"workers\": [", "{\"workers\": []}");
+
+}
+
+static unsigned int features_twice_read (const unsigned int *result) {
+
+	return __atomic_load_n (result, __ATOMIC_SEQ_CST);
+
+}
+
+// a request takes one response: its handler sent another one, a common one and the start of a stream after it,
+// each of them was refused and nothing of them reached the client
+static void test_features_one_response (void) {
+
+	FeaturesResponse response;
+
+	features_get ("/plain/twice", NULL, &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+
+	test_check_unsigned_eq (response.body_length, strlen (features_twice_first), NULL);
+	test_check_str_eq (response.body, features_twice_first, NULL);
+
+	test_check (strstr (response.raw, features_twice_second) == NULL, "the second response was sent");
+	test_check (strstr (response.body, "HTTP/1.1 ") == NULL, "another response followed the first one");
+
+	test_check_unsigned_eq (features_twice_read (&features_twice_first_result), 0, NULL);
+	test_check_unsigned_eq (features_twice_read (&features_twice_second_result), 1, NULL);
+	test_check_unsigned_eq (features_twice_read (&features_twice_common_result), 1, NULL);
+	test_check_unsigned_eq (features_twice_read (&features_twice_stream_result), 1, NULL);
+
+}
+
+// the values of a request are views of its memory: they end with '\0', one that the request does not have has
+// no data, and each getter gives what the request brought (the path and the query as they arrived, the values of
+// the query decoded)
+static void test_features_views (void) {
+
+	FeaturesResponse response;
+
+	features_get ("/plain/views/64?first=one&second=two%20words", "X-Custom: custom value\r\n", &response);
+	features_expect_status (&response, "HTTP/1.1 200");
+	test_check_str_eq (response.body, features_views_body, NULL);
+
+	// without a context there is no request and nothing to answer
+	test_check_true (cerver_http_view_is_missing (cerver_http_request_path (NULL)));
+	test_check_true (cerver_http_view_is_missing (cerver_http_request_param (NULL, "id")));
+	test_check_true (cerver_http_view_is_missing (cerver_http_request_peer_ip (NULL)));
+	test_check_unsigned_eq (cerver_http_request_params_count (NULL), 0, NULL);
+	test_check_int_eq ((int) cerver_http_request_method (NULL), (int) REQUEST_METHOD_UNDEFINED, NULL);
+	test_check_null_ptr (cerver_http_request_head (NULL));
+
+	test_check_int_eq (cerver_http_context_socket (NULL), -1, NULL);
+	test_check_false (cerver_http_context_client_is_gone (NULL));
+	test_check_int_eq ((int) cerver_http_context_client_state (NULL), (int) HTTP_CLIENT_STATE_RESET, NULL);
+
+	test_check_unsigned_eq (cerver_http_response_set_header (NULL, HTTP_HEADER_ETAG, "\"tag\""), 1, NULL);
+	test_check_unsigned_eq (cerver_http_response_send (NULL, features_twice_first, strlen (features_twice_first)), 1, NULL);
+	test_check_unsigned_eq (cerver_http_response_send_common (NULL, CERVER_HTTP_COMMON_RESPONSE_OK), 1, NULL);
+	test_check_unsigned_eq (cerver_http_response_stream_begin (NULL), 1, NULL);
 
 }
 
@@ -1291,12 +1363,8 @@ static void test_features_without_date (void) {
 
 #pragma endregion
 
-// the features of a cerver that handles its connections with a model: a thread for each one, or event loops
-static void features_tests_model (const CerverHandlerType handler_type) {
-
-	features_handler_type = handler_type;
-
-	(void) printf ("\t%s\n", cerver_handler_type_to_string (handler_type));
+// the features of a cerver, that handles its connections with event loops
+static void features_tests (void) {
 
 	(void) alarm (FEATURES_TEST_ALARM);
 
@@ -1315,14 +1383,14 @@ static void features_tests_model (const CerverHandlerType handler_type) {
 	test_features_metrics ();
 	test_features_connection ();
 	test_features_admin ();
+	test_features_one_response ();
+	test_features_views ();
 	test_features_repeated_headers ();
 	test_features_without_date ();
 
 	features_cerver_stop ();
 
 	(void) alarm (0);
-
-	features_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
 }
 
@@ -1332,8 +1400,7 @@ void http_tests_features (void) {
 
 	features_json_create ();
 
-	features_tests_model (CERVER_HANDLER_TYPE_THREADS);
-	features_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+	features_tests ();
 
 	(void) printf ("Done!\n");
 
