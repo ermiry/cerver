@@ -8,7 +8,7 @@
 > | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada; F6a, WebSocket completo sobre hilos); 2026-11-12 (el diseño de F8 y F9; el merge de la 2.0b-70); 2026-11-13 (F1; los arreglos de la revisión, §4.12); 2026-11-14 (la estructura y la documentación; F3, el event loop) |
 > | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-70. Desde la 2.1b-15 `nightly` no mergea `http`: sus arreglos se portan a mano |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3); F4, el keep-alive, la 2.1b-16 (§4.4); F5, los pools, health y las métricas, la 2.1b-17 (§4.5); los arreglos de la auditoría de las otras líneas, la 2.1b-18 (§4.13); F4b, la 2.1b-19; la sincronía, la 2.1b-20; F6b, la 2.1b-21 (§4.6); F8a, TLS sobre hilos y en los clientes, la 2.1b-22 (§4.8.11); F8b, TLS en el loop, la 2.1b-23 (§4.8.12) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, la 2.1b-8 (§4.2); F6a, WebSocket sobre hilos con el cliente, la 2.1b-9 (§4.6); el merge de la 2.0b-66 a la 2.0b-70, la 2.1b-10; F1, la respuesta estructurada y la recepción por petición, la 2.1b-11 (§4.1); los arreglos de la revisión de la 2.1b-10, la 2.1b-12 y la 2.1b-13 (§4.12); la estructura, la documentación y la licencia de `labs`, la 2.1b-14; F3, el event loop cerrando por petición, la 2.1b-15 (§4.3); F4, el keep-alive, la 2.1b-16 (§4.4); F5, los pools, health y las métricas, la 2.1b-17 (§4.5); los arreglos de la auditoría de las otras líneas, la 2.1b-18 (§4.13); F4b, la 2.1b-19; la sincronía, la 2.1b-20; F6b, la 2.1b-21 (§4.6); F8a, TLS sobre hilos y en los clientes, la 2.1b-22 (§4.8.11); F8b, TLS en el loop, la 2.1b-23 (§4.8.12); F7, la auth asíncrona, la 2.1b-24 (§4.7.1) |
 
 **Las citas `archivo:línea`:**
 
@@ -1035,6 +1035,23 @@ En THREADS cada conexión sigue en su hilo propio (F6a), con la misma API y la m
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
 - **La conexión espera en `AUTH` sin hilo,** con un pool de conexiones persistentes por loop.
 - **El fallback:** la etapa en el pool, para una auth custom que no usa ese cliente.
+
+#### 4.7.1 Lo que hizo F7 (2.1b-24)
+
+El diseño de arriba, con lo que la implementación cambió (las decisiones se tomaron con el usuario al planear la beta):
+
+- **libcurl es opcional:** `CURL=1` compila la auth remota (`-D CERVER_CURL`, `-l curl`); sin él,
+  `http_auth_request ()` devuelve 1 y el loop no tiene nada de esto. Las imágenes y el CI compilan con `CURL=1`.
+- **La API** es un callback de reanudación (`cerver/http/security/remote.h`): la auth custom llama
+  `http_auth_request ()` con la petición y un `on_response ()` que decide con la respuesta, y devuelve lo que devuelve
+  (`HTTP_AUTHENTICATION_PENDING` en un loop). `HTTP_ROUTE_AUTH_TYPE_MAP` no cambia.
+- **Tres caminos esperan en el loop,** no uno: el job que autoriza antes del body, el job que despacha una petición sin
+  body (la auth y el despacho en el mismo job) y el hilo que sigue su conexión. La conexión espera en un estado del
+  loop (`REMOTE`), no en `AUTH` (que es del pool); `on_response ()` corre en un hilo del pool, nunca en el loop, y el
+  job sigue donde se quedó (lo que falta de las cabeceras, o el despacho). Las demás (con body, en THREADS) son
+  síncronas: un easy handle por llamada.
+- **Los timers de libcurl** son una deadline propia del loop, que entra en su espera: la rueda tiene ticks de 2^8 ms.
+- **El pool de conexiones** es el del multi de cada loop: 2^5, y 2^4 por destino.
 
 ### 4.8 F8 — TLS
 
