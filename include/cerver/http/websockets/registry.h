@@ -21,7 +21,7 @@
 /**
  * @defgroup http_websockets_registry Registry
  * @ingroup http_websockets
- * @brief The WebSocket connections of an HTTP cerver (HttpCerver.web_sockets), a struct that only cerver knows:
+ * @brief The WebSocket connections of an HTTP cerver (CerverHttp.web_sockets), a struct that only cerver knows:
  * its limit, its rooms and its stats are reached with the methods of this group.
  *
  * Only the connections of the server are in the registry; the ones of a client are not in any room.

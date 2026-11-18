@@ -39,7 +39,7 @@ static bool http_web_socket_upgrade_header_is_reserved (const char *name) {
 
 	bool reserved = false;
 
-	switch (http_header_type_with_string (name)) {
+	switch (cerver_http_header_with_string (name)) {
 		case HTTP_HEADER_SERVER:
 		case HTTP_HEADER_UPGRADE:
 		case HTTP_HEADER_CONNECTION:

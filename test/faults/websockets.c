@@ -330,7 +330,7 @@ static void test_client_thread_not_created (void) {
 typedef struct FaultsTestServer {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 	pthread_t thread;
 	u16 port;
 
@@ -356,19 +356,18 @@ static void faults_test_server_start (FaultsTestServer *server) {
 	Cerver *cerver = cerver_create_web ("faults-test", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, test_handler_type ());
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 	cerver_set_thpool_n_threads (cerver, FAULTS_TEST_THREADS);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 	http_cerver_set_web_socket_max_connections (http_cerver, 1);
 
-	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
+	CerverHttpGroup *ws = cerver_http_group_create (http_cerver, "ws");
 	test_check_ptr (ws);
-	test_check_ptr (http_group_web_socket_add (ws, "echo", &faults_test_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "echo", &faults_test_handlers));
 
 	server->cerver = cerver;
 	server->http_cerver = http_cerver;

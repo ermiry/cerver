@@ -402,55 +402,6 @@ CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
 /** @} */
 
 /**
- * @defgroup handler_context Thread context
- * @ingroup handler
- * @brief The memory that a worker thread of a web cerver reuses between requests.
- * @{
- */
-
-struct Arena;
-struct _HttpReceive;
-
-/**
- * @brief The memory that a worker thread reuses between requests; the data of a request lives in the arena only
- * while it is handled.
- */
-typedef struct HandlerThreadContext {
-
-	/** @brief The arena of the requests of the thread. */
-	struct Arena *arena;
-
-	/** @brief The receive buffer of the thread. */
-	char *buffer;
-	/** @brief The size of the receive buffer. */
-	size_t buffer_size;
-
-	/**
-	 * @brief The buffer of the head of a request that does not arrive in one piece.
-	 *
-	 * @since 3.0b-9
-	 */
-	String *head_buffer;
-
-	/** @brief The receive of the HTTP connection that the thread handles, with the arena and the buffers of the thread. */
-	struct _HttpReceive *http_receive;
-
-} HandlerThreadContext;
-
-/**
- * @brief Returns the context of the current thread, with a receive buffer of at least some bytes.
- *
- * It is created the first time and released when the thread exits.
- *
- * @param[in] buffer_size the smallest receive buffer
- * @return the context, NULL if it can not be used, and then every request allocates its own memory
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE HandlerThreadContext *handler_context_get (const size_t buffer_size);
-
-/** @} */
-
-/**
  * @defgroup handler_cerver_receive Cerver receive
  * @ingroup handler
  * @brief How a cerver receives from its connections.
@@ -492,22 +443,6 @@ typedef struct CerverReceive {
 
 	/** @brief The lobby of the connection. */
 	struct _Lobby *lobby;
-
-	/**
-	 * @brief The requests that a web connection that is kept has handled: its thread gives the connection back to
-	 * the thpool between two requests when another connection waits for a thread, and the thread that takes it
-	 * again continues from here.
-	 *
-	 * @since 3.0b-5
-	 */
-	unsigned int n_requests;
-	/**
-	 * @brief When the wait of that connection for its next request ends, in the secs of the monotonic clock;
-	 * 0 while it does not wait.
-	 *
-	 * @since 3.0b-5
-	 */
-	double idle_deadline;
 
 	/** @brief The next deleted receive that waits to be reused. */
 	struct CerverReceive *recycle_next;

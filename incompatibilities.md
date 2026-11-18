@@ -3,6 +3,172 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-12 (from 3.0b-11)
+
+The first part of L5 of `roadmap.md`: **the application API of HTTP is new, and every application is migrated.** A
+handler takes one context; it reads its request with `cerver_http_request_* (context, …)`, whose values are views,
+and it writes its response with `cerver_http_response_* (context, …)`. The HTTP data of a cerver, its groups and
+its endpoints are handles (`CerverHttp`, `CerverHttpGroup`, `CerverHttpEndpoint`): their structs are not installed.
+Every name of HTTP starts with `cerver_http_` (types with `CerverHttp`), except the ones of WebSocket, that change
+in L9. The routes are only groups and endpoints, and a web cerver always runs on event loops. There is no
+compatibility layer: the tables below are how code of the 3.0b-11 is written now.
+
+**A web cerver**
+
+- **A web cerver always uses the event loops:** `cerver_create ()` of a `CERVER_TYPE_WEB` (and
+  `cerver_create_web ()`) leaves `CERVER_HANDLER_TYPE_EVENTS`, and `cerver_start ()` fails with its message when the
+  cerver was given another handler type (`THREADS`, `POLL`). The cervers of the other types keep theirs.
+  **Removed:** the thread of each connection of HTTP, `HandlerThreadContext` and `handler_context_get ()`,
+  `CerverReceive::n_requests` and `idle_deadline`
+- **One event loop for each processor by default** (before: one): a new web cerver has
+  `CERVER_IO_THREADS_PER_CORE`; `cerver_set_io_threads (cerver, 1)` asks for one. Each loop keeps its own
+  descriptors (its socket, its backend, its wake up), so a process with a small `RLIMIT_NOFILE` and many processors
+  needs more of them to start
+- **The handlers run in the event loop that read their request by default** (before: in a thread of the thpool of
+  the cerver): the pool of the requests that chose none is `HTTP_POOL_LOOP_NAME`. **A handler that waits** (a
+  database, another service, a file, a lock, a sleep) **must choose a pool of threads:**
+  `cerver_http_set_handlers_pool (http, HTTP_POOL_DEFAULT_NAME)` for every handler of the cerver, or
+  `cerver_http_group_set_pool ()` / `cerver_http_endpoint_set_pool ()` for some. `cerver_http_set_handlers_pool ()`
+  with a NULL name goes back to the event loops (before: to the thpool). The files of the static paths are always
+  served by the thpool of the cerver
+- **Keep-alive is on by default** in every web cerver (it was the default only with event loops)
+- **The admin routes have a top level group of their own:** they are `/cerver/info`, `/cerver/stats`… by default
+  (`CERVER_HTTP_DEFAULT_ADMIN_PATH`), and `cerver_http_admin_set_path (http, "/api")` (new) keeps them in
+  `/api/cerver/…`. Before they were endpoints of the first group of the application, with its path and its
+  settings (its middlewares, its pool, its CORS). The admin stats have `groups` and `total_handlers` (before
+  `main_routes`, `children_routes` and `total_handlers`), and their `routes` array is gone: every route is in
+  `endpoints`
+- **The default headers of the responses are of each cerver** (`cerver_http_add_responses_header ()`): a response
+  takes the ones of the cerver of its request when it is sent. Before every cerver of a process sent the ones of
+  the first HTTP cerver that started, and a response compiled before they were set did not have them
+
+**The names**
+
+| Before | Now |
+|---|---|
+| `http_cerver_*`, `HTTP_CERVER_*` | `cerver_http_*`, `CERVER_HTTP_*` |
+| `HttpCerver *`, `(HttpCerver *) cerver->cerver_data` | `CerverHttp *`, `cerver_http_get (cerver)` |
+| `http_group_*`, `HttpGroup *`; `http_group_create (group, path)` (a subgroup) | `cerver_http_group_*`, `CerverHttpGroup *`; `cerver_http_group_subgroup_add (group, path)` |
+| `http_endpoint_*`, `HttpEndpoint *` | `cerver_http_endpoint_*`, `CerverHttpEndpoint *` |
+| `RequestMethod`, `http_status`, `ContentType`, `http_header` | `CerverHttpMethod`, `CerverHttpStatus`, `CerverHttpContentType`, `CerverHttpHeader` |
+| `HttpRouteModifier`, `HttpRouteAuthType`, `HttpStage`, `HttpAbortReason`, `HttpClientState`, `HttpTrustedProxies`, `HttpTrailingSlash`, `HttpMiddlewareResult`, `RangeType`, `BytesRange` | the same with `CerverHttp` (`CerverHttpRouteModifier`, `CerverHttpRangeType`, `CerverHttpBytesRange`…) |
+| `http_request_method_str ()`, `http_status_string ()`, `http_header_string ()`, `http_header_type_with_string ()` | `cerver_http_method_to_string ()`, `cerver_http_status_to_string ()`, `cerver_http_header_to_string ()`, `cerver_http_header_with_string ()` |
+| `HttpDecodeData` | `CerverHttpDecodeData` |
+| `http_receive_public_path_remove ()` | `cerver_http_static_path_remove ()` |
+| every other function of HTTP: `http_url_*`, `http_content_type_*`, `http_static_path_*`, `http_pool_*`, `http_origin_*`, `http_proxy_*`, `http_jwt_*`, `http_etag_*`, `http_date_*`, `http_compression_*`, `http_conditional_*`, `http_param_validat*`, `http_middleware_result_*`, `http_bytes_range_*`, `http_stage_*`, `http_abort_reason_*`, `http_client_state_string ()`, `http_range_type_string ()`, `http_trusted_proxies_*`, `http_trailing_slash_*`, `http_query_pairs_*`, `http_request_method_is_valid ()` | the same name behind `cerver_http_` (`cerver_http_url_decode ()`, `cerver_http_content_type_mime ()`, `cerver_http_pool_get_name ()`…; `cerver_http_method_is_valid ()`) |
+
+The constants of the enums (`HTTP_STATUS_OK`, `REQUEST_METHOD_GET`, `HTTP_HEADER_CONTENT_TYPE`,
+`HTTP_ROUTE_AUTH_TYPE_BEARER`, `HTTP_POOL_DEFAULT_NAME`…) and their X-macro tables did not change. Everything named
+`http_web_socket_*`, `HttpWebSocket*` and `http_cerver_*web_socket*` keeps its name; the WebSocket methods of a
+group and of an endpoint are `cerver_http_group_web_socket_add ()`, `cerver_http_group_set_web_socket_*` and
+`cerver_http_endpoint_set_web_socket_*`.
+
+**The headers:** `<cerver/http/core/handler.h>` (the `HttpReceive`), `<cerver/http/core/pairs.h>`,
+`<cerver/http/requests/multipart.h>` (`MultiPart` and `http_multi_part_*`) and `<cerver/http/responses/stream.h>`
+are not installed anymore, and `routes/compatibility.h` was removed; a handler includes
+`<cerver/http/core/context.h>`, `<cerver/http/requests/request.h>` and `<cerver/http/responses/response.h>`.
+`struct _HttpRequest`, `HttpResponse`, `HttpReceive`, `KeyValuePair`, `MultiPart` and the structs of the HTTP cerver,
+the groups, the endpoints, their settings and the routes tree are internal: their headers are in `src/`, and every
+installed header compiles alone with only the installed include path.
+
+- **`libcerver.so` still exports the functions of those internal headers** (`http_request_get_*`,
+  `http_response_*`, `http_receive_get_*`, `http_multi_part_*`…, the application API of the 3.0b-11): the tests of
+  cerver call them through the headers of `src/`. They have no installed declaration and they are not API: they
+  change or leave without an entry here. Eight functions of the installed headers keep an old name until the next
+  pass over them (`http_tree_print ()`, `http_tree_get_n_endpoints ()`, `http_tree_path_validate ()`,
+  `http_route_methods_string ()`, `http_header_print ()`, `http_headers_buffer_find ()`,
+  `http_parser_lenient_string ()` and `http_parser_lenient_description ()`)
+
+**Handlers: one context**
+
+| Before | Now |
+|---|---|
+| `void handler (const HttpReceive *http_receive, const HttpRequest *request)` | `void handler (CerverHttpContext *context)` (`CerverHttpHandler`) |
+| `unsigned int authentication_handler (const HttpReceive *, const HttpRequest *)` | `unsigned int authentication_handler (CerverHttpContext *context)` (`CerverHttpAuthenticationHandler`) |
+| the before and after middlewares, the catch all, not found and method not allowed handlers, the uploads filename and dirname generators | they take `(CerverHttpContext *context)` |
+| WebSocket `on_upgrade (const HttpReceive *, const HttpRequest *, HttpWebSocketUpgrade *)` | `on_upgrade (CerverHttpContext *context, HttpWebSocketUpgrade *upgrade)` |
+| `http_receive_get_cerver ()`, `http_receive->http_cerver` | `cerver_http_context_http (context)` |
+| `http_receive->cr->cerver` | `cerver_http_context_cerver (context)` |
+| `http_receive_get_endpoint ()`, `_get_route_custom_data ()`, `_get_cerver_custom_data ()`, `_get_allow ()` | `cerver_http_context_endpoint ()`, `_endpoint_custom_data ()`, `_http_custom_data ()`, `_allow ()` |
+| `http_receive_is_client_gone ()`, `http_receive_get_client_state ()` | `cerver_http_context_client_is_gone ()`, `cerver_http_context_client_state ()` |
+| `http_receive_get_sock_fd ()`, `http_receive->cr->connection->socket->sock_fd` | `cerver_http_context_socket (context)`: only to tell the connection apart, the loop owns the socket |
+| `http_receive->cr->connection->ip` | `cerver_http_request_peer_ip (context)` |
+| `http_receive->parser.head` | `cerver_http_request_head (context)` |
+
+**The request: its values are views**
+
+`CerverHttpView { const char *data; size_t length; }`: `data` ends with `'\0'`, it is NULL when the request does not
+have the value (`cerver_http_view_is_missing ()`), and it is valid until the request ends; `cerver_http_view_equals
+(view, "text")` compares it. Before they were `const String *`, `const char *` or a `DoubleList`.
+
+| Before | Now |
+|---|---|
+| `http_request_get_method ()`, `_get_url ()`, `_get_query ()` | `cerver_http_request_method (context)`, `_path ()`, `_query ()` |
+| `http_receive_is_head ()` | `cerver_http_request_is_head (context)` |
+| `http_request_query_params_get_value (request, key)`, `http_query_pairs_get_value (http_request_get_query_params (request), key)` | `cerver_http_request_query_value (context, key)`; `_query_values_count ()` and `_query_value_at ()` visit them |
+| `http_request_get_n_params ()`, `_get_param ()`, `_get_param_at_idx ()`, `_get_param_name_at_idx ()` | `cerver_http_request_params_count ()`, `_param ()`, `_param_at ()`, `_param_name_at ()` |
+| `http_request_get_header (request, type)`, `_get_custom_header (request, name)` | `cerver_http_request_header (context, type)`, `_header_with_name (context, name)` |
+| `http_request_get_content_type ()`, `_content_type_is_json ()`, `_get_bytes_range ()` | `cerver_http_request_content_type ()`, `_is_json ()`, `_bytes_range ()` |
+| `http_request_get_id ()`, `_get_client_ip ()` | `cerver_http_request_id ()`, `_client_ip ()` |
+| `http_request_get_body ()`, `http_request_json (request, &error)` | `cerver_http_request_body ()`, `cerver_http_request_json (context, &error)` |
+| `http_request_body_get_value (request, key)`, `key_value_pairs_get_value (http_request_get_body_values (request), key)` | `cerver_http_request_form_value (context, key)`; `_form_values_count ()` and `_form_value_at ()` visit them |
+| `http_request_claims ()`, `_get_decoded_data ()` | `cerver_http_request_claims ()`, `_decoded_data ()` |
+| `http_request_set_decoded_data ()` + `_set_delete_decoded_data ()`; `_set_custom_data ()` + `_set_delete_custom_data ()` | `cerver_http_request_set_decoded_data (context, data, delete)`; `cerver_http_request_set_custom_data (context, data, delete)` |
+| `http_request_get_n_files ()`, `_get_n_values ()` | `cerver_http_request_files_count ()`, `_values_count ()` |
+| `http_request_multi_parts_get (request, name)`, `_get_value ()` | `cerver_http_request_part (context, name)` (a `const CerverHttpPart *`), `cerver_http_request_part_value ()` |
+| `http_request_multi_parts_iter_start ()` + `_iter_get_next ()`, `_get_all_filenames ()`, `_get_all_saved_filenames ()` | `cerver_http_request_part_next (context, part)`, from a NULL part until it returns NULL |
+| `http_multi_part_is_file ()`, `_get_name ()`, `_get_value ()`, `_get_filename ()`, `_get_saved_filename ()`, `_get_total_wrote ()`, `_move_file ()` | `cerver_http_part_is_file ()`, `_name ()`, `_value ()`, `_filename ()`, `_saved_filename ()`, `_size ()`, `_move_file ()` |
+| `http_request_get_dirname ()`, `http_request_multi_part_keep_files ()`, `_discard_files ()` | `cerver_http_request_uploads_directory ()`, `_keep_files ()`, `_discard_files ()` |
+| in a generator: `http_request_get_current_mpart ()`, `http_multi_part_set_generated_filename ()`, `http_request_set_dirname ()` | `cerver_http_request_current_part ()`, `cerver_http_part_set_generated_filename ()`, `cerver_http_request_set_uploads_directory ()` |
+
+**Removed:** the getters that returned a `String *`, a `KeyValuePair` or a `DoubleList`, `http_request_new ()`
+without an arena for an application, and the print helpers of a request and of a response.
+
+**The response: written to the context**
+
+A handler sets the status and the headers of its response in its context and sends it: there is no response to
+create, compile and delete. Every send adds `Content-Length` (and `Content-Type` where it knows it); a body whose
+length is not known is a stream. A handler that returns without a response is answered with 500.
+
+| Before | Now |
+|---|---|
+| `http_response_create (status, data, len)` + `_compile ()` + `http_response_send (res, http_receive)` + `_delete ()`, `http_response_create_and_send ()`, `http_response_send_split ()` | `cerver_http_response_set_status (context, status)` (when it is not 200) and `cerver_http_response_send (context, data, len)`, or `cerver_http_response_send_content (context, type, data, len)` |
+| `http_response_add_header ()`, `http_response_header_set ()`, `_header_add ()`, `_header_set_with_name ()`, `_header_add_with_name ()` | `cerver_http_response_set_header (context, type, value)`, `_add_header ()`, `_set_header_with_name ()`, `_add_header_with_name ()`, before the send |
+| `http_response_add_content_type_header ()`, `_add_content_length_header ()`, `_add_json_headers ()` | not needed |
+| `http_response_render_json ()`, `http_response_json_custom_send ()`, `_json_custom_reference_send ()`, `http_response_create_json ()` | `cerver_http_response_send_json (context, json, len)` |
+| `http_response_render_text ()` (it sent `text/html`) | `cerver_http_response_send_content (context, HTTP_CONTENT_TYPE_HTML, text, len)`; `cerver_http_response_send_text ()` is `text/plain` |
+| `http_response_json_msg ()`, `_json_error ()`, `_json_key_value ()`, `_json_int_value ()`, `_json_real_value ()`, `_json_bool_value ()` and their `_send ()` | `cerver_http_response_send_json_message (context, status, message)`, `_send_json_error ()`, `_send_json_key_value ()`, `_send_json_integer ()`, `_send_json_real ()`, `_send_json_boolean ()` |
+| `http_response_send (oki_doki, http_receive)`, `bad_request_error`, `bad_user_error`, `bad_auth_error`, `not_found_error`, `server_error` | `cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK)`, `_BAD_REQUEST`, `_BAD_USER`, `_BAD_AUTH`, `_NOT_FOUND`, `_SERVER_ERROR`; the global responses are not declared in the installed headers |
+| `http_response_send_file (http_receive, status, filename)`, `http_response_handle_video ()`, and their `_generate ()` | `cerver_http_response_send_file (context, filename)`, `cerver_http_response_send_video (context, filename)`, with the path already written |
+| `http_response_stream_begin (http_receive, res)`, `_stream_write ()`, `_stream_end ()`, `_stream_is_active ()` | `cerver_http_response_stream_begin (context)` with the status and the headers of the context, `_stream_write (context, data, len)`, `_stream_end (context)`, `_stream_is_active (context)` |
+| a response created once and sent many times (`HttpResponse *`) | `CerverHttpPrepared *`: `cerver_http_prepared_create (status, type, data, len)`, `_create_json_message ()`, `_create_json_error ()`, `_create_json_key_value ()`, `_set_header ()`, `_set_header_with_name ()`, `_delete ()`, and `cerver_http_response_send_prepared (context, prepared)` |
+
+- **A response without its length and a header given as bytes can not be written by an application anymore**
+  (`http_response_create_and_send ()` without `Content-Length`, `http_response_set_header ()` with the bytes of a
+  header): the methods that sent them are internal
+
+**The routes: only groups and endpoints**
+
+**Removed:** `HttpRoute` and the first routes API (`http_route_create ()`, `http_route_child_add ()`,
+`http_route_set_*`, `http_route_get_custom_data ()`, `http_route_print ()`), `http_cerver_route_register ()`,
+`http_cerver_set_main_route ()`,
+`http_cerver_route_stats_print ()` (now `cerver_http_endpoint_stats_print ()`),
+`http_cerver_stats_get_children_routes ()`, and the `compatibility` member of the JSON of the routes.
+
+| Before | Now |
+|---|---|
+| a top level route `http_route_create (METHOD, "api/users", handler)` + `http_cerver_route_register ()` | `cerver_http_group_create (http, "/api/users")` + `cerver_http_group_root_add (group, METHOD, handler)` |
+| a child `http_route_create (METHOD, "login", handler)` + `http_route_child_add (parent, child)` | `cerver_http_group_route_add (group, METHOD, "login", handler)`, or `cerver_http_group_get ()`, `_post ()`, `_put ()`, `_patch ()`, `_delete_route ()` |
+| `http_route_set_handler (route, OTHER_METHOD, handler)` | another endpoint of the same path |
+| `http_route_set_modifier ()`, `_set_auth ()`, `_set_decode_data ()`, `_set_authentication_handler ()`, `_set_pool ()` | `cerver_http_endpoint_set_*` on each endpoint, or `cerver_http_group_set_*` for the group |
+| `http_route_set_custom_data ()` + `_set_delete_custom_data ()` | `cerver_http_endpoint_set_custom_data (endpoint, data, delete)` |
+| a child of a child | a path with more segments, or `cerver_http_group_subgroup_add (group, "prefix")` |
+
+- A route with children answered the paths below it with its own handler; a group has no handler: every path that
+  answers is an endpoint
+- **An endpoint with `HTTP_ROUTE_MODIFIER_WEB_SOCKET` and without the handlers of a WebSocket is a registration
+  error** (the cerver does not start); a route of the first API like that was answered with 501
+
 ## 3.0b-11 (from 3.0b-10)
 
 The first part of L4 of `roadmap.md`: the I/O of the event loops (`CERVER_HANDLER_TYPE_EVENTS`) is new. A loop asks

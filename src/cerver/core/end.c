@@ -358,7 +358,7 @@ static bool cerver_drain_pools (
 
 	HttpCerver *http_cerver = cerver_http_data (cerver);
 
-	return !http_cerver || !http_cerver_pools_drain (http_cerver, run_queued, timeout);
+	return !http_cerver || !cerver_http_pools_drain (http_cerver, run_queued, timeout);
 
 }
 
@@ -368,7 +368,7 @@ static unsigned int cerver_drain_working (const Cerver *cerver) {
 	const HttpCerver *http_cerver = cerver_http_data (cerver);
 
 	return (cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0)
-		+ (http_cerver ? http_cerver_pools_working (http_cerver) : 0);
+		+ (http_cerver ? cerver_http_pools_working (http_cerver) : 0);
 
 }
 
@@ -378,7 +378,7 @@ static unsigned int cerver_drain_queued (const Cerver *cerver) {
 	const HttpCerver *http_cerver = cerver_http_data (cerver);
 
 	return (cerver->thpool ? thpool_get_queued (cerver->thpool) : 0)
-		+ (http_cerver ? http_cerver_pools_queued (http_cerver) : 0);
+		+ (http_cerver ? cerver_http_pools_queued (http_cerver) : 0);
 
 }
 
@@ -551,7 +551,7 @@ static void cerver_clean_pools (const Cerver *cerver) {
 
 	HttpCerver *http_cerver = cerver_http_data (cerver);
 
-	if (http_cerver) http_cerver_pools_end (http_cerver);
+	if (http_cerver) cerver_http_pools_end (http_cerver);
 
 }
 
@@ -658,8 +658,8 @@ static void cerver_clean_data (Cerver *cerver) {
 
 			case CERVER_TYPE_WEB: {
 				if (cerver->cerver_data) {
-					http_cerver_end ((HttpCerver *) cerver->cerver_data);
-					http_cerver_delete (cerver->cerver_data);
+					cerver_http_end ((HttpCerver *) cerver->cerver_data);
+					cerver_http_delete (cerver->cerver_data);
 					cerver->cerver_data = NULL;
 				}
 			} break;

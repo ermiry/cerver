@@ -1,4 +1,5 @@
 /**
+ * @internal
  * @file cerver/http/responses/stream.h
  * @brief The responses that are sent in pieces: chunked to an HTTP/1.1 client, delimited by the close to an
  * HTTP/1.0 one.

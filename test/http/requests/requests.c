@@ -9,6 +9,7 @@
 #include <cerver/version.h>
 
 #include <cerver/http/core/http.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/method.h>
 #include <cerver/http/requests/request.h>
 
@@ -95,10 +96,10 @@ static void test_http_request_create (void) {
 	test_check_null_ptr (http_request_get_param_name_at_idx (request, 0));
 
 	// a header outside the table is never read
-	test_check_null_ptr (http_request_get_header (request, (const http_header) HTTP_HEADERS_SIZE));
+	test_check_null_ptr (http_request_get_header (request, (const CerverHttpHeader) HTTP_HEADERS_SIZE));
 
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (http_request_get_header (request, (const http_header) i));
+		test_check_null_ptr (http_request_get_header (request, (const CerverHttpHeader) i));
 	
 	test_check_null_ptr (request->current_custom_header);
 	test_check_null_ptr (request->custom_headers);
@@ -271,16 +272,16 @@ static void test_http_request_params (void) {
 // the methods have the values of the HTTP parser (llhttp): PATCH is 28, 34 is PRI
 static void test_http_request_methods (void) {
 
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_PATCH), "PATCH", NULL);
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_GET), "GET", NULL);
-	test_check_str_eq (http_request_method_str (REQUEST_METHOD_COPY), "COPY", NULL);
-	test_check_str_eq (http_request_method_str ((RequestMethod) 34), "Undefined", NULL);
+	test_check_str_eq (cerver_http_method_to_string (REQUEST_METHOD_PATCH), "PATCH", NULL);
+	test_check_str_eq (cerver_http_method_to_string (REQUEST_METHOD_GET), "GET", NULL);
+	test_check_str_eq (cerver_http_method_to_string (REQUEST_METHOD_COPY), "COPY", NULL);
+	test_check_str_eq (cerver_http_method_to_string ((CerverHttpMethod) 34), "Undefined", NULL);
 
-	test_check_true (http_request_method_is_valid (REQUEST_METHOD_PATCH));
-	test_check_true (http_request_method_is_valid (REQUEST_METHOD_TRACE));
-	test_check_true (http_request_method_is_valid (REQUEST_METHOD_QUERY));
-	test_check_false (http_request_method_is_valid ((RequestMethod) 34));
-	test_check_false (http_request_method_is_valid (REQUEST_METHOD_UNDEFINED));
+	test_check_true (cerver_http_method_is_valid (REQUEST_METHOD_PATCH));
+	test_check_true (cerver_http_method_is_valid (REQUEST_METHOD_TRACE));
+	test_check_true (cerver_http_method_is_valid (REQUEST_METHOD_QUERY));
+	test_check_false (cerver_http_method_is_valid ((CerverHttpMethod) 34));
+	test_check_false (cerver_http_method_is_valid (REQUEST_METHOD_UNDEFINED));
 
 	test_check_int_eq ((int) REQUEST_METHOD_PATCH, 28, NULL);
 
@@ -495,15 +496,15 @@ static void test_http_request_id (void) {
 
 static void test_http_request_bytes_range_case (
 	const char *value, const bool expected,
-	const RangeType type, const long start, const long end
+	const CerverHttpRangeType type, const long start, const long end
 ) {
 
 	HttpRequest *request = test_http_request_new ();
 
 	request->headers[HTTP_HEADER_RANGE] = str_new (value);
 
-	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
-	http_bytes_range_init (&bytes_range);
+	CerverHttpBytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	cerver_http_bytes_range_init (&bytes_range);
 
 	test_check_bool_eq (http_request_get_bytes_range (request, &bytes_range), expected, value);
 	test_check_int_eq (bytes_range.type, type, value);
@@ -522,8 +523,8 @@ static void test_http_request_bytes_range (void) {
 	// without the header there is no range
 	HttpRequest *request = test_http_request_new ();
 
-	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
-	http_bytes_range_init (&bytes_range);
+	CerverHttpBytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	cerver_http_bytes_range_init (&bytes_range);
 
 	test_check_bool_eq (http_request_get_bytes_range (request, &bytes_range), false, NULL);
 	test_check_int_eq (bytes_range.type, HTTP_RANGE_TYPE_NONE, NULL);

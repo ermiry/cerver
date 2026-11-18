@@ -4,8 +4,8 @@
 
 #include "cerver/http/routes/middleware.h"
 
-const char *http_middleware_result_to_string (
-	const HttpMiddlewareResult result
+const char *cerver_http_middleware_result_to_string (
+	const CerverHttpMiddlewareResult result
 ) {
 
 	switch (result) {
@@ -16,12 +16,12 @@ const char *http_middleware_result_to_string (
 		default: break;
 	}
 
-	return http_middleware_result_to_string (HTTP_MIDDLEWARE_RESULT_NONE);
+	return cerver_http_middleware_result_to_string (HTTP_MIDDLEWARE_RESULT_NONE);
 
 }
 
-const char *http_middleware_result_description (
-	const HttpMiddlewareResult result
+const char *cerver_http_middleware_result_description (
+	const CerverHttpMiddlewareResult result
 ) {
 
 	switch (result) {
@@ -32,7 +32,7 @@ const char *http_middleware_result_description (
 		default: break;
 	}
 
-	return http_middleware_result_description (HTTP_MIDDLEWARE_RESULT_NONE);
+	return cerver_http_middleware_result_description (HTTP_MIDDLEWARE_RESULT_NONE);
 
 }
 
@@ -128,14 +128,13 @@ u8 http_middlewares_append (
 // runs the before middlewares in order
 // returns true if the request continues to the route handler
 bool http_middlewares_run_before (
-	const HttpMiddlewares *middlewares,
-	const struct _HttpReceive *http_receive, const HttpRequest *request
+	const HttpMiddlewares *middlewares, struct _HttpReceive *http_receive
 ) {
 
 	bool next = true;
 
 	for (size_t idx = 0; next && (idx < middlewares->n_before); idx++) {
-		next = middlewares->before[idx] (http_receive, request) != HTTP_MIDDLEWARE_RESULT_STOP;
+		next = middlewares->before[idx] (http_receive) != HTTP_MIDDLEWARE_RESULT_STOP;
 	}
 
 	return next;
@@ -144,12 +143,11 @@ bool http_middlewares_run_before (
 
 // runs the after middlewares in reverse order
 void http_middlewares_run_after (
-	const HttpMiddlewares *middlewares,
-	const struct _HttpReceive *http_receive, const HttpRequest *request
+	const HttpMiddlewares *middlewares, struct _HttpReceive *http_receive
 ) {
 
 	for (size_t idx = middlewares->n_after; idx > 0; idx--) {
-		middlewares->after[idx - 1] (http_receive, request);
+		middlewares->after[idx - 1] (http_receive);
 	}
 
 }

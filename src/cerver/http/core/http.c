@@ -68,7 +68,7 @@
 #include "cerver/utils/utils.h"
 
 // the first character of the file of a key that is a JWK (RFC 7517): the start of its object
-#define HTTP_CERVER_JWT_JWK_START			'{'
+#define CERVER_HTTP_JWT_JWK_START			'{'
 
 HttpResponse *oki_doki = NULL;
 HttpResponse *bad_request_error = NULL;
@@ -99,7 +99,7 @@ static const char *upgrade_required_json = { "{\"error\": \"Upgrade to WebSocket
 static const char *web_socket_unavailable_json = { "{\"error\": \"Too many WebSocket connections!\"}" };
 static const char *not_ready_json = { "{\"error\": \"Not ready!\"}" };
 
-static const char *http_cerver_retry_after_header = { "Retry-After" };
+static const char *cerver_http_retry_after_header = { "Retry-After" };
 
 // the HTTP cervers of the process that hold a reference to the shared state
 static DoubleList *http_cervers = NULL;
@@ -107,17 +107,13 @@ static pthread_mutex_t http_cervers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #pragma region http
 
-HttpCerver *http_cerver_new (void) {
+HttpCerver *cerver_http_new (void) {
 
 	HttpCerver *http_cerver = (HttpCerver *) malloc (sizeof (HttpCerver));
 	if (http_cerver) {
 		http_cerver->cerver = NULL;
 
 		http_cerver->static_paths = NULL;
-
-		http_cerver->routes = NULL;
-
-		http_cerver->main_route = NULL;
 
 		http_cerver->tree = NULL;
 
@@ -127,15 +123,15 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->not_found = NULL;
 
 		http_cerver->uploads_path_len = 0;
-		(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
+		(void) memset (http_cerver->uploads_path, 0, CERVER_HTTP_UPLOADS_PATH_SIZE);
 
-		http_cerver->uploads_file_mode = HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE;
+		http_cerver->uploads_file_mode = CERVER_HTTP_DEFAULT_UPLOADS_FILE_MODE;
 		http_cerver->uploads_filename_generator = NULL;
 
-		http_cerver->uploads_dir_mode = HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE;
+		http_cerver->uploads_dir_mode = CERVER_HTTP_DEFAULT_UPLOADS_DIR_MODE;
 		http_cerver->uploads_dirname_generator = NULL;
 
-		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
+		http_cerver->uploads_delete_when_done = CERVER_HTTP_DEFAULT_UPLOADS_DELETE;
 
 		http_cerver->uploads_sequence = 0;
 
@@ -147,16 +143,16 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
-		http_cerver->jwt_max_size = HTTP_CERVER_DEFAULT_JWT_MAX_SIZE;
-		http_cerver->jwt_require_expiration = HTTP_CERVER_DEFAULT_JWT_REQUIRE_EXPIRATION;
-		http_cerver->jwt_leeway_seconds = HTTP_CERVER_DEFAULT_JWT_LEEWAY_SECONDS;
+		http_cerver->jwt_max_size = CERVER_HTTP_DEFAULT_JWT_MAX_SIZE;
+		http_cerver->jwt_require_expiration = CERVER_HTTP_DEFAULT_JWT_REQUIRE_EXPIRATION;
+		http_cerver->jwt_leeway_seconds = CERVER_HTTP_DEFAULT_JWT_LEEWAY_SECONDS;
 		http_cerver->jwt_issuer = NULL;
 		http_cerver->jwt_subject = NULL;
 		http_cerver->jwt_audience = NULL;
 
 		http_cerver->n_origins = 0;
 		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
-			http_origin_reset (&http_cerver->origins_whitelist[i]);
+			cerver_http_origin_reset (&http_cerver->origins_whitelist[i]);
 
 		http_cerver->custom_data = NULL;
 		http_cerver->delete_custom_data = NULL;
@@ -171,13 +167,14 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
 
-		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->enable_admin_routes = CERVER_HTTP_DEFAULT_ENABLE_ADMIN;
 		http_cerver->admin_routes_ready = false;
-		http_cerver->enable_admin_info_route = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO;
-		http_cerver->enable_admin_head_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS;
-		http_cerver->enable_admin_options_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS;
+		http_cerver->admin_path = NULL;
+		http_cerver->enable_admin_info_route = CERVER_HTTP_DEFAULT_ENABLE_ADMIN_INFO;
+		http_cerver->enable_admin_head_handlers = CERVER_HTTP_DEFAULT_ENABLE_ADMIN_HEADS;
+		http_cerver->enable_admin_options_handlers = CERVER_HTTP_DEFAULT_ENABLE_ADMIN_OPTIONS;
 
-		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
+		http_cerver->enable_admin_routes_auth = CERVER_HTTP_DEFAULT_ENABLE_ADMIN_AUTH;
 		http_cerver->admin_auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
 		http_cerver->admin_decode_data = NULL;
 		http_cerver->admin_delete_decoded_data = NULL;
@@ -186,8 +183,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->admin_routes_custom_data = NULL;
 		http_cerver->delete_admin_routes_custom_data = NULL;
 
-		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
-		http_origin_reset (&http_cerver->admin_origin);
+		http_cerver->enable_admin_cors_headers = CERVER_HTTP_DEFAULT_ENABLE_ADMIN_CORS;
+		cerver_http_origin_reset (&http_cerver->admin_origin);
 
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_workers = NULL;
@@ -195,19 +192,19 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->mutex = NULL;
 
-		http_cerver->max_body_size = HTTP_CERVER_DEFAULT_MAX_BODY_SIZE;
-		http_cerver->max_url_size = HTTP_CERVER_DEFAULT_MAX_URL_SIZE;
-		http_cerver->max_header_size = HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE;
-		http_cerver->max_headers = HTTP_CERVER_DEFAULT_MAX_HEADERS;
-		http_cerver->max_multipart_parts = HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS;
-		http_cerver->max_file_size = HTTP_CERVER_DEFAULT_MAX_FILE_SIZE;
-		http_cerver->max_custom_header_size = HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE;
+		http_cerver->max_body_size = CERVER_HTTP_DEFAULT_MAX_BODY_SIZE;
+		http_cerver->max_url_size = CERVER_HTTP_DEFAULT_MAX_URL_SIZE;
+		http_cerver->max_header_size = CERVER_HTTP_DEFAULT_MAX_HEADER_SIZE;
+		http_cerver->max_headers = CERVER_HTTP_DEFAULT_MAX_HEADERS;
+		http_cerver->max_multipart_parts = CERVER_HTTP_DEFAULT_MAX_MULTIPART_PARTS;
+		http_cerver->max_file_size = CERVER_HTTP_DEFAULT_MAX_FILE_SIZE;
+		http_cerver->max_custom_header_size = CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE;
 
 		http_cerver->n_limited_requests = 0;
 
-		http_cerver->headers_timeout = HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT_MILLISECONDS;
-		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS;
-		http_cerver->idle_timeout = HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
+		http_cerver->headers_timeout = CERVER_HTTP_DEFAULT_HEADERS_TIMEOUT_MILLISECONDS;
+		http_cerver->request_timeout = CERVER_HTTP_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS;
+		http_cerver->idle_timeout = CERVER_HTTP_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 
 		http_cerver->send_timeout = 0;
 
@@ -217,13 +214,13 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->n_unanswered_requests = 0;
 
-		http_cerver->date_header = HTTP_CERVER_DEFAULT_DATE_HEADER;
-		http_cerver->request_id = HTTP_CERVER_DEFAULT_REQUEST_ID;
+		http_cerver->date_header = CERVER_HTTP_DEFAULT_DATE_HEADER;
+		http_cerver->request_id = CERVER_HTTP_DEFAULT_REQUEST_ID;
 
 		http_cerver->compression_min_size = HTTP_COMPRESSION_DEFAULT_MIN_SIZE;
 		http_cerver->compression_level = HTTP_COMPRESSION_DEFAULT_LEVEL;
 
-		http_cerver->trusted_proxies = HTTP_CERVER_DEFAULT_TRUSTED_PROXIES;
+		http_cerver->trusted_proxies = CERVER_HTTP_DEFAULT_TRUSTED_PROXIES;
 		http_cerver->n_trusted_proxies = 0;
 		(void) memset (
 			http_cerver->trusted_proxies_networks, 0,
@@ -232,10 +229,10 @@ HttpCerver *http_cerver_new (void) {
 
 		(void) memset (
 			http_cerver->n_responses_by_status, 0,
-			HTTP_CERVER_RESPONSES_STATUS_SIZE * sizeof (size_t)
+			CERVER_HTTP_RESPONSES_STATUS_SIZE * sizeof (size_t)
 		);
 
-		http_cerver->half_close_is_gone = HTTP_CERVER_DEFAULT_HALF_CLOSE_IS_GONE;
+		http_cerver->half_close_is_gone = CERVER_HTTP_DEFAULT_HALF_CLOSE_IS_GONE;
 
 		http_cerver->parser_lenient = HTTP_PARSER_LENIENT_NONE;
 
@@ -245,8 +242,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->keep_alive = false;
 		http_cerver->keep_alive_configured = false;
-		http_cerver->keep_alive_timeout = HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
-		http_cerver->keep_alive_requests = HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS;
+		http_cerver->keep_alive_timeout = CERVER_HTTP_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
+		http_cerver->keep_alive_requests = CERVER_HTTP_DEFAULT_KEEP_ALIVE_REQUESTS;
 
 		http_cerver->n_reused_connections = 0;
 
@@ -275,11 +272,11 @@ HttpCerver *http_cerver_new (void) {
 }
 
 // the bucket of a connection by its requests: the first power of two that is not less than them
-static unsigned int http_cerver_connection_requests_bucket (const size_t n_requests) {
+static unsigned int cerver_http_connection_requests_bucket (const size_t n_requests) {
 
 	unsigned int bucket = 0;
 	while (
-		(bucket < (HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1))
+		(bucket < (CERVER_HTTP_CONNECTION_REQUESTS_BUCKETS - 1))
 		&& (((size_t) 1 << bucket) < n_requests)
 	) {
 		bucket += 1;
@@ -289,11 +286,11 @@ static unsigned int http_cerver_connection_requests_bucket (const size_t n_reque
 
 }
 
-void http_cerver_connection_ended (HttpCerver *http_cerver, const size_t n_requests) {
+void cerver_http_connection_ended (HttpCerver *http_cerver, const size_t n_requests) {
 
 	if (http_cerver && n_requests) {
 		CERVER_STATS_ADD (
-			http_cerver->connection_requests[http_cerver_connection_requests_bucket (n_requests)], 1
+			http_cerver->connection_requests[cerver_http_connection_requests_bucket (n_requests)], 1
 		);
 
 		CERVER_STATS_ADD (http_cerver->n_connection_requests, n_requests);
@@ -301,17 +298,14 @@ void http_cerver_connection_ended (HttpCerver *http_cerver, const size_t n_reque
 
 }
 
-void http_cerver_delete (void *http_cerver_ptr) {
+void cerver_http_delete (void *cerver_http_ptr) {
 
-	if (http_cerver_ptr) {
-		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
+	if (cerver_http_ptr) {
+		HttpCerver *http_cerver = (HttpCerver *) cerver_http_ptr;
 
 		dlist_delete (http_cerver->static_paths);
 
-		// the endpoints of the first routes API keep references to their routes
 		http_tree_delete (http_cerver->tree);
-
-		dlist_delete (http_cerver->routes);
 
 		str_delete (http_cerver->jwt_opt_key_name);
 		cerver_jwt_key_delete (http_cerver->jwt_private_key);
@@ -349,33 +343,33 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		http_web_socket_registry_delete (http_cerver->web_sockets);
 
-		http_cerver_pools_delete (http_cerver);
+		cerver_http_pools_delete (http_cerver);
 
 		str_delete (http_cerver->health_route);
 		str_delete (http_cerver->ready_route);
 
-		free (http_cerver_ptr);
+		str_delete (http_cerver->admin_path);
+
+		free (cerver_http_ptr);
 	}
 
 }
 
-HttpCerver *http_cerver_get (Cerver *cerver) {
+HttpCerver *cerver_http_get (Cerver *cerver) {
 
 	return cerver ? (HttpCerver *) cerver->cerver_data : NULL;
 
 }
 
-HttpCerver *http_cerver_create (Cerver *cerver) {
+HttpCerver *cerver_http_create (Cerver *cerver) {
 
-	HttpCerver *http_cerver = http_cerver_new ();
+	HttpCerver *http_cerver = cerver_http_new ();
 	if (http_cerver) {
 		http_cerver->cerver = cerver;
 
 		http_cerver->static_paths = dlist_init (
-			http_static_path_delete, http_static_path_comparator
+			cerver_http_static_path_delete, cerver_http_static_path_comparator
 		);
-
-		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
 		http_cerver->tree = http_tree_create (http_cerver);
 
@@ -383,7 +377,7 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 		http_cerver->not_found = http_receive_handle_not_found_route;
 
-		http_cerver->jwt_alg = HTTP_CERVER_DEFAULT_JWT_ALGORITHM;
+		http_cerver->jwt_alg = CERVER_HTTP_DEFAULT_JWT_ALGORITHM;
 
 		http_cerver->admin_file_systems_stats = dlist_init (
 			http_admin_file_system_stats_delete, NULL
@@ -397,7 +391,7 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 		http_cerver->web_sockets = http_web_socket_registry_create ();
 
-		(void) http_cerver_pools_create (http_cerver);
+		(void) cerver_http_pools_create (http_cerver);
 	}
 
 	return http_cerver;
@@ -406,9 +400,9 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 // a JSON response of a rejected upgrade, with the Upgrade header,
 // and with one more header when its type is not HTTP_HEADER_UNDEFINED
-static HttpResponse *http_cerver_web_socket_response (
-	const http_status status, const char *json,
-	const http_header type, const char *value
+static HttpResponse *cerver_http_web_socket_response (
+	const CerverHttpStatus status, const char *json,
+	const CerverHttpHeader type, const char *value
 ) {
 
 	HttpResponse *response = (HttpResponse *) http_response_new ();
@@ -434,7 +428,7 @@ static HttpResponse *http_cerver_web_socket_response (
 }
 
 // the 503 of the ready route, with the Retry-After of the 503 of a request that was rejected
-static HttpResponse *http_cerver_not_ready_response (void) {
+static HttpResponse *cerver_http_not_ready_response (void) {
 
 	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
@@ -444,7 +438,7 @@ static HttpResponse *http_cerver_not_ready_response (void) {
 		(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
 		(void) http_response_add_content_length_header (response, json_len);
 		(void) http_response_header_add_with_name (
-			response, http_cerver_retry_after_header, HTTP_RESPONSE_RETRY_AFTER_SECONDS
+			response, cerver_http_retry_after_header, HTTP_RESPONSE_RETRY_AFTER_SECONDS
 		);
 
 		// the json is a static string
@@ -459,7 +453,7 @@ static HttpResponse *http_cerver_not_ready_response (void) {
 
 }
 
-static unsigned int http_cerver_init_responses (void) {
+static unsigned int cerver_http_init_responses (void) {
 
 	unsigned int retval = 1;
 
@@ -519,7 +513,7 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED, "error", "HTTP version not supported!"
 	);
 
-	upgrade_required_error = http_cerver_web_socket_response (
+	upgrade_required_error = cerver_http_web_socket_response (
 		HTTP_STATUS_UPGRADE_REQUIRED, upgrade_required_json, HTTP_HEADER_SEC_WEBSOCKET_VERSION, HTTP_WEB_SOCKET_VERSION
 	);
 
@@ -527,11 +521,11 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_FORBIDDEN, "error", "Forbidden!"
 	);
 
-	web_socket_unavailable_error = http_cerver_web_socket_response (
+	web_socket_unavailable_error = cerver_http_web_socket_response (
 		HTTP_STATUS_SERVICE_UNAVAILABLE, web_socket_unavailable_json, HTTP_HEADER_UNDEFINED, NULL
 	);
 
-	not_ready_error = http_cerver_not_ready_response ();
+	not_ready_error = cerver_http_not_ready_response ();
 
 	if (
 		oki_doki
@@ -553,19 +547,19 @@ static unsigned int http_cerver_init_responses (void) {
 }
 
 // the file of a key is a JWK when its first character that is not a space starts an object
-static bool http_cerver_init_jwt_key_is_jwk (
+static bool cerver_http_init_jwt_key_is_jwk (
 	const char *material, const size_t material_length
 ) {
 
 	size_t position = 0;
 	while ((position < material_length) && isspace ((unsigned char) material[position])) position += 1;
 
-	return (position < material_length) && (material[position] == HTTP_CERVER_JWT_JWK_START);
+	return (position < material_length) && (material[position] == CERVER_HTTP_JWT_JWK_START);
 
 }
 
 // the algorithms whose key is a secret: its file is its bytes, as they are
-static bool http_cerver_init_jwt_key_is_secret (const CerverJwtAlgorithm algorithm) {
+static bool cerver_http_init_jwt_key_is_secret (const CerverJwtAlgorithm algorithm) {
 
 	return (algorithm == CERVER_JWT_ALGORITHM_HS256)
 		|| (algorithm == CERVER_JWT_ALGORITHM_HS384)
@@ -574,17 +568,17 @@ static bool http_cerver_init_jwt_key_is_secret (const CerverJwtAlgorithm algorit
 }
 
 // the key of the content of a file, by what the file is: a JWK, a secret or a PEM
-static CerverJwtKey *http_cerver_init_read_jwt_key (
+static CerverJwtKey *cerver_http_init_read_jwt_key (
 	const HttpCerver *http_cerver,
 	const char *material, const size_t material_length,
 	const bool is_private, CerverJwtError *error
 ) {
 
-	if (http_cerver_init_jwt_key_is_jwk (material, material_length)) {
+	if (cerver_http_init_jwt_key_is_jwk (material, material_length)) {
 		return cerver_jwt_key_create_jwk (http_cerver->jwt_alg, material, material_length, error);
 	}
 
-	if (http_cerver_init_jwt_key_is_secret (http_cerver->jwt_alg)) {
+	if (cerver_http_init_jwt_key_is_secret (http_cerver->jwt_alg)) {
 		return cerver_jwt_key_create_secret (http_cerver->jwt_alg, material, material_length, error);
 	}
 
@@ -596,13 +590,13 @@ static CerverJwtKey *http_cerver_init_read_jwt_key (
 // it must have the type, the curve and the strength that the algorithm asks,
 // and the one that signs the tokens must be able to: a public key is not the private key of a cerver
 // returns the key, or NULL and the reason in error
-static CerverJwtKey *http_cerver_init_create_jwt_key (
+static CerverJwtKey *cerver_http_init_create_jwt_key (
 	const HttpCerver *http_cerver,
 	const char *material, const size_t material_length,
 	const bool is_private, CerverJwtError *error
 ) {
 
-	CerverJwtKey *key = http_cerver_init_read_jwt_key (
+	CerverJwtKey *key = cerver_http_init_read_jwt_key (
 		http_cerver, material, material_length, is_private, error
 	);
 
@@ -617,7 +611,7 @@ static CerverJwtKey *http_cerver_init_create_jwt_key (
 
 }
 
-static const char *http_cerver_init_jwt_key_name (const bool is_private) {
+static const char *cerver_http_init_jwt_key_name (const bool is_private) {
 
 	return is_private ? "private" : "public";
 
@@ -625,7 +619,7 @@ static const char *http_cerver_init_jwt_key_name (const bool is_private) {
 
 // reads the file of a key, its content is cleared after the key is created
 // returns the key, or NULL if it can not be used: the cerver does not start
-static CerverJwtKey *http_cerver_init_load_jwt_key (
+static CerverJwtKey *cerver_http_init_load_jwt_key (
 	const HttpCerver *http_cerver,
 	const String *filename, const bool is_private
 ) {
@@ -637,7 +631,7 @@ static CerverJwtKey *http_cerver_init_load_jwt_key (
 	char *material = file_read (filename->str, &material_length);
 	const bool read = (material != NULL);
 	if (read) {
-		key = http_cerver_init_create_jwt_key (
+		key = cerver_http_init_create_jwt_key (
 			http_cerver, material, material_length, is_private, &error
 		);
 
@@ -649,7 +643,7 @@ static CerverJwtKey *http_cerver_init_load_jwt_key (
 		cerver_log_success (
 			"Loaded cerver's %s http jwt %s key for %s!",
 			http_cerver->cerver->info->name,
-			http_cerver_init_jwt_key_name (is_private), cerver_jwt_algorithm_to_string (http_cerver->jwt_alg)
+			cerver_http_init_jwt_key_name (is_private), cerver_jwt_algorithm_to_string (http_cerver->jwt_alg)
 		);
 	}
 
@@ -657,7 +651,7 @@ static CerverJwtKey *http_cerver_init_load_jwt_key (
 		cerver_log_error (
 			"Failed to load cerver's %s http jwt %s key %s for %s: %s",
 			http_cerver->cerver->info->name,
-			http_cerver_init_jwt_key_name (is_private), filename->str,
+			cerver_http_init_jwt_key_name (is_private), filename->str,
 			cerver_jwt_algorithm_to_string (http_cerver->jwt_alg),
 			read ? cerver_jwt_error_to_string (error) : "The file can not be read"
 		);
@@ -668,14 +662,14 @@ static CerverJwtKey *http_cerver_init_load_jwt_key (
 }
 
 // a key that can not be used is an error, so the cerver does not start
-static unsigned int http_cerver_init_load_jwt_keys (
+static unsigned int cerver_http_init_load_jwt_keys (
 	HttpCerver *http_cerver
 ) {
 
 	unsigned int errors = 0;
 
 	if (http_cerver->jwt_opt_key_name && !http_cerver->jwt_private_key) {
-		http_cerver->jwt_private_key = http_cerver_init_load_jwt_key (
+		http_cerver->jwt_private_key = cerver_http_init_load_jwt_key (
 			http_cerver, http_cerver->jwt_opt_key_name, true
 		);
 
@@ -683,7 +677,7 @@ static unsigned int http_cerver_init_load_jwt_keys (
 	}
 
 	if (http_cerver->jwt_opt_pub_key_name && !http_cerver->jwt_public_key) {
-		http_cerver->jwt_public_key = http_cerver_init_load_jwt_key (
+		http_cerver->jwt_public_key = cerver_http_init_load_jwt_key (
 			http_cerver, http_cerver->jwt_opt_pub_key_name, false
 		);
 
@@ -695,8 +689,8 @@ static unsigned int http_cerver_init_load_jwt_keys (
 }
 
 // the common responses are global, so they are reset
-// for the next cerver that calls http_cerver_init ()
-static void http_cerver_end_responses (void) {
+// for the next cerver that calls cerver_http_init ()
+static void cerver_http_end_responses (void) {
 
 	http_response_delete (oki_doki);
 	oki_doki = NULL;
@@ -741,40 +735,38 @@ static void http_cerver_end_responses (void) {
 }
 
 // releases the state shared by every HTTP cerver of the process
-static void http_cerver_global_end (void) {
+static void cerver_http_global_end (void) {
 
 	http_responses_end ();
 
-	http_jwt_end_pool ();
+	cerver_http_jwt_end_pool ();
 
-	http_cerver_end_responses ();
+	cerver_http_end_responses ();
 
 	http_multi_parts_end_pool ();
 
 }
 
-// creates the state shared by every HTTP cerver of the process,
-// the common responses are compiled with the default headers of this cerver
+// creates the state shared by every HTTP cerver of the process, that belongs to none of them:
+// the default headers of a response are the ones of the cerver of its request
 // what was created is released if something fails
-static unsigned int http_cerver_global_init (
-	const HttpCerver *http_cerver
-) {
+static unsigned int cerver_http_global_init (void) {
 
 	unsigned int errors = 0;
 
 	// init HTTP jwt pool
-	errors |= http_jwt_init_pool ();
+	errors |= cerver_http_jwt_init_pool ();
 
 	// init HTTP responses pool
-	errors |= http_responses_init (http_cerver);
+	errors |= http_responses_init ();
 
 	// init common responses
-	errors |= http_cerver_init_responses ();
+	errors |= cerver_http_init_responses ();
 
 	// init multi-parts pool
 	errors |= http_multi_parts_init_pool ();
 
-	if (errors) http_cerver_global_end ();
+	if (errors) cerver_http_global_end ();
 
 	return errors;
 
@@ -789,7 +781,7 @@ static int http_cervers_compare (const void *one, const void *two) {
 // the shared state lives while the list has a cerver
 static void http_cervers_release (void) {
 
-	http_cerver_global_end ();
+	cerver_http_global_end ();
 
 	dlist_delete (http_cervers);
 	http_cervers = NULL;
@@ -809,7 +801,7 @@ static unsigned int http_cervers_add (
 
 	if (!http_cervers) http_cervers = dlist_init (NULL, http_cervers_compare);
 
-	if (dlist_is_empty (http_cervers)) errors |= http_cerver_global_init (http_cerver);
+	if (dlist_is_empty (http_cervers)) errors |= cerver_http_global_init ();
 
 	if (!errors) errors |= (unsigned int) dlist_insert_at_end_unsafe (http_cervers, http_cerver);
 
@@ -821,8 +813,7 @@ static unsigned int http_cervers_add (
 
 }
 
-// the last HTTP cerver of the process releases the shared state,
-// otherwise the responses producer follows a cerver that is still alive
+// the last HTTP cerver of the process releases the shared state
 static void http_cervers_remove (
 	HttpCerver *http_cerver
 ) {
@@ -833,8 +824,6 @@ static void http_cervers_remove (
 
 	if (dlist_is_empty (http_cervers)) http_cervers_release ();
 
-	else http_responses_follow (http_cerver, (const HttpCerver *) dlist_start (http_cervers)->data);
-
 	http_cerver->global_reference = false;
 
 	(void) pthread_mutex_unlock (&http_cervers_mutex);
@@ -843,7 +832,7 @@ static void http_cervers_remove (
 
 // the connections are kept between requests by default only in an event loop, where an idle one
 // costs no thread; a cerver that handles each connection with a thread keeps them only when it was asked to
-static void http_cerver_init_keep_alive (HttpCerver *http_cerver) {
+static void cerver_http_init_keep_alive (HttpCerver *http_cerver) {
 
 	const bool events = (http_cerver->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS);
 
@@ -861,7 +850,7 @@ static void http_cerver_init_keep_alive (HttpCerver *http_cerver) {
 
 // an event loop answers the health and the ready routes by itself, also when every thread is busy;
 // with the other handler types they are answered by the thread that has the connection, that waits for a thread
-static void http_cerver_init_health (const HttpCerver *http_cerver) {
+static void cerver_http_init_health (const HttpCerver *http_cerver) {
 
 	const bool events = (http_cerver->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS);
 
@@ -875,7 +864,7 @@ static void http_cerver_init_health (const HttpCerver *http_cerver) {
 
 }
 
-static unsigned int http_cerver_init_internal (
+static unsigned int cerver_http_init_internal (
 	HttpCerver *http_cerver
 ) {
 
@@ -885,50 +874,37 @@ static unsigned int http_cerver_init_internal (
 	cerver_log_msg ("Initializing HTTP cerver...");
 	#endif
 
-	http_cerver_init_keep_alive (http_cerver);
+	cerver_http_init_keep_alive (http_cerver);
 
 	// the thpool of the cerver was started before, the named pools start here
-	errors |= http_cerver_pools_start (http_cerver);
+	errors |= cerver_http_pools_start (http_cerver);
 
-	http_cerver_init_health (http_cerver);
+	cerver_http_init_health (http_cerver);
 
 	// the jwt pool, the responses and the multi-parts pool
 	if (!http_cerver->global_reference) errors |= http_cervers_add (http_cerver);
 
 	// load jwt keys
-	errors |= http_cerver_init_load_jwt_keys (http_cerver);
+	errors |= cerver_http_init_load_jwt_keys (http_cerver);
 
 	return errors;
 
 }
 
-// the admin routes are children of the main route of the first routes API,
-// or endpoints of the first top level group if the cerver only uses groups
+// the admin routes are the endpoints of a top level group of their own, so they take no setting of the groups
+// of the application (its authentication, its middlewares, its pool) and do not depend on their order
 // they are added only once, the routes can be compiled before the cerver starts
-void http_cerver_init_admin_routes (
+void cerver_http_init_admin_routes (
 	HttpCerver *http_cerver
 ) {
 
-	if (dlist_size (http_cerver->routes)) {
-		if (!http_cerver->main_route) {
-			http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
-		}
-	}
-
 	if (http_cerver->enable_admin_routes && !http_cerver->admin_routes_ready) {
-		if (http_cerver->main_route) {
-			(void) http_cerver_admin_init (
-				http_cerver,
-				(HttpRoute *) http_cerver->main_route
-			);
-		}
+		HttpGroup *admin = cerver_http_group_create (
+			http_cerver,
+			http_cerver->admin_path ? http_cerver->admin_path->str : CERVER_HTTP_DEFAULT_ADMIN_PATH
+		);
 
-		else if (dlist_size (http_cerver->tree->groups)) {
-			(void) http_cerver_admin_group_init (
-				http_cerver,
-				(HttpGroup *) dlist_start (http_cerver->tree->groups)->data
-			);
-		}
+		(void) cerver_http_admin_group_init (http_cerver, admin);
 
 		http_cerver->admin_routes_ready = true;
 	}
@@ -937,7 +913,7 @@ void http_cerver_init_admin_routes (
 
 // builds the routes tree, a registration error stops the cerver
 // returns 0 on success, 1 on error
-static u8 http_cerver_init_routes (
+static u8 cerver_http_init_routes (
 	HttpCerver *http_cerver
 ) {
 
@@ -945,7 +921,7 @@ static u8 http_cerver_init_routes (
 	cerver_log_msg ("Loading HTTP routes...");
 	#endif
 
-	http_cerver_init_admin_routes (http_cerver);
+	cerver_http_init_admin_routes (http_cerver);
 
 	const u8 retval = http_tree_compile (http_cerver->tree);
 
@@ -961,13 +937,13 @@ static u8 http_cerver_init_routes (
 
 }
 
-u8 http_cerver_init (HttpCerver *http_cerver) {
+u8 cerver_http_init (HttpCerver *http_cerver) {
 
 	u8 retval = 1;
 
 	if (http_cerver) {
-		if (!http_cerver_init_internal (http_cerver)) {
-			retval = http_cerver_init_routes (http_cerver);
+		if (!cerver_http_init_internal (http_cerver)) {
+			retval = cerver_http_init_routes (http_cerver);
 		}
 	}
 
@@ -975,10 +951,10 @@ u8 http_cerver_init (HttpCerver *http_cerver) {
 
 }
 
-// destroy values allocated in http_cerver_init (),
+// destroy values allocated in cerver_http_init (),
 // the shared state is released by the last HTTP cerver of the process
 // a cerver that never started has no reference
-void http_cerver_end (HttpCerver *http_cerver) {
+void cerver_http_end (HttpCerver *http_cerver) {
 
 	if (http_cerver && http_cerver->global_reference) {
 		http_cervers_remove (http_cerver);

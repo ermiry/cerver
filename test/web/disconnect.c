@@ -20,16 +20,17 @@
 #include <cerver/handler/handler.h>
 
 #include <cerver/http/core/admin.h>
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
 
@@ -98,54 +99,40 @@ static void disconnect_sleep (void) {
 }
 
 // GET /ok, POST /echo
-static void disconnect_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void disconnect_ok_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /upload, the files are discarded, so the uploads path ends empty
-static void disconnect_upload_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void disconnect_upload_handler (CerverHttpContext *context) {
 
-	http_request_multi_part_discard_files (request);
+	cerver_http_request_discard_files (context);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /gone waits until its client (nginx) leaves, and answers anyway
-static void disconnect_gone_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_gone_handler (CerverHttpContext *context) {
 
 	const double deadline = disconnect_now () + ((double) DISCONNECT_GONE_WAIT / DISCONNECT_MILLISECONDS_PER_SECOND);
 
-	HttpClientState state = http_receive_get_client_state (http_receive);
+	CerverHttpClientState state = cerver_http_context_client_state (context);
 	while ((state == HTTP_CLIENT_STATE_CONNECTED) && (disconnect_now () < deadline)) {
 		disconnect_sleep ();
-		state = http_receive_get_client_state (http_receive);
+		state = cerver_http_context_client_state (context);
 	}
 
 	(void) __atomic_add_fetch (&gone_states[state], 1, __ATOMIC_SEQ_CST);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /slow takes a while, so it is still running when the cerver starts to drain
-static void disconnect_slow_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_slow_handler (CerverHttpContext *context) {
 
 	const struct timespec wait = {
 		DISCONNECT_SLOW_WAIT / DISCONNECT_MILLISECONDS_PER_SECOND,
@@ -154,35 +141,29 @@ static void disconnect_slow_handler (
 
 	(void) nanosleep (&wait, NULL);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /large, its socket keeps a small buffer, so the response never fits in it
-static void disconnect_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_large_handler (CerverHttpContext *context) {
 
 	const int size = DISCONNECT_SMALL_BUFFER;
-	(void) setsockopt (http_receive_get_sock_fd (http_receive), SOL_SOCKET, SO_SNDBUF, &size, sizeof (int));
+	(void) setsockopt (cerver_http_context_socket (context), SOL_SOCKET, SO_SNDBUF, &size, sizeof (int));
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, disconnect_large_body, DISCONNECT_LARGE_SIZE);
+	(void) cerver_http_response_send_content (
+		context, HTTP_CONTENT_TYPE_HTML, disconnect_large_body, DISCONNECT_LARGE_SIZE
+	);
 
 }
 
 // GET and POST /crash, the instance with DISCONNECT_CRASH exits without answering,
 // like a process that dies in the middle of a request
-static void disconnect_crash_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_crash_handler (CerverHttpContext *context) {
 
 	if (getenv (DISCONNECT_CRASH_VARIABLE)) _exit (DISCONNECT_CRASH_EXIT);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -195,13 +176,9 @@ static void *disconnect_drain_thread (void *cerver_ptr) {
 }
 
 // GET /drain starts to stop the cerver after its answer, its connections are drained
-static void disconnect_drain_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void disconnect_drain_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 	pthread_t thread_id;
 	if (!pthread_create (&thread_id, NULL, disconnect_drain_thread, disconnect_cerver)) {
@@ -211,21 +188,17 @@ static void disconnect_drain_handler (
 }
 
 // GET /states, the states of the clients that the gone handler found
-static void disconnect_states_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_states_handler (CerverHttpContext *context) {
 
 	char json[DISCONNECT_JSON_SIZE] = { 0 };
-	(void) snprintf (
+	const int length = snprintf (
 		json, DISCONNECT_JSON_SIZE, "{\"connected\": %u, \"closed\": %u, \"reset\": %u}",
 		__atomic_load_n (&gone_states[HTTP_CLIENT_STATE_CONNECTED], __ATOMIC_SEQ_CST),
 		__atomic_load_n (&gone_states[HTTP_CLIENT_STATE_CLOSED], __ATOMIC_SEQ_CST),
 		__atomic_load_n (&gone_states[HTTP_CLIENT_STATE_RESET], __ATOMIC_SEQ_CST)
 	);
 
-	(void) http_response_json_custom_send (http_receive, HTTP_STATUS_OK, json);
+	(void) cerver_http_response_send_json (context, json, (size_t) length);
 
 }
 
@@ -249,51 +222,36 @@ static unsigned int disconnect_uploads_count (void) {
 }
 
 // GET /uploads, the files and the directories left in the uploads path
-static void disconnect_uploads_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void disconnect_uploads_handler (CerverHttpContext *context) {
 
 	char json[DISCONNECT_JSON_SIZE] = { 0 };
-	(void) snprintf (json, DISCONNECT_JSON_SIZE, "{\"uploads\": %u}", disconnect_uploads_count ());
+	const int length = snprintf (json, DISCONNECT_JSON_SIZE, "{\"uploads\": %u}", disconnect_uploads_count ());
 
-	(void) http_response_json_custom_send (http_receive, HTTP_STATUS_OK, json);
-
-}
-
-static void disconnect_route (
-	HttpCerver *http_cerver, const RequestMethod method, const char *path,
-	void (*handler) (const HttpReceive *, const HttpRequest *)
-) {
-
-	HttpRoute *route = http_route_create (method, path, handler);
-	http_cerver_route_register (http_cerver, route);
+	(void) cerver_http_response_send_json (context, json, (size_t) length);
 
 }
 
-static void disconnect_routes (HttpCerver *http_cerver) {
+static void disconnect_routes (CerverHttp *http_cerver) {
 
-	// the admin routes are its children: GET /instance/cerver/metrics
-	HttpRoute *instance_route = http_route_create (REQUEST_METHOD_GET, "instance", disconnect_ok_handler);
-	http_cerver_route_register (http_cerver, instance_route);
-	http_cerver_set_main_route (http_cerver, instance_route);
+	CerverHttpGroup *instance = cerver_http_group_create (http_cerver, "/instance");
+	(void) cerver_http_group_root_add (instance, REQUEST_METHOD_GET, disconnect_ok_handler);
 
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "ok", disconnect_ok_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_POST, "echo", disconnect_ok_handler);
+	CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
-	HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", disconnect_upload_handler);
-	http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
-	http_cerver_route_register (http_cerver, upload_route);
+	(void) cerver_http_group_get (main_group, "ok", disconnect_ok_handler);
+	(void) cerver_http_group_post (main_group, "echo", disconnect_ok_handler);
 
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "gone", disconnect_gone_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "slow", disconnect_slow_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "large", disconnect_large_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "crash", disconnect_crash_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_POST, "crash", disconnect_crash_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "drain", disconnect_drain_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "states", disconnect_states_handler);
-	disconnect_route (http_cerver, REQUEST_METHOD_GET, "uploads", disconnect_uploads_handler);
+	CerverHttpEndpoint *upload = cerver_http_group_post (main_group, "upload", disconnect_upload_handler);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+	(void) cerver_http_group_get (main_group, "gone", disconnect_gone_handler);
+	(void) cerver_http_group_get (main_group, "slow", disconnect_slow_handler);
+	(void) cerver_http_group_get (main_group, "large", disconnect_large_handler);
+	(void) cerver_http_group_get (main_group, "crash", disconnect_crash_handler);
+	(void) cerver_http_group_post (main_group, "crash", disconnect_crash_handler);
+	(void) cerver_http_group_get (main_group, "drain", disconnect_drain_handler);
+	(void) cerver_http_group_get (main_group, "states", disconnect_states_handler);
+	(void) cerver_http_group_get (main_group, "uploads", disconnect_uploads_handler);
 
 }
 
@@ -301,7 +259,6 @@ static void disconnect_configure (Cerver *cerver) {
 
 	(void) cerver_set_bind_address (cerver, test_address ());
 	cerver_set_thpool_n_threads (cerver, DISCONNECT_THREADS);
-	cerver_set_handler_type (cerver, test_handler_type ());
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
@@ -309,19 +266,24 @@ static void disconnect_configure (Cerver *cerver) {
 	cerver_set_drain_policy (cerver, CERVER_DRAIN_POLICY_RUN);
 	cerver_set_drain_timeout (cerver, DISCONNECT_DRAIN_TIMEOUT);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
+	// the gone handler waits for its client and the slow one sleeps: the handlers run in threads
+	(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
-	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
+	if (test_keep_alive_is_set ()) cerver_http_set_keep_alive (http_cerver, test_keep_alive ());
 
-	http_cerver_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
-	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+	cerver_http_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
 
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_uploads_path (http_cerver, DISCONNECT_UPLOADS_PATH);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_dirname_generator (http_cerver);
 
-	http_cerver_enable_admin_routes (http_cerver, true);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+
+	// GET /instance/cerver/metrics
+	cerver_http_enable_admin_routes (http_cerver, true);
+	cerver_http_admin_set_path (http_cerver, "/instance");
 
 	disconnect_routes (http_cerver);
 
@@ -329,7 +291,7 @@ static void disconnect_configure (Cerver *cerver) {
 
 static bool disconnect_resources_create (void) {
 
-	bool created = !mkdir (DISCONNECT_UPLOADS_PATH, HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE) || (errno == EEXIST);
+	bool created = !mkdir (DISCONNECT_UPLOADS_PATH, CERVER_HTTP_DEFAULT_UPLOADS_DIR_MODE) || (errno == EEXIST);
 
 	disconnect_large_body = (char *) malloc (DISCONNECT_LARGE_SIZE);
 	if (disconnect_large_body) {
@@ -361,7 +323,7 @@ int main (int argc, char **argv) {
 			disconnect_configure (disconnect_cerver);
 
 			if (!cerver_start (disconnect_cerver)) {
-				http_cerver_all_stats_print ((HttpCerver *) disconnect_cerver->cerver_data);
+				cerver_http_all_stats_print (cerver_http_get (disconnect_cerver));
 				(void) cerver_teardown (disconnect_cerver);
 			}
 

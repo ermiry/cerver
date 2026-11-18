@@ -83,12 +83,14 @@ static void test_settings_backend (void) {
 
 }
 
-// the I/O threads of a cerver: a count, or one for each processor; and whether each one stays in its processor
+// the I/O threads of a cerver: a count, or one for each processor; and whether each one stays in its processor;
+// a web cerver starts with one for each processor
 static void test_settings_io_threads (void) {
 
 	Cerver *cerver = settings_test_cerver ();
 
-	test_check_unsigned_eq (cerver->n_io_threads, CERVER_DEFAULT_IO_THREADS, NULL);
+	test_check_unsigned_eq (cerver->n_io_threads, CERVER_IO_THREADS_PER_CORE, NULL);
+	test_check_int_eq ((int) cerver->handler_type, (int) CERVER_HANDLER_TYPE_EVENTS, NULL);
 	test_check_false (cerver->io_threads_affinity);
 
 	cerver_set_io_threads (cerver, SETTINGS_TEST_IO_THREADS);

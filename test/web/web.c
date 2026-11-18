@@ -11,14 +11,15 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -43,7 +44,7 @@ static void web_finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -54,15 +55,10 @@ static void web_finish (void) {
 #pragma region routes
 
 // GET /render
-static void main_render_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void main_render_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	if (http_response_send_file (
-		http_receive, HTTP_STATUS_OK, "./public/index.html"
+	if (cerver_http_response_send_file (
+		context, "./public/index.html"
 	)) {
 		cerver_log_error (
 			"Failed to send ./public/index.html"
@@ -72,36 +68,26 @@ static void main_render_handler (
 }
 
 // GET /render/text
-// test http_response_render_text ()
-static void text_render_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+// test cerver_http_response_send_text ()
+static void text_render_handler (CerverHttpContext *context) {
 
 	const char *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
-	if (http_response_render_text (http_receive, HTTP_STATUS_OK, text, text_len)) {
+	if (cerver_http_response_send_text (context, text, text_len)) {
 		cerver_log_error ("text_handler () has failed!");
 	}
 
 }
 
 // GET /render/json
-// test http_response_render_json ()
-static void json_render_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+// test cerver_http_response_send_json ()
+static void json_render_handler (CerverHttpContext *context) {
 
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
-	if (http_response_render_json (http_receive, HTTP_STATUS_OK, json, json_len)) {
+	if (cerver_http_response_send_json (context, json, json_len)) {
 		cerver_log_error ("json_handler () has failed!");
 	}
 
@@ -138,28 +124,29 @@ int main (void) {
 		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, test_handler_type ());
 		cerver_set_events_backend (web_cerver, test_events_backend ());
 		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
 
-		http_cerver_static_path_add (http_cerver, "./public");
+		// the render route and the static paths read files: the handlers run in threads
+		(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
+
+		cerver_http_static_path_add (http_cerver, "./public");
+
+		CerverHttpGroup *render = cerver_http_group_create (http_cerver, "/render");
 
 		// GET /render
-		HttpRoute *render_route = http_route_create (REQUEST_METHOD_GET, "render", main_render_handler);
-		http_cerver_route_register (http_cerver, render_route);
+		(void) cerver_http_group_root_add (render, REQUEST_METHOD_GET, main_render_handler);
 
 		// GET /render/text
-		HttpRoute *render_text_route = http_route_create (REQUEST_METHOD_GET, "render/text", text_render_handler);
-		http_cerver_route_register (http_cerver, render_text_route);
+		(void) cerver_http_group_get (render, "text", text_render_handler);
 
 		// GET /render/json
-		HttpRoute *render_json_route = http_route_create (REQUEST_METHOD_GET, "render/json", json_render_handler);
-		http_cerver_route_register (http_cerver, render_json_route);
+		(void) cerver_http_group_get (render, "json", json_render_handler);
 
 		if (!cerver_start (web_cerver)) {
 			web_finish ();

@@ -14,6 +14,7 @@
 #include <cerver/crypto/signature.h>
 
 #include <cerver/http/core/http.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/security/auth.h>
 
 #include <cerver/json/json.h>
@@ -177,11 +178,11 @@ static u8 tokens_cerver_init (
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, algorithm), 0, NULL);
-	if (private_file) http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_file);
-	if (public_file) http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_file);
+	test_check_unsigned_eq (cerver_http_auth_set_jwt_algorithm (http_cerver, algorithm), 0, NULL);
+	if (private_file) cerver_http_auth_set_jwt_priv_key_filename (http_cerver, private_file);
+	if (public_file) cerver_http_auth_set_jwt_pub_key_filename (http_cerver, public_file);
 
-	return http_cerver_init (http_cerver);
+	return cerver_http_init (http_cerver);
 
 }
 
@@ -205,7 +206,7 @@ static bool tokens_cerver_verifies (const HttpCerver *http_cerver, const char *t
 	Arena *arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
 	test_check_ptr (arena);
 
-	const bool verified = http_cerver_auth_jwt_verify (http_cerver, arena, token, strlen (token)) != NULL;
+	const bool verified = cerver_http_auth_jwt_verify (http_cerver, arena, token, strlen (token)) != NULL;
 
 	arena_delete (arena);
 
@@ -218,7 +219,7 @@ static const CerverJsonValue *tokens_cerver_verified_claims (
 	const HttpCerver *http_cerver, Arena *arena, const HttpJwt *http_jwt
 ) {
 
-	const CerverJsonValue *claims = http_cerver_auth_jwt_verify (
+	const CerverJsonValue *claims = cerver_http_auth_jwt_verify (
 		http_cerver, arena,
 		http_jwt->bearer + HTTP_JWT_BEARER_PREFIX_LENGTH,
 		http_jwt->bearer_len - HTTP_JWT_BEARER_PREFIX_LENGTH
@@ -253,16 +254,16 @@ static void tokens_encode_empty (void) {
 	Cerver *cerver = tokens_secret_cerver_create ();
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	HttpJwt *http_jwt = (HttpJwt *) http_jwt_new ();
+	HttpJwt *http_jwt = (HttpJwt *) cerver_http_jwt_new ();
 
-	char *token = http_cerver_auth_generate_jwt (http_cerver, http_jwt);
+	char *token = cerver_http_auth_generate_jwt (http_cerver, http_jwt);
 	test_check_ptr (token);
 	test_check (!strncmp (token, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.", strlen ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.")), token);
 
 	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
 
 	free (token);
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 	(void) cerver_teardown (cerver);
 
@@ -528,12 +529,12 @@ static void tokens_cerver_keys (void) {
 
 	Cerver *cerver = tokens_cerver_create ();
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_NONE), 1, NULL);
+	test_check_unsigned_eq (cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_NONE), 1, NULL);
 	test_check_unsigned_eq (
-		http_cerver_auth_set_jwt_algorithm (http_cerver, (CerverJwtAlgorithm) CERVER_JWT_ALGORITHMS), 1, NULL
+		cerver_http_auth_set_jwt_algorithm (http_cerver, (CerverJwtAlgorithm) CERVER_JWT_ALGORITHMS), 1, NULL
 	);
-	test_check_unsigned_eq (http_cerver_auth_set_jwt_algorithm (NULL, CERVER_JWT_ALGORITHM_HS256), 1, NULL);
-	test_check_int_eq (http_cerver->jwt_alg, HTTP_CERVER_DEFAULT_JWT_ALGORITHM, NULL);
+	test_check_unsigned_eq (cerver_http_auth_set_jwt_algorithm (NULL, CERVER_JWT_ALGORITHM_HS256), 1, NULL);
+	test_check_int_eq (http_cerver->jwt_alg, CERVER_HTTP_DEFAULT_JWT_ALGORITHM, NULL);
 	test_check_unsigned_eq (
 		tokens_cerver_init (cerver, CERVER_JWT_ALGORITHM_RS256, TOKENS_RSA_PRIVATE_FILE, TOKENS_RSA_PUBLIC_FILE), 0, NULL
 	);
@@ -589,9 +590,9 @@ static void tokens_cerver_claims (void) {
 	test_check (!tokens_cerver_verifies (http_cerver, expired), NULL);
 
 	// the leeway accepts a clock that is behind
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
 	test_check (tokens_cerver_verifies (http_cerver, expired), NULL);
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, 0);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, 0);
 	free (expired);
 
 	(void) snprintf (grants, sizeof (grants), "{\"nbf\": %ld}", now + TOKENS_HOUR_SECONDS);
@@ -599,9 +600,9 @@ static void tokens_cerver_claims (void) {
 	test_check (!tokens_cerver_verifies (http_cerver, early), NULL);
 
 	// and one that is ahead
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
 	test_check (tokens_cerver_verifies (http_cerver, early), NULL);
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, 0);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, 0);
 	free (early);
 
 	// a token that was issued in the future is not valid, one that was issued before is
@@ -609,9 +610,9 @@ static void tokens_cerver_claims (void) {
 	char *issued = tokens_sign (http_cerver->jwt_private_key, grants);
 	test_check (!tokens_cerver_verifies (http_cerver, issued), "a token that was issued in the future");
 
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, TOKENS_LEEWAY_SECONDS);
 	test_check (tokens_cerver_verifies (http_cerver, issued), NULL);
-	http_cerver_auth_set_jwt_leeway_seconds (http_cerver, 0);
+	cerver_http_auth_set_jwt_leeway_seconds (http_cerver, 0);
 	free (issued);
 
 	(void) snprintf (grants, sizeof (grants), "{\"iat\": %ld}", now - TOKENS_HOUR_SECONDS);
@@ -652,14 +653,14 @@ static void tokens_cerver_claims (void) {
 
 	// the claims are read in an arena: without one there are none
 	token = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
-	test_check_null_ptr (http_cerver_auth_jwt_verify (http_cerver, NULL, token, strlen (token)));
-	test_check_null_ptr (http_cerver_auth_jwt_verify (NULL, NULL, token, strlen (token)));
+	test_check_null_ptr (cerver_http_auth_jwt_verify (http_cerver, NULL, token, strlen (token)));
+	test_check_null_ptr (cerver_http_auth_jwt_verify (NULL, NULL, token, strlen (token)));
 	free (token);
 
 	test_check_null_ptr (http_decode_data_into_json (NULL));
 
 	// "exp" required
-	http_cerver_auth_set_jwt_require_expiration (http_cerver, true);
+	cerver_http_auth_set_jwt_require_expiration (http_cerver, true);
 	token = tokens_sign (http_cerver->jwt_private_key, "{\"id\": \"tokens\"}");
 	test_check (!tokens_cerver_verifies (http_cerver, token), NULL);
 	free (token);
@@ -670,7 +671,7 @@ static void tokens_cerver_claims (void) {
 	free (token);
 
 	// the subject
-	http_cerver_auth_set_jwt_subject (http_cerver, TOKENS_SUBJECT);
+	cerver_http_auth_set_jwt_subject (http_cerver, TOKENS_SUBJECT);
 
 	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"sub\": \"%s\"}", TOKENS_FAR_EXPIRATION, TOKENS_SUBJECT);
 	token = tokens_sign (http_cerver->jwt_private_key, grants);
@@ -692,14 +693,14 @@ static void tokens_cerver_claims (void) {
 	test_check (!tokens_cerver_verifies (http_cerver, token), "a token without its subject");
 
 	// without a subject any token is taken again
-	http_cerver_auth_set_jwt_subject (http_cerver, NULL);
+	cerver_http_auth_set_jwt_subject (http_cerver, NULL);
 	test_check (tokens_cerver_verifies (http_cerver, token), NULL);
-	http_cerver_auth_set_jwt_subject (NULL, TOKENS_SUBJECT);
+	cerver_http_auth_set_jwt_subject (NULL, TOKENS_SUBJECT);
 	free (token);
 
 	// the issuer and the audience
-	http_cerver_auth_set_jwt_issuer (http_cerver, TOKENS_ISSUER);
-	http_cerver_auth_set_jwt_audience (http_cerver, TOKENS_AUDIENCE);
+	cerver_http_auth_set_jwt_issuer (http_cerver, TOKENS_ISSUER);
+	cerver_http_auth_set_jwt_audience (http_cerver, TOKENS_AUDIENCE);
 
 	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"iss\": \"%s\", \"aud\": \"%s\"}", TOKENS_FAR_EXPIRATION, TOKENS_ISSUER, TOKENS_AUDIENCE);
 	token = tokens_sign (http_cerver->jwt_private_key, grants);
@@ -767,15 +768,15 @@ static void tokens_cerver_claims (void) {
 	// a token longer than the limit is not decoded; one that is valid, with the limit at its length and under it
 	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"iss\": \"%s\", \"aud\": \"%s\"}", TOKENS_FAR_EXPIRATION, TOKENS_ISSUER, TOKENS_AUDIENCE);
 	token = tokens_sign (http_cerver->jwt_private_key, grants);
-	http_cerver_auth_set_jwt_max_size (http_cerver, strlen (token));
+	cerver_http_auth_set_jwt_max_size (http_cerver, strlen (token));
 	test_check (tokens_cerver_verifies (http_cerver, token), "a token with the size of the limit");
-	http_cerver_auth_set_jwt_max_size (http_cerver, strlen (token) - 1);
+	cerver_http_auth_set_jwt_max_size (http_cerver, strlen (token) - 1);
 	test_check (!tokens_cerver_verifies (http_cerver, token), "a token over the limit");
 
 	// without a limit of the cerver the one of every token is the limit
-	http_cerver_auth_set_jwt_max_size (http_cerver, 0);
+	cerver_http_auth_set_jwt_max_size (http_cerver, 0);
 	test_check (tokens_cerver_verifies (http_cerver, token), "a token without a limit of the cerver");
-	http_cerver_auth_set_jwt_max_size (http_cerver, HTTP_CERVER_DEFAULT_JWT_MAX_SIZE);
+	cerver_http_auth_set_jwt_max_size (http_cerver, CERVER_HTTP_DEFAULT_JWT_MAX_SIZE);
 	free (token);
 
 	// the claims that the header of a token repeats are the ones of its payload (RFC 7519 section 5.3)
@@ -816,7 +817,7 @@ static void tokens_cerver_claims (void) {
 	free (token);
 
 	// an empty issuer of the cerver is only the one of a token with an empty issuer
-	http_cerver_auth_set_jwt_issuer (http_cerver, "");
+	cerver_http_auth_set_jwt_issuer (http_cerver, "");
 
 	(void) snprintf (grants, sizeof (grants), "{\"exp\": %lld, \"iss\": \"\", \"aud\": \"%s\"}", TOKENS_FAR_EXPIRATION, TOKENS_AUDIENCE);
 	token = tokens_sign (http_cerver->jwt_private_key, grants);
@@ -882,12 +883,12 @@ static void tokens_cerver_bearer (void) {
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	// without keys nothing is validated nor generated
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, "Bearer abc", NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, "Bearer abc", NULL, NULL), NULL);
 
-	HttpJwt *http_jwt = (HttpJwt *) http_jwt_new ();
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 1, NULL);
-	test_check_null_ptr (http_cerver_auth_generate_jwt (http_cerver, http_jwt));
-	http_jwt_delete (http_jwt);
+	HttpJwt *http_jwt = (HttpJwt *) cerver_http_jwt_new ();
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt (http_cerver, http_jwt), 1, NULL);
+	test_check_null_ptr (cerver_http_auth_generate_jwt (http_cerver, http_jwt));
+	cerver_http_jwt_delete (http_jwt);
 
 	(void) cerver_teardown (cerver);
 
@@ -895,19 +896,19 @@ static void tokens_cerver_bearer (void) {
 	http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	// values that are not a bearer, before they were read past their end
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, "", NULL, NULL), NULL);
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, "abc", NULL, NULL), NULL);
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, "Bearer", NULL, NULL), NULL);
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, "Bearer ", NULL, NULL), NULL);
-	test_check (!http_cerver_auth_validate_jwt (http_cerver, NULL, NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, "", NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, "abc", NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, "Bearer", NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, "Bearer ", NULL, NULL), NULL);
+	test_check (!cerver_http_auth_validate_jwt (http_cerver, NULL, NULL, NULL), NULL);
 
-	http_jwt = (HttpJwt *) http_jwt_new ();
-	http_cerver_auth_jwt_add_value (http_jwt, "id", "tokens");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", TOKENS_FAR_EXPIRATION);
+	http_jwt = (HttpJwt *) cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value (http_jwt, "id", "tokens");
+	cerver_http_auth_jwt_add_value_int (http_jwt, "exp", TOKENS_FAR_EXPIRATION);
 
 	// the extra value of the json is escaped
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", "a \"quoted\" \\ value"),
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", "a \"quoted\" \\ value"),
 		0, NULL
 	);
 
@@ -932,14 +933,14 @@ static void tokens_cerver_bearer (void) {
 	test_check_str_eq (http_jwt->json, expected, NULL);
 
 	// the json without an extra value
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_json (http_cerver, http_jwt), 0, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt_json (http_cerver, http_jwt), 0, NULL);
 	(void) snprintf (expected, TOKENS_TOKEN_SIZE, "{\"token\": \"%s\"}", http_jwt->bearer);
 	test_check_str_eq (http_jwt->json, expected, NULL);
 	test_check_unsigned_eq (http_jwt->json_len, strlen (expected), NULL);
 
 	// an extra value with the key of the token takes its place
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "token", "replaced"),
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "token", "replaced"),
 		0, NULL
 	);
 
@@ -947,7 +948,7 @@ static void tokens_cerver_bearer (void) {
 
 	// a value that is not UTF-8 and a json that does not fit leave no json
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", "\xff"),
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", "\xff"),
 		1, "a json with a value that is not UTF-8"
 	);
 
@@ -960,7 +961,7 @@ static void tokens_cerver_bearer (void) {
 	long_value[HTTP_JWT_TOKEN_SIZE - 1] = '\0';
 
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", long_value),
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", long_value),
 		1, "a json that does not fit"
 	);
 
@@ -970,15 +971,15 @@ static void tokens_cerver_bearer (void) {
 	free (long_value);
 
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, NULL, "value"), 1, NULL
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, NULL, "value"), 1, NULL
 	);
 
 	test_check_unsigned_eq (
-		http_cerver_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", NULL), 1, NULL
+		cerver_http_auth_generate_bearer_jwt_json_with_value (http_cerver, http_jwt, "message", NULL), 1, NULL
 	);
 
 	// the bearer is validated and its 64 bits "exp" is kept
-	test_check (http_cerver_auth_validate_jwt (http_cerver, http_jwt->bearer, NULL, NULL), NULL);
+	test_check (cerver_http_auth_validate_jwt (http_cerver, http_jwt->bearer, NULL, NULL), NULL);
 
 	Arena *arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
 	test_check_ptr (arena);
@@ -991,7 +992,7 @@ static void tokens_cerver_bearer (void) {
 	// the claims as json have the members in the order of the token, that has its keys sorted
 	char *decoded = NULL;
 	test_check (
-		http_cerver_auth_validate_jwt (http_cerver, http_jwt->bearer, http_decode_data_into_json, (void **) &decoded),
+		cerver_http_auth_validate_jwt (http_cerver, http_jwt->bearer, http_decode_data_into_json, (void **) &decoded),
 		NULL
 	);
 
@@ -1002,13 +1003,13 @@ static void tokens_cerver_bearer (void) {
 	// a token that is not valid leaves the decoded data as it was
 	decoded = NULL;
 	test_check (
-		!http_cerver_auth_validate_jwt (http_cerver, "Bearer a.b.c", http_decode_data_into_json, (void **) &decoded),
+		!cerver_http_auth_validate_jwt (http_cerver, "Bearer a.b.c", http_decode_data_into_json, (void **) &decoded),
 		NULL
 	);
 
 	test_check_null_ptr (decoded);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 	// a long username with characters of two bytes was cut in the middle of one,
 	// the json rejected it and the token was generated without it (users-service)
@@ -1017,10 +1018,10 @@ static void tokens_cerver_bearer (void) {
 		(void) memcpy (username + i, TOKENS_TWO_BYTES, TOKENS_TWO_BYTES_LENGTH);
 	}
 
-	http_jwt = (HttpJwt *) http_jwt_new ();
-	http_cerver_auth_jwt_add_value (http_jwt, "id", "tokens");
-	http_cerver_auth_jwt_add_value (http_jwt, "username", username);
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
+	http_jwt = (HttpJwt *) cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value (http_jwt, "id", "tokens");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", username);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 
 	claims = tokens_cerver_verified_claims (http_cerver, arena, http_jwt);
 
@@ -1032,10 +1033,10 @@ static void tokens_cerver_bearer (void) {
 
 	arena_delete (arena);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 	// the values of a token with every character as its longest escape fit in its claims, not in its bearer
-	http_jwt = (HttpJwt *) http_jwt_new ();
+	http_jwt = (HttpJwt *) cerver_http_jwt_new ();
 
 	char control[HTTP_JWT_VALUE_VALUE_SIZE] = { 0 };
 	(void) memset (control, '\x01', HTTP_JWT_VALUE_VALUE_SIZE - 1);
@@ -1045,21 +1046,21 @@ static void tokens_cerver_bearer (void) {
 		(void) memset (key, '\x02', HTTP_JWT_VALUE_KEY_SIZE - 1);
 		key[0] = (char) ('a' + i);
 
-		http_cerver_auth_jwt_add_value (http_jwt, key, control);
+		cerver_http_auth_jwt_add_value (http_jwt, key, control);
 	}
 
 	test_check_unsigned_eq (http_jwt->n_values, HTTP_JWT_VALUES_SIZE, NULL);
 
-	char *large = http_cerver_auth_generate_jwt (http_cerver, http_jwt);
+	char *large = cerver_http_auth_generate_jwt (http_cerver, http_jwt);
 	test_check_ptr (large);
 	test_check (strlen (large) > HTTP_JWT_BEARER_SIZE, "the token of the largest values fits in a bearer");
 	free (large);
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 1, "a bearer that does not fit");
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt (http_cerver, http_jwt), 1, "a bearer that does not fit");
 	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
 	test_check_str_eq (http_jwt->bearer, "", NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 	(void) cerver_teardown (cerver);
 

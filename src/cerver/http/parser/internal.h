@@ -228,16 +228,16 @@ static inline bool http_parser_fields_match (
 }
 
 /** @brief Returns the known header of a name that is a token (case insensitive), #HTTP_HEADER_UNDEFINED for another one. */
-static inline http_header http_parser_field_classify (const char *name, const size_t length) {
+static inline CerverHttpHeader http_parser_field_classify (const char *name, const size_t length) {
 
-	http_header found = HTTP_HEADER_UNDEFINED;
+	CerverHttpHeader found = HTTP_HEADER_UNDEFINED;
 
 	if (length) {
 		uint32_t slot = http_parser_fields_key (name, length);
 		while (http_parser_fields_table[slot]) {
 			const unsigned int type = (unsigned int) http_parser_fields_table[slot] - 1;
 			if ((http_parser_fields_lengths[type] == length) && http_parser_fields_match (name, length, type)) {
-				found = (http_header) type;
+				found = (CerverHttpHeader) type;
 				break;
 			}
 
@@ -575,7 +575,7 @@ typedef enum HttpParserSpecial {
 
 /** @brief Returns the special field of a name (Proxy-Connection is a Connection). */
 CERVER_HIDDEN HttpParserSpecial http_parser_special (
-	const char *name, const size_t length, const http_header type
+	const char *name, const size_t length, const CerverHttpHeader type
 );
 
 /** @brief The bytes of the name Proxy-Connection, the only special field that is not a known header. */

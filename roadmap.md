@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); L4, el I/O sobre io_uring (§4.4), en dos betas: la primera parte hecha en la 3.0b-11 (el anillo, el respaldo de epoll, los loops por núcleo, la conexión y los handlers en el loop), sigue la segunda en la 3.0b-12 |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); L4, el I/O sobre io_uring (§4.4), hecha en la 3.0b-11 (el anillo, el respaldo de epoll, los loops por núcleo, la conexión y los handlers en el loop); L5, la API de aplicación (§4.5), en dos betas: la primera parte en la 3.0b-12 (un contexto por petición, las vistas, el escritor de la respuesta, solo grupos y endpoints, un web cerver siempre sobre los event loops) y la segunda en la 3.0b-13; lo que L4 dejó para medir pasa a la beta de optimización, la 3.0b-14 (§4.5.3) |
 
 **Las citas `archivo:línea`:**
 
@@ -160,19 +160,20 @@ puede ocupar varias.
 | **L2** | 3.0b-8 | El JWT propio | L1 |
 | **L3** | 3.0b-9 | El parser HTTP/1.1 propio | L0.2 |
 | **L0.5** | 3.0b-10 | La sincronía antes de L4: F4b y la 2.1b-20 de `nightly` (con el Release 1.9 y la 2.0b-77), la política de versiones y métodos de HTTP Garden | L3 |
-| **L4** | 3.0b-11 | La arquitectura de I/O, primera parte: io_uring con syscalls propias, epoll de respaldo, un loop por núcleo, la conexión sobre completions, los handlers en el loop | L0.5 |
-| **L4** | 3.0b-12 | La arquitectura de I/O, segunda parte: lo que la primera midió y no adoptó, el reparto por CPU, el `send` zero-copy, kqueue | 3.0b-11 |
-| **L5** | 3.0b-13 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-14 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-15 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-16 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-17 | WebSocket sobre el I/O nuevo | L4, L5 |
-| **macOS** | con la segunda parte de L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
+| **L4** | 3.0b-11 | La arquitectura de I/O: io_uring con syscalls propias, epoll de respaldo, un loop por núcleo, la conexión sobre completions, los handlers en el loop | L0.5 |
+| **L5** | 3.0b-12 | La API de aplicación, primera parte: un contexto por petición, las vistas, el escritor de la respuesta, solo grupos y endpoints, un web cerver siempre sobre los event loops | L4 |
+| **L5** | 3.0b-13 | La API de aplicación, segunda parte: los handlers y la auth asíncronos, el cliente HTTP propio sobre el loop, multipart en streaming | 3.0b-12 |
+| **LO** | 3.0b-14 | La optimización: lo que L4 y L5 dejaron para medir, y la decisión de la implementación de máximo rendimiento | L5 |
+| **L6** | 3.0b-15 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-16 | HPACK y HTTP/2 | L4, L5, LO |
+| **L8** | 3.0b-17 | TLS con el proveedor, sobre el ring | L4, LO |
+| **L9** | 3.0b-18 | WebSocket sobre el I/O nuevo | L4, L5, LO |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
 **Fuera de la meta:** la implementación mayor de game (los `GameSettings` de la aplicación, un lobby sobre el loop)
 pasa a una 3.x. La auth asíncrona de F7 llega por la API de L5 (un cliente HTTP propio sobre el ring en lugar de
-`curl_multi`), en el plan de esa fase.
+`curl_multi`), en el plan de esa fase. **macOS está fuera del roadmap** (decisión del 2026-11-18): la 3.0 es específica
+de Linux, sin kqueue ni `.dylib`.
 
 ### 4.0 L0 — La línea (3.0b-1)
 
@@ -644,7 +645,7 @@ el árbol anterior al borrado:
   - timeouts del ring;
   - el kernel mínimo (propuesta: 6.1 LTS) se fija en el plan de la fase.
 - **epoll de respaldo** detrás de la misma abstracción, para kernels sin io_uring o con io_uring bloqueado por
-  seccomp. kqueue en macOS (con L4, §4.10).
+  seccomp.
 - **Una rueda de timers** por loop y **una máquina de estados** por conexión: el header, el body, el handler, el
   envío, idle con keep-alive y pipelining en orden.
 - **El trabajo bloqueante** (los handlers que hacen I/O, la auth custom) corre en pools nombrados, fuera del loop. Las
@@ -659,7 +660,7 @@ el árbol anterior al borrado:
   perfil seccomp por default de Docker bloquea io_uring; el plan de la fase define el perfil de las imágenes de test y
   el aviso al arrancar.
 
-#### 4.4.1 La primera parte (3.0b-11)
+#### 4.4.1 La 3.0b-11
 
 Las decisiones del usuario (2026-11-16): solo el loop escribe en el socket desde esta beta; el default sigue siendo el
 pool y lo rápido se declara «loop» (el default cambia en L5); el kernel mínimo de io_uring es 6.1 LTS.
@@ -682,25 +683,28 @@ pool y lo rápido se declara «loop» (el default cambia en L5); el kernel míni
 - **Las pruebas:** las unidades del anillo y de los dos backends, el eje del backend en las suites, la inyección de
   fallos de `syscall ()`, y `benchmarks/flood` (un cliente de carga por eventos con pipelining).
 
-#### 4.4.2 La segunda parte (3.0b-12)
+#### 4.4.2 Lo que pasa a la beta de optimización (3.0b-14)
 
-- Lo que la primera dejó para medir contra lo simple: el recv multishot, los descriptores directos, los bundles y las
+L4 se cerró con la 3.0b-11 (decisión del 2026-11-18): lo que era su segunda parte se mide y se decide en la beta de
+optimización (§4.5.3), después de L5.
+
+- Lo que la 3.0b-11 dejó para medir contra lo simple: el recv multishot, los descriptores directos, los bundles y las
   arenas prestadas por loop (la memoria de una conexión ociosa).
-- **El costo por petición que el perfil de la primera parte dejó a la vista** (`perf`, 4 loops, el handler en el
+- **El costo por petición que el perfil de la 3.0b-11 dejó a la vista** (`perf`, 4 loops, el handler en el
   loop):
   - el log de acceso: una línea por petición con su fecha (`strftime`), un `printf ()` con decimales y un `write ()`
     detrás del candado del log. Es lo primero del perfil y lo que impide escalar con varios loops; el arnés y la
     carga de `flood` lo apagan (`BENCH_QUIET`). Un log de acceso por loop, con búfer y sin candado;
   - el reloj: dos `gettimeofday ()` por petición (7 % de las muestras con el log apagado): la hora del paso del loop
     para el inicio de sus peticiones;
-  - la dirección del cliente, que se interpreta con `inet_pton ()` en cada petición (1.2 %);
+  - la dirección del cliente, que se interpretaba con `inet_pton ()` en cada petición (1.2 %): desde la 3.0b-12 solo
+    la lee un cerver que confía en algún proxy;
   - los contadores por loop: las stats del cerver y de HTTP por petición son atómicos compartidos entre los loops
     (1.8 % hoy, con 4 loops).
 - Las peticiones de un pool de hilos en un pipeline: hoy van una a la vez, cada una empieza cuando la respuesta de
   la anterior se envió.
 - El reparto de las conexiones por CPU (`SO_ATTACH_REUSEPORT_CBPF`).
 - El `send` zero-copy para las respuestas grandes, y los archivos sin bloquear al loop.
-- kqueue y macOS (§4.10).
 - Drogon, actix-web y fasthttp en el caso `server` del arnés de competidores.
 
 ### 4.5 L5 — La API de aplicación
@@ -717,6 +721,63 @@ pool y lo rápido se declara «loop» (el default cambia en L5); el kernel míni
 - **pycerver 2.0bN se rehace aquí:**
   - los handlers sin un `CFUNCTYPE` por petición;
   - las vistas expuestas como `memoryview`, sin copias.
+
+#### 4.5.1 La primera parte (3.0b-12)
+
+Las decisiones del usuario (2026-11-18): un rediseño completo de la API pública de HTTP, sin capa de compatibilidad;
+un solo contexto por handler; todo HTTP con el prefijo `cerver_http_` menos WebSocket (que cambia en L9); las
+constantes de las tablas X-macro se quedan; los handlers corren en el loop por default y un web cerver tiene un loop
+por núcleo; el pool de hilos implícito es solo para lo que toca disco; curl se queda en los tests como oráculo.
+
+- **El contexto** (`core/context.h`): `void handler (CerverHttpContext *context)`. Es el `HttpReceive` de siempre,
+  que ahora vive en `src/` y que una aplicación solo alcanza por sus métodos. `CerverHttp`, `CerverHttpGroup` y
+  `CerverHttpEndpoint` son handles: sus structs no se instalan.
+- **La petición** (`requests/request.h`): `cerver_http_request_* (context, …)` devuelven vistas
+  (`CerverHttpView`, terminadas en NUL y válidas hasta que la petición termina): el método, la ruta, el query, los
+  parámetros, las cabeceras, el body, el JSON, los claims, las partes de multipart, la dirección del cliente y la
+  del par, y la cabeza como la leyó el parser.
+- **La respuesta** (`responses/response.h`): `cerver_http_response_* (context, …)` fijan el status y las cabeceras
+  en el contexto y envían bytes, texto, JSON, un archivo, un video o un stream; `CerverHttpPrepared` es la respuesta
+  que se arma una vez y se envía muchas, y las comunes se piden con `cerver_http_response_send_common ()`. Por
+  dentro es una capa sobre el envío de la 3.0b-11: escribir la cabeza y un JSON en su lugar en la salida de la
+  conexión (reservar y confirmar) es de la optimización (§4.5.3).
+- **Las rutas:** solo grupos y endpoints; fuera `HttpRoute`, su traducción al árbol y las rutas de admin sobre
+  ella. Las rutas de admin tienen su propio grupo raíz (`cerver_http_admin_set_path ()`).
+- **Un web cerver siempre usa los event loops:** fuera el hilo por conexión de HTTP (THREADS y POLL siguen para los
+  cervers que no son web). Las cabeceras por default de las respuestas son de cada cerver.
+- **Las pruebas:** las suites, los pares, los ejemplos y los benchmarks sobre la API nueva; sin el eje `threads` en
+  los scripts; `test/performance.sh` se queda con las asignaciones por petición.
+- **Lo que pasa a la segunda parte:** los settings por grupo y por endpoint que faltan (las partes y el tamaño de
+  los archivos, los timeouts de la petición y del envío, el nivel y el mínimo de la compresión, los orígenes de CORS,
+  las llaves del JWT, los uploads; hoy un grupo o un endpoint fija su auth, su body máximo, CORS, ETag, la
+  compresión y su pool), y quitar el receive suelto sin conexión de las pruebas de caja blanca y de los fuzzers.
+
+#### 4.5.2 La segunda parte (3.0b-13)
+
+- **Los handlers asíncronos:** un handler difiere su respuesta y la completa después, desde su loop o desde otro
+  hilo, sin tener un hilo mientras espera; un stream escrito desde el loop, con su aviso de «vaciado».
+- **El cliente HTTP/1.1 propio** sobre el loop, dentro de un cerver y fuera de uno (con su propio loop y una forma
+  bloqueante), con un pool de conexiones conservadas por destino. Sin TLS hasta L8.
+- **La auth asíncrona:** la auth custom de un endpoint pide a otro servicio con el cliente propio y la conexión
+  espera su veredicto sin un hilo.
+- **Multipart en streaming:** un callback por parte (el inicio, los datos, el fin); guardar en uploads es un
+  consumidor encima, y sus escrituras salen del loop.
+- Los settings por grupo y por endpoint que la primera parte dejó.
+- **pycerver `labs`** se rehace en su sesión, con la lista de lo que cambia para los bindings.
+
+#### 4.5.3 LO — La optimización (3.0b-14)
+
+Una beta dedicada, sin funciones nuevas (decisión del usuario, 2026-11-18): se mide todo y se decide la
+implementación de máximo rendimiento.
+
+- Todo §4.4.2: lo que la 3.0b-11 dejó para medir, el costo por petición de su perfil, el pipeline de los pools, el
+  reparto por CPU, el `send` zero-copy y los competidores.
+- **De L5:** reservar y confirmar en la salida de la conexión (la cabeza y el body escritos en su lugar), las vistas
+  sin la copia de la cabeza a la arena, y `sendfile ()` de un archivo frío fuera del loop.
+- io_uring con conexiones de una sola petición, y WebSocket con io_uring a muchas conexiones.
+- **Los checks de rendimiento de `test/performance.sh`** (los req/s contra la línea base, los loops contra los
+  pools, io_uring contra epoll, keep-alive), que la 3.0b-12 quitó, se redefinen aquí; entre tanto solo se cuidan
+  las asignaciones por petición.
 
 ### 4.6 L6 — SHA-1, SHA-256, base64 y deflate propios
 
@@ -759,9 +820,9 @@ pool y lo rápido se declara «loop» (el default cambia en L5); el kernel míni
 
 ### 4.10 macOS
 
-Con L4: kqueue detrás de la abstracción del loop, `libcerver.dylib` (`-install_name`, `-rpath`), los equivalentes de
-lo que hoy es de Linux (`sendfile`, `prctl`, `MSG_NOSIGNAL` → `SO_NOSIGPIPE`), y jobs de `macos-latest` con la
-librería, los tests y los examples. arm64 y x86_64.
+**Fuera del roadmap** (decisión del 2026-11-18): la 3.0 es específica de Linux. No hay kqueue detrás de la
+abstracción del loop, ni `libcerver.dylib`, ni jobs de `macos-latest`; lo que hoy es de Linux (`sendfile`, `prctl`,
+`MSG_NOSIGNAL`, io_uring, epoll) se usa sin una capa de compatibilidad.
 
 ---
 

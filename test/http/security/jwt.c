@@ -12,9 +12,9 @@
 #include "../../test.h"
 #include "../http.h"
 
-static HttpJwt *test_http_jwt_new (void) {
+static HttpJwt *test_cerver_http_jwt_new (void) {
 
-	HttpJwt *http_jwt = (HttpJwt *) http_jwt_new ();
+	HttpJwt *http_jwt = (HttpJwt *) cerver_http_jwt_new ();
 
 	test_check_ptr (http_jwt);
 	test_check_int_eq (http_jwt->n_values, 0, NULL);
@@ -23,11 +23,11 @@ static HttpJwt *test_http_jwt_new (void) {
 
 }
 
-static void test_http_jwt_add_value (void) {
+static void test_cerver_http_jwt_add_value (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", "ermiry");
 
 	test_check_int_eq ((int) http_jwt->n_values, 1, NULL);
 
@@ -36,15 +36,15 @@ static void test_http_jwt_add_value (void) {
 	test_check_str_eq ("ermiry", http_jwt->values[0].value_str, NULL);
 	test_check_int_eq ((int) strlen ("ermiry"), (int) strlen (http_jwt->values[0].value_str), NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
-static void test_http_jwt_add_value_bool (void) {
+static void test_cerver_http_jwt_add_value_bool (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value_bool (http_jwt, "first", true);
+	cerver_http_auth_jwt_add_value_bool (http_jwt, "first", true);
 
 	test_check_int_eq ((int) http_jwt->n_values, 1, NULL);
 
@@ -52,15 +52,15 @@ static void test_http_jwt_add_value_bool (void) {
 	test_check_int_eq ((int) strlen ("first"), (int) strlen (http_jwt->values[0].key), NULL);
 	test_check_bool_eq (true, http_jwt->values[0].value_bool, NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 	
 }
 
-static void test_http_jwt_add_value_int (void) {
+static void test_cerver_http_jwt_add_value_int (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value_int (http_jwt, "test", 128);
+	cerver_http_auth_jwt_add_value_int (http_jwt, "test", 128);
 
 	test_check_int_eq ((int) http_jwt->n_values, 1, NULL);
 
@@ -68,19 +68,19 @@ static void test_http_jwt_add_value_int (void) {
 	test_check_int_eq ((int) strlen ("test"), (int) strlen (http_jwt->values[0].key), NULL);
 	test_check_int_eq (128, http_jwt->values[0].value_int, NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 	
 }
 
-static void test_http_jwt_add_value_multiple (void) {
+static void test_cerver_http_jwt_add_value_multiple (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
-	http_cerver_auth_jwt_add_value (http_jwt, "email", "erick.salas@ermiry.com");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "value", 7);
-	http_cerver_auth_jwt_add_value_bool (http_jwt, "flag", false);
-	http_cerver_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	cerver_http_auth_jwt_add_value (http_jwt, "email", "erick.salas@ermiry.com");
+	cerver_http_auth_jwt_add_value_int (http_jwt, "value", 7);
+	cerver_http_auth_jwt_add_value_bool (http_jwt, "flag", false);
+	cerver_http_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
 
 	test_check_int_eq ((int) http_jwt->n_values, 5, NULL);
 
@@ -107,18 +107,18 @@ static void test_http_jwt_add_value_multiple (void) {
 	test_check_str_eq ("Erick Salas", http_jwt->values[4].value_str, NULL);
 	test_check_int_eq ((int) strlen ("Erick Salas"), (int) strlen (http_jwt->values[4].value_str), NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 	
 }
 
-static void test_http_jwt_add_value_many (void) {
+static void test_cerver_http_jwt_add_value_many (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
-	http_cerver_auth_jwt_add_value (http_jwt, "email", "erick.salas@ermiry.com");
-	http_cerver_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
-	http_cerver_auth_jwt_add_value (http_jwt, "role", "0123456789abcdf");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	cerver_http_auth_jwt_add_value (http_jwt, "email", "erick.salas@ermiry.com");
+	cerver_http_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
+	cerver_http_auth_jwt_add_value (http_jwt, "role", "0123456789abcdf");
 
 	test_check_int_eq ((int) http_jwt->n_values, 4, NULL);
 
@@ -142,7 +142,7 @@ static void test_http_jwt_add_value_many (void) {
 	test_check_str_eq ("0123456789abcdf", http_jwt->values[3].value_str, NULL);
 	test_check_int_eq ((int) strlen ("0123456789abcdf"), (int) strlen (http_jwt->values[3].value_str), NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 	
 }
 
@@ -153,13 +153,13 @@ static void test_http_jwt_add_value_many (void) {
 //   "role": "common",
 //   "username": "ermiry"
 // }
-static void test_http_jwt_generate_internal (HttpJwt *http_jwt) {
+static void test_cerver_http_jwt_generate_internal (HttpJwt *http_jwt) {
 
-	http_cerver_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	http_cerver_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
-	http_cerver_auth_jwt_add_value (http_jwt, "role", "common");
-	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	cerver_http_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	cerver_http_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
+	cerver_http_auth_jwt_add_value (http_jwt, "role", "common");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", "ermiry");
 
 	test_check_int_eq ((int) http_jwt->n_values, 5, NULL);
 
@@ -190,10 +190,10 @@ static void test_http_jwt_generate_internal (HttpJwt *http_jwt) {
 }
 
 // the RS256 private key of the tests, parsed once as the cerver does
-static CerverJwtKey *test_http_jwt_private_key (void) {
+static CerverJwtKey *test_cerver_http_jwt_private_key (void) {
 
 	size_t private_key_len = 0;
-	char *private_key = http_cerver_auth_load_key (
+	char *private_key = cerver_http_auth_load_key (
 		"./test/http/keys/key.key", &private_key_len
 	);
 
@@ -215,22 +215,22 @@ static CerverJwtKey *test_http_jwt_private_key (void) {
 }
 
 // the token of the 2.x, byte by byte: RS256 has no random part
-static void test_http_jwt_generate (void) {
+static void test_cerver_http_jwt_generate (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	test_http_jwt_generate_internal (http_jwt);
+	test_cerver_http_jwt_generate_internal (http_jwt);
 
-	CerverJwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_cerver_http_jwt_private_key ();
 
-	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	char *token = cerver_http_auth_generate_jwt_actual (http_jwt, key);
 
 	test_check_ptr (token);
 	test_check_str_eq (token, base_token, NULL);
 	test_check_str_len (token, strlen (base_token), NULL);
 
 	// a second call generates the same token
-	char *again = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	char *again = cerver_http_auth_generate_jwt_actual (http_jwt, key);
 	test_check_ptr (again);
 	test_check_str_eq (again, base_token, NULL);
 
@@ -239,21 +239,21 @@ static void test_http_jwt_generate (void) {
 
 	cerver_jwt_key_delete (key);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
-static void test_http_jwt_generate_bearer (void) {
+static void test_cerver_http_jwt_generate_bearer (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
 	// add values to token
-	test_http_jwt_generate_internal (http_jwt);
+	test_cerver_http_jwt_generate_internal (http_jwt);
 
-	CerverJwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_cerver_http_jwt_private_key ();
 
 	// generate bearer token
-	u8 result = http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key);
+	u8 result = cerver_http_auth_generate_bearer_jwt_actual (http_jwt, key);
 
 	test_check_unsigned_eq (result, 0, NULL);
 
@@ -266,106 +266,106 @@ static void test_http_jwt_generate_bearer (void) {
 
 	cerver_jwt_key_delete (key);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
 // the claims of a token are written with their keys sorted: the values in any order make the same token
-static void test_http_jwt_generate_sorted (void) {
+static void test_cerver_http_jwt_generate_sorted (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	http_cerver_auth_jwt_add_value (http_jwt, "username", "ermiry");
-	http_cerver_auth_jwt_add_value (http_jwt, "role", "common");
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	http_cerver_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
-	http_cerver_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
+	cerver_http_auth_jwt_add_value (http_jwt, "username", "ermiry");
+	cerver_http_auth_jwt_add_value (http_jwt, "role", "common");
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	cerver_http_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
+	cerver_http_auth_jwt_add_value (http_jwt, "name", "Erick Salas");
 
-	CerverJwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_cerver_http_jwt_private_key ();
 
-	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	char *token = cerver_http_auth_generate_jwt_actual (http_jwt, key);
 	test_check_ptr (token);
 	test_check_str_eq (token, base_token, NULL);
 	free (token);
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key), 0, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt_actual (http_jwt, key), 0, NULL);
 	test_check_str_eq (http_jwt->bearer + HTTP_JWT_BEARER_PREFIX_LENGTH, base_token, NULL);
 
 	cerver_jwt_key_delete (key);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
 // an HttpJwt with a value that is not a claim has no token and no bearer
-static void test_http_jwt_not_generated (HttpJwt *http_jwt, const CerverJwtKey *key) {
+static void test_cerver_http_jwt_not_generated (HttpJwt *http_jwt, const CerverJwtKey *key) {
 
-	test_check_null_ptr (http_cerver_auth_generate_jwt_actual (http_jwt, key));
+	test_check_null_ptr (cerver_http_auth_generate_jwt_actual (http_jwt, key));
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, key), 1, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt_actual (http_jwt, key), 1, NULL);
 	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
 	test_check_str_empty (http_jwt->bearer);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
 // a key more than once, a value without a key and a text that is not UTF-8 are not claims
-static void test_http_jwt_generate_invalid (void) {
+static void test_cerver_http_jwt_generate_invalid (void) {
 
-	CerverJwtKey *key = test_http_jwt_private_key ();
+	CerverJwtKey *key = test_cerver_http_jwt_private_key ();
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	http_cerver_auth_jwt_add_value (http_jwt, "role", "common");
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	test_http_jwt_not_generated (http_jwt, key);
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	cerver_http_auth_jwt_add_value (http_jwt, "role", "common");
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	test_cerver_http_jwt_not_generated (http_jwt, key);
 
 	// the same key with values of other types
-	http_jwt = test_http_jwt_new ();
-	http_cerver_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	http_cerver_auth_jwt_add_value_bool (http_jwt, "iat", true);
-	test_http_jwt_not_generated (http_jwt, key);
+	http_jwt = test_cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value_int (http_jwt, "iat", STATIC_DATE);
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	cerver_http_auth_jwt_add_value_bool (http_jwt, "iat", true);
+	test_cerver_http_jwt_not_generated (http_jwt, key);
 
-	http_jwt = test_http_jwt_new ();
-	http_cerver_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
-	http_cerver_auth_jwt_add_value (http_jwt, "", "value");
-	test_http_jwt_not_generated (http_jwt, key);
+	http_jwt = test_cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value (http_jwt, "id", STATIC_ID);
+	cerver_http_auth_jwt_add_value (http_jwt, "", "value");
+	test_cerver_http_jwt_not_generated (http_jwt, key);
 
-	http_jwt = test_http_jwt_new ();
-	http_cerver_auth_jwt_add_value (http_jwt, "id", "not \xff UTF-8");
-	test_http_jwt_not_generated (http_jwt, key);
+	http_jwt = test_cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value (http_jwt, "id", "not \xff UTF-8");
+	test_cerver_http_jwt_not_generated (http_jwt, key);
 
-	http_jwt = test_http_jwt_new ();
-	http_cerver_auth_jwt_add_value_int (http_jwt, "not \xc3 UTF-8", STATIC_DATE);
-	test_http_jwt_not_generated (http_jwt, key);
+	http_jwt = test_cerver_http_jwt_new ();
+	cerver_http_auth_jwt_add_value_int (http_jwt, "not \xc3 UTF-8", STATIC_DATE);
+	test_cerver_http_jwt_not_generated (http_jwt, key);
 
 	// a token without values has the claims of an empty object
-	http_jwt = test_http_jwt_new ();
-	char *token = http_cerver_auth_generate_jwt_actual (http_jwt, key);
+	http_jwt = test_cerver_http_jwt_new ();
+	char *token = cerver_http_auth_generate_jwt_actual (http_jwt, key);
 	test_check_ptr (token);
 	test_check (strstr (token, ".e30.") != NULL, token);
 	free (token);
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 	cerver_jwt_key_delete (key);
 
 }
 
 // without a key there is no token
-static void test_http_jwt_generate_without_key (void) {
+static void test_cerver_http_jwt_generate_without_key (void) {
 
-	HttpJwt *http_jwt = test_http_jwt_new ();
+	HttpJwt *http_jwt = test_cerver_http_jwt_new ();
 
-	test_http_jwt_generate_internal (http_jwt);
+	test_cerver_http_jwt_generate_internal (http_jwt);
 
-	test_check_null_ptr (http_cerver_auth_generate_jwt_actual (http_jwt, NULL));
+	test_check_null_ptr (cerver_http_auth_generate_jwt_actual (http_jwt, NULL));
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt_actual (http_jwt, NULL), 1, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt_actual (http_jwt, NULL), 1, NULL);
 	test_check_unsigned_eq (http_jwt->bearer_len, 0, NULL);
 
-	http_jwt_delete (http_jwt);
+	cerver_http_jwt_delete (http_jwt);
 
 }
 
@@ -373,25 +373,25 @@ void http_tests_jwt (void) {
 
 	(void) printf ("Testing HTTP jwt...\n");
 
-	test_http_jwt_add_value ();
+	test_cerver_http_jwt_add_value ();
 
-	test_http_jwt_add_value_bool ();
+	test_cerver_http_jwt_add_value_bool ();
 
-	test_http_jwt_add_value_int ();
+	test_cerver_http_jwt_add_value_int ();
 
-	test_http_jwt_add_value_multiple ();
+	test_cerver_http_jwt_add_value_multiple ();
 
-	test_http_jwt_add_value_many ();
+	test_cerver_http_jwt_add_value_many ();
 
-	test_http_jwt_generate ();
+	test_cerver_http_jwt_generate ();
 
-	test_http_jwt_generate_bearer ();
+	test_cerver_http_jwt_generate_bearer ();
 
-	test_http_jwt_generate_sorted ();
+	test_cerver_http_jwt_generate_sorted ();
 
-	test_http_jwt_generate_invalid ();
+	test_cerver_http_jwt_generate_invalid ();
 
-	test_http_jwt_generate_without_key ();
+	test_cerver_http_jwt_generate_without_key ();
 
 	(void) printf ("Done!\n");
 

@@ -41,13 +41,13 @@ extern "C" {
 /**
  * @brief The type of a range, one `HTTP_RANGE_TYPE_<name>` for each row of #HTTP_RANGE_TYPE_MAP.
  */
-typedef enum RangeType {
+typedef enum CerverHttpRangeType {
 
 	#define XX(num, name, string) HTTP_RANGE_TYPE_##name = num,
 	HTTP_RANGE_TYPE_MAP (XX)
 	#undef XX
 
-} RangeType;
+} CerverHttpRangeType;
 
 /**
  * @brief Returns the string of a range type.
@@ -56,8 +56,8 @@ typedef enum RangeType {
  * @return the string of its row in #HTTP_RANGE_TYPE_MAP, or the one of HTTP_RANGE_TYPE_NONE for a value out of the
  * table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_range_type_string (
-	const RangeType range_type
+CERVER_PUBLIC const char *cerver_http_range_type_string (
+	const CerverHttpRangeType range_type
 );
 
 /**
@@ -66,13 +66,13 @@ CERVER_PUBLIC const char *http_range_type_string (
  * bytes=0- is EMPTY, bytes=N- is FIRST, bytes=N-M is FULL and bytes=-N is SUFFIX: the last N bytes of the file, N
  * is its end and its start is 0 until the range is resolved with the size of the file.
  */
-struct _BytesRange {
+struct _CerverHttpBytesRange {
 
 	/** @brief The size of the file. */
 	long file_size;
 
 	/** @brief The type of the range. */
-	RangeType type;
+	CerverHttpRangeType type;
 	/** @brief The first byte of the range. */
 	long start, end; /**< @brief The last byte of the range. */
 	/** @brief The bytes of the range, its Content-Length. */
@@ -80,16 +80,16 @@ struct _BytesRange {
 
 };
 
-/** @brief A range, see struct _BytesRange. */
-typedef struct _BytesRange BytesRange;
+/** @brief A range, see struct _CerverHttpBytesRange. */
+typedef struct _CerverHttpBytesRange CerverHttpBytesRange;
 
 /**
  * @brief Sets every value of a range to zero and its type to HTTP_RANGE_TYPE_NONE.
  *
  * @param[out] bytes_range the range, it must not be NULL
  */
-CERVER_PUBLIC void http_bytes_range_init (
-	BytesRange *bytes_range
+CERVER_PUBLIC void cerver_http_bytes_range_init (
+	CerverHttpBytesRange *bytes_range
 );
 
 /**
@@ -97,8 +97,8 @@ CERVER_PUBLIC void http_bytes_range_init (
  *
  * @param[in] bytes_range the range, it must not be NULL
  */
-CERVER_PUBLIC void http_bytes_range_print (
-	const BytesRange *bytes_range
+CERVER_PUBLIC void cerver_http_bytes_range_print (
+	const CerverHttpBytesRange *bytes_range
 );
 
 /** @} */

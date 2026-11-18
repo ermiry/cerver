@@ -153,7 +153,7 @@ static struct curl_slist *features_client_headers (const char *const *values) {
 // returns 0 on success, 1 on error
 static unsigned int features_client_request (
 	CURL *curl, const char *method, const char *prefix, const char *path,
-	const char *const *values, const http_status status
+	const char *const *values, const CerverHttpStatus status
 ) {
 
 	struct curl_slist *headers = features_client_headers (values);

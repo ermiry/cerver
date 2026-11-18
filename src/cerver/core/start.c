@@ -44,6 +44,7 @@
 #include "cerver/game/game.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/types.h"
 #include "cerver/http/websockets/internal.h"
 #include "cerver/http/websockets/registry.h"
 
@@ -501,7 +502,7 @@ static u8 cerver_init_internal (Cerver *cerver) {
 
 // only the threads handler type takes connections with the thpool,
 // the poll () handles every connection in its own thread,
-// a web cerver handles each request in its thpool with any handler type
+// a web cerver has it as its default pool of threads: what waits or reads the disk runs there, out of its event loops
 static inline bool cerver_uses_thpool (const Cerver *cerver) {
 
 	return (
@@ -578,12 +579,34 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
 }
 
+// the connections of a web cerver are only handled by its event loops
+static bool cerver_one_time_init_web_handler_is_wrong (const Cerver *cerver) {
+
+	const bool wrong = (cerver->type == CERVER_TYPE_WEB)
+		&& (cerver->handler_type != CERVER_HANDLER_TYPE_EVENTS);
+
+	if (wrong) {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+			"Cerver %s is a web cerver, that only uses event loops - its handler type can not be %s!",
+			cerver->info->name, cerver_handler_type_to_string (cerver->handler_type)
+		);
+	}
+
+	return wrong;
+
+}
+
 static u8 cerver_one_time_init (Cerver *cerver) {
 
 	u8 errors = 0;
 
 	if (cerver) {
-		if (!cerver_init_internal (cerver)) {
+		if (cerver_one_time_init_web_handler_is_wrong (cerver)) {
+			errors = 1;
+		}
+
+		else if (!cerver_init_internal (cerver)) {
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 				"Initialized cerver %s!", cerver->info->name
@@ -617,7 +640,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 				} break;
 
 				case CERVER_TYPE_WEB: {
-					errors |= http_cerver_init ((HttpCerver *) cerver->cerver_data);
+					errors |= cerver_http_init ((HttpCerver *) cerver->cerver_data);
 				} break;
 
 				case CERVER_TYPE_FILES: break;

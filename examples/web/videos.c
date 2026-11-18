@@ -11,14 +11,15 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -41,7 +42,7 @@ static void finish (void) {
 
 	cerver_stats_print (videos_service, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) videos_service->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (videos_service));
 	cerver_log_line_break ();
 	(void) cerver_teardown (videos_service);
 
@@ -52,15 +53,10 @@ static void finish (void) {
 #pragma region routes
 
 // GET /
-void main_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void main_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	if (http_response_send_file (
-		http_receive, HTTP_STATUS_OK, "./examples/web/public/video.html"
+	if (cerver_http_response_send_file (
+		context, "./examples/web/public/video.html"
 	)) {
 		cerver_log_error (
 			"Failed to send ./examples/web/public/video.html"
@@ -70,16 +66,9 @@ void main_handler (
 }
 
 // GET /video
-void video_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void video_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	// http_request_headers_print (request);
-
-	http_response_handle_video (http_receive, "./data/videos/redis.webm");
+	(void) cerver_http_response_send_video (context, "./data/videos/redis.webm");
 
 }
 
@@ -120,22 +109,24 @@ int main (void) {
 
 		cerver_set_receive_buffer_size (videos_service, 4096);
 		cerver_set_thpool_n_threads (videos_service, 4);
-		cerver_set_handler_type (videos_service, CERVER_HANDLER_TYPE_THREADS);
 
 		cerver_set_reusable_address_flags (videos_service, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) videos_service->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (videos_service);
 
-		http_cerver_static_path_add (http_cerver, "./examples/web/public");
+		// every handler and the static paths send files, so they run in the threads of the pool
+		(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
+
+		cerver_http_static_path_add (http_cerver, "./examples/web/public");
+
+		CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
 		// GET /
-		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
-		http_cerver_route_register (http_cerver, main_route);
+		(void) cerver_http_group_root_add (main_group, REQUEST_METHOD_GET, main_handler);
 
 		// GET /video
-		HttpRoute *video_route = http_route_create (REQUEST_METHOD_GET, "video", video_handler);
-		http_cerver_route_register (http_cerver, video_route);
+		(void) cerver_http_group_get (main_group, "video", video_handler);
 
 		if (!cerver_start (videos_service)) {
 			finish ();

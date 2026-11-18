@@ -91,7 +91,7 @@ static const char http_web_socket_response_line_end[] = { "\r\n" };
 static const char *http_web_socket_rejected_key = { "error" };
 static const char *http_web_socket_rejected_value = { "WebSocket rejected!" };
 
-// the endpoint takes WebSocket connections, a route of the first API with the modifier does not
+// the endpoint takes WebSocket connections: it has the modifier and the handlers of a WebSocket
 bool http_endpoint_is_web_socket (const HttpEndpoint *endpoint) {
 
 	return (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET)
@@ -426,7 +426,7 @@ static bool http_receive_web_socket_accept (
 	if (handlers->on_upgrade) {
 		HttpWebSocketUpgrade upgrade = { handshake->protocol, NULL, NULL, false, HTTP_STATUS_FORBIDDEN, headers };
 
-		accepted = handlers->on_upgrade (http_receive, request, &upgrade);
+		accepted = handlers->on_upgrade (http_receive, &upgrade);
 		if (accepted) {
 			http_receive_web_socket_decided (handshake, request, &upgrade);
 		}
@@ -487,7 +487,7 @@ void http_receive_web_socket_upgrade (
 
 	// a before middleware that stops answers the request itself
 	if (
-		http_middlewares_run_before (&endpoint->resolved.middlewares, http_receive, request)
+		http_middlewares_run_before (&endpoint->resolved.middlewares, http_receive)
 		&& http_receive_web_socket_accept (http_receive, request, endpoint, handshake, &headers)
 		&& !http_receive_web_socket_switch (http_receive, handshake, &headers)
 	) {

@@ -44,7 +44,7 @@ struct Arena;
  *
  * @return true with zlib; without it, the compression settings are accepted but nothing is compressed
  */
-CERVER_EXPORT bool http_compression_available (void);
+CERVER_EXPORT bool cerver_http_compression_available (void);
 
 /**
  * @brief Returns whether an Accept-Encoding value accepts gzip.
@@ -56,7 +56,7 @@ CERVER_EXPORT bool http_compression_available (void);
  * @param[in] length the length of the value
  * @return true if gzip is accepted
  */
-CERVER_PUBLIC bool http_compression_accepts_gzip (
+CERVER_PUBLIC bool cerver_http_compression_accepts_gzip (
 	const char *accept_encoding, const size_t length
 );
 
@@ -69,7 +69,7 @@ CERVER_PUBLIC bool http_compression_accepts_gzip (
  * @param[in] length the length of the content type
  * @return true if it is compressible
  */
-CERVER_PUBLIC bool http_compression_is_compressible (
+CERVER_PUBLIC bool cerver_http_compression_is_compressible (
 	const char *content_type, const size_t length
 );
 
@@ -88,7 +88,7 @@ CERVER_PUBLIC bool http_compression_is_compressible (
  * compiled without zlib
  * @note For the internal methods of cerver.
  */
-CERVER_PRIVATE bool http_compression_gzip (
+CERVER_PRIVATE bool cerver_http_compression_gzip (
 	struct Arena *arena,
 	const void *data, const size_t length, const int level,
 	void **compressed, size_t *compressed_length

@@ -54,7 +54,7 @@ static void loop_create (void) {
 	// a response that does not fit in the socket fails instead of waiting for its client
 	cerver_set_send_timeout (fuzz_cerver, FUZZ_SEND_TIMEOUT_SECONDS);
 
-	http_cerver_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
+	cerver_http_set_keep_alive ((HttpCerver *) fuzz_cerver->cerver_data, true);
 
 	cerver_set_events_backend (fuzz_cerver, test_events_backend ());
 
@@ -144,7 +144,7 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 	loop_create ();
 
 	// each input chooses where its handlers run: the cerver reads its pool with each request
-	(void) http_cerver_set_handlers_pool (
+	(void) cerver_http_set_handlers_pool (
 		(HttpCerver *) fuzz_cerver->cerver_data,
 		(data[0] & LOOP_HANDLERS_BIT) ? HTTP_POOL_LOOP_NAME : NULL
 	);

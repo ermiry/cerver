@@ -1,6 +1,6 @@
 /**
  * @file cerver/http/requests/request.h
- * @brief The HttpRequest: what a handler gets of a request, its url, its params, its headers, its body and its parts.
+ * @brief The request of a context: its method, its path, its params, its headers and its body, as views.
  */
 
 #ifndef _CERVER_HTTP_REQUEST_H_
@@ -9,914 +9,691 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "cerver/types/string.h"
-
-#include "cerver/collections/dlist.h"
-
 #include "cerver/config.h"
 
-#include "cerver/network/network.h"
-
-#include "cerver/http/core/custom.h"
+#include "cerver/http/core/context.h"
 #include "cerver/http/core/utils.h"
-#include "cerver/http/headers/fields.h"
+#include "cerver/http/headers/types.h"
+#include "cerver/http/parser/head.h"
 #include "cerver/http/requests/content.h"
 #include "cerver/http/requests/method.h"
-#include "cerver/http/requests/multipart.h"
 
 #include "cerver/json/json.h"
-
-/**
- * @defgroup http_request Request
- * @ingroup http_requests
- * @brief A request and its getters.
- *
- * The getters take a request that is not NULL unless they say otherwise; what they return belongs to the request.
- * @{
- */
-
-/** @brief The size of the directory of the uploads of a request, with its terminator. */
-#define REQUEST_DIRNAME_SIZE			512
-
-/** @brief The size of the chunks of the arena of a request that was not created in the arena of its thread. */
-#define REQUEST_ARENA_CHUNK_SIZE		(1 << 10)
-
-/** @brief The longest X-Request-Id that is accepted; a longer one is replaced with a new id. */
-#define HTTP_REQUEST_ID_LENGTH			64
-/** @brief The size of the id of a request, with its terminator. */
-#define HTTP_REQUEST_ID_SIZE			(HTTP_REQUEST_ID_LENGTH + 1)
-
-/** @brief The length of a UUID v4, "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx". */
-#define HTTP_REQUEST_ID_UUID_LENGTH		36
-
-/** @brief The size of the longest address of a client (an IPv6 with its zone) and its terminator, the same as HTTP_CLIENT_IP_SIZE. */
-#define HTTP_REQUEST_CLIENT_IP_SIZE		NETWORK_ADDRESS_STRING_SIZE
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct Arena;
+struct _MultiPart;
+
+/**
+ * @defgroup http_request Request
+ * @ingroup http_requests
+ * @brief What a handler reads of its request.
+ *
+ * Every getter takes the context of the request. What it returns belongs to the request: it is valid until the
+ * request ends and it must not be changed nor released. A getter of a NULL context returns no value.
+ * @{
+ */
 
 /**
  * @brief Creates the data of an application from the claims of the token of a request.
  *
- * A route, an endpoint, a group or a static path with a bearer authentication calls it once its token was
- * verified; what it returns is HttpRequest::decoded_data.
+ * An endpoint, a group or a static path with a bearer authentication calls it once its token was verified; what
+ * it returns is the decoded data of the request, cerver_http_request_decoded_data ().
  *
  * @param[in] claims the claims of the token, an object of the JSON of cerver; it is valid only during the call, so
  * what is needed of it is copied
  * @return the data of the application, NULL for none
- * @note The handler of a route with a bearer also has the claims of its request, for as long as the request
- * lives: http_request_claims ().
- * @since 3.0b-7
+ * @since 3.0b-12 it replaces HttpDecodeData.
  */
-typedef void *(*HttpDecodeData) (const CerverJsonValue *claims);
+typedef void *(*CerverHttpDecodeData) (const CerverJsonValue *claims);
 
 /**
- * @brief A route param: a slice of the url of the request.
+ * @defgroup http_request_line Method and path
+ * @ingroup http_request
+ * @{
+ */
+
+/**
+ * @brief Returns the method of a request.
  *
- * Its percent-decoded value is created in the arena of the request when it is requested.
+ * @param[in] context the context of the request
+ * @return the method, REQUEST_METHOD_UNDEFINED for a NULL context
+ * @since 3.0b-12 it replaces http_request_get_method ().
  */
-typedef struct HttpRequestParam {
-
-	/** @brief The param in the url, it does not end with '\0'. */
-	const char *value;
-	/** @brief The length of #value. */
-	size_t len;
-
-	/** @brief The percent-decoded value, NULL until it is requested. */
-	String *decoded;
-
-} HttpRequestParam;
-
-/**
- * @brief A request.
- */
-struct _HttpRequest {
-
-	/** @brief The method. */
-	RequestMethod method;
-
-	/** @brief The path of the url. */
-	String *url;
-	/** @brief The query of the url. */
-	String *query;
-
-	/**
-	 * @brief The query params, as a list of key value pairs: NULL until http_request_get_query_params () creates it
-	 * from #query_pairs.
-	 *
-	 * @warning Since 2.1b-19 the field is not set when the request is parsed: read it with its getter.
-	 */
-	DoubleList *query_params;
-
-	/** @brief The route params. */
-	unsigned int n_params;
-	/** @brief The values of the route params. */
-	HttpRequestParam *params;
-	/** @brief The names of the route params, the ones of the matched endpoint. */
-	char *const *params_names;
-
-	/** @brief The header whose value is being received. */
-	http_header next_header;
-	/** @brief The known headers, by http_header; NULL for a header that the request does not have. */
-	String *headers[HTTP_HEADERS_SIZE];
-
-	/** @brief The custom headers. */
-	size_t n_custom_headers;
-	/** @brief The first custom header, they live in the arena of the request. */
-	HttpCustomHeader *custom_headers;
-	/** @brief The custom header that is being received. */
-	HttpCustomHeader *current_custom_header;
-
-	/** @brief The claims of its bearer token once it was verified; they live in the arena of the request. */
-	const CerverJsonValue *claims;
-
-	/** @brief The decoded data of its JWT. */
-	void *decoded_data;
-	/** @brief Releases #decoded_data. */
-	void (*delete_decoded_data)(void *);
-
-	/** @brief The data of a custom authentication handler. */
-	void *custom_data;
-	/** @brief Releases #custom_data. */
-	void (*delete_custom_data)(void *);
-
-	/** @brief The body, for a body that is not multipart. */
-	String *body;
-
-	/** @brief The parts of a multipart body. */
-	DoubleList *multi_parts;
-	/** @brief The part that is being received. */
-	MultiPart *current_part;
-	/** @brief The next part of the iterator of the parts. */
-	ListElement *next_part;
-
-	/** @brief The parts that are files. */
-	u8 n_files;
-	/** @brief The parts that are values. */
-	u8 n_values;
-
-	/** @brief The length that the directory of its uploads needed, see http_request_set_dirname (). */
-	int dirname_len;
-	/** @brief The directory of its uploads, generated by the uploads dirname generator. */
-	char dirname[REQUEST_DIRNAME_SIZE];
-
-	/**
-	 * @brief The values of a x-www-form-urlencoded body, as a list of key value pairs: NULL until
-	 * http_request_get_body_values () creates it from #body_pairs.
-	 *
-	 * @warning Since 2.1b-19 the field is not set when the request is parsed: read it with its getter.
-	 */
-	DoubleList *body_values;
-
-	/** @brief The document of its body, in the arena of the request; NULL until http_request_json () reads it. */
-	CerverJsonDocument *json;
-	/** @brief How http_request_json () read its body, with CERVER_JSON_ERROR_NONE for a body that is a document. */
-	CerverJsonError json_error;
-	/** @brief Its body was already read by http_request_json (). */
-	bool json_read;
-
-	/** @brief Its uploaded files are kept when it ends. */
-	bool keep_files;
-
-	/** @brief Its id when the cerver identifies its requests, "" if it does not. */
-	char id[HTTP_REQUEST_ID_SIZE];
-
-	/** @brief The address of the client: the peer, or the one forwarded by a trusted proxy. */
-	char client_ip[HTTP_REQUEST_CLIENT_IP_SIZE];
-
-	/**
-	 * @brief The arena of its thread, when the request lives there.
-	 *
-	 * The request, its url, its query and its headers are released with the arena, so none of them must be used
-	 * after the route handler returns.
-	 */
-	struct Arena *arena;
-
-	/** @brief The arena of a request that was not created in an arena: it holds its params, its custom headers and their strings. */
-	struct Arena *own_arena;
-
-	/**
-	 * @brief Its url, its query and its headers are views of the copy of its head, in its arena (HttpRequest::arena or
-	 * HttpRequest::own_arena): they are released with it.
-	 *
-	 * @since 3.0b-9
-	 */
-	bool strings_in_arena;
-
-	/**
-	 * @brief The query params, decoded, in the arena of the request: the getters of a value read them without
-	 * allocating.
-	 *
-	 * @since 3.0b-10
-	 */
-	struct KeyValuePair *query_pairs;
-	/**
-	 * @brief The pairs of #query_pairs.
-	 *
-	 * @since 3.0b-10
-	 */
-	size_t n_query_pairs;
-
-	/**
-	 * @brief The values of a x-www-form-urlencoded body, decoded, in the arena of the request, like #query_pairs.
-	 *
-	 * @since 3.0b-10
-	 */
-	struct KeyValuePair *body_pairs;
-	/**
-	 * @brief The pairs of #body_pairs.
-	 *
-	 * @since 3.0b-10
-	 */
-	size_t n_body_pairs;
-
-};
-
-/** @brief A request, see struct _HttpRequest. */
-typedef struct _HttpRequest HttpRequest;
-
-/**
- * @brief Returns the arena where the params and the custom headers of a request are created.
- *
- * @param[in,out] http_request the request
- * @return the arena of its thread, or its own one, created the first time; NULL if it could not be created
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE struct Arena *http_request_get_arena (
-	HttpRequest *http_request
+CERVER_EXPORT CerverHttpMethod cerver_http_request_method (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Allocates an empty request.
+ * @brief Returns whether a request is a HEAD that the handler of GET answers: its response is sent without its
+ * body.
  *
- * @return the new request, released with http_request_delete (); NULL if it could not be allocated
+ * @param[in] context the context of the request
+ * @retval true the handler of GET is answering a HEAD
+ * @retval false any other request
+ * @since 3.0b-12 it replaces http_receive_is_head ().
  */
-CERVER_PUBLIC HttpRequest *http_request_new (void);
-
-/**
- * @brief Creates an empty request in an arena, see HttpRequest::arena.
- *
- * @param[in] arena the arena
- * @return the new request, NULL if it could not be allocated
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE HttpRequest *http_request_new_arena (struct Arena *arena);
-
-/**
- * @brief Releases a request: its strings, its lists, its data with their delete methods and its own arena.
- *
- * @param[in] http_request the request, it can be NULL
- */
-CERVER_PUBLIC void http_request_delete (
-	HttpRequest *http_request
+CERVER_EXPORT bool cerver_http_request_is_head (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Creates an empty request, like http_request_new ().
+ * @brief Returns the path of the url of a request, like "/api/users/5".
  *
- * @return the new request, NULL if it could not be allocated
+ * @param[in] context the context of the request
+ * @return the path, as it was received (not decoded)
+ * @since 3.0b-12 it replaces http_request_get_url ().
  */
-CERVER_PUBLIC HttpRequest *http_request_create (void);
-
-/**
- * @brief Ends a request: its uploaded files are removed unless they are kept.
- *
- * @param[in,out] http_request the request, it can be NULL
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE void http_request_destroy (
-	HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_path (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the method of a request (GET, POST, ...).
+ * @brief Returns the query of the url of a request, what follows its '?'.
  *
- * @param[in] http_request the request
- * @return the method
+ * @param[in] context the context of the request
+ * @return the query, as it was received (not decoded); no value for a url without one
+ * @since 3.0b-12 it replaces http_request_get_query ().
  */
-CERVER_EXPORT const RequestMethod http_request_get_method (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_query (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the id of a request: its X-Request-Id or a new UUID v4.
+ * @brief Returns the id of a request: the X-Request-Id that it brought, or the one that the cerver generated.
  *
- * @param[in] http_request the request
- * @return the id when the cerver identifies its requests (http_cerver_set_request_id ()), "" otherwise
+ * @param[in] context the context of the request
+ * @return the id; no value when the cerver does not identify its requests
+ * @since 3.0b-12 it replaces http_request_get_id ().
  */
-CERVER_EXPORT const char *http_request_get_id (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_id (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the address of the client that sent a request.
+ * @brief Returns the address of the client of a request: the peer of its connection, or the one that a trusted
+ * proxy forwarded.
  *
- * @param[in] http_request the request
- * @return the peer, or the address forwarded by a trusted proxy (http_cerver_set_trusted_proxies ())
+ * @param[in] context the context of the request
+ * @return the address, as text
+ * @since 3.0b-12 it replaces http_request_get_client_ip ().
  */
-CERVER_EXPORT const char *http_request_get_client_ip (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_client_ip (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Sets the id of a request: its X-Request-Id if it is valid, or a new UUID v4.
+ * @brief Returns the address of the peer of the connection of a request: who connected to the cerver, a proxy when
+ * there is one in front of it.
  *
- * @param[in,out] http_request the request; its id is "" if a new one could not be generated
- * @note For the internal methods of cerver.
+ * @param[in] context the context of the request
+ * @return the address, as text; no value for a NULL context
+ * @note cerver_http_request_client_ip () is the address of the client: this one, unless the peer is a trusted proxy
+ * that forwarded another.
+ * @since 3.0b-12
  */
-CERVER_PRIVATE void http_request_resolve_id (
-	HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_peer_ip (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns whether a value can be the id of a request: up to #HTTP_REQUEST_ID_LENGTH characters of
- * [A-Za-z0-9._-].
+ * @brief Returns the head of a request as the parser read it: its version, its target as it arrived and every
+ * field in the order of the message, with the names and the values that the getters of the headers do not keep
+ * (a repeated field, a name that cerver does not know).
  *
- * @param[in] value the value
- * @param[in] length its length
- * @return true for a valid id, false for a NULL or an empty value
+ * Each slice of the head is read with cerver_http_head_at ().
+ *
+ * @param[in] context the context of the request
+ * @return the head, NULL for a NULL context
+ * @warning The bytes of the head are the copy of the request: the target has a '\0' where its query starts, and
+ * the head is valid until the request ends.
+ * @since 3.0b-12
  */
-CERVER_PUBLIC bool http_request_id_is_valid (
-	const char *value, const size_t length
+CERVER_EXPORT const CerverHttpHead *cerver_http_request_head (
+	const CerverHttpContext *context
+);
+
+/** @} */
+
+/**
+ * @defgroup http_request_params Params
+ * @ingroup http_request
+ * @brief The params of the route and the values of the query.
+ * @{
+ */
+
+/**
+ * @brief Returns the number of params of the route of a request.
+ *
+ * @param[in] context the context of the request
+ * @return the params that its path matched
+ * @since 3.0b-12 it replaces http_request_get_n_params ().
+ */
+CERVER_EXPORT unsigned int cerver_http_request_params_count (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Writes a new UUID v4 from the random bytes of the kernel.
+ * @brief Returns a param of the route of a request with its name, like "id" in "/users/:id".
  *
- * @param[out] id the buffer, of at least #HTTP_REQUEST_ID_UUID_LENGTH + 1 bytes
- * @retval 0 the id was written
- * @retval 1 a NULL buffer or the random bytes failed
+ * @param[in] context the context of the request
+ * @param[in] name the name of the param in the path of its endpoint
+ * @return the param, percent-decoded; no value when the route has no param with that name
+ * @since 3.0b-12 it replaces http_request_get_param ().
  */
-CERVER_PUBLIC u8 http_request_id_generate (char *id);
-
-/**
- * @brief Returns the path of the url of a request.
- *
- * @param[in] http_request the request
- * @return the path
- */
-CERVER_EXPORT const String *http_request_get_url (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_param (
+	const CerverHttpContext *context, const char *name
 );
 
 /**
- * @brief Returns the query of the url of a request.
+ * @brief Returns a param of the route of a request with its position.
  *
- * @param[in] http_request the request
- * @return the query, NULL if it has none
+ * @param[in] context the context of the request
+ * @param[in] index the position of the param in the path, from 0
+ * @return the param, percent-decoded; no value for a position that the route does not have
+ * @since 3.0b-12 it replaces http_request_get_param_at_idx ().
  */
-CERVER_EXPORT const String *http_request_get_query (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_param_at (
+	const CerverHttpContext *context, const unsigned int index
 );
 
 /**
- * @brief Returns the query params of a request.
+ * @brief Returns the name of a param of the route of a request.
  *
- * @param[in] http_request the request
- * @return the list of KeyValuePair, NULL if it has none
- * @note The list is created the first time that it is asked for, with a copy of each pair: a handler that only
- * reads some values reads them with http_request_query_params_get_value (), that does not allocate.
+ * @param[in] context the context of the request
+ * @param[in] index the position of the param in the path, from 0
+ * @return the name, a string of its endpoint; NULL for a param without name and for a position that the route
+ * does not have
+ * @since 3.0b-12 it replaces http_request_get_param_name_at_idx ().
  */
-CERVER_EXPORT const DoubleList *http_request_get_query_params (
-	const HttpRequest *http_request
+CERVER_EXPORT const char *cerver_http_request_param_name_at (
+	const CerverHttpContext *context, const unsigned int index
 );
 
 /**
- * @brief Returns how many route params a request has.
+ * @brief Returns the number of values of the query of a request.
  *
- * @param[in] http_request the request
- * @return the params
+ * @param[in] context the context of the request
+ * @return the pairs of its query, with the repeated keys
+ * @since 3.0b-12
  */
-CERVER_EXPORT const unsigned int http_request_get_n_params (
-	const HttpRequest *http_request
+CERVER_EXPORT size_t cerver_http_request_query_values_count (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns a route param of a request by its index, percent-decoded.
+ * @brief Returns the value of a key of the query of a request.
  *
- * @param[in] http_request the request
- * @param[in] idx the index
- * @return the value, that lives only while the route handler runs; NULL for an index out of range
+ * @param[in] context the context of the request
+ * @param[in] key the key
+ * @return the first value of the key, percent-decoded; no value when the query does not have the key
+ * @since 3.0b-12 it replaces http_request_query_params_get_value ().
  */
-CERVER_EXPORT const String *http_request_get_param_at_idx (
-	const HttpRequest *http_request, const unsigned int idx
+CERVER_EXPORT CerverHttpView cerver_http_request_query_value (
+	const CerverHttpContext *context, const char *key
 );
 
 /**
- * @brief Returns the route param with a name of the matched route (":id" is "id"), percent-decoded.
+ * @brief Returns a pair of the query of a request with its position.
  *
- * @param[in] http_request the request
- * @param[in] name the name
- * @return the value, that lives only while the route handler runs; NULL for a NULL name or a missing param
+ * @param[in] context the context of the request
+ * @param[in] index the position of the pair in the query, from 0
+ * @param[out] key the key of the pair, percent-decoded; it can be NULL
+ * @return the value of the pair, percent-decoded; no value for a position that the query does not have
+ * @since 3.0b-12 it replaces the list of http_request_get_query_params ().
  */
-CERVER_EXPORT const String *http_request_get_param (
-	const HttpRequest *http_request, const char *name
+CERVER_EXPORT CerverHttpView cerver_http_request_query_value_at (
+	const CerverHttpContext *context, const size_t index, CerverHttpView *key
+);
+
+/** @} */
+
+/**
+ * @defgroup http_request_headers Headers
+ * @ingroup http_request
+ * @{
+ */
+
+/**
+ * @brief Returns a header of a request.
+ *
+ * @param[in] context the context of the request
+ * @param[in] header the header, one of #HTTP_HEADERS_MAP
+ * @return its value, the ones of a repeated header joined with ", "; no value when the request does not have it
+ * @since 3.0b-12 it replaces http_request_get_header ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_request_header (
+	const CerverHttpContext *context, const CerverHttpHeader header
 );
 
 /**
- * @brief Returns the name of a route param by its index.
+ * @brief Returns a header of a request with its name, also one that #HTTP_HEADERS_MAP does not have.
  *
- * @param[in] http_request the request
- * @param[in] idx the index
- * @return the name, NULL if it has no name or for an index out of range
+ * @param[in] context the context of the request
+ * @param[in] name the name of the header, in any case
+ * @return its value; no value when the request does not have it
+ * @since 3.0b-12 it replaces http_request_get_custom_header ().
  */
-CERVER_EXPORT const char *http_request_get_param_name_at_idx (
-	const HttpRequest *http_request, const unsigned int idx
+CERVER_EXPORT CerverHttpView cerver_http_request_header_with_name (
+	const CerverHttpContext *context, const char *name
 );
 
 /**
- * @brief Returns the value of a known header of a request.
+ * @brief Returns the content type of a request.
  *
- * @param[in] http_request the request
- * @param[in] header the header
- * @return the value, NULL if the request does not have it or for a value out of the table
+ * @param[in] context the context of the request
+ * @return the type of its Content-Type header, HTTP_CONTENT_TYPE_NONE for a request without one or with one
+ * that #HTTP_CONTENT_TYPE_MAP does not have
+ * @since 3.0b-12 it replaces http_request_get_content_type ().
  */
-CERVER_EXPORT const String *http_request_get_header (
-	const HttpRequest *http_request, const http_header header
+CERVER_EXPORT CerverHttpContentType cerver_http_request_content_type (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Adds a custom header with its name to a request, as the one whose value is being received.
+ * @brief Returns whether the content type of a request is application/json.
  *
- * @param[in,out] http_request the request
- * @param[in] header the name
- * @note For the internal methods of cerver.
+ * @param[in] context the context of the request
+ * @retval true its Content-Type is JSON
+ * @retval false any other one, or none
+ * @since 3.0b-12 it replaces http_request_content_type_is_json ().
  */
-CERVER_PRIVATE void http_request_set_current_custom_header (
-	HttpRequest *http_request, const char *header
+CERVER_EXPORT bool cerver_http_request_is_json (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Sets the value of the custom header that is being received.
+ * @brief Reads the Range header of a request.
  *
- * @param[in,out] http_request the request
- * @param[in] header_value the value
- * @note For the internal methods of cerver.
+ * @param[in] context the context of the request
+ * @param[out] bytes_range the range that the request asks for
+ * @retval true the request has a range of bytes that cerver can serve
+ * @retval false it has none, or one that is not valid
+ * @since 3.0b-12 it replaces http_request_get_bytes_range ().
  */
-CERVER_PRIVATE void http_request_set_current_custom_header_value (
-	HttpRequest *http_request, const char *header_value
+CERVER_EXPORT bool cerver_http_request_bytes_range (
+	const CerverHttpContext *context, CerverHttpBytesRange *bytes_range
 );
 
-/**
- * @brief Returns the custom header of a request with a name, compared without case.
- *
- * @param[in] http_request the request
- * @param[in] header the name
- * @return the custom header, NULL if it is not found
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE HttpCustomHeader *http_request_custom_header_find (
-	const HttpRequest *http_request, const char *header
-);
+/** @} */
 
 /**
- * @brief Returns how many custom headers a request has.
- *
- * @param[in] http_request the request
- * @return the custom headers
+ * @defgroup http_request_body Body
+ * @ingroup http_request
+ * @{
  */
-CERVER_EXPORT const size_t http_request_get_custom_headers_count (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the value of a header of a request with a name, compared without case like the HTTP parser does.
- *
- * A custom header is looked for first, and then a known header with the name.
- *
- * @param[in] http_request the request
- * @param[in] header the name
- * @return the value, NULL for a NULL name or a missing header
- */
-CERVER_EXPORT const char *http_request_get_custom_header (
-	const HttpRequest *http_request, const char *header
-);
-
-/**
- * @brief Returns the content type of a request from its Content-Type, compared exactly with the mimes.
- *
- * @param[in] http_request the request
- * @return the content type, HTTP_CONTENT_TYPE_NONE without a Content-Type or with an unknown one
- */
-CERVER_EXPORT ContentType http_request_get_content_type (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the Content-Type of a request.
- *
- * @param[in] http_request the request
- * @return the value, NULL if it has none
- */
-CERVER_EXPORT const String *http_request_get_content_type_string (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns whether the Content-Type of a request is "application/json", like http_content_type_is_json ().
- *
- * @param[in] http_request the request
- * @return true for json, false without a Content-Type
- */
-CERVER_EXPORT bool http_request_content_type_is_json (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Reads the Range of a request.
- *
- * @param[in] http_request the request
- * @param[out] bytes_range the range
- * @return true when the request has a valid bytes range, false otherwise
- */
-CERVER_EXPORT bool http_request_get_bytes_range (
-	const HttpRequest *http_request, BytesRange *bytes_range
-);
-
-/**
- * @brief Returns the claims of the bearer token of a request, once the bearer authentication of its route
- * verified it.
- *
- * @param[in] http_request the request
- * @return the claims, an object of the JSON of cerver that lives as long as the request; NULL for a NULL request
- * and for one whose route did not verify a bearer
- * @since 3.0b-8
- */
-CERVER_EXPORT const CerverJsonValue *http_request_claims (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the decoded data of a request, created by the decode data method of its route
- * (http_route_set_decode_data ()).
- *
- * @param[in] http_request the request
- * @return the data, NULL if it has none
- */
-CERVER_EXPORT const void *http_request_get_decoded_data (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Sets the decoded data of a request.
- *
- * @param[in,out] http_request the request
- * @param[in] decoded_data the data
- */
-CERVER_EXPORT void http_request_set_decoded_data (
-	HttpRequest *http_request, void *decoded_data
-);
-
-/**
- * @brief Sets how the decoded data of a request is released.
- *
- * @param[in,out] http_request the request
- * @param[in] delete_decoded_data releases the data, NULL to keep it
- */
-CERVER_EXPORT void http_request_set_delete_decoded_data (
-	HttpRequest *http_request, void (*delete_decoded_data)(void *)
-);
-
-/**
- * @brief Releases the decoded data of a request with free ().
- *
- * @param[in,out] http_request the request
- */
-CERVER_EXPORT void http_request_set_default_delete_decoded_data (
-	HttpRequest *http_request
-);
-
-/**
- * @brief Returns the custom data of a request, that the application can set and read at any time.
- *
- * @param[in] http_request the request
- * @return the data, NULL if it has none
- */
-CERVER_EXPORT const void *http_request_get_custom_data (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Sets the custom data of a request.
- *
- * @param[in,out] http_request the request
- * @param[in] custom_data the data
- */
-CERVER_EXPORT void http_request_set_custom_data (
-	HttpRequest *http_request, void *custom_data
-);
-
-/**
- * @brief Sets how the custom data of a request is released.
- *
- * @param[in,out] http_request the request
- * @param[in] delete_custom_data releases the data, NULL to keep it
- */
-CERVER_EXPORT void http_request_set_delete_custom_data (
-	HttpRequest *http_request, void (*delete_custom_data)(void *)
-);
-
-/**
- * @brief Releases the custom data of a request with free ().
- *
- * @param[in,out] http_request the request
- */
-CERVER_EXPORT void http_request_set_default_delete_custom_data (
-	HttpRequest *http_request
-);
 
 /**
  * @brief Returns the body of a request that is not multipart.
  *
- * @param[in] http_request the request
- * @return the body, NULL if it has none
+ * @param[in] context the context of the request
+ * @return the body; no value for a request without one
+ * @since 3.0b-12 it replaces http_request_get_body ().
  */
-CERVER_EXPORT const String *http_request_get_body (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_body (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the body of a request as a JSON value, read with the JSON of cerver.
+ * @brief Returns the body of a request as a document of the JSON of cerver.
  *
- * The body is read once, with the defaults of cerver_json_parse (): the next calls answer what the first one
- * did. Its document lives in the arena of the request, so a body that fits in a chunk of that arena is read
- * without a call to malloc (), and it is released with the request. The body itself is not changed.
+ * The body is read the first time, into the memory of the request, and the next calls return the same value.
  *
- * @param[in] http_request the request
- * @param[out] error why the body is not a value and where, with CERVER_JSON_ERROR_NONE when it is; it can be
- * NULL
- * @return the value of the body, read with the methods of cerver/json/value.h; NULL when the body is not valid
- * JSON, for a request without a body (CERVER_JSON_ERROR_END, an empty text) and for a NULL request
- * (CERVER_JSON_ERROR_ARGUMENTS)
- * @warning The value is released when the handler of the request returns, like its url and its headers.
- * @threadsafety Only from the thread that handles the request.
- * @since 3.0b-6
+ * @param[in] context the context of the request
+ * @param[out] error why the body is not a document, with CERVER_JSON_ERROR_NONE for one that is; it can be NULL
+ * @return the root of the document, valid until the request ends; NULL for a request without a body and for a
+ * body that is not JSON
+ * @since 3.0b-12 it replaces http_request_json ().
  */
-CERVER_EXPORT const CerverJsonValue *http_request_json (
-	const HttpRequest *http_request, CerverJsonError *error
+CERVER_EXPORT const CerverJsonValue *cerver_http_request_json (
+	const CerverHttpContext *context, CerverJsonError *error
 );
 
 /**
- * @brief Returns the part that is being received, for the uploads generators.
+ * @brief Returns the number of values of the application/x-www-form-urlencoded body of a request.
  *
- * @param[in] http_request the request
- * @return the part, NULL if there is none
+ * @param[in] context the context of the request
+ * @return the pairs of its body, with the repeated keys
+ * @since 3.0b-12
  */
-CERVER_EXPORT const MultiPart *http_request_get_current_mpart (
-	const HttpRequest *http_request
+CERVER_EXPORT size_t cerver_http_request_form_values_count (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns how many parts of a request are files.
+ * @brief Returns the value of a key of the application/x-www-form-urlencoded body of a request.
  *
- * @param[in] http_request the request
- * @return the files
+ * @param[in] context the context of the request
+ * @param[in] key the key
+ * @return the first value of the key, percent-decoded; no value when the body does not have the key
+ * @since 3.0b-12 it replaces http_request_body_get_value ().
  */
-CERVER_EXPORT const u8 http_request_get_n_files (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_form_value (
+	const CerverHttpContext *context, const char *key
 );
 
 /**
- * @brief Returns how many parts of a request are values.
+ * @brief Returns a pair of the application/x-www-form-urlencoded body of a request with its position.
  *
- * @param[in] http_request the request
- * @return the values
+ * @param[in] context the context of the request
+ * @param[in] index the position of the pair in the body, from 0
+ * @param[out] key the key of the pair, percent-decoded; it can be NULL
+ * @return the value of the pair, percent-decoded; no value for a position that the body does not have
+ * @since 3.0b-12 it replaces the list of http_request_get_body_values ().
  */
-CERVER_EXPORT const u8 http_request_get_n_values (
-	const HttpRequest *http_request
+CERVER_EXPORT CerverHttpView cerver_http_request_form_value_at (
+	const CerverHttpContext *context, const size_t index, CerverHttpView *key
+);
+
+/** @} */
+
+/**
+ * @defgroup http_request_authentication Authentication
+ * @ingroup http_request
+ * @brief What the authentication of a request left for its handler.
+ * @{
+ */
+
+/**
+ * @brief Returns the claims of the bearer token of a request, once it was verified.
+ *
+ * @param[in] context the context of the request
+ * @return the claims, an object of the JSON of cerver that lives until the request ends; NULL for a request
+ * without a verified token
+ * @since 3.0b-12 it replaces http_request_claims ().
+ */
+CERVER_EXPORT const CerverJsonValue *cerver_http_request_claims (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the length that the directory of the uploads of a request needed.
+ * @brief Returns the data that the decode method of its endpoint created from the token of a request.
  *
- * @param[in] http_request the request
- * @return the length, see http_request_set_dirname ()
+ * @param[in] context the context of the request
+ * @return the decoded data, NULL when there is none
+ * @since 3.0b-12 it replaces http_request_get_decoded_data ().
  */
-CERVER_EXPORT const int http_request_get_dirname_len (
-	const HttpRequest *http_request
+CERVER_EXPORT const void *cerver_http_request_decoded_data (
+	const CerverHttpContext *context
 );
 
 /**
- * @brief Returns the directory of the uploads of a request, generated by the uploads dirname generator.
+ * @brief Sets the decoded data of a request, for example from a custom authentication handler.
  *
- * @param[in] http_request the request
- * @return the directory, empty if it has none
+ * @param[in,out] context the context of the request
+ * @param[in] decoded_data the data; the one that the request had is not released
+ * @param[in] delete_decoded_data releases the data when the request ends, NULL to keep it
+ * @since 3.0b-12 it replaces http_request_set_decoded_data () and http_request_set_delete_decoded_data ().
  */
-CERVER_EXPORT const char *http_request_get_dirname (
-	const HttpRequest *http_request
+CERVER_EXPORT void cerver_http_request_set_decoded_data (
+	CerverHttpContext *context,
+	void *decoded_data, void (*delete_decoded_data)(void *)
 );
 
 /**
- * @brief Sets the directory of the uploads of a request from a format; the uploads dirname generators call it.
+ * @brief Returns the custom data of a request, the one that an authentication handler or a middleware set.
  *
- * @param[in] http_request the request, NULL is ignored
- * @param[in] format the printf () format of the directory, NULL is ignored
- * @param[in] ... the arguments of the format
- * @note The length is what the format needed: a directory of REQUEST_DIRNAME_SIZE - 1 characters is kept whole, and
- * the cerver does not use one whose length is #REQUEST_DIRNAME_SIZE or more (it was cut).
+ * @param[in] context the context of the request
+ * @return the custom data, NULL when there is none
+ * @since 3.0b-12 it replaces http_request_get_custom_data ().
  */
-CERVER_PUBLIC void http_request_set_dirname (
-	const HttpRequest *http_request, const char *format, ...
+CERVER_EXPORT const void *cerver_http_request_custom_data (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Sets the custom data of a request, to pass it from an authentication handler or a middleware to the
+ * handler.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] custom_data the data; the one that the request had is not released
+ * @param[in] delete_custom_data releases the data when the request ends, NULL to keep it
+ * @since 3.0b-12 it replaces http_request_set_custom_data () and http_request_set_delete_custom_data ().
+ */
+CERVER_EXPORT void cerver_http_request_set_custom_data (
+	CerverHttpContext *context,
+	void *custom_data, void (*delete_custom_data)(void *)
+);
+
+/** @} */
+
+/**
+ * @defgroup http_request_parts Multipart
+ * @ingroup http_request
+ * @brief The parts of a multipart/form-data body: its values and its files, that are saved in the uploads path
+ * of the cerver while the body is received.
+ * @{
+ */
+
+/**
+ * @brief A part of a multipart body: a value or a file.
+ *
+ * @since 3.0b-12 it replaces MultiPart, whose fields are not public anymore.
+ */
+typedef struct _MultiPart CerverHttpPart;
+
+/**
+ * @brief Returns the number of files of the multipart body of a request.
+ *
+ * @param[in] context the context of the request
+ * @return the parts that are files
+ * @since 3.0b-12 it replaces http_request_get_n_files ().
+ */
+CERVER_EXPORT unsigned int cerver_http_request_files_count (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Returns the number of values of the multipart body of a request.
+ *
+ * @param[in] context the context of the request
+ * @return the parts that are values
+ * @since 3.0b-12 it replaces http_request_get_n_values ().
+ */
+CERVER_EXPORT unsigned int cerver_http_request_values_count (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Returns a part of the multipart body of a request with its name.
+ *
+ * @param[in] context the context of the request
+ * @param[in] name the name of the part
+ * @return the first part with that name, NULL when the body has none
+ * @since 3.0b-12 it replaces http_request_multi_parts_get ().
+ */
+CERVER_EXPORT const CerverHttpPart *cerver_http_request_part (
+	const CerverHttpContext *context, const char *name
+);
+
+/**
+ * @brief Returns the part of the multipart body of a request that follows another one, to visit them all.
+ *
+ * @param[in] context the context of the request
+ * @param[in] previous the part that was returned before, NULL for the first one
+ * @return the next part in the order of the body, NULL after the last one
+ * @since 3.0b-12 it replaces http_request_multi_parts_iter_start () and http_request_multi_parts_iter_get_next ().
+ */
+CERVER_EXPORT const CerverHttpPart *cerver_http_request_part_next (
+	const CerverHttpContext *context, const CerverHttpPart *previous
+);
+
+/**
+ * @brief Returns the value of a part of the multipart body of a request with its name.
+ *
+ * @param[in] context the context of the request
+ * @param[in] name the name of the part
+ * @return its value; no value when the body has no value with that name
+ * @since 3.0b-12 it replaces http_request_multi_parts_get_value ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_request_part_value (
+	const CerverHttpContext *context, const char *name
+);
+
+/**
+ * @brief Returns the directory where the files of a request were saved, the one that the uploads dirname
+ * generator of its cerver created inside its uploads path.
+ *
+ * @param[in] context the context of the request
+ * @return the name of the directory; no value for a cerver without a dirname generator
+ * @since 3.0b-12 it replaces http_request_get_dirname ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_request_uploads_directory (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Keeps the files of a request when it ends, in a cerver that deletes its uploads when they are done.
+ *
+ * @param[in,out] context the context of the request
+ * @since 3.0b-12 it replaces http_request_multi_part_keep_files ().
+ */
+CERVER_EXPORT void cerver_http_request_keep_files (
+	CerverHttpContext *context
+);
+
+/**
+ * @brief Deletes the files of a request that were saved, and its uploads directory if it ends empty.
+ *
+ * @param[in] context the context of the request
+ * @since 3.0b-12 it replaces http_request_multi_part_discard_files ().
+ */
+CERVER_EXPORT void cerver_http_request_discard_files (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Returns whether a part is a file.
+ *
+ * @param[in] part the part
+ * @retval true it is a file, saved in the uploads path
+ * @retval false it is a value, or the part is NULL
+ * @since 3.0b-12 it replaces http_multi_part_is_file ().
+ */
+CERVER_EXPORT bool cerver_http_part_is_file (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Returns the name of a part.
+ *
+ * @param[in] part the part
+ * @return its name; no value for a NULL part
+ * @since 3.0b-12 it replaces http_multi_part_get_name ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_part_name (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Returns the value of a part that is not a file.
+ *
+ * @param[in] part the part
+ * @return its value; no value for a file and for a NULL part
+ * @since 3.0b-12 it replaces http_multi_part_get_value ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_part_value (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Returns the name that the client gave to the file of a part.
+ *
+ * @param[in] part the part
+ * @return the filename of its Content-Disposition; no value for a part that is not a file
+ * @warning It is what the client sent: it is never used as a path as it is.
+ * @since 3.0b-12 it replaces http_multi_part_get_filename ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_part_filename (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Returns where the file of a part was saved.
+ *
+ * @param[in] part the part
+ * @return the path of the saved file; no value for a part that is not a file and for one that could not be
+ * saved
+ * @since 3.0b-12 it replaces http_multi_part_get_saved_filename ().
+ */
+CERVER_EXPORT CerverHttpView cerver_http_part_saved_filename (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Returns the bytes of the file of a part that were saved.
+ *
+ * @param[in] part the part
+ * @return the bytes that were written, 0 for a part that is not a file
+ * @since 3.0b-12 it replaces http_multi_part_get_total_wrote ().
+ */
+CERVER_EXPORT size_t cerver_http_part_size (
+	const CerverHttpPart *part
+);
+
+/**
+ * @brief Moves the saved file of a part to another path, in the same file system.
+ *
+ * @param[in,out] part the part, of the request that is being handled
+ * @param[in] destination the new path of the file
+ * @retval 0 the file was moved, and the saved filename of the part is the new path
+ * @retval 1 the part is not a saved file, or the file could not be moved
+ * @since 3.0b-12 it replaces http_multi_part_move_file ().
+ */
+CERVER_EXPORT unsigned int cerver_http_part_move_file (
+	const CerverHttpPart *part, const char *destination
+);
+
+/** @} */
+
+/**
+ * @defgroup http_request_uploads Uploads generators
+ * @ingroup http_request
+ * @brief What the generators of the uploads of a cerver use (cerver/http/core/uploads.h): they run while the body
+ * of a multipart request is received, before its handler.
+ * @{
+ */
+
+/**
+ * @brief Returns the part of a multipart request that is being received: the file that the uploads filename
+ * generator names.
+ *
+ * @param[in] context the context of the request
+ * @return the part, with its name and the filename that the client sent; NULL outside a generator
+ * @since 3.0b-12 it replaces http_request_get_current_mpart ().
+ */
+CERVER_EXPORT const CerverHttpPart *cerver_http_request_current_part (
+	const CerverHttpContext *context
+);
+
+/**
+ * @brief Sets the name with which the file of a part is saved, from an uploads filename generator.
+ *
+ * @param[in,out] part the part that is being received, cerver_http_request_current_part ()
+ * @param[in] format the format of the name, like the one of printf (), followed by its values
+ * @note A name that is not set, or that is empty, is replaced by the sanitized filename of the part.
+ * @since 3.0b-12 it replaces http_multi_part_set_generated_filename ().
+ */
+CERVER_EXPORT void cerver_http_part_set_generated_filename (
+	const CerverHttpPart *part, const char *format, ...
 ) CERVER_PRINTF_FORMAT (2, 3);
 
 /**
- * @brief Returns the values of a x-www-form-urlencoded body.
+ * @brief Sets the directory, inside the uploads path of the cerver, where the files of a request are saved, from
+ * an uploads dirname generator.
  *
- * @param[in] http_request the request
- * @return the list of KeyValuePair, NULL if it has none
- * @note The list is created the first time that it is asked for, like the one of http_request_get_query_params ();
- * http_request_body_get_value () does not allocate.
+ * @param[in,out] context the context of the request
+ * @param[in] format the format of the name of the directory, like the one of printf (), followed by its values
+ * @note A name that does not fit is not used: the request is rejected.
+ * @since 3.0b-12 it replaces http_request_set_dirname ().
  */
-CERVER_EXPORT const DoubleList *http_request_get_body_values (
-	const HttpRequest *http_request
-);
+CERVER_EXPORT void cerver_http_request_set_uploads_directory (
+	CerverHttpContext *context, const char *format, ...
+) CERVER_PRINTF_FORMAT (2, 3);
 
-/**
- * @brief Logs the known headers that a request has.
- *
- * @param[in] http_request the request, NULL prints nothing
- */
-CERVER_PUBLIC void http_request_headers_print (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Logs every known header, with "NULL" for the ones that the request does not have.
- *
- * @param[in] http_request the request, NULL prints nothing
- */
-CERVER_PUBLIC void http_request_headers_print_full (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Prints the query params of a request to stdout.
- *
- * @param[in] http_request the request, NULL prints nothing
- */
-CERVER_PUBLIC void http_request_query_params_print (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the value of a query param of a request.
- *
- * @param[in] http_request the request
- * @param[in] key the key
- * @return the value, NULL for a NULL argument, a request without query params or a missing key
- */
-CERVER_EXPORT const String *http_request_query_params_get_value (
-	const HttpRequest *http_request, const char *key
-);
-
-/**
- * @brief Returns the part of a request with a name.
- *
- * @param[in] http_request the request
- * @param[in] key the name of the part
- * @return the part, that must not be deleted; NULL for a NULL argument or a missing part
- */
-CERVER_EXPORT const MultiPart *http_request_multi_parts_get (
-	const HttpRequest *http_request, const char *key
-);
-
-/**
- * @brief Returns the value of the part of a request with a name.
- *
- * @param[in] http_request the request
- * @param[in] key the name of the part
- * @return the value, that must not be deleted; NULL for a NULL argument or a missing part
- */
-CERVER_EXPORT const char *http_request_multi_parts_get_value (
-	const HttpRequest *http_request, const char *key
-);
-
-/**
- * @brief Returns the sanitized original filename of the part of a request with a name.
- *
- * @param[in] http_request the request
- * @param[in] key the name of the part
- * @return the filename, that must not be deleted; NULL for a NULL argument or a missing part
- */
-CERVER_EXPORT const char *http_request_multi_parts_get_filename (
-	const HttpRequest *http_request, const char *key
-);
-
-/**
- * @brief Returns the saved filename of the part of a request with a name.
- *
- * @param[in] http_request the request
- * @param[in] key the name of the part
- * @return the saved filename, that must not be deleted; NULL for a NULL argument or a missing part
- */
-CERVER_EXPORT const char *http_request_multi_parts_get_saved_filename (
-	const HttpRequest *http_request, const char *key
-);
-
-/**
- * @brief Starts the iterator of the parts of a request.
- *
- * @param[in] http_request the request
- * @return true when the request has parts, false otherwise
- */
-CERVER_EXPORT bool http_request_multi_parts_iter_start (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the next part of the iterator.
- *
- * @param[in] http_request the request
- * @return the part, NULL after the last one
- */
-CERVER_EXPORT const MultiPart *http_request_multi_parts_iter_get_next (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the sanitized original filenames of the parts of a request.
- *
- * @param[in] http_request the request
- * @return a new list of the filenames, that belong to the parts; deleted with
- * http_request_multi_parts_all_filenames_delete (); NULL for a NULL request or one without parts
- */
-CERVER_EXPORT DoubleList *http_request_multi_parts_get_all_filenames (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the saved filenames of the parts of a request.
- *
- * @param[in] http_request the request
- * @return a new list of the saved filenames, that belong to the parts; deleted with
- * http_request_multi_parts_all_filenames_delete (); NULL for a NULL request or one without parts
- */
-CERVER_EXPORT DoubleList *http_request_multi_parts_get_all_saved_filenames (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Deletes a list of http_request_multi_parts_get_all_filenames () or
- * http_request_multi_parts_get_all_saved_filenames (), without the filenames.
- *
- * @param[in] all_filenames the list, it can be NULL
- */
-CERVER_EXPORT void http_request_multi_parts_all_filenames_delete (
-	DoubleList *all_filenames
-);
-
-/**
- * @brief Keeps the uploaded files of a request when it ends.
- *
- * They are only deleted when the cerver deletes the uploads when they are done
- * (http_cerver_set_uploads_delete_when_done ()).
- *
- * @param[in,out] http_request the request, NULL is ignored
- */
-CERVER_EXPORT void http_request_multi_part_keep_files (
-	HttpRequest *http_request
-);
-
-/**
- * @brief Removes every saved file of the parts of a request.
- *
- * @param[in] http_request the request, NULL is ignored
- */
-CERVER_PUBLIC void http_request_multi_part_discard_files (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Prints the parts of a request to stdout.
- *
- * @param[in] http_request the request, NULL prints nothing
- */
-CERVER_PUBLIC void http_request_multi_parts_print (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Prints the files of the parts of a request to stdout.
- *
- * @param[in] http_request the request, NULL prints nothing
- */
-CERVER_PUBLIC void http_request_multi_parts_files_print (
-	const HttpRequest *http_request
-);
-
-/**
- * @brief Returns the value of a key of the x-www-form-urlencoded body of a request.
- *
- * @param[in] http_request the request
- * @param[in] key the key
- * @return the value, that must not be deleted; NULL for a missing key or a request without body values
- */
-CERVER_EXPORT const String *http_request_body_get_value (
-	const HttpRequest *http_request, const char *key
-);
+/** @} */
 
 /** @} */
 

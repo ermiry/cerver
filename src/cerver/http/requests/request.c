@@ -74,7 +74,7 @@ HttpRequest *http_request_new_arena (Arena *arena) {
 static void http_request_init (HttpRequest *http_request) {
 
 	if (http_request) {
-		http_request->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		http_request->method = (CerverHttpMethod) REQUEST_METHOD_UNDEFINED;
 
 		http_request->url = NULL;
 		http_request->query = NULL;
@@ -241,7 +241,7 @@ void http_request_destroy (HttpRequest *http_request) {
 
 }
 
-const RequestMethod http_request_get_method (
+const CerverHttpMethod http_request_get_method (
 	const HttpRequest *http_request
 ) {
 
@@ -393,7 +393,7 @@ const DoubleList *http_request_get_query_params (
 ) {
 
 	if (!http_request->query_params && http_request->n_query_pairs) {
-		((HttpRequest *) http_request)->query_params = http_query_pairs_list (
+		((HttpRequest *) http_request)->query_params = cerver_http_query_pairs_list (
 			http_request->query_pairs, http_request->n_query_pairs
 		);
 	}
@@ -419,7 +419,7 @@ static const String *http_request_param_decode (
 		Arena *arena = http_request_get_arena ((HttpRequest *) http_request);
 		String *decoded = arena ? str_create_from_bytes_arena (arena, param->value, param->len) : NULL;
 		if (decoded) {
-			decoded->len = http_url_decode_path (decoded->str, param->value, param->len);
+			decoded->len = cerver_http_url_decode_path (decoded->str, param->value, param->len);
 			decoded->str[decoded->len] = '\0';
 			param->decoded = decoded;
 		}
@@ -467,7 +467,7 @@ const char *http_request_get_param_name_at_idx (
 }
 
 const String *http_request_get_header (
-	const HttpRequest *http_request, const http_header header
+	const HttpRequest *http_request, const CerverHttpHeader header
 ) {
 
 	// a negative value of a signed enum is a large unsigned one
@@ -557,7 +557,7 @@ const char *http_request_get_custom_header (
 		// a header that became part of the HTTP headers map is still found by its name
 		else {
 			const String *known = http_request_get_header (
-				http_request, http_header_type_with_string (header)
+				http_request, cerver_http_header_with_string (header)
 			);
 
 			if (known) value = known->str;
@@ -568,12 +568,12 @@ const char *http_request_get_custom_header (
 
 }
 
-ContentType http_request_get_content_type (
+CerverHttpContentType http_request_get_content_type (
 	const HttpRequest *http_request
 ) {
 
 	return http_request->headers[HTTP_HEADER_CONTENT_TYPE] ?
-		http_content_type_with_mime (
+		cerver_http_content_type_with_mime (
 			http_request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		) : HTTP_CONTENT_TYPE_NONE;
 
@@ -592,7 +592,7 @@ bool http_request_content_type_is_json (
 ) {
 
 	return http_request->headers[HTTP_HEADER_CONTENT_TYPE] ?
-		http_content_type_is_json (
+		cerver_http_content_type_is_json (
 			http_request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		) : false;
 
@@ -618,7 +618,7 @@ static bool http_request_bytes_range_position (
 
 // the range that starts at a position, with or without its last one
 static void http_request_bytes_range_from (
-	BytesRange *bytes_range, const long start, const char *last
+	CerverHttpBytesRange *bytes_range, const long start, const char *last
 ) {
 
 	bytes_range->start = start;
@@ -641,7 +641,7 @@ static void http_request_bytes_range_from (
 // and its start is known with the size of the file; no bytes are not a range
 // returns true when the value is a range
 static bool http_request_bytes_range_suffix (
-	BytesRange *bytes_range, const char *length
+	CerverHttpBytesRange *bytes_range, const char *length
 ) {
 
 	bool result = false;
@@ -665,7 +665,7 @@ static bool http_request_bytes_range_suffix (
 // another unit and a value without its numbers are ignored and the bytes range is not changed
 // returns true when the value is a range
 static bool http_request_get_bytes_range_internal (
-	const char *range, BytesRange *bytes_range
+	const char *range, CerverHttpBytesRange *bytes_range
 ) {
 
 	bool result = false;
@@ -691,7 +691,7 @@ static bool http_request_get_bytes_range_internal (
 }
 
 bool http_request_get_bytes_range (
-	const HttpRequest *http_request, BytesRange *bytes_range
+	const HttpRequest *http_request, CerverHttpBytesRange *bytes_range
 ) {
 
 	bool result = false;
@@ -905,7 +905,7 @@ const DoubleList *http_request_get_body_values (
 ) {
 
 	if (!http_request->body_values && http_request->n_body_pairs) {
-		((HttpRequest *) http_request)->body_values = http_query_pairs_list (
+		((HttpRequest *) http_request)->body_values = cerver_http_query_pairs_list (
 			http_request->body_pairs, http_request->n_body_pairs
 		);
 	}
@@ -921,7 +921,7 @@ void http_request_headers_print (const HttpRequest *http_request) {
 			if (http_request->headers[i]) {
 				cerver_log_msg (
 					"%s: %s",
-					http_header_string ((const http_header) i),
+					cerver_http_header_to_string ((const CerverHttpHeader) i),
 					http_request->headers[i]->str
 				);
 			}
@@ -937,7 +937,7 @@ void http_request_headers_print_full (const HttpRequest *http_request) {
 		for (u8 i = 0; i < HTTP_HEADERS_MAX; i++) {
 			cerver_log_msg (
 				"%s: %s",
-				http_header_string ((const http_header) i),
+				cerver_http_header_to_string ((const CerverHttpHeader) i),
 				http_request->headers[i] ? http_request->headers[i]->str : null
 			);
 		}
@@ -960,7 +960,7 @@ const String *http_request_query_params_get_value (
 ) {
 
 	return http_request ?
-		http_query_pairs_find (http_request->query_pairs, http_request->n_query_pairs, key) : NULL;
+		cerver_http_query_pairs_find (http_request->query_pairs, http_request->n_query_pairs, key) : NULL;
 
 }
 
@@ -1272,6 +1272,6 @@ const String *http_request_body_get_value (
 	const HttpRequest *http_request, const char *key
 ) {
 
-	return http_query_pairs_find (http_request->body_pairs, http_request->n_body_pairs, key);
+	return cerver_http_query_pairs_find (http_request->body_pairs, http_request->n_body_pairs, key);
 
 }

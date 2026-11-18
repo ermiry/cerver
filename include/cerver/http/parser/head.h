@@ -75,7 +75,7 @@ CERVER_EXPORT const char *cerver_http_head_at (
  * @since 3.0b-9
  */
 CERVER_EXPORT const CerverHttpField *cerver_http_head_field_with_type (
-	const CerverHttpHead *head, const http_header type
+	const CerverHttpHead *head, const CerverHttpHeader type
 );
 
 /**
@@ -100,7 +100,7 @@ CERVER_EXPORT const CerverHttpField *cerver_http_head_field_with_name (
  * @threadsafety Safe from any thread.
  * @since 3.0b-9
  */
-CERVER_EXPORT http_header cerver_http_parser_field_type (
+CERVER_EXPORT CerverHttpHeader cerver_http_parser_field_type (
 	const char *name, const size_t length
 );
 

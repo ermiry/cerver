@@ -9,12 +9,11 @@
 #include "cerver/cerver.h"
 
 #include "cerver/http/core/admin.h"
+#include "cerver/http/core/context.h"
 #include "cerver/http/core/custom.h"
-#include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/limits.h"
 #include "cerver/http/core/metrics.h"
-#include "cerver/http/core/pairs.h"
 #include "cerver/http/core/pool.h"
 #include "cerver/http/core/public.h"
 #include "cerver/http/core/routes.h"
@@ -32,7 +31,6 @@
 #include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/content.h"
 #include "cerver/http/requests/method.h"
-#include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/requests/url.h"
 #include "cerver/http/responses/compression.h"
@@ -40,7 +38,6 @@
 #include "cerver/http/responses/date.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/responses/status.h"
-#include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/middleware.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -60,10 +57,10 @@
 
 /**
  * @defgroup http HTTP
- * @brief The HTTP/1.1 server of cerver: the HttpCerver of a cerver of type CERVER_TYPE_WEB, its routes, its
+ * @brief The HTTP/1.1 server of cerver: the CerverHttp of a cerver of type CERVER_TYPE_WEB, its routes, its
  * requests, its responses, its security and its WebSocket connections.
  *
- * A web cerver is created with cerver_create_web (), its HttpCerver is taken with http_cerver_get (), configured
+ * A web cerver is created with cerver_create_web (), its CerverHttp is taken with cerver_http_get (), configured
  * with the setters of HTTP and started with cerver_start ().
  */
 

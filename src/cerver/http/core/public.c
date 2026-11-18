@@ -64,7 +64,7 @@
 
 #pragma region public
 
-static HttpStaticPath *http_static_path_new (void) {
+static HttpStaticPath *cerver_http_static_path_new (void) {
 
 	HttpStaticPath *http_static_path = (HttpStaticPath *) malloc (sizeof (HttpStaticPath));
 	if (http_static_path) {
@@ -81,7 +81,7 @@ static HttpStaticPath *http_static_path_new (void) {
 
 }
 
-void http_static_path_delete (void *http_static_path_ptr) {
+void cerver_http_static_path_delete (void *http_static_path_ptr) {
 
 	if (http_static_path_ptr) {
 		HttpStaticPath *http_static_path = (HttpStaticPath *) http_static_path_ptr;
@@ -93,21 +93,21 @@ void http_static_path_delete (void *http_static_path_ptr) {
 
 }
 
-int http_static_path_comparator (const void *a, const void *b) {
+int cerver_http_static_path_comparator (const void *a, const void *b) {
 
 	return strcmp (((HttpStaticPath *) a)->path->str, ((HttpStaticPath *) b)->path->str);
 
 }
 
-static HttpStaticPath *http_static_path_create (const char *path) {
+static HttpStaticPath *cerver_http_static_path_create (const char *path) {
 
-	HttpStaticPath *http_static_path = http_static_path_new ();
+	HttpStaticPath *http_static_path = cerver_http_static_path_new ();
 	if (http_static_path) {
 		http_static_path->path = str_new (path);
 
 		// a static path without its path, or without its characters, would be dereferenced when it is resolved
 		if (!http_static_path->path || !http_static_path->path->str) {
-			http_static_path_delete (http_static_path);
+			cerver_http_static_path_delete (http_static_path);
 			http_static_path = NULL;
 		}
 	}
@@ -117,15 +117,15 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 }
 
 // sets the authentication of the files of a whole static path
-void http_static_path_set_auth (
-	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+void cerver_http_static_path_set_auth (
+	HttpStaticPath *static_path, CerverHttpRouteAuthType auth_type
 ) {
 
 	if (static_path) static_path->auth_type = auth_type;
 
 }
 
-void http_static_path_set_decode_data (
+void cerver_http_static_path_set_decode_data (
 	HttpStaticPath *static_path,
 	HttpDecodeData decode_data,
 	void (*delete_decoded_data)(void *)
@@ -138,7 +138,7 @@ void http_static_path_set_decode_data (
 
 }
 
-void http_static_path_set_authentication_handler (
+void cerver_http_static_path_set_authentication_handler (
 	HttpStaticPath *static_path,
 	HttpAuthenticationHandler authentication_handler
 ) {
@@ -150,18 +150,18 @@ void http_static_path_set_authentication_handler (
 // add a new static path where static files can be served upon request
 // it is recomened to set absoulute paths
 // returns the http static path structure that was added to the cerver
-HttpStaticPath *http_cerver_static_path_add (
+HttpStaticPath *cerver_http_static_path_add (
 	HttpCerver *http_cerver, const char *static_path
 ) {
 
 	HttpStaticPath *http_static_path = NULL;
 
 	if (http_cerver && static_path) {
-		http_static_path = http_static_path_create (static_path);
+		http_static_path = cerver_http_static_path_create (static_path);
 
 		// a path that the list could not take is not returned as added
 		if (http_static_path && dlist_insert_at_end (http_cerver->static_paths, http_static_path)) {
-			http_static_path_delete (http_static_path);
+			cerver_http_static_path_delete (http_static_path);
 			http_static_path = NULL;
 		}
 	}
@@ -172,7 +172,7 @@ HttpStaticPath *http_cerver_static_path_add (
 
 // removes a path from the served public paths
 // returns 0 on success, 1 on error
-u8 http_receive_public_path_remove (
+u8 cerver_http_static_path_remove (
 	HttpCerver *http_cerver, const char *static_path
 ) {
 
@@ -180,7 +180,7 @@ u8 http_receive_public_path_remove (
 
 	if (http_cerver && static_path) {
 		// the list's comparator receives static paths
-		HttpStaticPath *query = http_static_path_create (static_path);
+		HttpStaticPath *query = cerver_http_static_path_create (static_path);
 
 		void *data = query ? dlist_remove (
 			http_cerver->static_paths,
@@ -189,11 +189,11 @@ u8 http_receive_public_path_remove (
 		) : NULL;
 
 		if (data) {
-			http_static_path_delete (data);
+			cerver_http_static_path_delete (data);
 			retval = 0;
 		}
 
-		http_static_path_delete (query);
+		cerver_http_static_path_delete (query);
 	}
 
 	return retval;

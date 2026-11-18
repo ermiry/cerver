@@ -86,7 +86,7 @@ unsigned int http_multi_parts_init_pool (void) {
 		if (!pool_init (
 			multi_parts_pool,
 			http_multi_part_new,
-			HTTP_CERVER_MULTI_PARTS_POOL_INIT
+			CERVER_HTTP_MULTI_PARTS_POOL_INIT
 		)) {
 			retval = 0;
 		}
@@ -192,7 +192,7 @@ unsigned int http_mpart_get_boundary (
 		if (attributes) {
 			// key_value_pairs_print (attributes);
 
-			const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
+			const String *original_boundary = cerver_http_query_pairs_get_value (attributes, "boundary");
 			if (original_boundary) {
 				(void) snprintf (
 					boundary, HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
@@ -523,9 +523,7 @@ static const char *http_receive_mpart_saved_name (
 		multi_part->generated_filename_len = 0;
 		multi_part->generated_filename[0] = '\0';
 
-		http_receive->http_cerver->uploads_filename_generator (
-			http_receive, http_receive->request
-		);
+		http_receive->http_cerver->uploads_filename_generator (http_receive);
 
 		if (multi_part->generated_filename_len > 0) {
 			name = multi_part->generated_filename;

@@ -26,18 +26,22 @@
 
 #include "cerver/http/core/access.h"
 #include "cerver/http/core/connection.h"
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/pairs.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include "cerver/http/core/recycle.h"
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/headers/fields.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/multipart.h>
 #include <cerver/http/requests/request.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
@@ -285,9 +289,9 @@ static void test_receive_observe_body (const HttpRequest *request) {
 }
 
 // POST /test/echo, POST /test/private, POST /test/bearer
-static void test_receive_echo_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_echo_handler (CerverHttpContext *context) {
+
+	const HttpRequest *request = context->request;
 
 	observed.n_handled += 1;
 
@@ -315,12 +319,12 @@ static void test_receive_echo_handler (
 
 	test_receive_copy (
 		observed.query_key,
-		http_query_pairs_get_value (http_request_get_query_params (request), "key")
+		cerver_http_query_pairs_get_value (http_request_get_query_params (request), "key")
 	);
 
 	test_receive_copy (
 		observed.query_other,
-		http_query_pairs_get_value (http_request_get_query_params (request), "other")
+		cerver_http_query_pairs_get_value (http_request_get_query_params (request), "other")
 	);
 
 	observed.query_list_after = (request->query_params != NULL);
@@ -331,19 +335,19 @@ static void test_receive_echo_handler (
 
 	test_receive_copy (
 		observed.body_value_listed,
-		http_query_pairs_get_value (http_request_get_body_values (request), "b")
+		cerver_http_query_pairs_get_value (http_request_get_body_values (request), "b")
 	);
 
 	observed.body_list_after = (request->body_values != NULL);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /test/items/:id/update
-static void test_receive_param_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_param_handler (CerverHttpContext *context) {
+
+	const HttpRequest *request = context->request;
 
 	observed.n_handled += 1;
 
@@ -351,7 +355,7 @@ static void test_receive_param_handler (
 
 	test_receive_copy (observed.param, http_request_get_param_at_idx (request, 0));
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -361,26 +365,26 @@ static const char *forbidden_body = { "{\"error\": \"forbidden\"}" };
 static const char *custom_not_allowed_body = { "{\"error\": \"custom 405\"}" };
 
 // GET /v2/items/:id, GET /v2/users/:name
-static void test_receive_named_param_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_named_param_handler (CerverHttpContext *context) {
+
+	const HttpRequest *request = context->request;
 
 	observed.n_handled += 1;
 
 	test_receive_copy (observed.param, http_request_get_param (request, "id"));
 	if (!observed.param[0]) test_receive_copy (observed.param, http_request_get_param (request, "name"));
 
-	test_receive_copy_c_string (observed.custom, (const char *) http_receive_get_route_custom_data (http_receive));
+	test_receive_copy_c_string (observed.custom, (const char *) cerver_http_context_endpoint_custom_data (context));
 	test_receive_copy (observed.accept, http_request_get_header (request, HTTP_HEADER_REQUEST_ID));
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // PATCH /v2/items/:id, the response is sent from its header and its data
-static void test_receive_patch_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_patch_handler (CerverHttpContext *context) {
+
+	const HttpRequest *request = context->request;
 
 	observed.n_handled += 1;
 
@@ -388,22 +392,18 @@ static void test_receive_patch_handler (
 	test_receive_copy (observed.param, http_request_get_param (request, "id"));
 
 	(void) http_response_json_custom_reference_send (
-		http_receive, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
+		context, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
 	);
 
 }
 
 // GET /v2/render
-static void test_receive_render_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_render_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
+	(void) cerver_http_response_send_json (
+		context, render_json_body, strlen (render_json_body)
 	);
 
 }
@@ -413,53 +413,36 @@ static const char *framed_raw_header = { "HTTP/1.1 200 OK\r\nX-Raw: incomplete\r
 static const char *framed_bytes_header = { "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n" };
 
 // GET /v2/framed/created, a body without its length ends when the connection is closed
-static void test_receive_framed_created_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_framed_created_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
 	(void) http_response_create_and_send (
-		HTTP_STATUS_CREATED, framed_body, strlen (framed_body), http_receive
+		HTTP_STATUS_CREATED, framed_body, strlen (framed_body), context
 	);
 
 }
 
 // GET /v2/framed/empty, a response without a body and without its length
-static void test_receive_framed_empty_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_framed_empty_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	(void) http_response_create_and_send (HTTP_STATUS_OK, NULL, 0, http_receive);
+	(void) http_response_create_and_send (HTTP_STATUS_OK, NULL, 0, context);
 
 }
 
 // GET /v2/framed/stream, the stream is ended by cerver after its handler
-static void test_receive_framed_stream_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_framed_stream_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-
-	if (!http_response_stream_begin (http_receive, response)) {
-		(void) http_response_stream_write (http_receive, framed_body, strlen (framed_body));
+	if (!cerver_http_response_stream_begin (context)) {
+		(void) cerver_http_response_stream_write (context, framed_body, strlen (framed_body));
 
 		// the response has no end until its last chunk is sent
-		test_check_bool_eq (http_receive->framed, false, NULL);
+		test_check_bool_eq (context->framed, false, NULL);
 	}
-
-	http_response_return (response);
 
 }
 
@@ -477,38 +460,27 @@ static void test_receive_framed_send_header (
 }
 
 // GET /v2/framed/raw, a header that cerver can not complete is sent as it is
-static void test_receive_framed_raw_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_framed_raw_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	test_receive_framed_send_header (http_receive, framed_raw_header);
+	test_receive_framed_send_header (context, framed_raw_header);
 
 }
 
 // GET /v2/framed/bytes, a complete header that was set as bytes, with the length of its body
-static void test_receive_framed_bytes_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void test_receive_framed_bytes_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	test_receive_framed_send_header (http_receive, framed_bytes_header);
+	test_receive_framed_send_header (context, framed_bytes_header);
 
 }
 
 // GET /v2/framed/silent, the handler does not answer, cerver does
-static void test_receive_framed_silent_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_framed_silent_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 	observed.n_handled += 1;
 
@@ -534,39 +506,30 @@ static void test_receive_decoded_data_delete (void *data) {
 }
 
 // POST /v2/data, a request with data that is deleted when it ends
-static void test_receive_data_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_data_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	test_receive_observe_body (request);
+	test_receive_observe_body (context->request);
 
 	// a request never has the data of the one that the connection had before
-	test_check_null_ptr (http_request_get_custom_data (request));
-	test_check_null_ptr (http_request_get_decoded_data (request));
+	test_check_null_ptr (cerver_http_request_custom_data (context));
+	test_check_null_ptr (cerver_http_request_decoded_data (context));
 
-	HttpRequest *owner = (HttpRequest *) request;
+	cerver_http_request_set_custom_data (context, strdup ("custom"), test_receive_custom_data_delete);
 
-	http_request_set_custom_data (owner, strdup ("custom"));
-	http_request_set_delete_custom_data (owner, test_receive_custom_data_delete);
+	cerver_http_request_set_decoded_data (context, strdup ("decoded"), test_receive_decoded_data_delete);
 
-	http_request_set_decoded_data (owner, strdup ("decoded"));
-	http_request_set_delete_decoded_data (owner, test_receive_decoded_data_delete);
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 static unsigned int observed_before = 0;
 static unsigned int observed_after = 0;
 
-static HttpMiddlewareResult test_receive_count_before (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static CerverHttpMiddlewareResult test_receive_count_before (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 	observed_before += 1;
 
@@ -574,55 +537,43 @@ static HttpMiddlewareResult test_receive_count_before (
 
 }
 
-static void test_receive_count_after (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_count_after (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 	observed_after += 1;
 
 }
 
 // answers the request, so the handler never runs
-static HttpMiddlewareResult test_receive_forbid_before (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static CerverHttpMiddlewareResult test_receive_forbid_before (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_FORBIDDEN, forbidden_body, strlen (forbidden_body)
-	);
+	cerver_http_response_set_status (context, HTTP_STATUS_FORBIDDEN);
+	(void) cerver_http_response_send_json (context, forbidden_body, strlen (forbidden_body));
 
 	return HTTP_MIDDLEWARE_RESULT_STOP;
 
 }
 
-static void test_receive_method_not_allowed_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_method_not_allowed_handler (CerverHttpContext *context) {
 
-	(void) request;
+	test_receive_copy_c_string (observed.query, cerver_http_context_allow (context));
 
-	test_receive_copy_c_string (observed.query, http_receive_get_allow (http_receive));
-
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_METHOD_NOT_ALLOWED,
-		custom_not_allowed_body, strlen (custom_not_allowed_body)
+	cerver_http_response_set_status (context, HTTP_STATUS_METHOD_NOT_ALLOWED);
+	(void) cerver_http_response_send_json (
+		context, custom_not_allowed_body, strlen (custom_not_allowed_body)
 	);
 
 }
 
 // reads the saved file while the request exists (the files are deleted when it ends)
-static void test_receive_observe_file (const MultiPart *multi_part) {
+static void test_receive_observe_file (const CerverHttpPart *part) {
 
 	if (observed.n_files < TEST_RECEIVE_FILES_SIZE) {
 		TestReceiveFile *file = &observed.files[observed.n_files];
 		observed.n_files += 1;
 
-		test_receive_copy_c_string (file->saved_filename, http_multi_part_get_saved_filename (multi_part));
+		test_receive_copy_c_string (file->saved_filename, cerver_http_part_saved_filename (part).data);
 
 		FILE *saved = fopen (file->saved_filename, "rb");
 		if (saved) {
@@ -634,34 +585,29 @@ static void test_receive_observe_file (const MultiPart *multi_part) {
 }
 
 // POST /test/upload
-static void test_receive_upload_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_upload_handler (CerverHttpContext *context) {
 
 	observed.n_handled += 1;
 
-	if (http_request_multi_parts_iter_start (request)) {
-		const MultiPart *multi_part = http_request_multi_parts_iter_get_next (request);
-		while (multi_part) {
-			observed.n_parts += 1;
+	for (
+		const CerverHttpPart *part = cerver_http_request_part_next (context, NULL);
+		part;
+		part = cerver_http_request_part_next (context, part)
+	) {
+		observed.n_parts += 1;
 
-			if (http_multi_part_is_file (multi_part)) test_receive_observe_file (multi_part);
-			else test_receive_copy_c_string (observed.part_value, http_multi_part_get_value (multi_part));
-
-			multi_part = http_request_multi_parts_iter_get_next (request);
-		}
+		if (cerver_http_part_is_file (part)) test_receive_observe_file (part);
+		else test_receive_copy_c_string (observed.part_value, cerver_http_part_value (part).data);
 	}
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // the authentication runs before the body is received
-static unsigned int test_receive_authentication_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int test_receive_authentication_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
+	const HttpRequest *request = context->request;
 
 	observed.n_authentications += 1;
 	observed.body_at_authentication = (request->body != NULL) || (request->multi_parts != NULL);
@@ -673,18 +619,14 @@ static unsigned int test_receive_authentication_handler (
 }
 
 // a route that authenticates with a value of the body
-static unsigned int test_receive_body_authentication_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) http_receive;
+static unsigned int test_receive_body_authentication_handler (CerverHttpContext *context) {
 
 	observed.n_authentications += 1;
-	observed.body_at_authentication = (request->multi_parts != NULL);
+	observed.body_at_authentication = (context->request->multi_parts != NULL);
 
-	const char *key = http_request_multi_parts_get_value (request, "field");
+	const CerverHttpView key = cerver_http_request_part_value (context, "field");
 
-	return (key && !strcmp (key, "hello")) ? 0 : 1;
+	return cerver_http_view_equals (key, "hello") ? 0 : 1;
 
 }
 
@@ -692,14 +634,10 @@ static const char *fixed_generated_filename = { "fixed.jpg" };
 static const char *numbered_filename_suffix = { "fixed-1.jpg" };
 
 // every file gets the same name, so the second file of a request already exists
-static void test_receive_fixed_filename_generator (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_fixed_filename_generator (CerverHttpContext *context) {
 
-	(void) http_receive;
-
-	http_multi_part_set_generated_filename (
-		http_request_get_current_mpart (request), "%s", fixed_generated_filename
+	cerver_http_part_set_generated_filename (
+		cerver_http_request_current_part (context), "%s", fixed_generated_filename
 	);
 
 }
@@ -769,64 +707,64 @@ static const HttpWebSocketHandlers test_receive_web_socket_handlers = {
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
-static HttpRoute *test_receive_child_route (
-	HttpRoute *parent, const char *path, const HttpHandler handler
+static HttpEndpoint *test_receive_test_endpoint (
+	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	HttpRoute *route = http_route_create (REQUEST_METHOD_POST, path, handler);
-	http_route_child_add (parent, route);
+	HttpEndpoint *endpoint = cerver_http_group_post (group, path, handler);
+	test_check_ptr (endpoint);
 
-	return route;
+	return endpoint;
 
 }
 
-// the routes of the groups API, next to the ones of the first API
+// the routes of a second group, next to the ones of /test
 static void test_receive_groups_create (HttpCerver *http_cerver) {
 
-	HttpGroup *v2 = http_cerver_group_create (http_cerver, "v2");
+	HttpGroup *v2 = cerver_http_group_create (http_cerver, "v2");
 	test_check_ptr (v2);
 
-	http_group_set_custom_data (v2, (void *) group_custom_data, NULL);
-	test_check_unsigned_eq (http_group_add_before (v2, test_receive_count_before), 0, NULL);
-	test_check_unsigned_eq (http_group_add_after (v2, test_receive_count_after), 0, NULL);
+	cerver_http_group_set_custom_data (v2, (void *) group_custom_data, NULL);
+	test_check_unsigned_eq (cerver_http_group_add_before (v2, test_receive_count_before), 0, NULL);
+	test_check_unsigned_eq (cerver_http_group_add_after (v2, test_receive_count_after), 0, NULL);
 
-	test_check_ptr (http_group_get (v2, "items/:id", test_receive_named_param_handler));
-	test_check_ptr (http_group_patch (v2, "items/:id", test_receive_patch_handler));
-	test_check_ptr (http_group_get (v2, "users/:name", test_receive_named_param_handler));
-	test_check_ptr (http_group_get (v2, "render", test_receive_render_handler));
+	test_check_ptr (cerver_http_group_get (v2, "items/:id", test_receive_named_param_handler));
+	test_check_ptr (cerver_http_group_patch (v2, "items/:id", test_receive_patch_handler));
+	test_check_ptr (cerver_http_group_get (v2, "users/:name", test_receive_named_param_handler));
+	test_check_ptr (cerver_http_group_get (v2, "render", test_receive_render_handler));
 
-	HttpEndpoint *forbidden = http_group_post (v2, "items/:id", test_receive_echo_handler);
-	test_check_unsigned_eq (http_endpoint_add_before (forbidden, test_receive_forbid_before), 0, NULL);
+	HttpEndpoint *forbidden = cerver_http_group_post (v2, "items/:id", test_receive_echo_handler);
+	test_check_unsigned_eq (cerver_http_endpoint_add_before (forbidden, test_receive_forbid_before), 0, NULL);
 
-	HttpEndpoint *limited = http_group_post (v2, "limited", test_receive_echo_handler);
-	http_endpoint_set_max_body_size (limited, TEST_RECEIVE_ENDPOINT_MAX_BODY);
+	HttpEndpoint *limited = cerver_http_group_post (v2, "limited", test_receive_echo_handler);
+	cerver_http_endpoint_set_max_body_size (limited, TEST_RECEIVE_ENDPOINT_MAX_BODY);
 
 	// a request without an upgrade goes to its handler
-	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
-	http_endpoint_set_web_socket (socket, &test_receive_web_socket_handlers);
+	HttpEndpoint *socket = cerver_http_group_get (v2, "socket", test_receive_echo_handler);
+	cerver_http_endpoint_set_web_socket (socket, &test_receive_web_socket_handlers);
 
 	// a request without an upgrade is answered with 426
-	test_check_ptr (http_group_web_socket_add (v2, "only", &test_receive_web_socket_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (v2, "only", &test_receive_web_socket_handlers));
 
 	// the methods that the parser accepts since llhttp
-	test_check_ptr (http_group_route_add (v2, REQUEST_METHOD_PROPFIND, "dav", test_receive_echo_handler));
-	test_check_ptr (http_group_route_add (v2, REQUEST_METHOD_QUERY, "search", test_receive_echo_handler));
+	test_check_ptr (cerver_http_group_route_add (v2, REQUEST_METHOD_PROPFIND, "dav", test_receive_echo_handler));
+	test_check_ptr (cerver_http_group_route_add (v2, REQUEST_METHOD_QUERY, "search", test_receive_echo_handler));
 
-	HttpGroup *cors = http_group_create (v2, "cors");
-	http_group_set_cors (cors, true);
-	test_check_ptr (http_group_get (cors, "resource", test_receive_echo_handler));
+	HttpGroup *cors = cerver_http_group_subgroup_add (v2, "cors");
+	cerver_http_group_set_cors (cors, true);
+	test_check_ptr (cerver_http_group_get (cors, "resource", test_receive_echo_handler));
 
-	HttpGroup *framed = http_group_create (v2, "framed");
-	test_check_ptr (http_group_get (framed, "created", test_receive_framed_created_handler));
-	test_check_ptr (http_group_get (framed, "empty", test_receive_framed_empty_handler));
-	test_check_ptr (http_group_get (framed, "stream", test_receive_framed_stream_handler));
-	test_check_ptr (http_group_get (framed, "raw", test_receive_framed_raw_handler));
-	test_check_ptr (http_group_get (framed, "bytes", test_receive_framed_bytes_handler));
-	test_check_ptr (http_group_get (framed, "silent", test_receive_framed_silent_handler));
+	HttpGroup *framed = cerver_http_group_subgroup_add (v2, "framed");
+	test_check_ptr (cerver_http_group_get (framed, "created", test_receive_framed_created_handler));
+	test_check_ptr (cerver_http_group_get (framed, "empty", test_receive_framed_empty_handler));
+	test_check_ptr (cerver_http_group_get (framed, "stream", test_receive_framed_stream_handler));
+	test_check_ptr (cerver_http_group_get (framed, "raw", test_receive_framed_raw_handler));
+	test_check_ptr (cerver_http_group_get (framed, "bytes", test_receive_framed_bytes_handler));
+	test_check_ptr (cerver_http_group_get (framed, "silent", test_receive_framed_silent_handler));
 
-	test_check_ptr (http_group_post (v2, "data", test_receive_data_handler));
+	test_check_ptr (cerver_http_group_post (v2, "data", test_receive_data_handler));
 
-	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, TEST_RECEIVE_ALLOWED_ORIGIN), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_origin_to_whitelist (http_cerver, TEST_RECEIVE_ALLOWED_ORIGIN), 0, NULL);
 
 }
 
@@ -841,44 +779,45 @@ static Cerver *test_receive_cerver_create (void) {
 	// the loops of the tests take the backend of their cerver when they are created
 	cerver_set_events_backend (cerver, test_events_backend ());
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	HttpCerver *http_cerver = cerver_http_get (cerver);
 	test_check_ptr (http_cerver);
 
-	HttpRoute *main_route = http_route_create (REQUEST_METHOD_POST, "test", test_receive_echo_handler);
+	// each case of these tests is a connection with one request: it ends with its response
+	cerver_http_set_keep_alive (http_cerver, false);
 
-	(void) test_receive_child_route (main_route, "echo", test_receive_echo_handler);
-	(void) test_receive_child_route (main_route, "items/:id/update", test_receive_param_handler);
+	// the requests are jobs of the dispatcher of each test: the one of the pool of threads of the cerver
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
 
-	HttpRoute *upload_route = test_receive_child_route (main_route, "upload", test_receive_upload_handler);
-	http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	HttpGroup *test = cerver_http_group_create (http_cerver, "/test");
+	test_check_ptr (cerver_http_group_root_add (test, REQUEST_METHOD_POST, test_receive_echo_handler));
 
-	HttpRoute *private_route = test_receive_child_route (main_route, "private", test_receive_upload_handler);
-	http_route_set_auth (private_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_route_set_authentication_handler (private_route, test_receive_authentication_handler);
+	(void) test_receive_test_endpoint (test, "echo", test_receive_echo_handler);
+	(void) test_receive_test_endpoint (test, "items/:id/update", test_receive_param_handler);
 
-	HttpRoute *bearer_route = test_receive_child_route (main_route, "bearer", test_receive_echo_handler);
-	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+	HttpEndpoint *upload = test_receive_test_endpoint (test, "upload", test_receive_upload_handler);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	// the first routes API has no WebSocket connections, they are answered with 501
-	HttpRoute *socket_route = test_receive_child_route (main_route, "socket", test_receive_echo_handler);
-	http_route_set_modifier (socket_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+	HttpEndpoint *private_endpoint = test_receive_test_endpoint (test, "private", test_receive_upload_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (private_endpoint, test_receive_authentication_handler);
 
-	HttpRoute *body_route = test_receive_child_route (main_route, "body", test_receive_upload_handler);
-	http_route_set_auth (body_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_route_set_authentication_handler (body_route, test_receive_body_authentication_handler);
-	http_route_set_authentication_with_body (body_route, true);
+	HttpEndpoint *bearer = test_receive_test_endpoint (test, "bearer", test_receive_echo_handler);
+	cerver_http_endpoint_set_auth (bearer, HTTP_ROUTE_AUTH_TYPE_BEARER);
 
-	http_cerver_route_register (http_cerver, main_route);
+	HttpEndpoint *body = test_receive_test_endpoint (test, "body", test_receive_upload_handler);
+	cerver_http_endpoint_set_auth (body, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (body, test_receive_body_authentication_handler);
+	cerver_http_endpoint_set_authentication_with_body (body, true);
 
 	test_receive_groups_create (http_cerver);
 
-	http_cerver_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
-	http_cerver_set_uploads_delete_when_done (http_cerver, true);
+	cerver_http_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_uploads_delete_when_done (http_cerver, true);
 
-	(void) http_cerver_static_path_add (http_cerver, TEST_RECEIVE_STATIC_PATH);
+	(void) cerver_http_static_path_add (http_cerver, TEST_RECEIVE_STATIC_PATH);
 
-	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_http_init (http_cerver), 0, NULL);
 
 	return cerver;
 
@@ -886,15 +825,15 @@ static Cerver *test_receive_cerver_create (void) {
 
 static void test_receive_limits_reset (HttpCerver *http_cerver) {
 
-	http_cerver_set_max_body_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_BODY_SIZE);
-	http_cerver_set_max_url_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_URL_SIZE);
-	http_cerver_set_max_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE);
-	http_cerver_set_max_headers (http_cerver, HTTP_CERVER_DEFAULT_MAX_HEADERS);
-	http_cerver_set_max_custom_header_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE);
-	http_cerver_set_max_multipart_parts (http_cerver, HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS);
-	http_cerver_set_max_file_size (http_cerver, HTTP_CERVER_DEFAULT_MAX_FILE_SIZE);
+	cerver_http_set_max_body_size (http_cerver, CERVER_HTTP_DEFAULT_MAX_BODY_SIZE);
+	cerver_http_set_max_url_size (http_cerver, CERVER_HTTP_DEFAULT_MAX_URL_SIZE);
+	cerver_http_set_max_header_size (http_cerver, CERVER_HTTP_DEFAULT_MAX_HEADER_SIZE);
+	cerver_http_set_max_headers (http_cerver, CERVER_HTTP_DEFAULT_MAX_HEADERS);
+	cerver_http_set_max_custom_header_size (http_cerver, CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE);
+	cerver_http_set_max_multipart_parts (http_cerver, CERVER_HTTP_DEFAULT_MAX_MULTIPART_PARTS);
+	cerver_http_set_max_file_size (http_cerver, CERVER_HTTP_DEFAULT_MAX_FILE_SIZE);
 
-	http_cerver_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
+	cerver_http_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
 
 }
 
@@ -1782,21 +1721,21 @@ static void test_receive_limits (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_max_url_size (http_cerver, 1 << 4);
+	cerver_http_set_max_url_size (http_cerver, 1 << 4);
 	test_receive_limit_case (
 		cerver, "url limit",
 		"POST /test/echo?key=a-long-query-value HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
 		"414"
 	);
 
-	http_cerver_set_max_headers (http_cerver, 1 << 1);
+	cerver_http_set_max_headers (http_cerver, 1 << 1);
 	test_receive_limit_case (
 		cerver, "headers count limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nAccept: */*\r\nX-One: 1\r\n\r\n",
 		"431"
 	);
 
-	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	cerver_http_set_max_header_size (http_cerver, 1 << 6);
 	test_receive_limit_case (
 		cerver, "headers size limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n"
@@ -1804,7 +1743,7 @@ static void test_receive_limits (Cerver *cerver) {
 		"431"
 	);
 
-	http_cerver_set_max_body_size (http_cerver, 1 << 4);
+	cerver_http_set_max_body_size (http_cerver, 1 << 4);
 	test_receive_limit_case (
 		cerver, "body limit by content length",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 32\r\n\r\n"
@@ -1812,7 +1751,7 @@ static void test_receive_limits (Cerver *cerver) {
 		"413"
 	);
 
-	http_cerver_set_max_body_size (http_cerver, 1 << 4);
+	cerver_http_set_max_body_size (http_cerver, 1 << 4);
 	test_receive_limit_case (
 		cerver, "chunked body limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -1822,7 +1761,7 @@ static void test_receive_limits (Cerver *cerver) {
 
 	// the trailers of a chunked body are not kept, but they count for the limits of the headers:
 	// a body could be followed by trailers without an end
-	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	cerver_http_set_max_header_size (http_cerver, 1 << 6);
 	test_receive_limit_case (
 		cerver, "trailers size limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -1831,7 +1770,7 @@ static void test_receive_limits (Cerver *cerver) {
 		"431"
 	);
 
-	http_cerver_set_max_headers (http_cerver, 1 << 1);
+	cerver_http_set_max_headers (http_cerver, 1 << 1);
 	test_receive_limit_case (
 		cerver, "trailers count limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -1841,7 +1780,7 @@ static void test_receive_limits (Cerver *cerver) {
 	);
 
 	// the extensions of the chunks are not used, but their bytes count for the size of the headers
-	http_cerver_set_max_header_size (http_cerver, 1 << 6);
+	cerver_http_set_max_header_size (http_cerver, 1 << 6);
 	test_receive_limit_case (
 		cerver, "chunk extensions size limit",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -1850,10 +1789,10 @@ static void test_receive_limits (Cerver *cerver) {
 		"431"
 	);
 
-	http_cerver_set_max_multipart_parts (http_cerver, 1);
+	cerver_http_set_max_multipart_parts (http_cerver, 1);
 	test_receive_limit_case (cerver, "multi-part parts limit", multipart_request, "413");
 
-	http_cerver_set_max_file_size (http_cerver, 1 << 3);
+	cerver_http_set_max_file_size (http_cerver, 1 << 3);
 	test_receive_limit_case (cerver, "multi-part file size limit", multipart_request, "413");
 
 }
@@ -1885,29 +1824,29 @@ static void test_receive_custom_header_case (
 }
 
 // a header that is not one of the known ones fits up to the limit of the cerver,
-// by default HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE: the limit was 512 bytes without a setting,
+// by default CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE: the limit was 512 bytes without a setting,
 // so the headers of the traces and of the certificates of a proxy rejected their requests
 static void test_receive_custom_header_too_large (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	test_receive_custom_header_case (
-		cerver, "custom header value below the default limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1
+		cerver, "custom header value below the default limit", CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1
 	);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (observed.n_handled == 1);
-	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1));
+	test_receive_expect (observed.custom_len == (CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE - 1));
 
 	test_receive_custom_header_case (
-		cerver, "custom header value that does not fit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE
+		cerver, "custom header value that does not fit", CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE
 	);
 
 	test_receive_expect (test_receive_status_is ("431"));
 	test_receive_expect (observed.n_handled == 0);
 
 	// the limit of the cerver
-	http_cerver_set_max_custom_header_size (http_cerver, 1 << 4);
+	cerver_http_set_max_custom_header_size (http_cerver, 1 << 4);
 	test_receive_custom_header_case (cerver, "custom header value above the limit that was set", 1 << 4);
 
 	test_receive_expect (test_receive_status_is ("431"));
@@ -1919,13 +1858,13 @@ static void test_receive_custom_header_too_large (Cerver *cerver) {
 	test_receive_expect (observed.custom_len == ((1 << 4) - 1));
 
 	// without the limit, only the size of all the headers limits it
-	http_cerver_set_max_custom_header_size (http_cerver, 0);
+	cerver_http_set_max_custom_header_size (http_cerver, 0);
 	test_receive_custom_header_case (
-		cerver, "custom header value without a limit", HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1
+		cerver, "custom header value without a limit", CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1
 	);
 
 	test_receive_expect (test_receive_status_is ("200"));
-	test_receive_expect (observed.custom_len == (HTTP_CERVER_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1));
+	test_receive_expect (observed.custom_len == (CERVER_HTTP_DEFAULT_MAX_CUSTOM_HEADER_SIZE << 1));
 
 	test_receive_limits_reset (http_cerver);
 
@@ -1971,7 +1910,7 @@ static void test_receive_numbered_filenames (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_uploads_filename_generator (http_cerver, test_receive_fixed_filename_generator);
+	cerver_http_set_uploads_filename_generator (http_cerver, test_receive_fixed_filename_generator);
 
 	test_receive_whole_case (cerver, "files with the same generated filename", multipart_request);
 
@@ -1982,7 +1921,7 @@ static void test_receive_numbered_filenames (Cerver *cerver) {
 	test_receive_expect (strstr (observed.files[1].saved_filename, numbered_filename_suffix) != NULL);
 	test_receive_expect (test_receive_uploads_count () == 0);
 
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
 
 }
 
@@ -2055,7 +1994,7 @@ static void test_receive_unsafe_filenames (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_uploads_filename_generator (http_cerver, NULL);
+	cerver_http_set_uploads_filename_generator (http_cerver, NULL);
 
 	char request[TEST_RECEIVE_UNSAFE_REQUEST_SIZE];
 	(void) snprintf (
@@ -2091,7 +2030,7 @@ static void test_receive_unsafe_filenames (Cerver *cerver) {
 	test_receive_expect (access (TEST_RECEIVE_ESCAPED_FILE, F_OK) != 0);
 	test_receive_expect (test_receive_uploads_count () == 0);
 
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
 
 }
 
@@ -2101,15 +2040,11 @@ static void test_receive_unsafe_filenames (Cerver *cerver) {
 
 static unsigned int n_generated_dirnames = 0;
 
-static void test_receive_counting_dirname_generator (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) http_receive;
+static void test_receive_counting_dirname_generator (CerverHttpContext *context) {
 
 	n_generated_dirnames += 1;
 
-	http_request_set_dirname (request, "%s", TEST_RECEIVE_DIRNAME);
+	cerver_http_request_set_uploads_directory (context, "%s", TEST_RECEIVE_DIRNAME);
 
 }
 
@@ -2119,18 +2054,18 @@ static void test_receive_dirname_without_uploads_path (Cerver *cerver) {
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	http_cerver->uploads_path_len = 0;
-	(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
+	(void) memset (http_cerver->uploads_path, 0, CERVER_HTTP_UPLOADS_PATH_SIZE);
 
 	n_generated_dirnames = 0;
-	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
+	cerver_http_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
 
 	test_receive_whole_case (cerver, "a dirname generator without an uploads path", multipart_request);
 
 	const bool created_at_root = (access (TEST_RECEIVE_ROOT_DIRNAME, F_OK) == 0);
 	if (created_at_root) (void) rmdir (TEST_RECEIVE_ROOT_DIRNAME);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
-	http_cerver_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
+	cerver_http_set_uploads_dirname_generator (http_cerver, NULL);
+	cerver_http_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (observed.n_handled == 1);
@@ -2146,14 +2081,14 @@ static void test_receive_dirname_with_uploads_path (Cerver *cerver) {
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
 	n_generated_dirnames = 0;
-	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
+	cerver_http_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
 
 	test_receive_whole_case (cerver, "a dirname generator with an uploads path", multipart_request);
 
 	const bool left_in_uploads = (access (TEST_RECEIVE_UPLOADS_DIRNAME, F_OK) == 0);
 	if (left_in_uploads) (void) rmdir (TEST_RECEIVE_UPLOADS_DIRNAME);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+	cerver_http_set_uploads_dirname_generator (http_cerver, NULL);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (n_generated_dirnames == 1);
@@ -2186,7 +2121,7 @@ static void test_receive_default_dirnames (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+	cerver_http_set_default_uploads_dirname_generator (http_cerver);
 
 	char first[TEST_RECEIVE_PATH_SIZE] = { 0 };
 	char second[TEST_RECEIVE_PATH_SIZE] = { 0 };
@@ -2201,7 +2136,7 @@ static void test_receive_default_dirnames (Cerver *cerver) {
 	test_receive_expect (observed.n_files == 2);
 	test_receive_default_dirname_take (second);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+	cerver_http_set_uploads_dirname_generator (http_cerver, NULL);
 
 	test_receive_expect (!strncmp (first, TEST_RECEIVE_UPLOADS_PATH "/", strlen (TEST_RECEIVE_UPLOADS_PATH "/")));
 	test_receive_expect (strcmp (first, second) != 0);
@@ -2279,11 +2214,9 @@ static bool test_receive_bearer_request_expires = false;
 static bool test_receive_bearer_request_claims = false;
 
 // the handler of the bearer route has the claims of its token while its request lives
-static void test_receive_bearer_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_bearer_handler (CerverHttpContext *context) {
 
-	const CerverJsonValue *claims = http_request_claims (request);
+	const CerverJsonValue *claims = cerver_http_request_claims (context);
 	const CerverJsonValue *id = cerver_json_object_get (claims, "id");
 
 	test_receive_bearer_request_claims = cerver_json_is_object (claims);
@@ -2296,7 +2229,7 @@ static void test_receive_bearer_handler (
 	test_receive_bearer_request_expires =
 		cerver_json_type (cerver_json_object_get (claims, "exp")) == CERVER_JSON_TYPE_INTEGER;
 
-	test_receive_echo_handler (http_receive, request);
+	test_receive_echo_handler (context);
 
 }
 
@@ -2308,18 +2241,19 @@ static Cerver *test_receive_bearer_cerver_create (void) {
 
 	test_check_ptr (cerver);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	HttpCerver *http_cerver = cerver_http_get (cerver);
 
-	HttpRoute *bearer_route = http_route_create (REQUEST_METHOD_POST, "bearer", test_receive_bearer_handler);
-	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-	http_route_set_decode_data (bearer_route, test_receive_bearer_decode, test_receive_bearer_decode_delete);
-	http_cerver_route_register (http_cerver, bearer_route);
+	HttpGroup *bearer = cerver_http_group_create (http_cerver, "/bearer");
+	HttpEndpoint *bearer_endpoint = cerver_http_group_root_add (bearer, REQUEST_METHOD_POST, test_receive_bearer_handler);
+	test_check_ptr (bearer_endpoint);
+	cerver_http_endpoint_set_auth (bearer_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
+	cerver_http_endpoint_set_decode_data (bearer_endpoint, test_receive_bearer_decode, test_receive_bearer_decode_delete);
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
-	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
-	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+	cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+	cerver_http_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	cerver_http_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 
-	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_http_init (http_cerver), 0, NULL);
 
 	return cerver;
 
@@ -2330,17 +2264,17 @@ static void test_receive_bearer_token (
 	HttpCerver *http_cerver, const time_t expires, char *bearer
 ) {
 
-	HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+	HttpJwt *http_jwt = cerver_http_auth_jwt_new ();
 	test_check_ptr (http_jwt);
 
-	http_cerver_auth_jwt_add_value (http_jwt, "id", "receive-test");
-	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) expires);
+	cerver_http_auth_jwt_add_value (http_jwt, "id", "receive-test");
+	cerver_http_auth_jwt_add_value_int (http_jwt, "exp", (int64_t) expires);
 
-	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
+	test_check_unsigned_eq (cerver_http_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
 
 	(void) snprintf (bearer, HTTP_JWT_BEARER_SIZE, "%s", http_jwt->bearer);
 
-	http_cerver_auth_jwt_delete (http_jwt);
+	cerver_http_auth_jwt_delete (http_jwt);
 
 }
 
@@ -2472,7 +2406,7 @@ static void test_receive_static_case (
 
 // a public static path and a private one, with its authentication
 static Cerver *test_receive_static_cerver_create (
-	const HttpRouteAuthType auth_type, HttpStaticPath **private_path
+	const CerverHttpRouteAuthType auth_type, HttpStaticPath **private_path
 ) {
 
 	Cerver *cerver = cerver_create (
@@ -2483,11 +2417,11 @@ static Cerver *test_receive_static_cerver_create (
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	test_check_ptr (http_cerver_static_path_add (http_cerver, TEST_RECEIVE_STATIC_PATH));
+	test_check_ptr (cerver_http_static_path_add (http_cerver, TEST_RECEIVE_STATIC_PATH));
 
-	*private_path = http_cerver_static_path_add (http_cerver, TEST_RECEIVE_PRIVATE_PATH);
+	*private_path = cerver_http_static_path_add (http_cerver, TEST_RECEIVE_PRIVATE_PATH);
 	test_check_ptr (*private_path);
-	http_static_path_set_auth (*private_path, auth_type);
+	cerver_http_static_path_set_auth (*private_path, auth_type);
 
 	return cerver;
 
@@ -2499,8 +2433,8 @@ static void test_receive_static_custom_authentication (void) {
 	HttpStaticPath *private_path = NULL;
 	Cerver *cerver = test_receive_static_cerver_create (HTTP_ROUTE_AUTH_TYPE_CUSTOM, &private_path);
 
-	http_static_path_set_authentication_handler (private_path, test_receive_authentication_handler);
-	test_check_unsigned_eq (http_cerver_init ((HttpCerver *) cerver->cerver_data), 0, NULL);
+	cerver_http_static_path_set_authentication_handler (private_path, test_receive_authentication_handler);
+	test_check_unsigned_eq (cerver_http_init ((HttpCerver *) cerver->cerver_data), 0, NULL);
 
 	test_receive_static_case (cerver, "a private file without authentication", private_file_url, NULL, "401");
 	test_receive_static_case (cerver, "a private file with a bad authentication", private_file_url, "Bearer bad-token", "401");
@@ -2527,11 +2461,11 @@ static void test_receive_static_bearer_authentication (void) {
 	Cerver *cerver = test_receive_static_cerver_create (HTTP_ROUTE_AUTH_TYPE_BEARER, &private_path);
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
-	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
-	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+	cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+	cerver_http_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	cerver_http_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 
-	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_http_init (http_cerver), 0, NULL);
 
 	const time_t now = time (NULL);
 
@@ -2553,7 +2487,7 @@ static void test_receive_static_bearer_authentication (void) {
 
 static void test_receive_upload_error (Cerver *cerver) {
 
-	http_cerver_set_uploads_path ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_MISSING_PATH);
+	cerver_http_set_uploads_path ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_MISSING_PATH);
 
 	test_receive_whole_case (cerver, "file that can not be saved", multipart_request);
 
@@ -2592,11 +2526,11 @@ static void test_receive_foreign_files (Cerver *cerver) {
 		test_receive_write_file (filename, foreign_content);
 	}
 
-	http_cerver_set_uploads_filename_generator (http_cerver, test_receive_fixed_filename_generator);
+	cerver_http_set_uploads_filename_generator (http_cerver, test_receive_fixed_filename_generator);
 
 	test_receive_whole_case (cerver, "every numbered filename is taken", multipart_request);
 
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
 
 	unsigned int kept = 0;
 	for (unsigned int number = 0; number <= HTTP_MULTI_PART_FILENAME_NUMBERS; number++) {
@@ -2613,12 +2547,9 @@ static void test_receive_foreign_files (Cerver *cerver) {
 
 }
 
-static void test_receive_empty_filename_generator (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_empty_filename_generator (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -2628,11 +2559,11 @@ static void test_receive_empty_generated_filename (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_uploads_filename_generator (http_cerver, test_receive_empty_filename_generator);
+	cerver_http_set_uploads_filename_generator (http_cerver, test_receive_empty_filename_generator);
 
 	test_receive_whole_case (cerver, "a generator that does not set a filename", multipart_request);
 
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (observed.n_files == 2);
@@ -2645,13 +2576,9 @@ static void test_receive_empty_generated_filename (Cerver *cerver) {
 #define TEST_RECEIVE_BLOCKER_NAME			"blocker"
 #define TEST_RECEIVE_BLOCKER_FILE			TEST_RECEIVE_UPLOADS_PATH "/" TEST_RECEIVE_BLOCKER_NAME
 
-static void test_receive_blocked_dirname_generator (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void test_receive_blocked_dirname_generator (CerverHttpContext *context) {
 
-	(void) http_receive;
-
-	http_request_set_dirname (request, "%s/inside", TEST_RECEIVE_BLOCKER_NAME);
+	cerver_http_request_set_uploads_directory (context, "%s/inside", TEST_RECEIVE_BLOCKER_NAME);
 
 }
 
@@ -2662,11 +2589,11 @@ static void test_receive_directory_error (Cerver *cerver) {
 
 	test_receive_write_file (TEST_RECEIVE_BLOCKER_FILE, foreign_content);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_blocked_dirname_generator);
+	cerver_http_set_uploads_dirname_generator (http_cerver, test_receive_blocked_dirname_generator);
 
 	test_receive_whole_case (cerver, "a directory that can not be created", multipart_request);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+	cerver_http_set_uploads_dirname_generator (http_cerver, NULL);
 
 	const bool blocker_kept = !access (TEST_RECEIVE_BLOCKER_FILE, F_OK);
 	(void) remove (TEST_RECEIVE_BLOCKER_FILE);
@@ -2795,14 +2722,6 @@ static void test_receive_groups (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 
 	test_receive_whole_case (
-		cerver, "a route of the first API with the websocket modifier",
-		"POST /test/socket HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n"
-	);
-
-	test_receive_expect (test_receive_status_is ("501"));
-	test_receive_expect (observed.n_handled == 0);
-
-	test_receive_whole_case (
 		cerver, "a custom header without case",
 		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nx-custom: lower\r\nContent-Length: 0\r\n\r\n"
 	);
@@ -2822,7 +2741,7 @@ static void test_receive_method_not_allowed (Cerver *cerver) {
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
 
-	http_cerver_set_method_not_allowed (http_cerver, true);
+	cerver_http_set_method_not_allowed (http_cerver, true);
 
 	test_receive_whole_case (cerver, "405 with the Allow header", request);
 	test_receive_expect (test_receive_status_is ("405"));
@@ -2836,15 +2755,15 @@ static void test_receive_method_not_allowed (Cerver *cerver) {
 
 	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
 
-	http_cerver_set_method_not_allowed_handler (http_cerver, test_receive_method_not_allowed_handler);
+	cerver_http_set_method_not_allowed_handler (http_cerver, test_receive_method_not_allowed_handler);
 
 	test_receive_whole_case (cerver, "405 with a custom handler", request);
 	test_receive_expect (test_receive_status_is ("405"));
 	test_receive_expect (test_receive_has_header (custom_not_allowed_body));
 	test_receive_expect (!strcmp (observed.query, "GET, HEAD, POST, OPTIONS, PATCH"));
 
-	http_cerver_set_method_not_allowed_handler (http_cerver, NULL);
-	http_cerver_set_method_not_allowed (http_cerver, false);
+	cerver_http_set_method_not_allowed_handler (http_cerver, NULL);
+	cerver_http_set_method_not_allowed (http_cerver, false);
 
 }
 
@@ -2860,7 +2779,7 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 	test_receive_expect (!strcmp (observed.param, "abc"));
 
 	test_receive_whole_case (
-		cerver, "a first API route with a trailing slash",
+		cerver, "an endpoint of /test with a trailing slash",
 		"POST /test/echo/ HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n"
 	);
 
@@ -2874,13 +2793,13 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
 
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_STRICT);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_STRICT);
 
 	test_receive_whole_case (cerver, "a strict trailing slash", request);
 	test_receive_expect (observed.n_handled == 0);
 	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
 
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
 
 	test_receive_whole_case (cerver, "a redirected trailing slash", request);
 	test_receive_expect (test_receive_status_is ("308"));
@@ -2888,10 +2807,10 @@ static void test_receive_trailing_slash (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 
 	// an invalid policy is ignored
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_MAX);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_MAX);
 	test_receive_expect (http_cerver->tree->trailing_slash == HTTP_TRAILING_SLASH_REDIRECT);
 
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
 
 }
 
@@ -3132,7 +3051,7 @@ static void test_receive_cors_preflight (Cerver *cerver) {
 #pragma region parser
 
 // a header value bigger than the default limit of the headers
-#define TEST_RECEIVE_BIG_HEADER_VALUE		(HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE + (1 << 10))
+#define TEST_RECEIVE_BIG_HEADER_VALUE		(CERVER_HTTP_DEFAULT_MAX_HEADER_SIZE + (1 << 10))
 #define TEST_RECEIVE_BIG_REQUEST_SIZE		(TEST_RECEIVE_BIG_HEADER_VALUE + (1 << 8))
 
 static const char *query_request = {
@@ -3291,14 +3210,14 @@ static void test_receive_parser_methods (Cerver *cerver) {
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (observed.n_handled == 1);
 
-	http_cerver_set_method_not_allowed (http_cerver, true);
+	cerver_http_set_method_not_allowed (http_cerver, true);
 
 	test_receive_whole_case (cerver, "a method that the path does not have", "MKCOL /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_expect (test_receive_status_is ("405"));
 	test_receive_expect (test_receive_has_header ("Allow: OPTIONS, PROPFIND\r\n"));
 	test_receive_expect (observed.n_handled == 0);
 
-	http_cerver_set_method_not_allowed (http_cerver, false);
+	cerver_http_set_method_not_allowed (http_cerver, false);
 
 	test_receive_whole_case (cerver, "an RTSP method", "DESCRIBE /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_method_rejected ();
@@ -3379,7 +3298,7 @@ static void test_receive_parser_protocols (Cerver *cerver) {
 	test_receive_version_rejected ();
 
 	// the lenient flag of the version is for the versions that cerver does not know, never for another protocol
-	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_VERSION);
+	cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_VERSION);
 
 	test_receive_whole_case (cerver, "HTTP/2.0 with the lenient version", second_version_request);
 	test_receive_expect (test_receive_status_is ("200"));
@@ -3388,7 +3307,7 @@ static void test_receive_parser_protocols (Cerver *cerver) {
 	test_receive_whole_case (cerver, "a request of RTSP with the lenient version", rtsp_request);
 	test_receive_parser_rejected ();
 
-	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+	cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 }
 
@@ -3403,7 +3322,7 @@ static void test_receive_parser_strict (Cerver *cerver) {
 		test_receive_whole_case (cerver, strict->name, strict->request);
 		test_receive_parser_rejected ();
 
-		http_cerver_set_parser_lenient (http_cerver, strict->lenient);
+		cerver_http_set_parser_lenient (http_cerver, strict->lenient);
 		test_check_unsigned_eq (http_cerver->parser_lenient, strict->lenient, NULL);
 
 		test_receive_whole_case (cerver, strict->name, strict->request);
@@ -3411,16 +3330,16 @@ static void test_receive_parser_strict (Cerver *cerver) {
 		test_receive_expect (observed.n_handled == 1);
 		test_receive_expect (!strcmp (observed.body, strict->body));
 
-		http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+		cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 	}
 
 	// the lenient flags are applied to the parser of every request, also in pieces
-	http_cerver_set_parser_lenient (http_cerver, TEST_RECEIVE_LENIENT_LF);
+	cerver_http_set_parser_lenient (http_cerver, TEST_RECEIVE_LENIENT_LF);
 	test_receive_every_split (cerver, "lenient LF without CR", lf_request, strlen (lf_request), test_receive_check_lf);
 
 	// a value outside the flags is ignored, also the header value relaxed of llhttp (0x400),
 	// that loops forever with a NUL in a header value
-	http_cerver_set_parser_lenient (http_cerver, ~0u);
+	cerver_http_set_parser_lenient (http_cerver, ~0u);
 	test_check_unsigned_eq (http_cerver->parser_lenient, HTTP_PARSER_LENIENT_ALL, NULL);
 	test_check_false (http_cerver->parser_lenient & TEST_RECEIVE_LENIENT_RELAXED);
 
@@ -3452,7 +3371,7 @@ static void test_receive_parser_strict (Cerver *cerver) {
 
 	test_receive_parser_rejected ();
 
-	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+	cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 	current_case = "a NUL in a header value";
 	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
@@ -3701,7 +3620,7 @@ static void test_receive_parser_keep_alive (Cerver *cerver) {
 	// the lenient flags of what follows a request with Connection close change nothing:
 	// the parser is paused when its request is complete, what follows it is not parsed
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_KEEP_ALIVE | HTTP_PARSER_LENIENT_DATA_AFTER_CLOSE);
+	cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_KEEP_ALIVE | HTTP_PARSER_LENIENT_DATA_AFTER_CLOSE);
 
 	test_receive_whole_case (
 		cerver, "HTTP/1.1 with Connection close and the lenient flags of what follows it",
@@ -3715,7 +3634,7 @@ static void test_receive_parser_keep_alive (Cerver *cerver) {
 	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
 	test_receive_expect (test_receive_count_responses () == 1);
 
-	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+	cerver_http_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
 
 	test_receive_whole_case (cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n");
 	test_receive_expect (test_receive_status_is ("200"));
@@ -3737,11 +3656,11 @@ static void test_receive_parser_header_limit (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_max_header_size (http_cerver, 0);
-	test_check_unsigned_eq (http_cerver->max_header_size, HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE, NULL);
+	cerver_http_set_max_header_size (http_cerver, 0);
+	test_check_unsigned_eq (http_cerver->max_header_size, CERVER_HTTP_DEFAULT_MAX_HEADER_SIZE, NULL);
 
-	http_cerver_set_max_url_size (http_cerver, 0);
-	test_check_unsigned_eq (http_cerver->max_url_size, HTTP_CERVER_DEFAULT_MAX_URL_SIZE, NULL);
+	cerver_http_set_max_url_size (http_cerver, 0);
+	test_check_unsigned_eq (http_cerver->max_url_size, CERVER_HTTP_DEFAULT_MAX_URL_SIZE, NULL);
 
 	char *request = (char *) malloc (TEST_RECEIVE_BIG_REQUEST_SIZE);
 	test_check_ptr (request);
@@ -3926,14 +3845,14 @@ static void test_receive_framed (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
 
 	test_receive_framed_case (
 		cerver, "framed: a redirect with an empty body",
 		"GET /v2/render/ HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", "308", true
 	);
 
-	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
+	cerver_http_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
 
 	test_receive_framed_case (
 		cerver, "framed: the response that cerver sends for a handler that did not answer",
@@ -4214,7 +4133,7 @@ static void test_receive_loop_output_timeout (Cerver *cerver) {
 	current_case = "loop: a client that does not read its response";
 	current_mode = "whole";
 
-	http_cerver_set_send_timeout_milliseconds (http_cerver, TEST_RECEIVE_LOOP_SEND_TIMEOUT);
+	cerver_http_set_send_timeout_milliseconds (http_cerver, TEST_RECEIVE_LOOP_SEND_TIMEOUT);
 
 	const u64 failed = CERVER_STATS_GET (http_cerver->n_failed_responses);
 
@@ -4244,7 +4163,7 @@ static void test_receive_loop_output_timeout (Cerver *cerver) {
 
 	test_receive_loop_end ();
 
-	http_cerver_set_send_timeout_milliseconds (http_cerver, 0);
+	cerver_http_set_send_timeout_milliseconds (http_cerver, 0);
 
 	free (request);
 	free (headers);
@@ -4992,8 +4911,8 @@ static void test_receive_kept_start (Cerver *cerver, const unsigned int places) 
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
 
-	http_cerver_set_keep_alive (http_cerver, true);
-	http_cerver_set_keep_alive_timeout_milliseconds (http_cerver, TEST_RECEIVE_KEPT_TIMEOUT);
+	cerver_http_set_keep_alive (http_cerver, true);
+	cerver_http_set_keep_alive_timeout_milliseconds (http_cerver, TEST_RECEIVE_KEPT_TIMEOUT);
 
 	test_receive_manual_start (cerver, places);
 
@@ -5008,9 +4927,9 @@ static void test_receive_kept_end (Cerver *cerver) {
 
 	test_receive_loop_end ();
 
-	http_cerver_set_keep_alive (http_cerver, false);
-	http_cerver_set_keep_alive_timeout (http_cerver, 0);
-	http_cerver_set_keep_alive_requests (http_cerver, HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS);
+	cerver_http_set_keep_alive (http_cerver, false);
+	cerver_http_set_keep_alive_timeout (http_cerver, 0);
+	cerver_http_set_keep_alive_requests (http_cerver, CERVER_HTTP_DEFAULT_KEEP_ALIVE_REQUESTS);
 
 }
 
@@ -5208,7 +5127,7 @@ static void test_receive_loop_kept_requests (Cerver *cerver) {
 
 	test_receive_kept_start (cerver, TEST_RECEIVE_MANUAL_JOBS);
 
-	http_cerver_set_keep_alive_requests ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_KEPT_REQUESTS);
+	cerver_http_set_keep_alive_requests ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_KEPT_REQUESTS);
 
 	int server_fd = -1;
 	const int client_fd = test_receive_manual_client (&server_fd);
@@ -5605,7 +5524,7 @@ static void test_receive_session_start (TestReceiveSession *session, Cerver *cer
 	session->arena_allocations = receive_arena ? receive_arena->n_allocations : 0;
 
 	// the cerver keeps the connection after each request that it completes
-	http_cerver_set_keep_alive ((HttpCerver *) cerver->cerver_data, true);
+	cerver_http_set_keep_alive ((HttpCerver *) cerver->cerver_data, true);
 
 	test_receive_session_hold (session);
 
@@ -5658,7 +5577,7 @@ static void test_receive_session_request (
 
 static void test_receive_session_end (TestReceiveSession *session) {
 
-	http_cerver_set_keep_alive ((HttpCerver *) session->cerver_receive.cerver->cerver_data, false);
+	cerver_http_set_keep_alive ((HttpCerver *) session->cerver_receive.cerver->cerver_data, false);
 
 	http_receive_delete (session->http_receive);
 	if (receive_arena) arena_reset (receive_arena);
@@ -5686,7 +5605,6 @@ static void test_receive_reset_check (
 	test_receive_expect (http_receive->dispatch == HTTP_RECEIVE_DISPATCH_NONE);
 	test_receive_expect (http_receive->node == NULL);
 	test_receive_expect (http_receive->endpoint == NULL);
-	test_receive_expect (http_receive->route == NULL);
 	test_receive_expect (http_receive->served_file == NULL);
 	test_receive_expect (!http_receive->head);
 	test_receive_expect (http_receive->max_body_size == 0);
@@ -5891,7 +5809,7 @@ static void test_receive_reset_many (Cerver *cerver) {
 	test_receive_expect (observed_decoded_deleted == 2);
 
 	// the uploads of each request have their own directory, and none is left
-	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+	cerver_http_set_default_uploads_dirname_generator (http_cerver);
 
 	char first[TEST_RECEIVE_PATH_SIZE] = { 0 };
 	char second[TEST_RECEIVE_PATH_SIZE] = { 0 };
@@ -5923,7 +5841,7 @@ static void test_receive_reset_many (Cerver *cerver) {
 	test_receive_expect (test_receive_uploads_count () == 0);
 	test_receive_expect (observed.n_parts == 0);
 
-	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+	cerver_http_set_uploads_dirname_generator (http_cerver, NULL);
 
 	// a request without a body after one with it, and a stream
 	test_receive_session_reset (&session);
@@ -6071,13 +5989,13 @@ static void test_receive_access (Cerver *cerver) {
 	test_receive_expect (endpoint != NULL);
 
 	HttpRouteStats stats_before;
-	http_route_stats_snapshot (endpoint->stats, &stats_before);
+	cerver_http_route_stats_snapshot (endpoint->stats, &stats_before);
 
 	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
 	test_receive_access_check (&session, &changes);
 
 	HttpRouteStats stats_after;
-	http_route_stats_snapshot (endpoint->stats, &stats_after);
+	cerver_http_route_stats_snapshot (endpoint->stats, &stats_after);
 	test_receive_expect (stats_after.n_requests == stats_before.n_requests + 1);
 	test_receive_expect (stats_after.sum_request_sizes == stats_before.sum_request_sizes + strlen (reset_data_request));
 	test_receive_expect (stats_after.sum_response_sizes == stats_before.sum_response_sizes + session.http_receive->sent);
@@ -6092,7 +6010,7 @@ static void test_receive_access (Cerver *cerver) {
 	(void) memset (&changes, 0, sizeof (TestReceiveCounters));
 	test_receive_access_check (&session, &changes);
 
-	http_route_stats_snapshot (endpoint->stats, &stats_after);
+	cerver_http_route_stats_snapshot (endpoint->stats, &stats_after);
 	test_receive_expect (stats_after.n_requests == stats_before.n_requests + 1);
 
 	test_receive_session_end (&session);

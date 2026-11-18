@@ -25,7 +25,7 @@ static const char to_hex (const char code) {
 
 // returns a newly allocated url-encoded version of str that should be deleted after use,
 // NULL for a NULL str
-char *http_url_encode (const char *str) {
+char *cerver_http_url_encode (const char *str) {
 
 	char *buf = NULL;
 
@@ -56,7 +56,7 @@ char *http_url_encode (const char *str) {
 // that has room for length bytes, a '+' is kept (it is a space only in a query)
 // and an incomplete or invalid escape is copied as it is
 // returns the length of the decoded value
-size_t http_url_decode_path (
+size_t cerver_http_url_decode_path (
 	char *destination, const char *source, const size_t length
 ) {
 
@@ -88,8 +88,8 @@ size_t http_url_decode_path (
 
 // returns a newly allocated url-decoded version of str that should be deleted after use,
 // NULL for a NULL str; an incomplete or invalid escape is copied as it is,
-// like http_url_decode_path () does
-char *http_url_decode (const char *str) {
+// like cerver_http_url_decode_path () does
+char *cerver_http_url_decode (const char *str) {
 
 	char *buf = NULL;
 

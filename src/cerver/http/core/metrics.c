@@ -236,7 +236,7 @@ static void http_metrics_responses (String *metrics, const HttpCerver *http_cerv
 		http_metrics_type_counter
 	);
 
-	for (size_t status = HTTP_METRICS_FIRST_STATUS; status < HTTP_CERVER_RESPONSES_STATUS_SIZE; status++) {
+	for (size_t status = HTTP_METRICS_FIRST_STATUS; status < CERVER_HTTP_RESPONSES_STATUS_SIZE; status++) {
 		const size_t count = CERVER_STATS_GET (http_cerver->n_responses_by_status[status]);
 		if (count) {
 			http_metrics_append (
@@ -277,7 +277,7 @@ static void http_metrics_aborted (String *metrics, const HttpCerver *http_cerver
 				metrics, line,
 				snprintf (
 					line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_ABORTED_FORMAT,
-					http_stage_label ((HttpStage) stage), http_abort_reason_label ((HttpAbortReason) reason),
+					cerver_http_stage_label ((CerverHttpStage) stage), cerver_http_abort_reason_label ((CerverHttpAbortReason) reason),
 					CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason])
 				)
 			);
@@ -302,7 +302,7 @@ static void http_metrics_vanished (String *metrics, const HttpCerver *http_cerve
 			metrics, line,
 			snprintf (
 				line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_VANISHED_FORMAT,
-				http_stage_label ((HttpStage) stage),
+				cerver_http_stage_label ((CerverHttpStage) stage),
 				CERVER_STATS_GET (http_cerver->n_vanished_requests[stage])
 			)
 		);
@@ -708,7 +708,7 @@ static void http_metrics_connection_requests (String *metrics, const HttpCerver 
 	);
 
 	size_t cumulative = 0;
-	for (unsigned int i = 0; i < (HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1); i++) {
+	for (unsigned int i = 0; i < (CERVER_HTTP_CONNECTION_REQUESTS_BUCKETS - 1); i++) {
 		cumulative += CERVER_STATS_GET (http_cerver->connection_requests[i]);
 
 		http_metrics_append (
@@ -720,7 +720,7 @@ static void http_metrics_connection_requests (String *metrics, const HttpCerver 
 		);
 	}
 
-	cumulative += CERVER_STATS_GET (http_cerver->connection_requests[HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS - 1]);
+	cumulative += CERVER_STATS_GET (http_cerver->connection_requests[CERVER_HTTP_CONNECTION_REQUESTS_BUCKETS - 1]);
 
 	http_metrics_append (
 		metrics, line,
@@ -790,8 +790,7 @@ static void http_metrics_connections (String *metrics, const HttpCerver *http_ce
 
 }
 
-// calls the method for every endpoint of the cerver,
-// the ones of the groups and the ones of the first routes API
+// calls the method for every endpoint of the cerver: the ones of its groups and of their subgroups
 typedef void (*HttpMetricsEndpointMethod)(String *metrics, const HttpEndpoint *endpoint);
 
 static void http_metrics_group_endpoints (
@@ -818,10 +817,6 @@ static void http_metrics_endpoints (
 		http_metrics_group_endpoints (metrics, (const HttpGroup *) le->data, method);
 	}
 
-	for (ListElement *le = dlist_start (tree->compatibility_endpoints); le; le = le->next) {
-		method (metrics, (const HttpEndpoint *) le->data);
-	}
-
 }
 
 // the stats are updated with atomic operations while the requests are handled
@@ -831,7 +826,7 @@ static void http_metrics_endpoint_snapshot (
 
 	(void) memset (snapshot, 0, sizeof (HttpRouteStats));
 
-	http_route_stats_snapshot (endpoint->stats, snapshot);
+	cerver_http_route_stats_snapshot (endpoint->stats, snapshot);
 
 }
 
@@ -847,7 +842,7 @@ static void http_metrics_endpoint_value (
 		metrics, line,
 		snprintf (
 			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_ENDPOINT_FORMAT,
-			name, http_request_method_str (endpoint->method), path, value
+			name, cerver_http_method_to_string (endpoint->method), path, value
 		)
 	);
 
@@ -888,8 +883,8 @@ static void http_metrics_endpoint_histogram (String *metrics, const HttpEndpoint
 	char path[HTTP_METRICS_LABEL_SIZE] = { 0 };
 	http_metrics_label_escape (endpoint->path->str, path);
 
-	const char *method = http_request_method_str (endpoint->method);
-	const double *buckets = http_route_stats_duration_buckets ();
+	const char *method = cerver_http_method_to_string (endpoint->method);
+	const double *buckets = cerver_http_route_stats_duration_buckets ();
 
 	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
 
@@ -1062,7 +1057,7 @@ static void http_metrics_web_sockets (String *metrics, const HttpCerver *http_ce
 
 }
 
-String *http_cerver_metrics_generate (const HttpCerver *http_cerver) {
+String *cerver_http_metrics_generate (const HttpCerver *http_cerver) {
 
 	String *metrics = NULL;
 

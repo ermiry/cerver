@@ -27,17 +27,19 @@
 #include "cerver/events/internal.h"
 #include <cerver/network/network.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/metrics.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/core/uploads.h>
 #include <cerver/http/headers/fields.h>
 #include <cerver/http/requests/request.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
 #include <cerver/json/json.h>
@@ -110,6 +112,10 @@
 #define SERVER_TEST_FILES_LIMIT				(1 << 5)
 #define SERVER_TEST_FILES_CONNECTIONS		(1 << 6)
 
+// each event loop keeps its own fds (its socket, its backend, its wake up): with one for each processor
+// the cerver of the limit would not have the ones that it needs to start
+#define SERVER_TEST_FILES_LOOPS				1
+
 // the connections that a cerver with that limit can never hold
 #define SERVER_TEST_FILES_EXTRA				(SERVER_TEST_FILES_CONNECTIONS - SERVER_TEST_FILES_LIMIT)
 
@@ -127,7 +133,6 @@
 #define SERVER_TEST_HUGE_SLOW_BODY_SIZE		((size_t) 16 << 20)
 #define SERVER_TEST_HUGE_BLOCK_SIZE			(SERVER_TEST_LARGE_ALPHABET * 4096)
 
-#define SERVER_TEST_POLL_REQUESTS			(1 << 4)
 #define SERVER_TEST_RESETS					(1 << 3)
 
 #define SERVER_TEST_ALARM					256
@@ -180,6 +185,12 @@
 
 static const char *ok_request = {
 	"GET /ok HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *own_request = {
+	"GET /own HTTP/1.1\r\n"
 	"Host: localhost\r\n"
 	"\r\n"
 };
@@ -370,6 +381,18 @@ static const char *null_device = { "/dev/null" };
 
 static const char *unanswered_metric = { "cerver_http_requests_unanswered_total 1\n" };
 
+// the header that a cerver of these tests adds to its responses to tell which one it is
+static const char *server_test_instance_header = { "X-Instance" };
+static const char *server_test_first_instance = { "first" };
+static const char *server_test_second_instance = { "second" };
+static const char *server_test_first_instance_line = { "\r\nX-Instance: first\r\n" };
+static const char *server_test_second_instance_line = { "\r\nX-Instance: second\r\n" };
+
+// the value that the handler of /own gives to that header in its response
+static const char *server_test_own_instance = { "own" };
+static const char *server_test_own_instance_line = { "\r\nX-Instance: own\r\n" };
+static const char *server_test_instance_line_start = { "\r\nX-Instance: " };
+
 static const char *status_ok = { "HTTP/1.1 200" };
 static const char *status_bad_request = { "HTTP/1.1 400" };
 static const char *status_partial_content = { "HTTP/1.1 206" };
@@ -445,31 +468,34 @@ static void server_test_gate_wait_for (const unsigned int waiting) {
 static unsigned int server_test_ok_answered = 0;
 
 // GET /ok
-static void server_test_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_ok_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 	(void) __atomic_add_fetch (&server_test_ok_answered, 1, __ATOMIC_SEQ_CST);
 
 }
 
-// GET /block
-static void server_test_block_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+// GET /own, a response with its own value of the header that its cerver adds to the others
+static void server_test_own_handler (CerverHttpContext *context) {
 
-	(void) request;
+	(void) cerver_http_response_set_header_with_name (
+		context, server_test_instance_header, server_test_own_instance
+	);
+
+	(void) cerver_http_response_send_text (context, server_test_own_instance, strlen (server_test_own_instance));
+
+}
+
+// GET /block
+static void server_test_block_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&gate_mutex);
 	gate_waiting += 1;
 	while (!gate_open) (void) pthread_cond_wait (&gate_cond, &gate_mutex);
 	(void) pthread_mutex_unlock (&gate_mutex);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -479,16 +505,12 @@ static unsigned int big_sent = 0;
 static unsigned int big_failed = 0;
 
 // GET /big, the client never reads it
-static void server_test_big_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_big_handler (CerverHttpContext *context) {
 
 	(void) __atomic_add_fetch (&big_started, 1, __ATOMIC_SEQ_CST);
 
-	if (http_response_render_text (
-		http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE
+	if (cerver_http_response_send_text (
+		context, big_response, SERVER_TEST_BIG_RESPONSE_SIZE
 	)) {
 		(void) __atomic_add_fetch (&big_failed, 1, __ATOMIC_SEQ_CST);
 	}
@@ -500,37 +522,33 @@ static void server_test_big_handler (
 }
 
 // POST /echo
-static void server_test_echo_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_echo_handler (CerverHttpContext *context) {
 
-	const String *body = http_request_get_body (request);
+	const CerverHttpView body = cerver_http_request_body (context);
 
-	if (body && (body->len == SERVER_TEST_SLOW_BODY_SIZE)) {
-		(void) http_response_send (oki_doki, http_receive);
+	if (!cerver_http_view_is_missing (body) && (body.length == SERVER_TEST_SLOW_BODY_SIZE)) {
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 	}
 
 	else {
-		(void) http_response_send (bad_request_error, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST);
 	}
 
 }
 
 // POST /json
 // reads its body with the JSON of cerver and answers with what it has: the name and how many values
-static void server_test_json_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_json_handler (CerverHttpContext *context) {
 
 	char response[SERVER_TEST_JSON_SIZE];
 	CerverJsonWriter writer;
 	CerverJsonError error = { CERVER_JSON_ERROR_NONE, 0 };
 
-	const CerverJsonValue *json = http_request_json (request, &error);
+	const CerverJsonValue *json = cerver_http_request_json (context, &error);
 	const CerverJsonValue *name = cerver_json_object_get (json, "name");
 
 	// the second call answers the same value: the body is read once
-	const bool same = (http_request_json (request, NULL) == json);
+	const bool same = (cerver_http_request_json (context, NULL) == json);
 
 	cerver_json_writer_init (&writer, response, sizeof (response), CERVER_JSON_FLAGS_NONE);
 	cerver_json_writer_object_begin (&writer);
@@ -541,13 +559,13 @@ static void server_test_json_handler (
 	cerver_json_writer_object_end (&writer);
 
 	if (same && (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE)) {
-		(void) http_response_json_custom_reference_send (
-			http_receive, HTTP_STATUS_OK, response, cerver_json_writer_length (&writer)
+		(void) cerver_http_response_send_json (
+			context, response, cerver_json_writer_length (&writer)
 		);
 	}
 
 	else {
-		(void) http_response_send (bad_request_error, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST);
 	}
 
 }
@@ -576,46 +594,39 @@ static size_t server_test_huge_part (const size_t position) {
 }
 
 // POST /huge checks every byte of the body
-static void server_test_huge_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_huge_handler (CerverHttpContext *context) {
 
-	const String *body = http_request_get_body (request);
+	const CerverHttpView body = cerver_http_request_body (context);
 
-	bool intact = body && (body->len == server_test_huge_size);
+	bool intact = !cerver_http_view_is_missing (body) && (body.length == server_test_huge_size);
 	for (size_t position = 0; intact && (position < server_test_huge_size); position += SERVER_TEST_HUGE_BLOCK_SIZE) {
-		intact = !memcmp (body->str + position, server_test_huge_block, server_test_huge_part (position));
+		intact = !memcmp (body.data + position, server_test_huge_block, server_test_huge_part (position));
 	}
 
-	(void) http_response_send (intact ? oki_doki : bad_request_error, http_receive);
+	(void) cerver_http_response_send_common (
+		context, intact ? CERVER_HTTP_COMMON_RESPONSE_OK : CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST
+	);
 
 }
 
 // GET /unanswered returns without sending a response
-static void server_test_unanswered_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_unanswered_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
 static unsigned int gone_answered = 0;
 
 // GET /gone answers after its client has closed the connection
-static void server_test_gone_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_gone_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&gate_mutex);
 	gate_waiting += 1;
 	while (!gate_open) (void) pthread_cond_wait (&gate_cond, &gate_mutex);
 	(void) pthread_mutex_unlock (&gate_mutex);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 	(void) __atomic_add_fetch (&gone_answered, 1, __ATOMIC_SEQ_CST);
 
@@ -631,9 +642,9 @@ static char server_test_file[SERVER_TEST_FILENAME_SIZE] = { 0 };
 static double server_test_now (void);
 
 // the handler's socket stops blocking, so a full socket buffer answers send () with EAGAIN
-static double server_test_nonblocking_start (const HttpReceive *http_receive) {
+static double server_test_nonblocking_start (const CerverHttpContext *context) {
 
-	(void) sock_set_blocking (http_receive->cr->connection->socket->sock_fd, false);
+	(void) sock_set_blocking (cerver_http_context_socket (context), false);
 
 	return server_test_now ();
 
@@ -649,115 +660,83 @@ static void server_test_nonblocking_end (const double start, const u8 result) {
 
 }
 
-static u8 server_test_large_send (const HttpReceive *http_receive);
+static u8 server_test_large_send (CerverHttpContext *context);
 
 // GET /nonblocking/large
-static void server_test_nonblocking_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_nonblocking_large_handler (CerverHttpContext *context) {
 
-	(void) request;
+	const double start = server_test_nonblocking_start (context);
 
-	const double start = server_test_nonblocking_start (http_receive);
-
-	server_test_nonblocking_end (start, server_test_large_send (http_receive));
+	server_test_nonblocking_end (start, server_test_large_send (context));
 
 }
 
 // GET /nonblocking/big, the client never reads it
-static void server_test_nonblocking_big_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_nonblocking_big_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	const double start = server_test_nonblocking_start (http_receive);
+	const double start = server_test_nonblocking_start (context);
 
 	server_test_nonblocking_end (
 		start,
-		http_response_render_text (http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
+		cerver_http_response_send_text (context, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
 	);
 
 }
 
 // GET /nonblocking/file
-static void server_test_nonblocking_file_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_nonblocking_file_handler (CerverHttpContext *context) {
 
-	(void) request;
+	const double start = server_test_nonblocking_start (context);
 
-	const double start = server_test_nonblocking_start (http_receive);
-
-	server_test_nonblocking_end (start, http_response_send_file (http_receive, HTTP_STATUS_OK, server_test_file));
+	server_test_nonblocking_end (start, cerver_http_response_send_file (context, server_test_file));
 
 }
 
 // GET /zero/file, in a child process, closes its stdin so the file is opened as fd 0
-static void server_test_zero_file_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_zero_file_handler (CerverHttpContext *context) {
 
 	(void) close (STDIN_FILENO);
 
-	(void) http_response_send_file (http_receive, HTTP_STATUS_OK, server_test_file);
+	(void) cerver_http_response_send_file (context, server_test_file);
 
 }
 
 // GET /zero/video, in a child process, closes its stdin so the video is opened as fd 0
-static void server_test_zero_video_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_zero_video_handler (CerverHttpContext *context) {
 
 	(void) close (STDIN_FILENO);
 
-	(void) http_response_handle_video (http_receive, server_test_file);
+	(void) cerver_http_response_send_video (context, server_test_file);
 
 }
 
 // GET /nonblocking/video
-static void server_test_nonblocking_video_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_nonblocking_video_handler (CerverHttpContext *context) {
 
-	(void) request;
+	const double start = server_test_nonblocking_start (context);
 
-	const double start = server_test_nonblocking_start (http_receive);
-
-	server_test_nonblocking_end (start, http_response_handle_video (http_receive, server_test_file));
+	server_test_nonblocking_end (start, cerver_http_response_send_video (context, server_test_file));
 
 }
 
 // GET /deadline/big, in the blocking socket of the connection, the client never reads it
-static void server_test_deadline_big_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_deadline_big_handler (CerverHttpContext *context) {
 
 	const double start = server_test_now ();
 
 	server_test_nonblocking_end (
 		start,
-		http_response_render_text (http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
+		cerver_http_response_send_text (context, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
 	);
 
 }
 
 // GET /deadline/video, its header and its file are sent with the same deadline
-static void server_test_deadline_video_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_deadline_video_handler (CerverHttpContext *context) {
 
 	const double start = server_test_now ();
 
-	server_test_nonblocking_end (start, http_response_handle_video (http_receive, server_test_file));
+	server_test_nonblocking_end (start, cerver_http_response_send_video (context, server_test_file));
 
 }
 
@@ -780,8 +759,6 @@ typedef struct ServerTestOptions {
 	unsigned int headers_timeout;
 	unsigned int request_timeout;
 
-	CerverHandlerType handler_type;
-
 	// milliseconds of all the sends of a response, 0 uses send_timeout
 	unsigned int response_send_timeout;
 
@@ -799,6 +776,9 @@ typedef struct ServerTestOptions {
 	// the cerver keeps the files of the uploads instead of deleting them when their request is done
 	bool keep_uploads;
 
+	// the value of the header that the cerver adds to its responses to tell which one it is, NULL for none
+	const char *instance;
+
 } ServerTestOptions;
 
 typedef struct ServerTest {
@@ -812,10 +792,6 @@ typedef struct ServerTest {
 
 } ServerTest;
 
-// how the cervers of the tests that run now handle their connections,
-// every test runs with a thread for each connection and with event loops
-static CerverHandlerType server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 static ServerTestOptions server_test_options_default (void) {
 
 	ServerTestOptions options = {
@@ -823,12 +799,12 @@ static ServerTestOptions server_test_options_default (void) {
 		CERVER_OVERLOAD_POLICY_WAIT,
 		CERVER_DRAIN_POLICY_RUN, SERVER_TEST_DRAIN_TIMEOUT,
 		CERVER_DEFAULT_SEND_TIMEOUT,
-		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT,
-		server_test_handler_type,
+		CERVER_HTTP_DEFAULT_HEADERS_TIMEOUT, CERVER_HTTP_DEFAULT_REQUEST_TIMEOUT,
 		0,
 		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, 0, 0,
 		0,
-		false
+		false,
+		NULL
 	};
 
 	return options;
@@ -854,7 +830,7 @@ static char server_test_large_byte (const size_t position) {
 
 // sends a response bigger than the socket buffer, in many partial writes
 // returns 0 on success, 1 on error
-static u8 server_test_large_send (const HttpReceive *http_receive) {
+static u8 server_test_large_send (CerverHttpContext *context) {
 
 	u8 retval = 1;
 
@@ -864,13 +840,7 @@ static u8 server_test_large_send (const HttpReceive *http_receive) {
 			body[idx] = server_test_large_byte (idx);
 		}
 
-		// the response is never compiled, so it is sent from its header and its data
-		HttpResponse *response = http_response_create (HTTP_STATUS_OK, body, SERVER_TEST_LARGE_RESPONSE_SIZE);
-		if (response) {
-			(void) http_response_add_content_length_header (response, SERVER_TEST_LARGE_RESPONSE_SIZE);
-			retval = http_response_send (response, http_receive);
-			http_response_delete (response);
-		}
+		retval = cerver_http_response_send (context, body, SERVER_TEST_LARGE_RESPONSE_SIZE);
 
 		free (body);
 	}
@@ -880,13 +850,9 @@ static u8 server_test_large_send (const HttpReceive *http_receive) {
 }
 
 // GET /group/large
-static void server_test_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_large_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) server_test_large_send (http_receive);
+	(void) server_test_large_send (context);
 
 }
 
@@ -937,101 +903,95 @@ static bool server_test_thread_name_is_pool (const char *name) {
 static const char *server_test_valid_authorization = { "Bearer server-test" };
 
 // the custom authentication of /secure: a method of the application that can wait
-static unsigned int server_test_authentication (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) http_receive;
+static unsigned int server_test_authentication (CerverHttpContext *context) {
 
 	server_test_thread_name_take (server_test_authentication_thread);
 
-	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	return (authorization && !strcmp (authorization->str, server_test_valid_authorization)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, server_test_valid_authorization) ? 0 : 1;
 
 }
 
 // GET /secure/ok
-static void server_test_secure_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void server_test_secure_handler (CerverHttpContext *context) {
 
 	server_test_thread_name_take (server_test_handler_thread);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /upload, the files of its request are deleted when it ends
-static void server_test_upload_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_upload_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
-static void server_test_routes (HttpCerver *http_cerver) {
+// a top level route: a group with the endpoint of its path
+static void server_test_route (
+	CerverHttp *http_cerver, const CerverHttpMethod method, const char *path,
+	const CerverHttpHandler handler
+) {
 
-	HttpRoute *ok_route = http_route_create (REQUEST_METHOD_GET, "ok", server_test_ok_handler);
-	http_cerver_route_register (http_cerver, ok_route);
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, path);
+	test_check_ptr (group);
 
-	HttpGroup *secure = http_cerver_group_create (http_cerver, "secure");
-	http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_group_set_authentication_handler (secure, server_test_authentication);
-	test_check_ptr (http_group_get (secure, "ok", server_test_secure_handler));
-	test_check_ptr (http_group_post (secure, "echo", server_test_echo_handler));
+	test_check_ptr (cerver_http_group_root_add (group, method, handler));
 
-	HttpGroup *files = http_cerver_group_create (http_cerver, "files");
-	HttpEndpoint *upload = http_group_post (files, "upload", server_test_upload_handler);
+}
+
+static void server_test_routes (CerverHttp *http_cerver) {
+
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "ok", server_test_ok_handler);
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "own", server_test_own_handler);
+
+	CerverHttpGroup *secure = cerver_http_group_create (http_cerver, "secure");
+	cerver_http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_group_set_authentication_handler (secure, server_test_authentication);
+	test_check_ptr (cerver_http_group_get (secure, "ok", server_test_secure_handler));
+	test_check_ptr (cerver_http_group_post (secure, "echo", server_test_echo_handler));
+
+	CerverHttpGroup *files = cerver_http_group_create (http_cerver, "files");
+	CerverHttpEndpoint *upload = cerver_http_group_post (files, "upload", server_test_upload_handler);
 	test_check_ptr (upload);
-	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	http_cerver_set_uploads_path (http_cerver, SERVER_TEST_UPLOADS_PATH);
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
-	http_cerver_set_uploads_delete_when_done (http_cerver, true);
+	cerver_http_set_uploads_path (http_cerver, SERVER_TEST_UPLOADS_PATH);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_uploads_delete_when_done (http_cerver, true);
 
-	HttpRoute *block_route = http_route_create (REQUEST_METHOD_GET, "block", server_test_block_handler);
-	http_cerver_route_register (http_cerver, block_route);
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "block", server_test_block_handler);
 
-	HttpRoute *big_route = http_route_create (REQUEST_METHOD_GET, "big", server_test_big_handler);
-	http_cerver_route_register (http_cerver, big_route);
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "big", server_test_big_handler);
 
-	HttpRoute *echo_route = http_route_create (REQUEST_METHOD_POST, "echo", server_test_echo_handler);
-	http_cerver_route_register (http_cerver, echo_route);
+	server_test_route (http_cerver, REQUEST_METHOD_POST, "echo", server_test_echo_handler);
 
-	HttpRoute *json_route = http_route_create (REQUEST_METHOD_POST, "json", server_test_json_handler);
-	http_cerver_route_register (http_cerver, json_route);
+	server_test_route (http_cerver, REQUEST_METHOD_POST, "json", server_test_json_handler);
 
-	HttpRoute *huge_route = http_route_create (REQUEST_METHOD_POST, "huge", server_test_huge_handler);
-	http_cerver_route_register (http_cerver, huge_route);
+	server_test_route (http_cerver, REQUEST_METHOD_POST, "huge", server_test_huge_handler);
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "group");
-	test_check_ptr (http_group_get (group, "large", server_test_large_handler));
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "group");
+	test_check_ptr (cerver_http_group_get (group, "large", server_test_large_handler));
 
-	HttpRoute *unanswered_route = http_route_create (REQUEST_METHOD_GET, "unanswered", server_test_unanswered_handler);
-	http_cerver_route_register (http_cerver, unanswered_route);
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "unanswered", server_test_unanswered_handler);
 
-	HttpRoute *gone_route = http_route_create (REQUEST_METHOD_GET, "gone", server_test_gone_handler);
-	http_cerver_route_register (http_cerver, gone_route);
+	server_test_route (http_cerver, REQUEST_METHOD_GET, "gone", server_test_gone_handler);
 
-	HttpGroup *nonblocking = http_cerver_group_create (http_cerver, "nonblocking");
-	test_check_ptr (http_group_get (nonblocking, "large", server_test_nonblocking_large_handler));
-	test_check_ptr (http_group_get (nonblocking, "big", server_test_nonblocking_big_handler));
-	test_check_ptr (http_group_get (nonblocking, "file", server_test_nonblocking_file_handler));
-	test_check_ptr (http_group_get (nonblocking, "video", server_test_nonblocking_video_handler));
+	CerverHttpGroup *nonblocking = cerver_http_group_create (http_cerver, "nonblocking");
+	test_check_ptr (cerver_http_group_get (nonblocking, "large", server_test_nonblocking_large_handler));
+	test_check_ptr (cerver_http_group_get (nonblocking, "big", server_test_nonblocking_big_handler));
+	test_check_ptr (cerver_http_group_get (nonblocking, "file", server_test_nonblocking_file_handler));
+	test_check_ptr (cerver_http_group_get (nonblocking, "video", server_test_nonblocking_video_handler));
 
-	HttpGroup *deadline = http_cerver_group_create (http_cerver, "deadline");
-	test_check_ptr (http_group_get (deadline, "big", server_test_deadline_big_handler));
-	test_check_ptr (http_group_get (deadline, "video", server_test_deadline_video_handler));
+	CerverHttpGroup *deadline = cerver_http_group_create (http_cerver, "deadline");
+	test_check_ptr (cerver_http_group_get (deadline, "big", server_test_deadline_big_handler));
+	test_check_ptr (cerver_http_group_get (deadline, "video", server_test_deadline_video_handler));
 
-	HttpGroup *zero = http_cerver_group_create (http_cerver, "zero");
-	test_check_ptr (http_group_get (zero, "file", server_test_zero_file_handler));
-	test_check_ptr (http_group_get (zero, "video", server_test_zero_video_handler));
+	CerverHttpGroup *zero = cerver_http_group_create (http_cerver, "zero");
+	test_check_ptr (cerver_http_group_get (zero, "file", server_test_zero_file_handler));
+	test_check_ptr (cerver_http_group_get (zero, "video", server_test_zero_video_handler));
 
 }
 
@@ -1042,7 +1002,6 @@ static Cerver *server_test_cerver_create (
 	Cerver *cerver = cerver_create_web ("server-test", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, options->handler_type);
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
@@ -1060,21 +1019,33 @@ static Cerver *server_test_cerver_create (
 	cerver_set_io_threads (cerver, options->io_threads);
 	cerver_set_max_connections (cerver, options->max_connections);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	http_cerver_set_headers_timeout (http_cerver, options->headers_timeout);
-	http_cerver_set_request_timeout (http_cerver, options->request_timeout);
-	http_cerver_set_send_timeout_milliseconds (http_cerver, options->response_send_timeout);
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	if (options->max_body_size) http_cerver_set_max_body_size (http_cerver, options->max_body_size);
+	// the handlers of these tests wait in the gate and fill the thpool, they count its jobs and expect
+	// the 503 of a full one: they run in the threads of the default pool, not in the event loops
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
+
+	cerver_http_set_headers_timeout (http_cerver, options->headers_timeout);
+	cerver_http_set_request_timeout (http_cerver, options->request_timeout);
+	cerver_http_set_send_timeout_milliseconds (http_cerver, options->response_send_timeout);
+
+	if (options->max_body_size) cerver_http_set_max_body_size (http_cerver, options->max_body_size);
+
+	if (options->instance) {
+		test_check_unsigned_eq (
+			cerver_http_add_responses_header_with_name (http_cerver, server_test_instance_header, options->instance),
+			0, NULL
+		);
+	}
 
 	// the clients of these tests read each response until the cerver closes its connection,
 	// the connections that are kept have their own tests (keepalive.c)
-	http_cerver_set_keep_alive (http_cerver, false);
+	cerver_http_set_keep_alive (http_cerver, false);
 
 	server_test_routes (http_cerver);
 
 	// after the routes, which set the uploads to be deleted when their request is done
-	if (options->keep_uploads) http_cerver_set_uploads_delete_when_done (http_cerver, false);
+	if (options->keep_uploads) cerver_http_set_uploads_delete_when_done (http_cerver, false);
 
 	return cerver;
 
@@ -1363,15 +1334,15 @@ static void test_server_routes_error (void) {
 	const u16 port = (u16) server_test_port++;
 
 	Cerver *cerver = server_test_cerver_create (port, &options);
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "broken");
-	test_check_ptr (http_group_get (group, "items", server_test_ok_handler));
-	test_check_ptr (http_group_get (group, "items", server_test_ok_handler));
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "broken");
+	test_check_ptr (cerver_http_group_get (group, "items", server_test_ok_handler));
+	test_check_ptr (cerver_http_group_get (group, "items", server_test_ok_handler));
 
 	test_check_unsigned_ne (cerver_start (cerver), 0);
-	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 1, NULL);
-	test_check_ptr (strstr (http_cerver_routes_error (http_cerver), "already registered"));
+	test_check_unsigned_eq (cerver_http_routes_errors_count (http_cerver), 1, NULL);
+	test_check_ptr (strstr (cerver_http_routes_error (http_cerver), "already registered"));
 
 	// nothing listens in its port
 	test_check_int_eq (server_test_connect_once (port), -1, NULL);
@@ -1412,26 +1383,6 @@ static void test_server_large_response (void) {
 	test_check (intact, "the large response arrived with wrong bytes");
 
 	free (response);
-
-	server_test_stop (server);
-
-}
-
-// the POLL handler serves the same requests as the THREADS one,
-// a web cerver handles its requests in its thpool with both types,
-// only the cervers of the protocol of cerver create it just with CERVER_HANDLER_TYPE_THREADS
-static void test_server_poll (void) {
-
-	ServerTestOptions options = server_test_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_POLL;
-
-	ServerTest *server = server_test_start (&options);
-
-	test_check_ptr (server->cerver->thpool);
-
-	for (unsigned int i = 0; i < SERVER_TEST_POLL_REQUESTS; i++) {
-		server_test_request (server->port, ok_request, status_ok);
-	}
 
 	server_test_stop (server);
 
@@ -1647,7 +1598,7 @@ static void test_server_request_timeout (void) {
 	(void) close (fd);
 
 	// the counter is read like the stats and the metrics read it, without the mutex of the cerver
-	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+	const CerverHttp *http_cerver = cerver_http_get (server->cerver);
 	const size_t n_timeout_requests = CERVER_STATS_GET (http_cerver->n_timeout_requests);
 	test_check (n_timeout_requests == 1, NULL);
 
@@ -1657,15 +1608,9 @@ static void test_server_request_timeout (void) {
 
 // the handler of a cerver with event loops gives its response to the loop of its connection, that sees its send
 // fail: the handler does not, and the cerver counts the response that failed
-static bool server_test_handler_sees_failures (void) {
-
-	return server_test_handler_type != CERVER_HANDLER_TYPE_EVENTS;
-
-}
-
 static u64 server_test_failed_responses (const ServerTest *server) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+	const CerverHttp *http_cerver = cerver_http_get (server->cerver);
 
 	return (u64) CERVER_STATS_GET (http_cerver->n_failed_responses);
 
@@ -1682,18 +1627,12 @@ static void server_test_wait_failed_responses (const ServerTest *server, const u
 
 }
 
-// a response that a handler wrote failed: the handler saw it, or the cerver counted it
+// a response that a handler wrote failed: the cerver counted it
 static void server_test_expect_failed (
-	const ServerTest *server, const unsigned int *handler_failed, const u64 failed_responses
+	const ServerTest *server, const u64 failed_responses
 ) {
 
-	if (server_test_handler_sees_failures ()) {
-		test_check_unsigned_eq (__atomic_load_n (handler_failed, __ATOMIC_SEQ_CST), 1, NULL);
-	}
-
-	else {
-		server_test_wait_failed_responses (server, failed_responses + 1);
-	}
+	server_test_wait_failed_responses (server, failed_responses + 1);
 
 }
 
@@ -1724,7 +1663,7 @@ static void test_server_send_timeout (void) {
 	// the only thread is free again after the send timeout
 	server_test_request (server->port, ok_request, status_ok);
 
-	server_test_expect_failed (server, &big_failed, failed_responses);
+	server_test_expect_failed (server, failed_responses);
 
 	(void) close (slow_reader);
 
@@ -1741,7 +1680,7 @@ static void test_server_send_timeout (void) {
 
 static size_t server_test_unanswered_count (const ServerTest *server) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+	const CerverHttp *http_cerver = cerver_http_get (server->cerver);
 
 	return CERVER_STATS_GET (http_cerver->n_unanswered_requests);
 
@@ -1769,7 +1708,7 @@ static void test_server_unanswered (void) {
 	server_test_request (server->port, ok_request, status_ok);
 	test_check_unsigned_eq (server_test_unanswered_count (server), 1, NULL);
 
-	String *metrics = http_cerver_metrics_generate ((const HttpCerver *) server->cerver->cerver_data);
+	String *metrics = cerver_http_metrics_generate (cerver_http_get (server->cerver));
 	test_check_ptr (metrics);
 	test_check_ptr (strstr (metrics->str, unanswered_metric));
 	str_delete (metrics);
@@ -2012,7 +1951,7 @@ static void test_server_nonblocking_timeout (void) {
 	server_test_wait_count (&nonblocking_done, done + 1);
 
 	// a client that leaves would fail the send at once
-	server_test_expect_failed (server, &nonblocking_failed, failed_responses);
+	server_test_expect_failed (server, failed_responses);
 	(void) close (fd);
 
 	const unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
@@ -2031,28 +1970,22 @@ static void test_server_nonblocking_timeout (void) {
 
 }
 
-// the milliseconds that a response took until it failed: the handler measured its sends, or, with event
-// loops, the test measures from its request until the cerver counted the failure
+// the milliseconds that a response took until it failed: with event loops,
+// the test measures from its request until the cerver counted the failure
 static unsigned long server_test_response_failed_milliseconds (
 	const ServerTest *server, const double start, const u64 failed_responses
 ) {
 
-	unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
+	server_test_wait_failed_responses (server, failed_responses + 1);
 
-	if (!server_test_handler_sees_failures ()) {
-		server_test_wait_failed_responses (server, failed_responses + 1);
-
-		milliseconds = (unsigned long) ((server_test_now () - start) * SERVER_TEST_MILLISECONDS_PER_SECOND);
-	}
-
-	return milliseconds;
+	return (unsigned long) ((server_test_now () - start) * SERVER_TEST_MILLISECONDS_PER_SECOND);
 
 }
 
 // the deadline of a response of an event loop is a timer of its wheel, that expires at most a tick later
 static unsigned long server_test_response_tolerance (void) {
 
-	return SERVER_TEST_RESPONSE_SEND_TOLERANCE + (server_test_handler_sees_failures () ? 0 : EVENT_WHEEL_TICK);
+	return SERVER_TEST_RESPONSE_SEND_TOLERANCE + EVENT_WHEEL_TICK;
 
 }
 
@@ -2071,7 +2004,7 @@ static void server_test_response_deadline (const ServerTest *server, const char 
 	server_test_wait_count (&nonblocking_done, done + 1);
 
 	// a client that leaves would fail the send at once
-	server_test_expect_failed (server, &nonblocking_failed, failed_responses);
+	server_test_expect_failed (server, failed_responses);
 	(void) close (fd);
 
 	const unsigned long milliseconds = server_test_response_failed_milliseconds (server, start, failed_responses);
@@ -2399,6 +2332,7 @@ static void server_test_files_child (const u16 port) {
 	options.threads = 2;
 	options.queue_size = SERVER_TEST_FILES_CONNECTIONS;
 	options.overload_policy = CERVER_OVERLOAD_POLICY_REJECT;
+	options.io_threads = SERVER_TEST_FILES_LOOPS;
 
 	server_test_files_cerver = server_test_cerver_create (port, &options);
 
@@ -2673,6 +2607,140 @@ static void test_server_two_cervers (void) {
 
 }
 
+// asks a cerver for /ok and checks which instance its response says it is, none when the line is NULL
+static void server_test_expect_instance (const u16 port, const char *line) {
+
+	const unsigned int answered = __atomic_load_n (&server_test_ok_answered, __ATOMIC_SEQ_CST);
+
+	int fd = server_test_connect (port);
+	server_test_send (fd, ok_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (fd, response);
+	(void) close (fd);
+
+	server_test_ok_wait (answered);
+
+	test_check (server_test_starts_with (response, status_ok), "unexpected response status");
+
+	if (line) {
+		test_check (strstr (response, line) != NULL, "the response does not have the header of its cerver");
+	}
+
+	else {
+		test_check (
+			strstr (response, server_test_instance_header) == NULL,
+			"the response has the header of another cerver"
+		);
+	}
+
+}
+
+// a response that has the header keeps its value: the one of its cerver is not added, so it has it once
+static void server_test_expect_own_instance (const u16 port) {
+
+	int fd = server_test_connect (port);
+	server_test_send (fd, own_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (fd, response);
+	(void) close (fd);
+
+	test_check (server_test_starts_with (response, status_ok), "unexpected response status");
+
+	const char *own = strstr (response, server_test_own_instance_line);
+	test_check (own != NULL, "the response does not have its own header");
+
+	test_check (
+		strstr (response, server_test_instance_line_start) == own,
+		"the header of the cerver was added before the one of the response"
+	);
+
+	test_check (
+		strstr (own + 1, server_test_instance_line_start) == NULL,
+		"the header of the cerver was added to a response that has it"
+	);
+
+}
+
+// each cerver of a process adds its own headers to its responses, also to the common ones that they share:
+// every cerver sent the ones of the first HTTP cerver that started, read while that one released them
+static void test_server_default_headers (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+
+	options.instance = server_test_first_instance;
+	ServerTest *first = server_test_start (&options);
+
+	options.instance = server_test_second_instance;
+	ServerTest *second = server_test_start (&options);
+
+	options.instance = NULL;
+	ServerTest *third = server_test_start (&options);
+
+	server_test_expect_instance (first->port, server_test_first_instance_line);
+	server_test_expect_instance (second->port, server_test_second_instance_line);
+	server_test_expect_instance (third->port, NULL);
+
+	server_test_expect_own_instance (second->port);
+
+	// the cerver that started first ends: the others keep their own
+	server_test_stop (first);
+
+	server_test_expect_instance (second->port, server_test_second_instance_line);
+	server_test_expect_instance (third->port, NULL);
+
+	server_test_stop (second);
+
+	server_test_expect_instance (third->port, NULL);
+
+	server_test_stop (third);
+
+}
+
+// a web cerver that was given a handler type that is not the event loops does not start, and it is released
+static void server_test_handler_type_rejected (const CerverHandlerType handler_type) {
+
+	ServerTestOptions options = server_test_options_default ();
+
+	const u16 port = (u16) server_test_port++;
+	Cerver *cerver = server_test_cerver_create (port, &options);
+
+	cerver_set_handler_type (cerver, handler_type);
+
+	test_check_unsigned_eq (cerver_start (cerver), 1, NULL);
+	test_check (!cerver_http_get (cerver)->global_reference, "a cerver that did not start took the shared state");
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+// a web cerver always runs on event loops, with one for each processor until it is given a number of them:
+// the thread for each connection and the poll of HTTP are gone
+static void test_server_handler_type (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+
+	const u16 port = (u16) server_test_port++;
+	Cerver *cerver = server_test_cerver_create (port, &options);
+
+	test_check_int_eq ((int) cerver->handler_type, (int) CERVER_HANDLER_TYPE_EVENTS, NULL);
+	test_check_unsigned_eq (cerver->n_io_threads, CERVER_IO_THREADS_PER_CORE, NULL);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+	server_test_handler_type_rejected (CERVER_HANDLER_TYPE_THREADS);
+	server_test_handler_type_rejected (CERVER_HANDLER_TYPE_POLL);
+
+	// the cervers that did not start left nothing: the next one serves
+	ServerTest *server = server_test_start (&options);
+
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
 // a web cerver that was stopped before it started never takes the shared state
 static void test_server_stop_before_start (void) {
 
@@ -2683,7 +2751,7 @@ static void test_server_stop_before_start (void) {
 
 	test_check_unsigned_eq (cerver_shutdown (cerver), 0, NULL);
 	test_check_unsigned_eq (cerver_start (cerver), 0, NULL);
-	test_check (!((HttpCerver *) cerver->cerver_data)->global_reference, "a stopped cerver took the shared state");
+	test_check (!cerver_http_get (cerver)->global_reference, "a stopped cerver took the shared state");
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
 	ServerTest *server = server_test_start (&options);
@@ -3397,8 +3465,6 @@ static void server_tests_events (void) {
 
 	(void) printf ("Events only\n");
 
-	server_test_handler_type = CERVER_HANDLER_TYPE_EVENTS;
-
 	(void) alarm (SERVER_TEST_ALARM);
 
 	test_run (test_server_events_requirements);
@@ -3418,18 +3484,12 @@ static void server_tests_events (void) {
 
 	(void) alarm (0);
 
-	server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 }
 
 #pragma endregion
 
-// the tests of a cerver that handles its connections with a model: a thread for each one, or event loops
-static void server_tests_model (const CerverHandlerType handler_type) {
-
-	server_test_handler_type = handler_type;
-
-	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
+// the tests of a cerver, that handles its connections with event loops
+static void server_tests_model (void) {
 
 	// a hang fails the suite instead of blocking it forever
 	(void) alarm (SERVER_TEST_ALARM);
@@ -3462,14 +3522,14 @@ static void server_tests_model (const CerverHandlerType handler_type) {
 	test_run (test_server_signal);
 
 	test_run (test_server_two_cervers);
+	test_run (test_server_default_headers);
+	test_run (test_server_handler_type);
 	test_run (test_server_stop_before_start);
 
 	test_run (test_server_out_of_fds);
 	test_run (test_server_zero_fd);
 
 	(void) alarm (0);
-
-	server_test_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
 }
 
@@ -3483,12 +3543,10 @@ void http_tests_server (void) {
 	test_run (test_server_blocking);
 	test_run (test_server_reusable);
 	test_run (test_server_policies_strings);
-	test_run (test_server_poll);
 
 	(void) alarm (0);
 
-	server_tests_model (CERVER_HANDLER_TYPE_THREADS);
-	server_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+	server_tests_model ();
 
 	server_tests_events ();
 

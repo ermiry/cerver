@@ -231,7 +231,7 @@ static int http_receive_close_url (HttpReceive *http_receive, char *target, cons
 #pragma region headers
 
 // these headers must appear only once (RFC 9110 section 5.3, RFC 6455 section 11.3)
-static inline bool http_header_is_unique (const http_header type) {
+static inline bool http_header_is_unique (const CerverHttpHeader type) {
 
 	return (type == HTTP_HEADER_HOST)
 		|| (type == HTTP_HEADER_CONTENT_TYPE)
@@ -379,7 +379,7 @@ static int http_header_values_join_arena (
 // a repeated header is joined with HTTP_HEADER_VALUES_SEPARATOR, unless it must be unique
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_close_known_header (
-	HttpReceive *http_receive, const http_header type,
+	HttpReceive *http_receive, const CerverHttpHeader type,
 	char *value, const size_t value_len
 ) {
 

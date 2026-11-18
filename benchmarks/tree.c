@@ -6,11 +6,12 @@
 
 #include <cerver/types/string.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
-#include <cerver/http/requests/request.h>
-#include <cerver/http/routes/route.h>
+#include "cerver/http/core/types.h"
+#include "cerver/http/requests/internal.h"
+#include "cerver/http/routes/internal.h"
 #include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/utils.h>
@@ -77,7 +78,7 @@ void *realloc (void *ptr, size_t size) {
 
 typedef struct TreeBenchRoute {
 
-	RequestMethod method;
+	CerverHttpMethod method;
 	char path[TREE_BENCH_LINE_SIZE];
 	char url[TREE_BENCH_LINE_SIZE];
 
@@ -86,9 +87,9 @@ typedef struct TreeBenchRoute {
 static TreeBenchRoute tree_bench_routes[TREE_BENCH_MAX_ROUTES];
 static size_t tree_bench_n_routes = 0;
 
-static RequestMethod tree_bench_method (const char *method) {
+static CerverHttpMethod tree_bench_method (const char *method) {
 
-	RequestMethod found = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	CerverHttpMethod found = (CerverHttpMethod) REQUEST_METHOD_UNDEFINED;
 
 	#define XX(num, name, string) if (!strcmp (method, #string)) found = REQUEST_METHOD_##name;
 	REQUEST_METHOD_MAP(XX)
@@ -308,12 +309,9 @@ static TreeBenchResult tree_bench_tree (const HttpTree *tree, const size_t round
 
 }
 
-static void tree_bench_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void tree_bench_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -336,15 +334,15 @@ int main (int argc, char **argv) {
 	// the top level route of the services is "/api/<service>", the first two segments
 	tree_bench_old_top = tree_bench_top (tree_bench_routes[0].path);
 
-	HttpCerver *http_cerver = http_cerver_create (NULL);
-	HttpGroup *root = http_cerver_group_create (http_cerver, NULL);
+	CerverHttp *http_cerver = cerver_http_create (NULL);
+	CerverHttpGroup *root = cerver_http_group_create (http_cerver, NULL);
 
 	for (size_t idx = 0; idx < tree_bench_n_routes; idx++) {
 		tree_bench_old_add (tree_bench_routes[idx].path);
-		(void) http_group_route_add (root, tree_bench_routes[idx].method, tree_bench_routes[idx].path, tree_bench_handler);
+		(void) cerver_http_group_route_add (root, tree_bench_routes[idx].method, tree_bench_routes[idx].path, tree_bench_handler);
 	}
 
-	(void) http_cerver_routes_compile (http_cerver);
+	(void) cerver_http_routes_compile (http_cerver);
 
 	(void) printf ("%zu routes (%zu endpoints in the tree) - %zu rounds\n",
 		tree_bench_n_routes, http_tree_get_n_endpoints (http_cerver->tree), rounds);

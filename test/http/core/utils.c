@@ -7,7 +7,7 @@
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 
-#include <cerver/http/core/handler.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/pairs.h>
 #include <cerver/http/core/settings.h>
@@ -24,20 +24,20 @@ static const char *range_empty = { "Empty" };
 static const char *range_first = { "First" };
 static const char *range_full = { "Full" };
 
-static void test_http_range_type_string (void) {
+static void test_cerver_http_range_type_string (void) {
 
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_NONE), range_none, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_EMPTY), range_empty, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_FIRST), range_first, NULL);
-	test_check_str_eq (http_range_type_string (HTTP_RANGE_TYPE_FULL), range_full, NULL);
+	test_check_str_eq (cerver_http_range_type_string (HTTP_RANGE_TYPE_NONE), range_none, NULL);
+	test_check_str_eq (cerver_http_range_type_string (HTTP_RANGE_TYPE_EMPTY), range_empty, NULL);
+	test_check_str_eq (cerver_http_range_type_string (HTTP_RANGE_TYPE_FIRST), range_first, NULL);
+	test_check_str_eq (cerver_http_range_type_string (HTTP_RANGE_TYPE_FULL), range_full, NULL);
 
 }
 
-static void test_http_bytes_range_init (void) {
+static void test_cerver_http_bytes_range_init (void) {
 
-	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	CerverHttpBytesRange bytes_range = CERVER_ZERO_INITIALIZER;
 
-	http_bytes_range_init (&bytes_range);
+	cerver_http_bytes_range_init (&bytes_range);
 
 	test_check_long_int_eq (bytes_range.file_size, 0, NULL);
 	test_check_int_eq (bytes_range.type, HTTP_RANGE_TYPE_NONE, NULL);
@@ -47,13 +47,13 @@ static void test_http_bytes_range_init (void) {
 
 }
 
-static void test_http_bytes_range_print (void) {
+static void test_cerver_http_bytes_range_print (void) {
 
-	BytesRange bytes_range = CERVER_ZERO_INITIALIZER;
+	CerverHttpBytesRange bytes_range = CERVER_ZERO_INITIALIZER;
 
-	http_bytes_range_init (&bytes_range);
+	cerver_http_bytes_range_init (&bytes_range);
 
-	http_bytes_range_print (&bytes_range);
+	cerver_http_bytes_range_print (&bytes_range);
 
 }
 
@@ -81,28 +81,28 @@ static void test_http_key_value_pairs_null (void) {
 }
 
 // the custom data of a NULL HTTP cerver is not set nor read
-static void test_http_cerver_custom_data_null (void) {
+static void test_cerver_http_custom_data_null (void) {
 
-	http_cerver_set_custom_data (NULL, NULL);
-	http_cerver_set_delete_custom_data (NULL, free);
-	http_cerver_set_default_delete_custom_data (NULL);
+	cerver_http_set_custom_data (NULL, NULL);
+	cerver_http_set_delete_custom_data (NULL, free);
+	cerver_http_set_default_delete_custom_data (NULL);
 
-	test_check_null_ptr (http_cerver_get_custom_data (NULL));
+	test_check_null_ptr (cerver_http_get_custom_data (NULL));
 
 }
 
 // the length of a generated uploads path that was truncated is the one of the path that was kept
-static void test_http_cerver_generate_uploads_path_truncated (void) {
+static void test_cerver_http_generate_uploads_path_truncated (void) {
 
 	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
 	test_check_ptr (test_cerver);
 
-	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+	HttpCerver *http_cerver = cerver_http_get (test_cerver);
 
 	char long_path[TEST_UPLOADS_PATH_LONG_SIZE] = { 0 };
 	(void) memset (long_path, 'a', TEST_UPLOADS_PATH_LONG_SIZE - 1);
 
-	http_cerver_generate_uploads_path (http_cerver, "/var/%s", long_path);
+	cerver_http_generate_uploads_path (http_cerver, "/var/%s", long_path);
 	test_check_unsigned_eq (
 		(size_t) http_cerver->uploads_path_len, strlen (http_cerver->uploads_path),
 		"the uploads path length is not the one of the truncated path"
@@ -125,16 +125,16 @@ void http_tests_utils (void) {
 
 	(void) printf ("Testing HTTP utils...\n");
 
-	test_http_range_type_string ();
+	test_cerver_http_range_type_string ();
 
-	test_http_bytes_range_init ();
-	test_http_bytes_range_print ();
+	test_cerver_http_bytes_range_init ();
+	test_cerver_http_bytes_range_print ();
 
 	test_http_key_value_pairs_null ();
 
-	test_http_cerver_custom_data_null ();
+	test_cerver_http_custom_data_null ();
 
-	test_http_cerver_generate_uploads_path_truncated ();
+	test_cerver_http_generate_uploads_path_truncated ();
 
 	test_http_receive_getters_null ();
 

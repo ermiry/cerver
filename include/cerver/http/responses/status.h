@@ -87,7 +87,7 @@ extern "C" {
 /**
  * @brief A status code, one `HTTP_STATUS_<name>` for each row of #HTTP_STATUS_MAP.
  */
-enum http_status {
+enum CerverHttpStatus {
 
 	#define XX(num, name, string) HTTP_STATUS_##name = num,
 	HTTP_STATUS_MAP(XX)
@@ -95,8 +95,8 @@ enum http_status {
 
 };
 
-/** @brief A status code, see enum http_status. */
-typedef enum http_status http_status;
+/** @brief A status code, see enum CerverHttpStatus. */
+typedef enum CerverHttpStatus CerverHttpStatus;
 
 /**
  * @brief Returns the reason phrase of a status code.
@@ -105,8 +105,8 @@ typedef enum http_status http_status;
  * @return the phrase of its row in #HTTP_STATUS_MAP, or "Undefined" (HTTP_STATUS_NONE) for a code out of the
  * table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_status_string (
-	const http_status status
+CERVER_PUBLIC const char *cerver_http_status_to_string (
+	const CerverHttpStatus status
 );
 
 /** @} */

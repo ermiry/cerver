@@ -9,8 +9,10 @@
 
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/recycle.h"
+#include "cerver/http/core/types.h"
 #include <cerver/http/headers/fields.h>
 #include <cerver/http/headers/header.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
 #include <cerver/http/responses/status.h>
 
@@ -240,9 +242,9 @@ void http_tests_recycle (void) {
 
 	(void) printf ("Testing HTTP recycle...\n");
 
-	test_recycle_cerver = http_cerver_new ();
+	test_recycle_cerver = cerver_http_new ();
 	test_check_ptr (test_recycle_cerver);
-	test_check_unsigned_eq (http_responses_init (test_recycle_cerver), 0, NULL);
+	test_check_unsigned_eq (http_responses_init (), 0, NULL);
 
 	test_recycle_buffer_classes ();
 	test_recycle_buffer_reused ();
@@ -253,7 +255,7 @@ void http_tests_recycle (void) {
 	test_recycle_threads ();
 
 	http_responses_end ();
-	http_cerver_delete (test_recycle_cerver);
+	cerver_http_delete (test_recycle_cerver);
 	test_recycle_cerver = NULL;
 
 	(void) printf ("Done!\n");

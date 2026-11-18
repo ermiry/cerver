@@ -1,6 +1,8 @@
 /**
+ * @internal
  * @file cerver/http/requests/multipart.h
  * @brief The parts of a multipart body, their files and their values (cerver/http/parser/multipart.h reads the body).
+ * A handler reads them with the methods of a CerverHttpPart of cerver/http/requests/request.h.
  */
 
 #ifndef _CERVER_HTTP_MULTIPART_H_

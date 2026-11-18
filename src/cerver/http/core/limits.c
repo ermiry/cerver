@@ -65,100 +65,100 @@
 #pragma region limits
 
 // the limits are tuned by measuring each service, always with powers of 2
-static void http_cerver_limit_check_power_of_two (
+static void cerver_http_limit_check_power_of_two (
 	const char *limit_name, const size_t value
 ) {
 
 	if (value && (value & (value - 1))) {
 		cerver_log_warning (
-			"http_cerver_set_%s () - %zu is not a power of 2",
+			"cerver_http_set_%s () - %zu is not a power of 2",
 			limit_name, value
 		);
 	}
 
 }
 
-void http_cerver_set_max_body_size (
+void cerver_http_set_max_body_size (
 	HttpCerver *http_cerver, const size_t max_body_size
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_body_size", max_body_size);
+		cerver_http_limit_check_power_of_two ("max_body_size", max_body_size);
 		http_cerver->max_body_size = max_body_size;
 	}
 
 }
 
-void http_cerver_set_max_url_size (
+void cerver_http_set_max_url_size (
 	HttpCerver *http_cerver, const size_t max_url_size
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_url_size", max_url_size);
+		cerver_http_limit_check_power_of_two ("max_url_size", max_url_size);
 		http_cerver->max_url_size = max_url_size ?
-			max_url_size : HTTP_CERVER_DEFAULT_MAX_URL_SIZE;
+			max_url_size : CERVER_HTTP_DEFAULT_MAX_URL_SIZE;
 	}
 
 }
 
-void http_cerver_set_max_header_size (
+void cerver_http_set_max_header_size (
 	HttpCerver *http_cerver, const size_t max_header_size
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_header_size", max_header_size);
+		cerver_http_limit_check_power_of_two ("max_header_size", max_header_size);
 		http_cerver->max_header_size = max_header_size ?
-			max_header_size : HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE;
+			max_header_size : CERVER_HTTP_DEFAULT_MAX_HEADER_SIZE;
 	}
 
 }
 
-void http_cerver_set_max_headers (
+void cerver_http_set_max_headers (
 	HttpCerver *http_cerver, const unsigned int max_headers
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_headers", max_headers);
+		cerver_http_limit_check_power_of_two ("max_headers", max_headers);
 		http_cerver->max_headers = max_headers;
 	}
 
 }
 
-void http_cerver_set_max_custom_header_size (
+void cerver_http_set_max_custom_header_size (
 	HttpCerver *http_cerver, const size_t max_custom_header_size
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_custom_header_size", max_custom_header_size);
+		cerver_http_limit_check_power_of_two ("max_custom_header_size", max_custom_header_size);
 		http_cerver->max_custom_header_size = max_custom_header_size;
 	}
 
 }
 
-void http_cerver_set_max_multipart_parts (
+void cerver_http_set_max_multipart_parts (
 	HttpCerver *http_cerver, const unsigned int max_multipart_parts
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_multipart_parts", max_multipart_parts);
+		cerver_http_limit_check_power_of_two ("max_multipart_parts", max_multipart_parts);
 		http_cerver->max_multipart_parts = max_multipart_parts;
 	}
 
 }
 
-void http_cerver_set_max_file_size (
+void cerver_http_set_max_file_size (
 	HttpCerver *http_cerver, const size_t max_file_size
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("max_file_size", max_file_size);
+		cerver_http_limit_check_power_of_two ("max_file_size", max_file_size);
 		http_cerver->max_file_size = max_file_size;
 	}
 
 }
 
 // the milliseconds of a timeout in secs, the most that fits in an unsigned int
-static unsigned int http_cerver_timeout_milliseconds (const unsigned int timeout) {
+static unsigned int cerver_http_timeout_milliseconds (const unsigned int timeout) {
 
 	const unsigned int max_seconds = UINT_MAX / HTTP_MILLISECONDS_PER_SECOND;
 
@@ -166,18 +166,18 @@ static unsigned int http_cerver_timeout_milliseconds (const unsigned int timeout
 
 }
 
-void http_cerver_set_headers_timeout (
+void cerver_http_set_headers_timeout (
 	HttpCerver *http_cerver, const unsigned int headers_timeout
 ) {
 
 	// a timeout is not tuned in powers of 2 like the sizes (a request of 300 s warned)
 	if (http_cerver) {
-		http_cerver->headers_timeout = http_cerver_timeout_milliseconds (headers_timeout);
+		http_cerver->headers_timeout = cerver_http_timeout_milliseconds (headers_timeout);
 	}
 
 }
 
-void http_cerver_set_headers_timeout_milliseconds (
+void cerver_http_set_headers_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int headers_timeout
 ) {
 
@@ -185,17 +185,17 @@ void http_cerver_set_headers_timeout_milliseconds (
 
 }
 
-void http_cerver_set_request_timeout (
+void cerver_http_set_request_timeout (
 	HttpCerver *http_cerver, const unsigned int request_timeout
 ) {
 
 	if (http_cerver) {
-		http_cerver->request_timeout = http_cerver_timeout_milliseconds (request_timeout);
+		http_cerver->request_timeout = cerver_http_timeout_milliseconds (request_timeout);
 	}
 
 }
 
-void http_cerver_set_request_timeout_milliseconds (
+void cerver_http_set_request_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int request_timeout
 ) {
 
@@ -203,18 +203,18 @@ void http_cerver_set_request_timeout_milliseconds (
 
 }
 
-void http_cerver_set_idle_timeout_milliseconds (
+void cerver_http_set_idle_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int idle_timeout
 ) {
 
 	if (http_cerver) {
 		http_cerver->idle_timeout = idle_timeout ?
-			idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
+			idle_timeout : CERVER_HTTP_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 	}
 
 }
 
-void http_cerver_set_send_timeout_milliseconds (
+void cerver_http_set_send_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int send_timeout
 ) {
 
@@ -222,7 +222,7 @@ void http_cerver_set_send_timeout_milliseconds (
 
 }
 
-void http_cerver_set_keep_alive (
+void cerver_http_set_keep_alive (
 	HttpCerver *http_cerver, const bool keep_alive
 ) {
 
@@ -233,43 +233,43 @@ void http_cerver_set_keep_alive (
 
 }
 
-void http_cerver_set_keep_alive_timeout (
+void cerver_http_set_keep_alive_timeout (
 	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("keep_alive_timeout", keep_alive_timeout);
+		cerver_http_limit_check_power_of_two ("keep_alive_timeout", keep_alive_timeout);
 
-		http_cerver_set_keep_alive_timeout_milliseconds (
-			http_cerver, http_cerver_timeout_milliseconds (keep_alive_timeout)
+		cerver_http_set_keep_alive_timeout_milliseconds (
+			http_cerver, cerver_http_timeout_milliseconds (keep_alive_timeout)
 		);
 	}
 
 }
 
-void http_cerver_set_keep_alive_timeout_milliseconds (
+void cerver_http_set_keep_alive_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int keep_alive_timeout
 ) {
 
 	if (http_cerver) {
 		http_cerver->keep_alive_timeout = keep_alive_timeout ?
-			keep_alive_timeout : HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
+			keep_alive_timeout : CERVER_HTTP_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS;
 	}
 
 }
 
-void http_cerver_set_keep_alive_requests (
+void cerver_http_set_keep_alive_requests (
 	HttpCerver *http_cerver, const unsigned int keep_alive_requests
 ) {
 
 	if (http_cerver) {
-		http_cerver_limit_check_power_of_two ("keep_alive_requests", keep_alive_requests);
+		cerver_http_limit_check_power_of_two ("keep_alive_requests", keep_alive_requests);
 		http_cerver->keep_alive_requests = keep_alive_requests;
 	}
 
 }
 
-void http_cerver_set_half_close_is_gone (
+void cerver_http_set_half_close_is_gone (
 	HttpCerver *http_cerver, const bool half_close_is_gone
 ) {
 
@@ -277,7 +277,7 @@ void http_cerver_set_half_close_is_gone (
 
 }
 
-static void http_cerver_parser_lenient_warning (
+static void cerver_http_parser_lenient_warning (
 	const HttpCerver *http_cerver, const HttpParserLenient lenient
 ) {
 
@@ -291,7 +291,7 @@ static void http_cerver_parser_lenient_warning (
 
 }
 
-void http_cerver_set_parser_lenient (
+void cerver_http_set_parser_lenient (
 	HttpCerver *http_cerver, const unsigned int lenient
 ) {
 
@@ -299,7 +299,7 @@ void http_cerver_set_parser_lenient (
 		http_cerver->parser_lenient = lenient & HTTP_PARSER_LENIENT_ALL;
 
 		#define XX(num, name, string, description) \
-			http_cerver_parser_lenient_warning (http_cerver, HTTP_PARSER_LENIENT_##name);
+			cerver_http_parser_lenient_warning (http_cerver, HTTP_PARSER_LENIENT_##name);
 		HTTP_PARSER_LENIENT_MAP(XX)
 		#undef XX
 	}

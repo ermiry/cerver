@@ -21,16 +21,18 @@
 #include "cerver/events/internal.h"
 #include <cerver/network/network.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/headers/types.h>
 #include <cerver/http/requests/request.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/settings.h>
 
@@ -39,8 +41,7 @@
 #include "http.h"
 
 // runs a real web cerver in a thread and talks to it with raw sockets that send more than one request,
-// to test the connections that are kept between requests in the two ways of handling them:
-// by default with event loops, and when it is asked for with a thread for each connection
+// to test the connections that are kept between requests by its event loops
 
 // what this suite pins:
 // - every response had "Connection: close" and its connection was closed, a client paid a connect by request
@@ -83,18 +84,14 @@
 #define KEEPALIVE_MAX_REQUESTS				3
 #define KEEPALIVE_PIPELINED					3
 
-// the buckets of the connections that ended: the ones with one request, and the ones with up to 2^2 of them
-#define KEEPALIVE_SINGLE_BUCKET				0
-#define KEEPALIVE_MAX_REQUESTS_BUCKET		2
-// the connections with one request of the test of a thread that is needed: the one that waits for the cerver
-// and the one that got the thread
-#define KEEPALIVE_NEEDED_SINGLE				2
-
 #define KEEPALIVE_THREADS					4
 #define KEEPALIVE_QUEUE_SIZE				(1 << 4)
 
 // the connections of the cerver of the limit test: the idle ones and the one that takes the place of the oldest
 #define KEEPALIVE_LIMIT_CONNECTIONS			2
+
+// the event loops of the cervers of the tests that act on one loop: its idle connections, its rejecting
+#define KEEPALIVE_SINGLE_LOOP				1
 
 // the idle connections of the test of a busy pool: the one that waited and the one that had the thread
 #define KEEPALIVE_BUSY_IDLE					2
@@ -129,9 +126,6 @@ static const char *keepalive_ok_close_request = {
 };
 
 static unsigned int keepalive_port = KEEPALIVE_PORT_BASE;
-
-// how the cervers of the tests that run now handle their connections
-static CerverHandlerType keepalive_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
 #pragma region gate
 
@@ -198,116 +192,85 @@ static void keepalive_gate_wait_for (const unsigned int waiting) {
 static unsigned int keepalive_handled = 0;
 
 // GET /keepalive/ok
-static void keepalive_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void keepalive_ok_handler (CerverHttpContext *context) {
 
 	test_counter_add (&keepalive_handled);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /keepalive/items/:id, answers with its param
-static void keepalive_items_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void keepalive_items_handler (CerverHttpContext *context) {
 
-	const String *id = http_request_get_param (request, "id");
+	const CerverHttpView id = cerver_http_request_param (context, "id");
 
-	const char *value = id ? id->str : keepalive_none;
+	const char *value = !cerver_http_view_is_missing (id) ? id.data : keepalive_none;
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, value, strlen (value));
+	(void) cerver_http_response_send_text (context, value, strlen (value));
 
 }
 
 // GET and POST /keepalive/state, answers with the body and the Accept header that the request has
-static void keepalive_state_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void keepalive_state_handler (CerverHttpContext *context) {
 
-	const String *body = http_request_get_body (request);
-	const String *accept = http_request_get_header (request, HTTP_HEADER_ACCEPT);
+	const CerverHttpView body = cerver_http_request_body (context);
+	const CerverHttpView accept = cerver_http_request_header (context, HTTP_HEADER_ACCEPT);
 
 	char state[KEEPALIVE_REQUEST_SIZE] = { 0 };
 	(void) snprintf (
 		state, sizeof (state), "%s|%s",
-		body ? body->str : keepalive_none,
-		accept ? accept->str : keepalive_none
+		!cerver_http_view_is_missing (body) ? body.data : keepalive_none,
+		!cerver_http_view_is_missing (accept) ? accept.data : keepalive_none
 	);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, state, strlen (state));
+	(void) cerver_http_response_send_text (context, state, strlen (state));
 
 }
 
 // GET /keepalive/silent, the handler does not answer
-static void keepalive_silent_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void keepalive_silent_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
-// GET /keepalive/unframed, a body without its length ends when the connection is closed
-static void keepalive_unframed_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+// GET /keepalive/unframed, a body without its length ends when the connection is closed:
+// the responses of the context always have their length, so it is sent with the internal methods
+static void keepalive_unframed_handler (CerverHttpContext *context) {
 
 	(void) http_response_create_and_send (
-		HTTP_STATUS_OK, keepalive_unframed_body, strlen (keepalive_unframed_body), http_receive
+		HTTP_STATUS_OK, keepalive_unframed_body, strlen (keepalive_unframed_body), context
 	);
 
 }
 
 // GET /keepalive/closing, a response that closes its connection with its own header
-static void keepalive_closing_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void keepalive_closing_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *response = http_response_get ();
-	http_response_set_status (response, HTTP_STATUS_OK);
-	(void) http_response_add_header (response, HTTP_HEADER_CONNECTION, HTTP_RESPONSE_CONNECTION_CLOSE);
-	(void) http_response_add_content_length_header (response, strlen (keepalive_closing_body));
-	(void) http_response_set_data_ref (response, keepalive_closing_body, strlen (keepalive_closing_body));
-	(void) http_response_send (response, http_receive);
-	http_response_return (response);
+	(void) cerver_http_response_set_header (context, HTTP_HEADER_CONNECTION, HTTP_RESPONSE_CONNECTION_CLOSE);
+	(void) cerver_http_response_send (context, keepalive_closing_body, strlen (keepalive_closing_body));
 
 }
 
 // GET /keepalive/block, answers when the gate is opened
-static void keepalive_block_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void keepalive_block_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&keepalive_gate_mutex);
 	keepalive_gate_waiting += 1;
 	while (!keepalive_gate_is_open) (void) pthread_cond_wait (&keepalive_gate_cond, &keepalive_gate_mutex);
 	(void) pthread_mutex_unlock (&keepalive_gate_mutex);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // POST /keepalive/private, only with the valid authorization
-static unsigned int keepalive_authentication_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int keepalive_authentication_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
-
-	return (authorization && !strcmp (authorization->str, keepalive_valid_authorization)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, keepalive_valid_authorization) ? 0 : 1;
 
 }
 
@@ -315,27 +278,27 @@ static const HttpWebSocketHandlers keepalive_web_socket_handlers = {
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
-static void keepalive_routes (HttpCerver *http_cerver) {
+static void keepalive_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "keepalive");
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "keepalive");
 	test_check_ptr (group);
 
-	test_check_ptr (http_group_get (group, "ok", keepalive_ok_handler));
-	test_check_ptr (http_group_get (group, "items/:id", keepalive_items_handler));
-	test_check_ptr (http_group_get (group, "state", keepalive_state_handler));
-	test_check_ptr (http_group_post (group, "state", keepalive_state_handler));
-	test_check_ptr (http_group_get (group, "silent", keepalive_silent_handler));
-	test_check_ptr (http_group_get (group, "unframed", keepalive_unframed_handler));
-	test_check_ptr (http_group_get (group, "closing", keepalive_closing_handler));
-	test_check_ptr (http_group_get (group, "block", keepalive_block_handler));
+	test_check_ptr (cerver_http_group_get (group, "ok", keepalive_ok_handler));
+	test_check_ptr (cerver_http_group_get (group, "items/:id", keepalive_items_handler));
+	test_check_ptr (cerver_http_group_get (group, "state", keepalive_state_handler));
+	test_check_ptr (cerver_http_group_post (group, "state", keepalive_state_handler));
+	test_check_ptr (cerver_http_group_get (group, "silent", keepalive_silent_handler));
+	test_check_ptr (cerver_http_group_get (group, "unframed", keepalive_unframed_handler));
+	test_check_ptr (cerver_http_group_get (group, "closing", keepalive_closing_handler));
+	test_check_ptr (cerver_http_group_get (group, "block", keepalive_block_handler));
 
-	HttpEndpoint *private_endpoint = http_group_post (group, "private", keepalive_state_handler);
+	CerverHttpEndpoint *private_endpoint = cerver_http_group_post (group, "private", keepalive_state_handler);
 	test_check_ptr (private_endpoint);
-	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (private_endpoint, keepalive_authentication_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (private_endpoint, keepalive_authentication_handler);
 
 	// GET /keepalive/socket, a WebSocket endpoint that only takes the connection
-	test_check_ptr (http_group_web_socket_add (group, "socket", &keepalive_web_socket_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (group, "socket", &keepalive_web_socket_handlers));
 
 }
 
@@ -345,10 +308,7 @@ static void keepalive_routes (HttpCerver *http_cerver) {
 
 typedef struct KeepAliveOptions {
 
-	CerverHandlerType handler_type;
-
-	// KEEPALIVE_CONFIGURE_*: by default a cerver with event loops is not configured (it keeps its connections)
-	// and one with threads is asked to keep them
+	// KEEPALIVE_CONFIGURE_*: by default a cerver is not configured (its event loops keep its connections)
 	int configure;
 
 	// milliseconds, 0 keeps a long time
@@ -362,12 +322,15 @@ typedef struct KeepAliveOptions {
 	// the threads of its pool, 0 for KEEPALIVE_THREADS
 	unsigned int threads;
 
+	// its event loops, 0 keeps the default (one for each processor)
+	unsigned int io_threads;
+
 } KeepAliveOptions;
 
 typedef struct KeepAliveServer {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 	u16 port;
 
 	pthread_t thread;
@@ -376,7 +339,7 @@ typedef struct KeepAliveServer {
 
 static KeepAliveOptions keepalive_options_default (void) {
 
-	KeepAliveOptions options = { keepalive_handler_type, KEEPALIVE_CONFIGURE_DEFAULT, 0, 0, 0, 0 };
+	KeepAliveOptions options = { KEEPALIVE_CONFIGURE_DEFAULT, 0, 0, 0, 0, 0 };
 
 	return options;
 
@@ -393,24 +356,20 @@ static void *keepalive_server_thread (void *server_ptr) {
 }
 
 static void keepalive_server_configure (
-	HttpCerver *http_cerver, const KeepAliveOptions *options
+	CerverHttp *http_cerver, const KeepAliveOptions *options
 ) {
 
-	const bool events = (options->handler_type == CERVER_HANDLER_TYPE_EVENTS);
-
 	switch (options->configure) {
-		case KEEPALIVE_CONFIGURE_DISABLED: http_cerver_set_keep_alive (http_cerver, false); break;
-		case KEEPALIVE_CONFIGURE_ENABLED: http_cerver_set_keep_alive (http_cerver, true); break;
+		case KEEPALIVE_CONFIGURE_DISABLED: cerver_http_set_keep_alive (http_cerver, false); break;
+		case KEEPALIVE_CONFIGURE_ENABLED: cerver_http_set_keep_alive (http_cerver, true); break;
 
-		default:
-			if (!events) http_cerver_set_keep_alive (http_cerver, true);
-			break;
+		default: break;
 	}
 
-	if (options->timeout) http_cerver_set_keep_alive_timeout_milliseconds (http_cerver, options->timeout);
-	else http_cerver_set_keep_alive_timeout (http_cerver, KEEPALIVE_LONG_TIMEOUT);
+	if (options->timeout) cerver_http_set_keep_alive_timeout_milliseconds (http_cerver, options->timeout);
+	else cerver_http_set_keep_alive_timeout (http_cerver, KEEPALIVE_LONG_TIMEOUT);
 
-	if (options->requests) http_cerver_set_keep_alive_requests (http_cerver, options->requests);
+	if (options->requests) cerver_http_set_keep_alive_requests (http_cerver, options->requests);
 
 }
 
@@ -446,7 +405,6 @@ static KeepAliveServer *keepalive_server_start (const KeepAliveOptions *options)
 	Cerver *cerver = cerver_create_web ("keepalive-test", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, options->handler_type);
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
@@ -455,11 +413,16 @@ static KeepAliveServer *keepalive_server_start (const KeepAliveOptions *options)
 	cerver_set_drain_timeout (cerver, KEEPALIVE_DRAIN_TIMEOUT);
 
 	if (options->max_connections) cerver_set_max_connections (cerver, options->max_connections);
+	if (options->io_threads) cerver_set_io_threads (cerver, options->io_threads);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
+
+	// the /keepalive/block handler waits, and the tests count the jobs of the thpool:
+	// the handlers run in its threads, not in the event loops
+	(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
 	// a path without a route is answered with 404 by cerver
-	http_cerver_set_not_found_handler (http_cerver);
+	cerver_http_set_not_found_handler (http_cerver);
 
 	keepalive_server_configure (http_cerver, options);
 
@@ -1073,7 +1036,7 @@ static void test_keepalive_idle_timeout (void) {
 
 	keepalive_client_end (&gone);
 
-	const HttpCerver *http_cerver = server->http_cerver;
+	const CerverHttp *http_cerver = server->http_cerver;
 	const size_t incompleted = __atomic_load_n (&http_cerver->n_incompleted_requests, __ATOMIC_RELAXED);
 
 	keepalive_server_stop (server);
@@ -1400,123 +1363,27 @@ static void test_keepalive_drain_partial (void) {
 
 }
 
-// a cerver with threads only keeps its connections when it is asked to:
-// without it, each connection is closed after its response
-static void test_keepalive_threads_default (void) {
+// a cerver that is asked to keep its connections says that it was configured,
+// and the keep alive of a new cerver is not configured and has its defaults
+static void test_keepalive_configured (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_THREADS;
 	options.configure = KEEPALIVE_CONFIGURE_ENABLED;
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 	test_check_bool_eq (server->http_cerver->keep_alive_configured, true, NULL);
 	keepalive_server_stop (server);
 
-	// nothing is configured, the cerver decides whether it keeps its connections
-	Cerver *threads = cerver_create_web ("keepalive-threads", (u16) keepalive_port, CERVER_DEFAULT_CONNECTION_QUEUE);
-	test_check_ptr (threads);
-	cerver_set_handler_type (threads, CERVER_HANDLER_TYPE_THREADS);
-	cerver_set_reusable_address_flags (threads, true);
-	cerver_set_thpool_n_threads (threads, KEEPALIVE_THREADS);
-	keepalive_routes ((HttpCerver *) threads->cerver_data);
-
-	KeepAliveServer unconfigured;
-	(void) memset (&unconfigured, 0, sizeof (KeepAliveServer));
-	unconfigured.cerver = threads;
-	unconfigured.http_cerver = (HttpCerver *) threads->cerver_data;
-	unconfigured.port = (u16) keepalive_port++;
-
-	test_check_int_eq (pthread_create (&unconfigured.thread, NULL, keepalive_server_thread, &unconfigured), 0, NULL);
-
-	KeepAliveClient client;
-	keepalive_client_start (&client, &unconfigured);
-
-	keepalive_client_send (&client, keepalive_ok_request);
-	keepalive_client_expect_close (&client, "HTTP/1.1 200", NULL);
-	keepalive_client_expect_closed (&client);
-
-	keepalive_client_end (&client);
-
-	test_check_unsigned_eq (cerver_shutdown (threads), 0, NULL);
-	keepalive_server_join (&unconfigured);
-	test_check_unsigned_eq (cerver_teardown (threads), 0, NULL);
-
 	Cerver *cerver = cerver_create_web ("keepalive-default", (u16) keepalive_port++, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	const HttpCerver *http_cerver = (const HttpCerver *) cerver->cerver_data;
+	const CerverHttp *http_cerver = cerver_http_get (cerver);
 	test_check_bool_eq (http_cerver->keep_alive, false, NULL);
 	test_check_bool_eq (http_cerver->keep_alive_configured, false, NULL);
-	test_check_unsigned_eq (http_cerver->keep_alive_timeout, HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS, NULL);
-	test_check_unsigned_eq (http_cerver->keep_alive_requests, HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS, NULL);
+	test_check_unsigned_eq (http_cerver->keep_alive_timeout, CERVER_HTTP_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS, NULL);
+	test_check_unsigned_eq (http_cerver->keep_alive_requests, CERVER_HTTP_DEFAULT_KEEP_ALIVE_REQUESTS, NULL);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
-
-}
-
-// a cerver with threads keeps a connection with the thread that handled its request: an idle connection
-// gives its thread to a connection that waits for one, at once and not when its time ends, and it is not closed
-// for that: it waits for a thread in its place, with the requests that it has handled
-// (a connection that was closed while its client sent its next request is a 502 behind a proxy)
-static void test_keepalive_threads_needed (void) {
-
-	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_THREADS;
-	options.configure = KEEPALIVE_CONFIGURE_ENABLED;
-	options.requests = KEEPALIVE_MAX_REQUESTS;
-	options.threads = 1;
-
-	KeepAliveServer *server = keepalive_server_start (&options);
-
-	KeepAliveClient idle;
-	keepalive_client_start (&idle, server);
-	keepalive_client_send (&idle, keepalive_ok_request);
-	keepalive_client_expect_kept (&idle, "HTTP/1.1 200", NULL);
-
-	// the only thread of the cerver waits for the next request of the first client
-	KeepAliveClient waiting;
-	keepalive_client_start (&waiting, server);
-	keepalive_client_send (&waiting, keepalive_ok_request);
-
-	// the one that got the thread says that it is closed: the idle one waits for the thread now
-	keepalive_client_expect_close (&waiting, "HTTP/1.1 200", NULL);
-	keepalive_client_expect_closed (&waiting);
-
-	// the idle one was not closed, and it has its thread again
-	keepalive_client_expect_open (&idle);
-	keepalive_client_send (&idle, keepalive_ok_request);
-	keepalive_client_expect_kept (&idle, "HTTP/1.1 200", NULL);
-
-	// it kept the count of its requests while it had no thread: this one is its last
-	keepalive_client_send (&idle, keepalive_ok_request);
-	keepalive_client_expect_close (&idle, "HTTP/1.1 200", NULL);
-	keepalive_client_expect_closed (&idle);
-
-	// each connection was counted once, when it ended: the idle one with the requests that it handled
-	// with two threads, not when it went back to the thpool
-	// (a client sees its connection closed before its thread counts it)
-	const HttpCerver *http_cerver = server->http_cerver;
-	(void) test_wait_counter_64 (
-		(const uint64_t *) &http_cerver->n_connection_requests,
-		KEEPALIVE_MAX_REQUESTS + KEEPALIVE_NEEDED_SINGLE, TEST_WAIT_SECONDS
-	);
-
-	test_check_unsigned_eq (
-		CERVER_STATS_GET (http_cerver->connection_requests[KEEPALIVE_SINGLE_BUCKET]), KEEPALIVE_NEEDED_SINGLE, NULL
-	);
-
-	test_check_unsigned_eq (
-		CERVER_STATS_GET (http_cerver->connection_requests[KEEPALIVE_MAX_REQUESTS_BUCKET]), 1, NULL
-	);
-
-	test_check_unsigned_eq (
-		CERVER_STATS_GET (http_cerver->n_connection_requests), KEEPALIVE_MAX_REQUESTS + KEEPALIVE_NEEDED_SINGLE, NULL
-	);
-
-	keepalive_client_end (&idle);
-	keepalive_client_end (&waiting);
-
-	keepalive_server_stop (server);
 
 }
 
@@ -1526,38 +1393,38 @@ static void test_keepalive_setters (void) {
 	Cerver *cerver = cerver_create_web ("keepalive-setters", (u16) keepalive_port++, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	http_cerver_set_keep_alive (http_cerver, true);
+	cerver_http_set_keep_alive (http_cerver, true);
 	test_check_bool_eq (http_cerver->keep_alive, true, NULL);
 	test_check_bool_eq (http_cerver->keep_alive_configured, true, NULL);
 
-	http_cerver_set_keep_alive (http_cerver, false);
+	cerver_http_set_keep_alive (http_cerver, false);
 	test_check_bool_eq (http_cerver->keep_alive, false, NULL);
 	test_check_bool_eq (http_cerver->keep_alive_configured, true, NULL);
 
-	http_cerver_set_keep_alive_timeout (http_cerver, KEEPALIVE_DRAIN_TIMEOUT);
+	cerver_http_set_keep_alive_timeout (http_cerver, KEEPALIVE_DRAIN_TIMEOUT);
 	test_check_unsigned_eq (
 		http_cerver->keep_alive_timeout, KEEPALIVE_DRAIN_TIMEOUT * KEEPALIVE_MILLISECONDS_PER_SECOND, NULL
 	);
 
-	http_cerver_set_keep_alive_timeout_milliseconds (http_cerver, KEEPALIVE_SHORT_TIMEOUT);
+	cerver_http_set_keep_alive_timeout_milliseconds (http_cerver, KEEPALIVE_SHORT_TIMEOUT);
 	test_check_unsigned_eq (http_cerver->keep_alive_timeout, KEEPALIVE_SHORT_TIMEOUT, NULL);
 
-	http_cerver_set_keep_alive_timeout (http_cerver, 0);
-	test_check_unsigned_eq (http_cerver->keep_alive_timeout, HTTP_CERVER_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS, NULL);
+	cerver_http_set_keep_alive_timeout (http_cerver, 0);
+	test_check_unsigned_eq (http_cerver->keep_alive_timeout, CERVER_HTTP_DEFAULT_KEEP_ALIVE_TIMEOUT_MILLISECONDS, NULL);
 
-	http_cerver_set_keep_alive_requests (http_cerver, KEEPALIVE_REQUESTS);
+	cerver_http_set_keep_alive_requests (http_cerver, KEEPALIVE_REQUESTS);
 	test_check_unsigned_eq (http_cerver->keep_alive_requests, KEEPALIVE_REQUESTS, NULL);
 
-	http_cerver_set_keep_alive_requests (http_cerver, 0);
+	cerver_http_set_keep_alive_requests (http_cerver, 0);
 	test_check_unsigned_eq (http_cerver->keep_alive_requests, 0, NULL);
 
 	// nothing is done without a cerver
-	http_cerver_set_keep_alive (NULL, true);
-	http_cerver_set_keep_alive_timeout (NULL, KEEPALIVE_DRAIN_TIMEOUT);
-	http_cerver_set_keep_alive_timeout_milliseconds (NULL, KEEPALIVE_SHORT_TIMEOUT);
-	http_cerver_set_keep_alive_requests (NULL, KEEPALIVE_REQUESTS);
+	cerver_http_set_keep_alive (NULL, true);
+	cerver_http_set_keep_alive_timeout (NULL, KEEPALIVE_DRAIN_TIMEOUT);
+	cerver_http_set_keep_alive_timeout_milliseconds (NULL, KEEPALIVE_SHORT_TIMEOUT);
+	cerver_http_set_keep_alive_requests (NULL, KEEPALIVE_REQUESTS);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -1566,8 +1433,7 @@ static void test_keepalive_setters (void) {
 // a cerver with event loops keeps its connections without being asked to
 static void test_keepalive_events_default (void) {
 
-	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
+	const KeepAliveOptions options = keepalive_options_default ();
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 
@@ -1592,8 +1458,7 @@ static void test_keepalive_events_default (void) {
 // it and a thread of the pool handles it, and a client that leaves while its connection is idle ends it
 static void test_keepalive_events_idle (void) {
 
-	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
+	const KeepAliveOptions options = keepalive_options_default ();
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 
@@ -1645,7 +1510,6 @@ static void keepalive_server_wait_queued (const KeepAliveServer *server, const u
 static void test_keepalive_events_pool_busy (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
 	options.threads = 1;
 
 	keepalive_gate_reset ();
@@ -1690,8 +1554,8 @@ static void test_keepalive_events_pool_busy (void) {
 static void test_keepalive_events_rejecting (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
 	options.threads = 1;
+	options.io_threads = KEEPALIVE_SINGLE_LOOP;
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 
@@ -1723,8 +1587,8 @@ static void test_keepalive_events_rejecting (void) {
 static void test_keepalive_events_limit (void) {
 
 	KeepAliveOptions options = keepalive_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_EVENTS;
 	options.max_connections = KEEPALIVE_LIMIT_CONNECTIONS;
+	options.io_threads = KEEPALIVE_SINGLE_LOOP;
 
 	KeepAliveServer *server = keepalive_server_start (&options);
 
@@ -1771,11 +1635,7 @@ static void test_keepalive_events_limit (void) {
 
 #pragma endregion
 
-static void keepalive_tests_model (const CerverHandlerType handler_type) {
-
-	keepalive_handler_type = handler_type;
-
-	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
+static void keepalive_tests_connections (void) {
 
 	// a hang fails the suite instead of blocking it forever
 	(void) alarm (KEEPALIVE_ALARM * test_time_scale ());
@@ -1800,8 +1660,6 @@ static void keepalive_tests_model (const CerverHandlerType handler_type) {
 
 	(void) alarm (0);
 
-	keepalive_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 }
 
 void http_tests_keepalive (void) {
@@ -1811,8 +1669,7 @@ void http_tests_keepalive (void) {
 	(void) alarm (KEEPALIVE_ALARM * test_time_scale ());
 
 	test_run (test_keepalive_setters);
-	test_run (test_keepalive_threads_default);
-	test_run (test_keepalive_threads_needed);
+	test_run (test_keepalive_configured);
 	test_run (test_keepalive_events_default);
 	test_run (test_keepalive_events_idle);
 	test_run (test_keepalive_events_pool_busy);
@@ -1821,8 +1678,7 @@ void http_tests_keepalive (void) {
 
 	(void) alarm (0);
 
-	keepalive_tests_model (CERVER_HANDLER_TYPE_THREADS);
-	keepalive_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+	keepalive_tests_connections ();
 
 	(void) printf ("Done!\n");
 

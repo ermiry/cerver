@@ -13,8 +13,6 @@
 
 #include <cerver/types/string.h>
 
-#include <cerver/collections/dlist.h>
-
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
@@ -23,7 +21,7 @@
 #include <cerver/network/network.h>
 
 #include <cerver/http/core/admin.h>
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
 #include <cerver/http/core/limits.h>
@@ -34,7 +32,6 @@
 #include <cerver/http/headers/types.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
 #include <cerver/threads/thpool.h>
@@ -110,8 +107,6 @@
 #define POOLS_KEPT_BUCKET					2
 // the bucket of a connection that ended with one request
 #define POOLS_SINGLE_BUCKET					0
-// the connections of the test of a cerver without event loops, with the one that waits for the cerver: one request each
-#define POOLS_WITHOUT_EVENTS_CONNECTIONS	5
 
 static const char *pools_cerver_name = { "pools" };
 static const char *pools_slow_name = { "slow" };
@@ -216,9 +211,6 @@ static const char *pools_ready_end = { "host\r\nConnection: close\r\n\r\n" };
 
 static unsigned int pools_port = POOLS_PORT_BASE;
 
-// how the cervers of the tests that run now handle their connections
-static CerverHandlerType pools_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 #pragma region gate
 
 // keeps the block requests working until it is opened
@@ -318,98 +310,84 @@ static void pools_thread_expect (const char *name, const char *prefix) {
 }
 
 // answers and tells which thread did it
-static void pools_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void pools_ok_handler (CerverHttpContext *context) {
 
 	pools_thread_save (pools_handler_thread);
 
 	test_counter_add (&pools_handled);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // answers with the name of the thread that handles the request
-static void pools_thread_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void pools_thread_handler (CerverHttpContext *context) {
 
 	char name[POOLS_THREAD_NAME_SIZE] = { 0 };
 	(void) pthread_getname_np (pthread_self (), name, POOLS_THREAD_NAME_SIZE);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, name, strlen (name));
+	(void) cerver_http_response_send_text (context, name, strlen (name));
 
 }
 
 // answers when the gate is opened
-static void pools_block_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void pools_block_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&pools_gate_mutex);
 	pools_gate_waiting += 1;
 	while (!pools_gate_is_open) (void) pthread_cond_wait (&pools_gate_cond, &pools_gate_mutex);
 	(void) pthread_mutex_unlock (&pools_gate_mutex);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // only with the valid authorization, and tells which thread checked it
-static unsigned int pools_authentication_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) http_receive;
+static unsigned int pools_authentication_handler (CerverHttpContext *context) {
 
 	pools_thread_save (pools_authentication_thread);
 
-	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	return (authorization && !strcmp (authorization->str, pools_valid_authorization)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, pools_valid_authorization) ? 0 : 1;
 
 }
 
 // GET /pools/ok and /pools/block in the thpool of the cerver;
 // the group /pools/slow in the slow pool, with an endpoint that goes back to the default one;
-// GET /old, a route of the first routes API in the slow pool
-static void pools_routes (HttpCerver *http_cerver) {
+// GET /old, the root endpoint of a top level group, in the slow pool
+static void pools_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "pools");
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "pools");
 	test_check_ptr (group);
 
-	test_check_ptr (http_group_get (group, "ok", pools_ok_handler));
-	test_check_ptr (http_group_get (group, "block", pools_block_handler));
-	test_check_ptr (http_group_get (group, "thread", pools_thread_handler));
+	test_check_ptr (cerver_http_group_get (group, "ok", pools_ok_handler));
+	test_check_ptr (cerver_http_group_get (group, "block", pools_block_handler));
+	test_check_ptr (cerver_http_group_get (group, "thread", pools_thread_handler));
 
-	HttpGroup *slow = http_group_create (group, "slow");
+	CerverHttpGroup *slow = cerver_http_group_subgroup_add (group, "slow");
 	test_check_ptr (slow);
-	http_group_set_pool (slow, pools_slow_name);
+	cerver_http_group_set_pool (slow, pools_slow_name);
 
-	test_check_ptr (http_group_get (slow, "ok", pools_ok_handler));
-	test_check_ptr (http_group_get (slow, "block", pools_block_handler));
-	test_check_ptr (http_group_get (slow, "thread", pools_thread_handler));
+	test_check_ptr (cerver_http_group_get (slow, "ok", pools_ok_handler));
+	test_check_ptr (cerver_http_group_get (slow, "block", pools_block_handler));
+	test_check_ptr (cerver_http_group_get (slow, "thread", pools_thread_handler));
 
-	HttpEndpoint *fast_endpoint = http_group_get (slow, "fast", pools_ok_handler);
+	CerverHttpEndpoint *fast_endpoint = cerver_http_group_get (slow, "fast", pools_ok_handler);
 	test_check_ptr (fast_endpoint);
-	http_endpoint_set_pool (fast_endpoint, NULL);
+	cerver_http_endpoint_set_pool (fast_endpoint, NULL);
 
-	HttpEndpoint *private_endpoint = http_group_get (slow, "private", pools_ok_handler);
+	CerverHttpEndpoint *private_endpoint = cerver_http_group_get (slow, "private", pools_ok_handler);
 	test_check_ptr (private_endpoint);
-	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (private_endpoint, pools_authentication_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (private_endpoint, pools_authentication_handler);
 
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", pools_ok_handler);
-	test_check_ptr (old_route);
-	http_route_set_pool (old_route, pools_slow_name);
-	http_cerver_route_register (http_cerver, old_route);
+	CerverHttpGroup *old = cerver_http_group_create (http_cerver, "/old");
+	test_check_ptr (old);
+
+	CerverHttpEndpoint *old_endpoint = cerver_http_group_root_add (old, REQUEST_METHOD_GET, pools_ok_handler);
+	test_check_ptr (old_endpoint);
+	cerver_http_endpoint_set_pool (old_endpoint, pools_slow_name);
 
 }
 
@@ -418,8 +396,6 @@ static void pools_routes (HttpCerver *http_cerver) {
 #pragma region server
 
 typedef struct PoolsOptions {
-
-	CerverHandlerType handler_type;
 
 	// the thpool of the cerver, 0 for POOLS_THREADS and POOLS_QUEUE_SIZE
 	unsigned int threads;
@@ -446,7 +422,7 @@ typedef struct PoolsOptions {
 typedef struct PoolsServer {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 	HttpPool *slow;
 	u16 port;
 
@@ -457,7 +433,6 @@ typedef struct PoolsServer {
 static PoolsOptions pools_options_default (void) {
 
 	PoolsOptions options = {
-		pools_handler_type,
 		0, 0, CERVER_OVERLOAD_POLICY_NONE,
 		0, 0, CERVER_OVERLOAD_POLICY_NONE, POOLS_WAIT_NOT_SET,
 		CERVER_DRAIN_POLICY_NONE
@@ -482,7 +457,6 @@ static Cerver *pools_cerver_create (const PoolsOptions *options) {
 	Cerver *cerver = cerver_create_web (pools_cerver_name, (u16) pools_port++, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, options->handler_type);
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
@@ -498,22 +472,22 @@ static Cerver *pools_cerver_create (const PoolsOptions *options) {
 
 }
 
-static HttpPool *pools_slow_create (HttpCerver *http_cerver, const PoolsOptions *options) {
+static HttpPool *pools_slow_create (CerverHttp *http_cerver, const PoolsOptions *options) {
 
-	HttpPool *slow = http_cerver_pool_create (
+	HttpPool *slow = cerver_http_pool_create (
 		http_cerver, pools_slow_name, options->slow_threads ? options->slow_threads : POOLS_SLOW_THREADS
 	);
 
 	test_check_ptr (slow);
 
-	http_pool_set_queue_size (slow, options->slow_queue_size ? options->slow_queue_size : POOLS_SLOW_QUEUE_SIZE);
+	cerver_http_pool_set_queue_size (slow, options->slow_queue_size ? options->slow_queue_size : POOLS_SLOW_QUEUE_SIZE);
 
 	if (options->slow_policy != CERVER_OVERLOAD_POLICY_NONE) {
-		http_pool_set_overload_policy (slow, options->slow_policy);
+		cerver_http_pool_set_overload_policy (slow, options->slow_policy);
 	}
 
 	if (options->slow_wait != POOLS_WAIT_NOT_SET) {
-		http_pool_set_wait_timeout (slow, (unsigned int) options->slow_wait);
+		cerver_http_pool_set_wait_timeout (slow, (unsigned int) options->slow_wait);
 	}
 
 	return slow;
@@ -548,13 +522,17 @@ static PoolsServer *pools_server_start (const PoolsOptions *options) {
 
 	Cerver *cerver = pools_cerver_create (options);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
+
+	// the handlers that did not choose a pool run in the thpool of the cerver, the default pool of these tests:
+	// the block routes wait, and the tests count the jobs of each pool
+	(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
 	// a path without a route is answered with 404 by cerver
-	http_cerver_set_not_found_handler (http_cerver);
+	cerver_http_set_not_found_handler (http_cerver);
 
-	http_cerver_set_health_route (http_cerver, pools_health_route);
-	http_cerver_set_ready_route (http_cerver, pools_ready_route);
+	cerver_http_set_health_route (http_cerver, pools_health_route);
+	cerver_http_set_ready_route (http_cerver, pools_ready_route);
 
 	server->cerver = cerver;
 	server->http_cerver = http_cerver;
@@ -622,7 +600,7 @@ static unsigned int pools_default_queued (const PoolsServer *server) {
 
 static unsigned int pools_ready (const PoolsServer *server) {
 
-	return http_cerver_is_ready (server->http_cerver) ? 1 : 0;
+	return cerver_http_is_ready (server->http_cerver) ? 1 : 0;
 
 }
 
@@ -796,7 +774,7 @@ static unsigned int pools_count (const char *response, const char *text) {
 // the metrics of the cerver have a line, or they do not have it
 static void pools_metrics_expect (const PoolsServer *server, const char *line, const bool expected) {
 
-	String *metrics = http_cerver_metrics_generate (server->http_cerver);
+	String *metrics = cerver_http_metrics_generate (server->http_cerver);
 	test_check_ptr (metrics);
 
 	const bool found = (strstr (metrics->str, line) != NULL);
@@ -813,7 +791,7 @@ static void pools_metrics_expect (const PoolsServer *server, const char *line, c
 // the stats of the admin routes have a text
 static void pools_admin_expect (const PoolsServer *server, const char *text) {
 
-	char *stats = http_cerver_admin_generate_routes_stats_json (server->http_cerver);
+	char *stats = cerver_http_admin_generate_routes_stats_json (server->http_cerver);
 	test_check_ptr (stats);
 
 	const bool found = (strstr (stats, text) != NULL);
@@ -851,12 +829,9 @@ static void pools_slow_fill_queue (const PoolsServer *server, int *fds, const un
 
 #pragma region tests
 
-static void pools_none_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void pools_none_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -873,37 +848,37 @@ static Cerver *pools_cerver_plain (void) {
 static void test_pools_create (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	const HttpPool *default_pool = http_cerver_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
+	const HttpPool *default_pool = cerver_http_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
 	test_check_ptr (default_pool);
-	test_check_str_eq (http_pool_get_name (default_pool), HTTP_POOL_DEFAULT_NAME, NULL);
+	test_check_str_eq (cerver_http_pool_get_name (default_pool), HTTP_POOL_DEFAULT_NAME, NULL);
 	test_check_unsigned_eq (default_pool->index, 0, NULL);
 	test_check_unsigned_eq (http_cerver->n_pools, 1, NULL);
 
-	test_check_null_ptr (http_cerver_pool_create (NULL, pools_slow_name, POOLS_SLOW_THREADS));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, NULL, POOLS_SLOW_THREADS));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, pools_slow_name, 0));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, "", POOLS_SLOW_THREADS));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, pools_words_name, POOLS_SLOW_THREADS));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, pools_long_name, POOLS_SLOW_THREADS));
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, HTTP_POOL_DEFAULT_NAME, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (NULL, pools_slow_name, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, NULL, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, pools_slow_name, 0));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, "", POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, pools_words_name, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, pools_long_name, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, HTTP_POOL_DEFAULT_NAME, POOLS_SLOW_THREADS));
 	test_check_unsigned_eq (http_cerver->n_pools, 1, NULL);
 
-	HttpPool *slow = http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
+	HttpPool *slow = cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
 	test_check_ptr (slow);
-	test_check_ptr_eq (http_cerver_pool_get_with_name (http_cerver, pools_slow_name), slow);
-	test_check_str_eq (http_pool_get_name (slow), pools_slow_name, NULL);
+	test_check_ptr_eq (cerver_http_pool_get_with_name (http_cerver, pools_slow_name), slow);
+	test_check_str_eq (cerver_http_pool_get_name (slow), pools_slow_name, NULL);
 	test_check_unsigned_eq (slow->index, 1, NULL);
 	test_check_unsigned_eq (slow->n_threads, POOLS_SLOW_THREADS, NULL);
 
 	// a name has one pool
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS));
 
-	test_check_null_ptr (http_cerver_pool_get_with_name (http_cerver, pools_missing_name));
-	test_check_null_ptr (http_cerver_pool_get_with_name (http_cerver, NULL));
-	test_check_null_ptr (http_cerver_pool_get_with_name (NULL, pools_slow_name));
-	test_check_null_ptr (http_pool_get_name (NULL));
+	test_check_null_ptr (cerver_http_pool_get_with_name (http_cerver, pools_missing_name));
+	test_check_null_ptr (cerver_http_pool_get_with_name (http_cerver, NULL));
+	test_check_null_ptr (cerver_http_pool_get_with_name (NULL, pools_slow_name));
+	test_check_null_ptr (cerver_http_pool_get_name (NULL));
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -913,67 +888,67 @@ static void test_pools_create (void) {
 static void test_pools_setters (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
 	cerver_set_overload_policy (cerver, CERVER_OVERLOAD_POLICY_WAIT);
 	cerver_set_overload_wait_timeout (cerver, POOLS_DRAIN_TIMEOUT);
 
-	HttpPool *slow = http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
+	HttpPool *slow = cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
 	test_check_ptr (slow);
 
-	test_check_int_eq ((int) http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_WAIT, NULL);
-	test_check_unsigned_eq (http_pool_wait_timeout (cerver, slow), POOLS_DRAIN_TIMEOUT, NULL);
+	test_check_int_eq ((int) cerver_http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_WAIT, NULL);
+	test_check_unsigned_eq (cerver_http_pool_wait_timeout (cerver, slow), POOLS_DRAIN_TIMEOUT, NULL);
 
-	http_pool_set_queue_size (slow, POOLS_SET_QUEUE_SIZE);
+	cerver_http_pool_set_queue_size (slow, POOLS_SET_QUEUE_SIZE);
 	test_check_unsigned_eq (slow->queue_size, POOLS_SET_QUEUE_SIZE, NULL);
 
-	http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_REJECT);
-	test_check_int_eq ((int) http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_REJECT, NULL);
+	cerver_http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_REJECT);
+	test_check_int_eq ((int) cerver_http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_REJECT, NULL);
 
 	// a value that is not a policy is ignored
-	http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_MAX);
-	http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_NONE);
-	test_check_int_eq ((int) http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_REJECT, NULL);
+	cerver_http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_MAX);
+	cerver_http_pool_set_overload_policy (slow, CERVER_OVERLOAD_POLICY_NONE);
+	test_check_int_eq ((int) cerver_http_pool_overload_policy (cerver, slow), (int) CERVER_OVERLOAD_POLICY_REJECT, NULL);
 
-	http_pool_set_wait_timeout (slow, POOLS_SET_WAIT);
-	test_check_unsigned_eq (http_pool_wait_timeout (cerver, slow), POOLS_SET_WAIT, NULL);
+	cerver_http_pool_set_wait_timeout (slow, POOLS_SET_WAIT);
+	test_check_unsigned_eq (cerver_http_pool_wait_timeout (cerver, slow), POOLS_SET_WAIT, NULL);
 
 	// a wait of 0 secs is a value of the pool, not the one of its cerver
-	http_pool_set_wait_timeout (slow, 0);
-	test_check_unsigned_eq (http_pool_wait_timeout (cerver, slow), 0, NULL);
+	cerver_http_pool_set_wait_timeout (slow, 0);
+	test_check_unsigned_eq (cerver_http_pool_wait_timeout (cerver, slow), 0, NULL);
 
 	// the default pool keeps the values of its cerver
-	test_check_int_eq ((int) http_pool_overload_policy (cerver, NULL), (int) CERVER_OVERLOAD_POLICY_WAIT, NULL);
-	test_check_unsigned_eq (http_pool_wait_timeout (cerver, NULL), POOLS_DRAIN_TIMEOUT, NULL);
+	test_check_int_eq ((int) cerver_http_pool_overload_policy (cerver, NULL), (int) CERVER_OVERLOAD_POLICY_WAIT, NULL);
+	test_check_unsigned_eq (cerver_http_pool_wait_timeout (cerver, NULL), POOLS_DRAIN_TIMEOUT, NULL);
 
 	// nothing is done without a pool
-	http_pool_set_queue_size (NULL, POOLS_SET_QUEUE_SIZE);
-	http_pool_set_overload_policy (NULL, CERVER_OVERLOAD_POLICY_REJECT);
-	http_pool_set_wait_timeout (NULL, POOLS_SET_WAIT);
+	cerver_http_pool_set_queue_size (NULL, POOLS_SET_QUEUE_SIZE);
+	cerver_http_pool_set_overload_policy (NULL, CERVER_OVERLOAD_POLICY_REJECT);
+	cerver_http_pool_set_wait_timeout (NULL, POOLS_SET_WAIT);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
 }
 
-// a cerver has HTTP_CERVER_POOLS_SIZE pools at most, with its default one
+// a cerver has CERVER_HTTP_POOLS_SIZE pools at most, with its default one
 static void test_pools_limit (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
 	char name[POOLS_NAME_SIZE] = { 0 };
-	for (unsigned int idx = 1; idx < HTTP_CERVER_POOLS_SIZE; idx++) {
+	for (unsigned int idx = 1; idx < CERVER_HTTP_POOLS_SIZE; idx++) {
 		(void) snprintf (name, POOLS_NAME_SIZE, "pool-%u", idx);
 
-		const HttpPool *pool = http_cerver_pool_create (http_cerver, name, POOLS_SLOW_THREADS);
+		const HttpPool *pool = cerver_http_pool_create (http_cerver, name, POOLS_SLOW_THREADS);
 		test_check_ptr (pool);
 		test_check_unsigned_eq (pool->index, idx, NULL);
 	}
 
-	test_check_unsigned_eq (http_cerver->n_pools, HTTP_CERVER_POOLS_SIZE, NULL);
+	test_check_unsigned_eq (http_cerver->n_pools, CERVER_HTTP_POOLS_SIZE, NULL);
 
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS));
-	test_check_unsigned_eq (http_cerver->n_pools, HTTP_CERVER_POOLS_SIZE, NULL);
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS));
+	test_check_unsigned_eq (http_cerver->n_pools, CERVER_HTTP_POOLS_SIZE, NULL);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -983,44 +958,49 @@ static void test_pools_limit (void) {
 static void test_pools_resolve (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	const HttpPool *default_pool = http_cerver_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
-	const HttpPool *slow = http_cerver_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
-	const HttpPool *fast = http_cerver_pool_create (http_cerver, pools_fast_name, POOLS_SLOW_THREADS);
+	const HttpPool *default_pool = cerver_http_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
+	const HttpPool *slow = cerver_http_pool_create (http_cerver, pools_slow_name, POOLS_SLOW_THREADS);
+	const HttpPool *fast = cerver_http_pool_create (http_cerver, pools_fast_name, POOLS_SLOW_THREADS);
 	test_check_ptr (slow);
 	test_check_ptr (fast);
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
-	HttpGroup *work = http_group_create (api, "work");
-	HttpGroup *inner = http_group_create (work, "inner");
+	CerverHttpGroup *api = cerver_http_group_create (http_cerver, "api");
+	CerverHttpGroup *work = cerver_http_group_subgroup_add (api, "work");
+	CerverHttpGroup *inner = cerver_http_group_subgroup_add (work, "inner");
 	test_check_ptr (inner);
 
-	http_group_set_pool (work, pools_slow_name);
+	cerver_http_group_set_pool (work, pools_slow_name);
 
-	const HttpEndpoint *plain_endpoint = http_group_get (api, "plain", pools_none_handler);
-	const HttpEndpoint *work_endpoint = http_group_get (work, "job", pools_none_handler);
-	const HttpEndpoint *inner_endpoint = http_group_get (inner, "job", pools_none_handler);
-	HttpEndpoint *fast_endpoint = http_group_get (inner, "fast", pools_none_handler);
-	HttpEndpoint *default_endpoint = http_group_get (inner, "default", pools_none_handler);
-	HttpEndpoint *none_endpoint = http_group_get (inner, "none", pools_none_handler);
+	const CerverHttpEndpoint *plain_endpoint = cerver_http_group_get (api, "plain", pools_none_handler);
+	const CerverHttpEndpoint *work_endpoint = cerver_http_group_get (work, "job", pools_none_handler);
+	const CerverHttpEndpoint *inner_endpoint = cerver_http_group_get (inner, "job", pools_none_handler);
+	CerverHttpEndpoint *fast_endpoint = cerver_http_group_get (inner, "fast", pools_none_handler);
+	CerverHttpEndpoint *default_endpoint = cerver_http_group_get (inner, "default", pools_none_handler);
+	CerverHttpEndpoint *none_endpoint = cerver_http_group_get (inner, "none", pools_none_handler);
 	test_check_ptr (none_endpoint);
 
-	http_endpoint_set_pool (fast_endpoint, pools_fast_name);
-	http_endpoint_set_pool (default_endpoint, HTTP_POOL_DEFAULT_NAME);
-	http_endpoint_set_pool (none_endpoint, NULL);
+	cerver_http_endpoint_set_pool (fast_endpoint, pools_fast_name);
+	cerver_http_endpoint_set_pool (default_endpoint, HTTP_POOL_DEFAULT_NAME);
+	cerver_http_endpoint_set_pool (none_endpoint, NULL);
 
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", pools_none_handler);
-	HttpRoute *old_plain_route = http_route_create (REQUEST_METHOD_GET, "plain", pools_none_handler);
-	test_check_ptr (old_plain_route);
-	http_route_set_pool (old_route, pools_slow_name);
-	http_cerver_route_register (http_cerver, old_route);
-	http_cerver_route_register (http_cerver, old_plain_route);
+	// the root endpoints of two top level groups, one that chose a pool and one that did not
+	CerverHttpEndpoint *old_endpoint = cerver_http_group_root_add (
+		cerver_http_group_create (http_cerver, "/old"), REQUEST_METHOD_GET, pools_none_handler
+	);
 
-	// nothing is done without a group, an endpoint or a route
-	http_group_set_pool (NULL, pools_slow_name);
-	http_endpoint_set_pool (NULL, pools_slow_name);
-	http_route_set_pool (NULL, pools_slow_name);
+	const CerverHttpEndpoint *old_plain_endpoint = cerver_http_group_root_add (
+		cerver_http_group_create (http_cerver, "/plain"), REQUEST_METHOD_GET, pools_none_handler
+	);
+
+	test_check_ptr (old_endpoint);
+	test_check_ptr (old_plain_endpoint);
+	cerver_http_endpoint_set_pool (old_endpoint, pools_slow_name);
+
+	// nothing is done without a group or an endpoint
+	cerver_http_group_set_pool (NULL, pools_slow_name);
+	cerver_http_endpoint_set_pool (NULL, pools_slow_name);
 
 	test_check_unsigned_eq (http_tree_compile (http_cerver->tree), 0, NULL);
 
@@ -1031,12 +1011,9 @@ static void test_pools_resolve (void) {
 	test_check_ptr_eq (default_endpoint->resolved.pool, default_pool);
 	test_check_null_ptr (none_endpoint->resolved.pool);
 
-	// the endpoints of the routes of the first routes API, in the order of their routes
-	const ListElement *old_element = dlist_start (http_cerver->tree->compatibility_endpoints);
-	test_check_ptr (old_element);
-	test_check_ptr_eq (((const HttpEndpoint *) old_element->data)->resolved.pool, slow);
-	test_check_ptr (old_element->next);
-	test_check_null_ptr (((const HttpEndpoint *) old_element->next->data)->resolved.pool);
+	// the endpoints of the top level groups
+	test_check_ptr_eq (old_endpoint->resolved.pool, slow);
+	test_check_null_ptr (old_plain_endpoint->resolved.pool);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -1044,9 +1021,9 @@ static void test_pools_resolve (void) {
 
 static void pools_unknown_expect (Cerver *cerver, const char *text) {
 
-	const HttpTree *tree = ((HttpCerver *) cerver->cerver_data)->tree;
+	const HttpTree *tree = cerver_http_get (cerver)->tree;
 
-	test_check_unsigned_eq (http_tree_compile (((HttpCerver *) cerver->cerver_data)->tree), 1, NULL);
+	test_check_unsigned_eq (http_tree_compile (cerver_http_get (cerver)->tree), 1, NULL);
 
 	test_check_unsigned_gt (tree->n_errors, 0);
 	test_check_ptr (strstr (tree->error, text));
@@ -1063,10 +1040,10 @@ static void pools_unknown_expect (Cerver *cerver, const char *text) {
 static void test_pools_unknown_endpoint (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
-	http_endpoint_set_pool (http_group_get (api, "job", pools_none_handler), pools_missing_name);
+	CerverHttpGroup *api = cerver_http_group_create (http_cerver, "api");
+	cerver_http_endpoint_set_pool (cerver_http_group_get (api, "job", pools_none_handler), pools_missing_name);
 
 	pools_unknown_expect (cerver, pools_missing_name);
 
@@ -1075,11 +1052,11 @@ static void test_pools_unknown_endpoint (void) {
 static void test_pools_unknown_group (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
-	http_group_set_pool (api, pools_missing_name);
-	test_check_ptr (http_group_get (api, "job", pools_none_handler));
+	CerverHttpGroup *api = cerver_http_group_create (http_cerver, "api");
+	cerver_http_group_set_pool (api, pools_missing_name);
+	test_check_ptr (cerver_http_group_get (api, "job", pools_none_handler));
 
 	pools_unknown_expect (cerver, pools_missing_name);
 
@@ -1088,11 +1065,12 @@ static void test_pools_unknown_group (void) {
 static void test_pools_unknown_route (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", pools_none_handler);
-	http_route_set_pool (old_route, pools_missing_name);
-	http_cerver_route_register (http_cerver, old_route);
+	CerverHttpGroup *old = cerver_http_group_create (http_cerver, "/old");
+	cerver_http_endpoint_set_pool (
+		cerver_http_group_root_add (old, REQUEST_METHOD_GET, pools_none_handler), pools_missing_name
+	);
 
 	pools_unknown_expect (cerver, pools_missing_name);
 
@@ -1102,20 +1080,21 @@ static void test_pools_unknown_route (void) {
 static void test_pools_unknown_long (void) {
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
+	CerverHttpGroup *api = cerver_http_group_create (http_cerver, "api");
 	test_check_unsigned_eq (http_cerver->tree->n_errors, 0, NULL);
 
-	http_group_set_pool (api, pools_long_name);
+	cerver_http_group_set_pool (api, pools_long_name);
 	test_check_unsigned_eq (http_cerver->tree->n_errors, 1, NULL);
 
-	http_endpoint_set_pool (http_group_get (api, "job", pools_none_handler), pools_long_name);
+	cerver_http_endpoint_set_pool (cerver_http_group_get (api, "job", pools_none_handler), pools_long_name);
 	test_check_unsigned_eq (http_cerver->tree->n_errors, 2, NULL);
 
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", pools_none_handler);
-	http_route_set_pool (old_route, pools_long_name);
-	http_cerver_route_register (http_cerver, old_route);
+	CerverHttpGroup *old = cerver_http_group_create (http_cerver, "/old");
+	cerver_http_endpoint_set_pool (
+		cerver_http_group_root_add (old, REQUEST_METHOD_GET, pools_none_handler), pools_long_name
+	);
 
 	test_check_unsigned_eq (http_tree_compile (http_cerver->tree), 1, NULL);
 	test_check_unsigned_eq (http_cerver->tree->n_errors, 3, NULL);
@@ -1145,7 +1124,7 @@ static void test_pools_threads (void) {
 	pools_expect (server, pools_slow_fast_request, pools_status_ok);
 	pools_thread_expect (pools_handler_thread, pools_default_thread);
 
-	// a route of the first routes API
+	// the root endpoint of a top level group
 	pools_expect (server, pools_old_request, pools_status_ok);
 	pools_thread_expect (pools_handler_thread, pools_slow_thread);
 
@@ -1245,7 +1224,7 @@ static void test_pools_kept (void) {
 	// two connections ended: the one that waited for the cerver with one request, and this one with three
 	pools_server_wait (server, pools_connection_requests, POOLS_KEPT_REQUESTS + 1);
 
-	const HttpCerver *http_cerver = server->http_cerver;
+	const CerverHttp *http_cerver = server->http_cerver;
 	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->connection_requests[POOLS_SINGLE_BUCKET]), 1, NULL);
 	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->connection_requests[POOLS_KEPT_BUCKET]), 1, NULL);
 
@@ -1419,9 +1398,9 @@ static void *pools_stop_thread (void *server_ptr) {
 static void pools_wait_stopping (const PoolsServer *server) {
 
 	const double deadline = test_wait_now () + (double) (POOLS_WAIT_TIMEOUT * test_time_scale ());
-	while (http_cerver_is_ready (server->http_cerver) && (test_wait_now () < deadline)) pools_pause ();
+	while (cerver_http_is_ready (server->http_cerver) && (test_wait_now () < deadline)) pools_pause ();
 
-	test_check_bool_eq (http_cerver_is_ready (server->http_cerver), false, NULL);
+	test_check_bool_eq (cerver_http_is_ready (server->http_cerver), false, NULL);
 
 }
 
@@ -1434,7 +1413,7 @@ static void test_pools_drain (void) {
 	const PoolsOptions options = pools_options_default ();
 	PoolsServer *server = pools_server_start (&options);
 
-	test_check_bool_eq (http_cerver_is_ready (server->http_cerver), true, NULL);
+	test_check_bool_eq (cerver_http_is_ready (server->http_cerver), true, NULL);
 
 	int fds[POOLS_SLOW_THREADS];
 	pools_slow_fill_threads (server, fds, POOLS_SLOW_THREADS);
@@ -1524,54 +1503,6 @@ static void test_pools_drain_reject (void) {
 
 }
 
-// without an event loop the named pools do not start: the thread of a connection handles its requests
-static void test_pools_without_events (void) {
-
-	pools_gate_reset ();
-
-	PoolsOptions options = pools_options_default ();
-	options.handler_type = CERVER_HANDLER_TYPE_THREADS;
-	PoolsServer *server = pools_server_start (&options);
-
-	test_check_null_ptr (server->slow->thpool);
-	test_check_unsigned_eq (server->http_cerver->n_pools, 2, NULL);
-
-	pools_expect (server, pools_slow_ok_request, pools_status_ok);
-	pools_thread_expect (pools_handler_thread, pools_default_thread);
-
-	pools_expect (server, pools_old_request, pools_status_ok);
-	pools_thread_expect (pools_handler_thread, pools_default_thread);
-
-	pools_expect (server, pools_health_request, pools_status_ok);
-	pools_expect (server, pools_ready_request, pools_status_ok);
-
-	// the metrics only have the pools with threads, and no connections of event loops
-	pools_metrics_expect (server, "cerver_http_pool_threads{pool=\"default\"} 4\n", true);
-	pools_metrics_expect (server, "{pool=\"slow\"}", false);
-	pools_metrics_expect (server, "cerver_http_connections ", false);
-	pools_metrics_expect (server, "cerver_http_health_requests_total 1\n", true);
-	pools_metrics_expect (server, "cerver_http_ready_requests_total 1\n", true);
-
-	// the connections of the threads are counted when they end: each one handled one request
-	pools_server_wait (server, pools_connection_requests, POOLS_WITHOUT_EVENTS_CONNECTIONS);
-
-	test_check_unsigned_eq (
-		CERVER_STATS_GET (server->http_cerver->connection_requests[POOLS_SINGLE_BUCKET]),
-		POOLS_WITHOUT_EVENTS_CONNECTIONS, NULL
-	);
-
-	pools_metrics_expect (server, "cerver_http_connection_requests_count 5\n", true);
-	pools_metrics_expect (server, "cerver_http_connection_requests_sum 5\n", true);
-
-	// the stats of the admin routes: one pool, and no connections of event loops
-	pools_admin_expect (server, "\"name\": \"default\"");
-	pools_admin_expect (server, "\"n_health_requests\": 1");
-	pools_admin_expect (server, "\"n_ended\": 5");
-
-	pools_server_stop (server);
-
-}
-
 // the health and the ready routes: a GET or a HEAD of their exact path, answered by cerver
 static void test_pools_health (void) {
 
@@ -1597,7 +1528,7 @@ static void test_pools_health (void) {
 
 	pools_expect (server, pools_ready_request, pools_status_ok);
 
-	const HttpCerver *http_cerver = server->http_cerver;
+	const CerverHttp *http_cerver = server->http_cerver;
 	test_check_unsigned_eq (__atomic_load_n (&http_cerver->n_health_requests, __ATOMIC_RELAXED), POOLS_HEALTH_REQUESTS, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&http_cerver->n_ready_requests, __ATOMIC_RELAXED), 1, NULL);
 	test_check_unsigned_eq (__atomic_load_n (&http_cerver->n_not_ready_requests, __ATOMIC_RELAXED), 0, NULL);
@@ -1612,28 +1543,28 @@ static void test_pools_health_removed (void) {
 	pools_gate_reset ();
 
 	Cerver *cerver = pools_cerver_plain ();
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
 	// a cerver that has not started can take requests, one that does not exist can not
-	test_check_bool_eq (http_cerver_is_ready (http_cerver), true, NULL);
-	test_check_bool_eq (http_cerver_is_ready (NULL), false, NULL);
+	test_check_bool_eq (cerver_http_is_ready (http_cerver), true, NULL);
+	test_check_bool_eq (cerver_http_is_ready (NULL), false, NULL);
 
-	http_cerver_set_health_route (http_cerver, pools_health_route);
-	http_cerver_set_ready_route (http_cerver, pools_ready_route);
+	cerver_http_set_health_route (http_cerver, pools_health_route);
+	cerver_http_set_ready_route (http_cerver, pools_ready_route);
 	test_check_str_eq (http_cerver->health_route->str, pools_health_route, NULL);
 	test_check_str_eq (http_cerver->ready_route->str, pools_ready_route, NULL);
 
-	http_cerver_set_health_route (http_cerver, pools_ready_route);
+	cerver_http_set_health_route (http_cerver, pools_ready_route);
 	test_check_str_eq (http_cerver->health_route->str, pools_ready_route, NULL);
 
-	http_cerver_set_health_route (http_cerver, NULL);
-	http_cerver_set_ready_route (http_cerver, NULL);
+	cerver_http_set_health_route (http_cerver, NULL);
+	cerver_http_set_ready_route (http_cerver, NULL);
 	test_check_null_ptr (http_cerver->health_route);
 	test_check_null_ptr (http_cerver->ready_route);
 
 	// nothing is done without a cerver
-	http_cerver_set_health_route (NULL, pools_health_route);
-	http_cerver_set_ready_route (NULL, pools_ready_route);
+	cerver_http_set_health_route (NULL, pools_health_route);
+	cerver_http_set_ready_route (NULL, pools_ready_route);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -1692,12 +1623,8 @@ static void test_pools_health_busy (void) {
 
 }
 
-// the tests of the routes that cerver answers, for each way of handling the connections
-static void pools_tests_model (const CerverHandlerType handler_type) {
-
-	pools_handler_type = handler_type;
-
-	(void) printf ("%s\n", cerver_handler_type_to_string (handler_type));
+// the tests of the routes that cerver answers
+static void pools_tests_routes (void) {
 
 	// a hang fails the suite instead of blocking it forever
 	(void) alarm (POOLS_ALARM * test_time_scale ());
@@ -1706,14 +1633,10 @@ static void pools_tests_model (const CerverHandlerType handler_type) {
 
 	(void) alarm (0);
 
-	pools_handler_type = CERVER_HANDLER_TYPE_THREADS;
-
 }
 
-// the tests of the pools, that only start with event loops
+// the tests of the pools of the event loops
 static void pools_tests_events (void) {
-
-	pools_handler_type = CERVER_HANDLER_TYPE_EVENTS;
 
 	(void) alarm (POOLS_ALARM * test_time_scale ());
 
@@ -1728,8 +1651,6 @@ static void pools_tests_events (void) {
 	test_run (test_pools_health_busy);
 
 	(void) alarm (0);
-
-	pools_handler_type = CERVER_HANDLER_TYPE_THREADS;
 
 }
 
@@ -1748,14 +1669,12 @@ void http_tests_pools (void) {
 	test_run (test_pools_unknown_route);
 	test_run (test_pools_unknown_long);
 	test_run (test_pools_health_removed);
-	test_run (test_pools_without_events);
 
 	(void) alarm (0);
 
 	pools_tests_events ();
 
-	pools_tests_model (CERVER_HANDLER_TYPE_THREADS);
-	pools_tests_model (CERVER_HANDLER_TYPE_EVENTS);
+	pools_tests_routes ();
 
 	(void) printf ("Done!\n");
 

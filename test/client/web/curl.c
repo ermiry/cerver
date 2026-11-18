@@ -39,7 +39,7 @@ void web_test_address (char *buffer, const char *path) {
 // performs the request with custom headers
 // and removes them from the handle before releasing them
 static CurlResult curl_perform_request_with_headers (
-	CURL *curl, const http_status expected_status,
+	CURL *curl, const CerverHttpStatus expected_status,
 	struct curl_slist *headers
 ) {
 
@@ -55,7 +55,7 @@ static CurlResult curl_perform_request_with_headers (
 }
 
 CurlResult curl_perform_request (
-	CURL *curl, const http_status expected_status
+	CURL *curl, const CerverHttpStatus expected_status
 ) {
 
 	CurlResult result = CURL_RESULT_NONE;
@@ -95,7 +95,7 @@ CurlResult curl_perform_request (
 // returns 0 on success, 1 on any error
 unsigned int curl_simple_full (
 	const char *address,
-	const http_status expected_status
+	const CerverHttpStatus expected_status
 ) {
 
 	unsigned int retval = 1;
@@ -118,7 +118,7 @@ unsigned int curl_simple_full (
 // returns 0 on success, 1 on any error
 unsigned int curl_full_handle_data (
 	const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer
 ) {
 
@@ -146,7 +146,7 @@ unsigned int curl_full_handle_data (
 // returns 0 on success, 1 on any error
 CurlResult curl_simple (
 	CURL *curl, const char *address,
-	const http_status expected_status
+	const CerverHttpStatus expected_status
 ) {
 
 	CurlResult result = CURL_RESULT_NONE;
@@ -164,7 +164,7 @@ CurlResult curl_simple (
 // returns 0 on success, 1 on any error
 CurlResult curl_simple_with_auth (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *authorization
 ) {
 
@@ -195,7 +195,7 @@ CurlResult curl_simple_with_auth (
 // returns 0 on success, 1 on any error
 CurlResult curl_simple_handle_data (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer
 ) {
 
@@ -218,7 +218,7 @@ CurlResult curl_simple_handle_data (
 // returns 0 on success, 1 on any error
 CurlResult curl_simple_post (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *data, const size_t datalen
 ) {
 
@@ -241,7 +241,7 @@ CurlResult curl_simple_post (
 // uses an already created CURL structure
 CurlResult curl_simple_post_json (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *json, const size_t json_len,
 	curl_write_data_cb write_cb, char *buffer
 ) {
@@ -274,7 +274,7 @@ CurlResult curl_simple_post_json (
 // but sets a custom Authorization header
 CurlResult curl_simple_post_with_auth (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *data, const size_t datalen,
 	const char *authorization
 ) {
@@ -308,7 +308,7 @@ CurlResult curl_simple_post_with_auth (
 // but has the option to handle the result data
 CurlResult curl_simple_post_handle_data (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *data, const size_t datalen,
 	curl_write_data_cb write_cb, char *buffer
 ) {
@@ -335,7 +335,7 @@ CurlResult curl_simple_post_handle_data (
 // returns 0 on success, 1 on error
 CurlResult curl_post_form_value (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer,
 	const char *key, const char *value
 ) {
@@ -371,7 +371,7 @@ CurlResult curl_post_form_value (
 // returns 0 on success, 1 on error
 CurlResult curl_post_two_form_values (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer,
 	const char *first_key, const char *first_value,
 	const char *second_key, const char *second_value
@@ -413,7 +413,7 @@ CurlResult curl_post_two_form_values (
 // returns 0 on success, 1 on error
 CurlResult curl_upload_file (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer,
 	const char *filename
 ) {
@@ -448,7 +448,7 @@ CurlResult curl_upload_file (
 // returns 0 on success, 1 on error
 CurlResult curl_upload_two_files (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	curl_write_data_cb write_cb, char *buffer,
 	const char *filename_one, const char *filename_two
 ) {
@@ -489,7 +489,7 @@ CurlResult curl_upload_two_files (
 // returns 0 on success, 1 on error
 CurlResult curl_upload_file_with_extra_value (
 	CURL *curl, const char *address,
-	const http_status expected_status,
+	const CerverHttpStatus expected_status,
 	const char *filename,
 	const char *key, const char *value
 ) {

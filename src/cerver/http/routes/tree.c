@@ -13,7 +13,6 @@
 #include "cerver/http/core/internal.h"
 #include "cerver/http/core/pool.h"
 #include "cerver/http/requests/request.h"
-#include "cerver/http/routes/compatibility.h"
 #include "cerver/http/routes/middleware.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -29,7 +28,7 @@
 static const char *http_tree_root_path = { "/" };
 static const char *http_tree_empty_path = { "" };
 
-// a level of the printed routes, the indentation of the first routes API print
+// a level of the printed routes
 static const char *http_tree_indent = { "    " };
 static const char *http_tree_values_separator = { ", " };
 
@@ -62,8 +61,8 @@ static void http_route_settings_init (HttpRouteSettings *settings);
 
 static void http_route_settings_end (HttpRouteSettings *settings);
 
-const char *http_trailing_slash_to_string (
-	const HttpTrailingSlash trailing_slash
+const char *cerver_http_trailing_slash_to_string (
+	const CerverHttpTrailingSlash trailing_slash
 ) {
 
 	switch (trailing_slash) {
@@ -74,12 +73,12 @@ const char *http_trailing_slash_to_string (
 		default: break;
 	}
 
-	return http_trailing_slash_to_string (HTTP_TRAILING_SLASH_NONE);
+	return cerver_http_trailing_slash_to_string (HTTP_TRAILING_SLASH_NONE);
 
 }
 
-const char *http_trailing_slash_description (
-	const HttpTrailingSlash trailing_slash
+const char *cerver_http_trailing_slash_description (
+	const CerverHttpTrailingSlash trailing_slash
 ) {
 
 	switch (trailing_slash) {
@@ -90,7 +89,7 @@ const char *http_trailing_slash_description (
 		default: break;
 	}
 
-	return http_trailing_slash_description (HTTP_TRAILING_SLASH_NONE);
+	return cerver_http_trailing_slash_description (HTTP_TRAILING_SLASH_NONE);
 
 }
 
@@ -241,17 +240,16 @@ static void http_route_settings_inherit (
 
 #pragma region endpoint
 
-static HttpEndpoint *http_endpoint_new (void) {
+static HttpEndpoint *cerver_http_endpoint_new (void) {
 
 	HttpEndpoint *endpoint = (HttpEndpoint *) malloc (sizeof (HttpEndpoint));
 	if (endpoint) {
 		endpoint->path = NULL;
 
-		endpoint->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		endpoint->method = (CerverHttpMethod) REQUEST_METHOD_UNDEFINED;
 		endpoint->handler = NULL;
 
 		endpoint->group = NULL;
-		endpoint->route = NULL;
 
 		http_route_settings_init (&endpoint->settings);
 		http_route_settings_init (&endpoint->resolved);
@@ -261,14 +259,13 @@ static HttpEndpoint *http_endpoint_new (void) {
 
 		endpoint->stats = NULL;
 		endpoint->file_stats = NULL;
-		endpoint->owns_stats = false;
 	}
 
 	return endpoint;
 
 }
 
-static void http_endpoint_params_names_delete (HttpEndpoint *endpoint) {
+static void cerver_http_endpoint_params_names_delete (HttpEndpoint *endpoint) {
 
 	if (endpoint->params_names) {
 		for (unsigned int idx = 0; idx < endpoint->n_params; idx++) {
@@ -283,7 +280,7 @@ static void http_endpoint_params_names_delete (HttpEndpoint *endpoint) {
 
 }
 
-void http_endpoint_delete (void *endpoint_ptr) {
+void cerver_http_endpoint_delete (void *endpoint_ptr) {
 
 	if (endpoint_ptr) {
 		HttpEndpoint *endpoint = (HttpEndpoint *) endpoint_ptr;
@@ -295,12 +292,10 @@ void http_endpoint_delete (void *endpoint_ptr) {
 		// the resolved settings only keep references to the custom data
 		http_middlewares_end (&endpoint->resolved.middlewares);
 
-		http_endpoint_params_names_delete (endpoint);
+		cerver_http_endpoint_params_names_delete (endpoint);
 
-		if (endpoint->owns_stats) {
-			http_route_stats_delete (endpoint->stats);
-			http_route_file_stats_delete (endpoint->file_stats);
-		}
+		cerver_http_route_stats_delete (endpoint->stats);
+		cerver_http_route_file_stats_delete (endpoint->file_stats);
 
 		free (endpoint);
 	}
@@ -308,11 +303,11 @@ void http_endpoint_delete (void *endpoint_ptr) {
 }
 
 // creates an endpoint with its complete path
-HttpEndpoint *http_endpoint_create (
-	const char *path, const RequestMethod method, const HttpHandler handler
+HttpEndpoint *cerver_http_endpoint_create (
+	const char *path, const CerverHttpMethod method, const HttpHandler handler
 ) {
 
-	HttpEndpoint *endpoint = http_endpoint_new ();
+	HttpEndpoint *endpoint = cerver_http_endpoint_new ();
 	if (endpoint) {
 		endpoint->path = str_new (path);
 		endpoint->method = method;
@@ -323,7 +318,7 @@ HttpEndpoint *http_endpoint_create (
 
 }
 
-const String *http_endpoint_get_path (
+const String *cerver_http_endpoint_get_path (
 	const HttpEndpoint *endpoint
 ) {
 
@@ -331,16 +326,16 @@ const String *http_endpoint_get_path (
 
 }
 
-RequestMethod http_endpoint_get_method (
+CerverHttpMethod cerver_http_endpoint_get_method (
 	const HttpEndpoint *endpoint
 ) {
 
-	return endpoint ? endpoint->method : (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	return endpoint ? endpoint->method : (CerverHttpMethod) REQUEST_METHOD_UNDEFINED;
 
 }
 
-void http_endpoint_set_modifier (
-	HttpEndpoint *endpoint, const HttpRouteModifier modifier
+void cerver_http_endpoint_set_modifier (
+	HttpEndpoint *endpoint, const CerverHttpRouteModifier modifier
 ) {
 
 	if (endpoint) {
@@ -350,8 +345,8 @@ void http_endpoint_set_modifier (
 
 }
 
-void http_endpoint_set_auth (
-	HttpEndpoint *endpoint, const HttpRouteAuthType auth_type
+void cerver_http_endpoint_set_auth (
+	HttpEndpoint *endpoint, const CerverHttpRouteAuthType auth_type
 ) {
 
 	if (endpoint) {
@@ -361,7 +356,7 @@ void http_endpoint_set_auth (
 
 }
 
-void http_endpoint_set_decode_data (
+void cerver_http_endpoint_set_decode_data (
 	HttpEndpoint *endpoint,
 	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
@@ -374,15 +369,15 @@ void http_endpoint_set_decode_data (
 
 }
 
-void http_endpoint_set_decode_data_into_json (
+void cerver_http_endpoint_set_decode_data_into_json (
 	HttpEndpoint *endpoint
 ) {
 
-	http_endpoint_set_decode_data (endpoint, http_decode_data_into_json, free);
+	cerver_http_endpoint_set_decode_data (endpoint, http_decode_data_into_json, free);
 
 }
 
-void http_endpoint_set_authentication_handler (
+void cerver_http_endpoint_set_authentication_handler (
 	HttpEndpoint *endpoint, const HttpAuthenticationHandler authentication_handler
 ) {
 
@@ -393,7 +388,7 @@ void http_endpoint_set_authentication_handler (
 
 }
 
-void http_endpoint_set_authentication_with_body (
+void cerver_http_endpoint_set_authentication_with_body (
 	HttpEndpoint *endpoint, const bool authentication_with_body
 ) {
 
@@ -405,7 +400,7 @@ void http_endpoint_set_authentication_with_body (
 }
 
 // the endpoint owns the data, it is deleted with delete_custom_data
-void http_endpoint_set_custom_data (
+void cerver_http_endpoint_set_custom_data (
 	HttpEndpoint *endpoint, void *custom_data, void (*delete_custom_data)(void *)
 ) {
 
@@ -416,7 +411,7 @@ void http_endpoint_set_custom_data (
 }
 
 // the custom data of the endpoint, or the one that it inherits from its groups
-const void *http_endpoint_get_custom_data (
+const void *cerver_http_endpoint_get_custom_data (
 	const HttpEndpoint *endpoint
 ) {
 
@@ -431,7 +426,7 @@ const void *http_endpoint_get_custom_data (
 
 }
 
-void http_endpoint_set_max_body_size (
+void cerver_http_endpoint_set_max_body_size (
 	HttpEndpoint *endpoint, const size_t max_body_size
 ) {
 
@@ -442,7 +437,7 @@ void http_endpoint_set_max_body_size (
 
 }
 
-void http_endpoint_set_cors (
+void cerver_http_endpoint_set_cors (
 	HttpEndpoint *endpoint, const bool cors
 ) {
 
@@ -453,7 +448,7 @@ void http_endpoint_set_cors (
 
 }
 
-void http_endpoint_set_etag (
+void cerver_http_endpoint_set_etag (
 	HttpEndpoint *endpoint, const bool etag
 ) {
 
@@ -464,7 +459,7 @@ void http_endpoint_set_etag (
 
 }
 
-void http_endpoint_set_compression (
+void cerver_http_endpoint_set_compression (
 	HttpEndpoint *endpoint, const bool compression
 ) {
 
@@ -475,7 +470,7 @@ void http_endpoint_set_compression (
 
 }
 
-void http_endpoint_set_pool (
+void cerver_http_endpoint_set_pool (
 	HttpEndpoint *endpoint, const char *name
 ) {
 
@@ -483,14 +478,14 @@ void http_endpoint_set_pool (
 		http_tree_error (
 			endpoint->group ? endpoint->group->tree : NULL,
 			"route %s \"%s\" - the name of its pool is too long",
-			http_request_method_str (endpoint->method),
+			cerver_http_method_to_string (endpoint->method),
 			endpoint->path ? endpoint->path->str : http_tree_empty_path
 		);
 	}
 
 }
 
-u8 http_endpoint_add_before (
+u8 cerver_http_endpoint_add_before (
 	HttpEndpoint *endpoint, const HttpBeforeMiddleware middleware
 ) {
 
@@ -498,7 +493,7 @@ u8 http_endpoint_add_before (
 
 }
 
-u8 http_endpoint_add_after (
+u8 cerver_http_endpoint_add_after (
 	HttpEndpoint *endpoint, const HttpAfterMiddleware middleware
 ) {
 
@@ -510,18 +505,18 @@ u8 http_endpoint_add_after (
 
 #pragma region websocket
 
-void http_endpoint_set_web_socket (
+void cerver_http_endpoint_set_web_socket (
 	HttpEndpoint *endpoint, const HttpWebSocketHandlers *handlers
 ) {
 
 	if (endpoint && handlers) {
-		http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		cerver_http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 		http_web_socket_settings_set_handlers (&endpoint->settings.web_socket, handlers);
 	}
 
 }
 
-void http_endpoint_set_web_socket_max_message (
+void cerver_http_endpoint_set_web_socket_max_message (
 	HttpEndpoint *endpoint, const size_t max_message
 ) {
 
@@ -529,7 +524,7 @@ void http_endpoint_set_web_socket_max_message (
 
 }
 
-u8 http_endpoint_set_web_socket_protocols (
+u8 cerver_http_endpoint_set_web_socket_protocols (
 	HttpEndpoint *endpoint, const char * const *protocols, const unsigned int n_protocols
 ) {
 
@@ -538,7 +533,7 @@ u8 http_endpoint_set_web_socket_protocols (
 
 }
 
-void http_endpoint_set_web_socket_compression (
+void cerver_http_endpoint_set_web_socket_compression (
 	HttpEndpoint *endpoint, const bool compression
 ) {
 
@@ -546,11 +541,11 @@ void http_endpoint_set_web_socket_compression (
 	http_web_socket_deflate_options_init (&options);
 	options.enabled = compression;
 
-	http_endpoint_set_web_socket_compression_options (endpoint, &options);
+	cerver_http_endpoint_set_web_socket_compression_options (endpoint, &options);
 
 }
 
-void http_endpoint_set_web_socket_compression_options (
+void cerver_http_endpoint_set_web_socket_compression_options (
 	HttpEndpoint *endpoint, const HttpWebSocketDeflateOptions *options
 ) {
 
@@ -558,7 +553,7 @@ void http_endpoint_set_web_socket_compression_options (
 
 }
 
-void http_endpoint_set_web_socket_origin_check (
+void cerver_http_endpoint_set_web_socket_origin_check (
 	HttpEndpoint *endpoint, const bool origin_check
 ) {
 
@@ -566,7 +561,7 @@ void http_endpoint_set_web_socket_origin_check (
 
 }
 
-void http_endpoint_set_web_socket_ping_milliseconds (
+void cerver_http_endpoint_set_web_socket_ping_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
 
@@ -574,7 +569,7 @@ void http_endpoint_set_web_socket_ping_milliseconds (
 
 }
 
-void http_endpoint_set_web_socket_close_timeout_milliseconds (
+void cerver_http_endpoint_set_web_socket_close_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int close_timeout
 ) {
 
@@ -582,7 +577,7 @@ void http_endpoint_set_web_socket_close_timeout_milliseconds (
 
 }
 
-void http_endpoint_set_web_socket_send_timeout_milliseconds (
+void cerver_http_endpoint_set_web_socket_send_timeout_milliseconds (
 	HttpEndpoint *endpoint, const unsigned int send_timeout
 ) {
 
@@ -778,7 +773,7 @@ u8 http_tree_path_validate (
 
 #pragma region group
 
-static HttpGroup *http_group_new (void) {
+static HttpGroup *cerver_http_group_new (void) {
 
 	HttpGroup *group = (HttpGroup *) malloc (sizeof (HttpGroup));
 	if (group) {
@@ -789,15 +784,15 @@ static HttpGroup *http_group_new (void) {
 
 		http_route_settings_init (&group->settings);
 
-		group->groups = dlist_init (http_group_delete, NULL);
-		group->endpoints = dlist_init (http_endpoint_delete, NULL);
+		group->groups = dlist_init (cerver_http_group_delete, NULL);
+		group->endpoints = dlist_init (cerver_http_endpoint_delete, NULL);
 	}
 
 	return group;
 
 }
 
-void http_group_delete (void *group_ptr) {
+void cerver_http_group_delete (void *group_ptr) {
 
 	if (group_ptr) {
 		HttpGroup *group = (HttpGroup *) group_ptr;
@@ -815,7 +810,7 @@ void http_group_delete (void *group_ptr) {
 }
 
 // validates the prefix and creates the group under parent_prefix
-static HttpGroup *http_group_create_internal (
+static HttpGroup *cerver_http_group_create_internal (
 	HttpTree *tree, HttpGroup *parent, const char *parent_prefix, const char *prefix
 ) {
 
@@ -830,7 +825,7 @@ static HttpGroup *http_group_create_internal (
 	}
 
 	else {
-		group = http_group_new ();
+		group = cerver_http_group_new ();
 		if (group) {
 			group->prefix = http_tree_path_join (parent_prefix, relative);
 			group->parent = parent;
@@ -843,14 +838,14 @@ static HttpGroup *http_group_create_internal (
 }
 
 // creates a top level group in the cerver, the prefix can be "" or "/" for the root
-HttpGroup *http_cerver_group_create (
+HttpGroup *cerver_http_group_create (
 	HttpCerver *http_cerver, const char *prefix
 ) {
 
 	HttpGroup *group = NULL;
 
 	if (http_cerver && http_cerver->tree) {
-		group = http_group_create_internal (
+		group = cerver_http_group_create_internal (
 			http_cerver->tree, NULL, http_tree_root_path, prefix
 		);
 
@@ -862,14 +857,14 @@ HttpGroup *http_cerver_group_create (
 }
 
 // creates a group inside another one
-HttpGroup *http_group_create (
+HttpGroup *cerver_http_group_subgroup_add (
 	HttpGroup *parent, const char *prefix
 ) {
 
 	HttpGroup *group = NULL;
 
 	if (parent) {
-		group = http_group_create_internal (
+		group = cerver_http_group_create_internal (
 			parent->tree, parent, parent->prefix->str, prefix
 		);
 
@@ -880,7 +875,7 @@ HttpGroup *http_group_create (
 
 }
 
-const String *http_group_get_prefix (
+const String *cerver_http_group_get_prefix (
 	const HttpGroup *group
 ) {
 
@@ -890,9 +885,9 @@ const String *http_group_get_prefix (
 
 // adds an endpoint to the group, the path is relative to the group's prefix,
 // only a WebSocket endpoint can be without a handler
-static HttpEndpoint *http_group_endpoint_add (
+static HttpEndpoint *cerver_http_group_endpoint_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler,
+	const CerverHttpMethod method, const char *path, const HttpHandler handler,
 	const bool handler_required
 ) {
 
@@ -901,30 +896,29 @@ static HttpEndpoint *http_group_endpoint_add (
 	if (group) {
 		char error[HTTP_TREE_ERROR_SIZE] = { 0 };
 
-		if (!http_request_method_is_valid (method)) {
+		if (!cerver_http_method_is_valid (method)) {
 			http_tree_error (group->tree, "route \"%s\" - the method %d is not valid", path ? path : "", (int) method);
 		}
 
 		else if (handler_required && !handler) {
-			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", http_request_method_str (method), path ? path : "");
+			http_tree_error (group->tree, "route %s \"%s\" - a handler is required", cerver_http_method_to_string (method), path ? path : "");
 		}
 
 		else if (http_tree_path_validate (path, error, HTTP_TREE_ERROR_SIZE)) {
-			http_tree_error (group->tree, "route %s \"%s\" - %s", http_request_method_str (method), path ? path : "", error);
+			http_tree_error (group->tree, "route %s \"%s\" - %s", cerver_http_method_to_string (method), path ? path : "", error);
 		}
 
 		else {
 			String *complete = http_tree_path_join (group->prefix->str, path);
 			if (complete) {
-				endpoint = http_endpoint_create (complete->str, method, handler);
+				endpoint = cerver_http_endpoint_create (complete->str, method, handler);
 				str_delete (complete);
 			}
 
 			if (endpoint) {
 				endpoint->group = group;
-				endpoint->owns_stats = true;
-				endpoint->stats = http_route_stats_new ();
-				endpoint->file_stats = http_route_file_stats_create ();
+				endpoint->stats = cerver_http_route_stats_new ();
+				endpoint->file_stats = cerver_http_route_file_stats_create ();
 
 				(void) dlist_insert_at_end_unsafe (group->endpoints, endpoint);
 			}
@@ -936,66 +930,66 @@ static HttpEndpoint *http_group_endpoint_add (
 }
 
 // adds an endpoint to the group, the path is relative to the group's prefix
-HttpEndpoint *http_group_route_add (
+HttpEndpoint *cerver_http_group_route_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const CerverHttpMethod method, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_endpoint_add (group, method, path, handler, true);
+	return cerver_http_group_endpoint_add (group, method, path, handler, true);
 
 }
 
-HttpEndpoint *http_group_root_add (
+HttpEndpoint *cerver_http_group_root_add (
 	HttpGroup *group,
-	const RequestMethod method, const HttpHandler handler
+	const CerverHttpMethod method, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, method, http_tree_empty_path, handler);
+	return cerver_http_group_route_add (group, method, http_tree_empty_path, handler);
 
 }
 
-HttpEndpoint *http_group_get (
+HttpEndpoint *cerver_http_group_get (
 	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, REQUEST_METHOD_GET, path, handler);
+	return cerver_http_group_route_add (group, REQUEST_METHOD_GET, path, handler);
 
 }
 
-HttpEndpoint *http_group_post (
+HttpEndpoint *cerver_http_group_post (
 	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, REQUEST_METHOD_POST, path, handler);
+	return cerver_http_group_route_add (group, REQUEST_METHOD_POST, path, handler);
 
 }
 
-HttpEndpoint *http_group_put (
+HttpEndpoint *cerver_http_group_put (
 	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, REQUEST_METHOD_PUT, path, handler);
+	return cerver_http_group_route_add (group, REQUEST_METHOD_PUT, path, handler);
 
 }
 
-HttpEndpoint *http_group_patch (
+HttpEndpoint *cerver_http_group_patch (
 	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, REQUEST_METHOD_PATCH, path, handler);
+	return cerver_http_group_route_add (group, REQUEST_METHOD_PATCH, path, handler);
 
 }
 
-HttpEndpoint *http_group_delete_route (
+HttpEndpoint *cerver_http_group_delete_route (
 	HttpGroup *group, const char *path, const HttpHandler handler
 ) {
 
-	return http_group_route_add (group, REQUEST_METHOD_DELETE, path, handler);
+	return cerver_http_group_route_add (group, REQUEST_METHOD_DELETE, path, handler);
 
 }
 
-void http_group_set_modifier (
-	HttpGroup *group, const HttpRouteModifier modifier
+void cerver_http_group_set_modifier (
+	HttpGroup *group, const CerverHttpRouteModifier modifier
 ) {
 
 	if (group) {
@@ -1005,8 +999,8 @@ void http_group_set_modifier (
 
 }
 
-void http_group_set_auth (
-	HttpGroup *group, const HttpRouteAuthType auth_type
+void cerver_http_group_set_auth (
+	HttpGroup *group, const CerverHttpRouteAuthType auth_type
 ) {
 
 	if (group) {
@@ -1016,7 +1010,7 @@ void http_group_set_auth (
 
 }
 
-void http_group_set_decode_data (
+void cerver_http_group_set_decode_data (
 	HttpGroup *group,
 	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
@@ -1029,15 +1023,15 @@ void http_group_set_decode_data (
 
 }
 
-void http_group_set_decode_data_into_json (
+void cerver_http_group_set_decode_data_into_json (
 	HttpGroup *group
 ) {
 
-	http_group_set_decode_data (group, http_decode_data_into_json, free);
+	cerver_http_group_set_decode_data (group, http_decode_data_into_json, free);
 
 }
 
-void http_group_set_authentication_handler (
+void cerver_http_group_set_authentication_handler (
 	HttpGroup *group, const HttpAuthenticationHandler authentication_handler
 ) {
 
@@ -1048,7 +1042,7 @@ void http_group_set_authentication_handler (
 
 }
 
-void http_group_set_authentication_with_body (
+void cerver_http_group_set_authentication_with_body (
 	HttpGroup *group, const bool authentication_with_body
 ) {
 
@@ -1060,7 +1054,7 @@ void http_group_set_authentication_with_body (
 }
 
 // the group owns the data, it is deleted with delete_custom_data
-void http_group_set_custom_data (
+void cerver_http_group_set_custom_data (
 	HttpGroup *group, void *custom_data, void (*delete_custom_data)(void *)
 ) {
 
@@ -1070,7 +1064,7 @@ void http_group_set_custom_data (
 
 }
 
-void http_group_set_max_body_size (
+void cerver_http_group_set_max_body_size (
 	HttpGroup *group, const size_t max_body_size
 ) {
 
@@ -1081,7 +1075,7 @@ void http_group_set_max_body_size (
 
 }
 
-void http_group_set_cors (
+void cerver_http_group_set_cors (
 	HttpGroup *group, const bool cors
 ) {
 
@@ -1092,7 +1086,7 @@ void http_group_set_cors (
 
 }
 
-void http_group_set_etag (
+void cerver_http_group_set_etag (
 	HttpGroup *group, const bool etag
 ) {
 
@@ -1103,7 +1097,7 @@ void http_group_set_etag (
 
 }
 
-void http_group_set_compression (
+void cerver_http_group_set_compression (
 	HttpGroup *group, const bool compression
 ) {
 
@@ -1114,7 +1108,7 @@ void http_group_set_compression (
 
 }
 
-void http_group_set_pool (
+void cerver_http_group_set_pool (
 	HttpGroup *group, const char *name
 ) {
 
@@ -1127,7 +1121,7 @@ void http_group_set_pool (
 
 }
 
-u8 http_group_add_before (
+u8 cerver_http_group_add_before (
 	HttpGroup *group, const HttpBeforeMiddleware middleware
 ) {
 
@@ -1135,7 +1129,7 @@ u8 http_group_add_before (
 
 }
 
-u8 http_group_add_after (
+u8 cerver_http_group_add_after (
 	HttpGroup *group, const HttpAfterMiddleware middleware
 ) {
 
@@ -1143,21 +1137,21 @@ u8 http_group_add_after (
 
 }
 
-HttpEndpoint *http_group_web_socket_add (
+HttpEndpoint *cerver_http_group_web_socket_add (
 	HttpGroup *group, const char *path, const HttpWebSocketHandlers *handlers
 ) {
 
-	HttpEndpoint *endpoint = http_group_endpoint_add (group, REQUEST_METHOD_GET, path, NULL, false);
+	HttpEndpoint *endpoint = cerver_http_group_endpoint_add (group, REQUEST_METHOD_GET, path, NULL, false);
 
 	// without handlers it inherits the ones of its groups
-	http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+	cerver_http_endpoint_set_modifier (endpoint, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 	if (endpoint && handlers) http_web_socket_settings_set_handlers (&endpoint->settings.web_socket, handlers);
 
 	return endpoint;
 
 }
 
-void http_group_set_web_socket (
+void cerver_http_group_set_web_socket (
 	HttpGroup *group, const HttpWebSocketHandlers *handlers
 ) {
 
@@ -1165,7 +1159,7 @@ void http_group_set_web_socket (
 
 }
 
-void http_group_set_web_socket_max_message (
+void cerver_http_group_set_web_socket_max_message (
 	HttpGroup *group, const size_t max_message
 ) {
 
@@ -1173,7 +1167,7 @@ void http_group_set_web_socket_max_message (
 
 }
 
-u8 http_group_set_web_socket_protocols (
+u8 cerver_http_group_set_web_socket_protocols (
 	HttpGroup *group, const char * const *protocols, const unsigned int n_protocols
 ) {
 
@@ -1182,7 +1176,7 @@ u8 http_group_set_web_socket_protocols (
 
 }
 
-void http_group_set_web_socket_compression (
+void cerver_http_group_set_web_socket_compression (
 	HttpGroup *group, const bool compression
 ) {
 
@@ -1190,11 +1184,11 @@ void http_group_set_web_socket_compression (
 	http_web_socket_deflate_options_init (&options);
 	options.enabled = compression;
 
-	http_group_set_web_socket_compression_options (group, &options);
+	cerver_http_group_set_web_socket_compression_options (group, &options);
 
 }
 
-void http_group_set_web_socket_compression_options (
+void cerver_http_group_set_web_socket_compression_options (
 	HttpGroup *group, const HttpWebSocketDeflateOptions *options
 ) {
 
@@ -1202,7 +1196,7 @@ void http_group_set_web_socket_compression_options (
 
 }
 
-void http_group_set_web_socket_origin_check (
+void cerver_http_group_set_web_socket_origin_check (
 	HttpGroup *group, const bool origin_check
 ) {
 
@@ -1210,7 +1204,7 @@ void http_group_set_web_socket_origin_check (
 
 }
 
-void http_group_set_web_socket_ping_milliseconds (
+void cerver_http_group_set_web_socket_ping_milliseconds (
 	HttpGroup *group, const unsigned int ping_interval, const unsigned int pong_timeout
 ) {
 
@@ -1218,7 +1212,7 @@ void http_group_set_web_socket_ping_milliseconds (
 
 }
 
-void http_group_set_web_socket_close_timeout_milliseconds (
+void cerver_http_group_set_web_socket_close_timeout_milliseconds (
 	HttpGroup *group, const unsigned int close_timeout
 ) {
 
@@ -1226,7 +1220,7 @@ void http_group_set_web_socket_close_timeout_milliseconds (
 
 }
 
-void http_group_set_web_socket_send_timeout_milliseconds (
+void cerver_http_group_set_web_socket_send_timeout_milliseconds (
 	HttpGroup *group, const unsigned int send_timeout
 ) {
 
@@ -1374,12 +1368,9 @@ static int http_route_node_param_comparator (const void *a, const void *b) {
 }
 
 // a marker for the methods that have an endpoint in the Allow header
-static void http_route_node_allow_marker (
-	const struct _HttpReceive *http_receive, const HttpRequest *request
-) {
+static void http_route_node_allow_marker (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -1433,9 +1424,8 @@ HttpTree *http_tree_create (HttpCerver *http_cerver) {
 	if (tree) {
 		tree->http_cerver = http_cerver;
 
-		tree->groups = dlist_init (http_group_delete, NULL);
-		tree->compatibility_endpoints = dlist_init (http_endpoint_delete, NULL);
-		tree->validators = dlist_init (http_param_validator_delete, NULL);
+		tree->groups = dlist_init (cerver_http_group_delete, NULL);
+		tree->validators = dlist_init (cerver_http_param_validator_delete, NULL);
 
 		tree->root = NULL;
 		tree->compiled = false;
@@ -1465,7 +1455,6 @@ void http_tree_delete (void *tree_ptr) {
 		http_route_node_delete (tree->root);
 
 		dlist_delete (tree->groups);
-		dlist_delete (tree->compatibility_endpoints);
 		dlist_delete (tree->validators);
 
 		http_middlewares_end (&tree->middlewares);
@@ -1499,22 +1488,6 @@ void http_tree_error (
 
 }
 
-// a warning of the first routes API, it is logged but it is not an error
-void http_tree_warning (
-	const char *format, ...
-) {
-
-	char message[HTTP_TREE_ERROR_SIZE] = { 0 };
-
-	va_list args;
-	va_start (args, format);
-	(void) vsnprintf (message, HTTP_TREE_ERROR_SIZE, format, args);
-	va_end (args);
-
-	cerver_log_warning ("[TREE] %s", message);
-
-}
-
 static const HttpParamValidator *http_tree_validator_get (
 	const HttpTree *tree, const char *name, const size_t name_len
 ) {
@@ -1529,7 +1502,7 @@ static const HttpParamValidator *http_tree_validator_get (
 		}
 	}
 
-	return validator ? validator : http_param_validator_builtin (name, name_len);
+	return validator ? validator : cerver_http_param_validator_builtin (name, name_len);
 
 }
 
@@ -1538,7 +1511,6 @@ typedef struct HttpTreeInsert {
 
 	HttpTree *tree;
 	HttpEndpoint *endpoint;
-	bool compatibility;
 
 	HttpRouteNode *node;
 
@@ -1633,19 +1605,10 @@ static void http_tree_insert_fail (HttpTreeInsert *insert) {
 
 	const HttpEndpoint *endpoint = insert->endpoint;
 
-	if (insert->compatibility) {
-		http_tree_warning (
-			"route %s %s - %s - it is not registered",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
-		);
-	}
-
-	else {
-		http_tree_error (
-			insert->tree, "route %s %s - %s",
-			http_request_method_str (endpoint->method), endpoint->path->str, insert->error
-		);
-	}
+	http_tree_error (
+		insert->tree, "route %s %s - %s",
+		cerver_http_method_to_string (endpoint->method), endpoint->path->str, insert->error
+	);
 
 	for (unsigned int idx = 0; idx < insert->n_names; idx++) free (insert->extra_names[idx]);
 	free (insert->extra_names);
@@ -1655,14 +1618,13 @@ static void http_tree_insert_fail (HttpTreeInsert *insert) {
 // adds a resolved endpoint to the routes tree
 // returns 0 on success, 1 on error
 u8 http_tree_insert (
-	HttpTree *tree, HttpEndpoint *endpoint, const bool compatibility
+	HttpTree *tree, HttpEndpoint *endpoint
 ) {
 
 	HttpTreeInsert insert;
 	(void) memset (&insert, 0, sizeof (HttpTreeInsert));
 	insert.tree = tree;
 	insert.endpoint = endpoint;
-	insert.compatibility = compatibility;
 
 	if (!tree->root) tree->root = http_route_node_new (HTTP_ROUTE_NODE_TYPE_STATIC);
 	insert.node = tree->root;
@@ -1698,7 +1660,7 @@ u8 http_tree_insert (
 		insert.node->endpoints[endpoint->method] = endpoint;
 		insert.node->n_endpoints += 1;
 
-		http_endpoint_params_names_delete (endpoint);
+		cerver_http_endpoint_params_names_delete (endpoint);
 		endpoint->n_params = insert.n_names;
 		endpoint->params_names = insert.extra_names;
 
@@ -1735,7 +1697,7 @@ static u8 http_tree_resolve_web_socket (
 	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_WEB_SOCKET) {
 		if (!(endpoint->resolved.web_socket.set & HTTP_WEB_SOCKET_SETTING_HANDLERS)) {
 			http_tree_error (
-				tree, "websocket \"%s\" - it needs its handlers (http_endpoint_set_web_socket ())",
+				tree, "websocket \"%s\" - it needs its handlers (cerver_http_endpoint_set_web_socket ())",
 				endpoint->path->str
 			);
 
@@ -1745,7 +1707,7 @@ static u8 http_tree_resolve_web_socket (
 		else if (endpoint->method != REQUEST_METHOD_GET) {
 			http_tree_error (
 				tree, "websocket %s \"%s\" - a WebSocket endpoint is a GET",
-				http_request_method_str (endpoint->method), endpoint->path->str
+				cerver_http_method_to_string (endpoint->method), endpoint->path->str
 			);
 
 			errors = 1;
@@ -1768,11 +1730,11 @@ u8 http_tree_resolve_pool (
 	resolved->pool = NULL;
 
 	if (resolved->pool_name[0]) {
-		resolved->pool = http_cerver_pool_get_with_name (tree->http_cerver, resolved->pool_name);
+		resolved->pool = cerver_http_pool_get_with_name (tree->http_cerver, resolved->pool_name);
 		if (!resolved->pool) {
 			http_tree_error (
-				tree, "route %s \"%s\" - the cerver has no pool \"%s\" (http_cerver_pool_create ())",
-				http_request_method_str (endpoint->method), endpoint->path->str, resolved->pool_name
+				tree, "route %s \"%s\" - the cerver has no pool \"%s\" (cerver_http_pool_create ())",
+				cerver_http_method_to_string (endpoint->method), endpoint->path->str, resolved->pool_name
 			);
 
 			errors = 1;
@@ -1821,7 +1783,7 @@ static u8 http_tree_compile_group (HttpTree *tree, HttpGroup *group) {
 		HttpEndpoint *endpoint = (HttpEndpoint *) le->data;
 
 		errors |= http_tree_resolve_endpoint (tree, endpoint);
-		errors |= http_tree_insert (tree, endpoint, false);
+		errors |= http_tree_insert (tree, endpoint);
 	}
 
 	for (ListElement *le = dlist_start (group->groups); le; le = le->next) {
@@ -1832,7 +1794,7 @@ static u8 http_tree_compile_group (HttpTree *tree, HttpGroup *group) {
 
 }
 
-// builds the routes tree with the groups and the routes of the first API
+// builds the routes tree with the groups
 // returns 0 on success, 1 on error (the cerver does not start)
 u8 http_tree_compile (HttpTree *tree) {
 
@@ -1846,8 +1808,6 @@ u8 http_tree_compile (HttpTree *tree) {
 		for (ListElement *le = dlist_start (tree->groups); le; le = le->next) {
 			errors |= http_tree_compile_group (tree, (HttpGroup *) le->data);
 		}
-
-		(void) http_compatibility_translate (tree, tree->http_cerver->routes);
 
 		http_route_node_finish (tree->root);
 
@@ -2071,7 +2031,7 @@ bool http_tree_match (
 
 #pragma region print
 
-// every route is printed like the first routes API did: a block with its path, methods,
+// every route is printed as a block with its path, methods,
 // modifier and auth, and the closest routes below it with an endpoint as its children,
 // the path segments without an endpoint add no level
 
@@ -2136,7 +2096,7 @@ static void http_tree_print_methods (const HttpRouteNode *node, const char *inde
 
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 		if (node->endpoints[method]) {
-			http_tree_print_append (methods, &length, http_request_method_str (node->endpoints[method]->method));
+			http_tree_print_append (methods, &length, cerver_http_method_to_string (node->endpoints[method]->method));
 		}
 	}
 
@@ -2167,7 +2127,7 @@ static void http_tree_print_value (
 		char method_value[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
 		(void) snprintf (
 			method_value, HTTP_TREE_PRINT_VALUES_SIZE, "%s %s",
-			http_request_method_str (node->endpoints[method]->method), value (node->endpoints[method])
+			cerver_http_method_to_string (node->endpoints[method]->method), value (node->endpoints[method])
 		);
 
 		http_tree_print_append (values, &length, method_value);
@@ -2179,13 +2139,13 @@ static void http_tree_print_value (
 
 static const char *http_tree_print_modifier (const HttpEndpoint *endpoint) {
 
-	return http_route_modifier_to_string (endpoint->resolved.modifier);
+	return cerver_http_route_modifier_to_string (endpoint->resolved.modifier);
 
 }
 
 static const char *http_tree_print_auth (const HttpEndpoint *endpoint) {
 
-	return http_route_auth_type_to_string (endpoint->resolved.auth_type);
+	return cerver_http_route_auth_type_to_string (endpoint->resolved.auth_type);
 
 }
 
@@ -2313,12 +2273,11 @@ static void http_tree_endpoint_json (
 
 	cerver_json_writer_object_begin (writer);
 
-	http_json_member_string (writer, "method", http_request_method_str (endpoint->method));
+	http_json_member_string (writer, "method", cerver_http_method_to_string (endpoint->method));
 	http_json_member_string (writer, "path", endpoint->path->str);
-	http_json_member_string (writer, "auth", http_route_auth_type_to_string (endpoint->resolved.auth_type));
-	http_json_member_string (writer, "modifier", http_route_modifier_to_string (endpoint->resolved.modifier));
+	http_json_member_string (writer, "auth", cerver_http_route_auth_type_to_string (endpoint->resolved.auth_type));
+	http_json_member_string (writer, "modifier", cerver_http_route_modifier_to_string (endpoint->resolved.modifier));
 
-	http_json_member_boolean (writer, "compatibility", endpoint->route != NULL);
 	http_json_member_boolean (writer, "cors", endpoint->resolved.cors);
 	http_json_member_boolean (writer, "etag", endpoint->resolved.etag);
 	http_json_member_boolean (writer, "compression", endpoint->resolved.compression);

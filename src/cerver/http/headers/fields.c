@@ -197,7 +197,7 @@ static void http_headers_write_line (
 
 // the name and the value are already valid
 static u8 http_headers_append (
-	HttpHeaders *headers, const http_header type,
+	HttpHeaders *headers, const CerverHttpHeader type,
 	const char *name, const size_t name_length,
 	const char *value, const size_t value_length
 ) {
@@ -232,14 +232,14 @@ static u8 http_headers_append (
 
 }
 
-static bool http_headers_type_is_known (const http_header type) {
+static bool http_headers_type_is_known (const CerverHttpHeader type) {
 
 	return (unsigned int) type < (unsigned int) HTTP_HEADER_UNDEFINED;
 
 }
 
 // the type of a name that does not end with '\0'
-static http_header http_headers_name_type (
+static CerverHttpHeader http_headers_name_type (
 	const char *name, const size_t name_length
 ) {
 
@@ -247,12 +247,12 @@ static http_header http_headers_name_type (
 	(void) memcpy (name_string, name, name_length);
 	name_string[name_length] = '\0';
 
-	return http_header_type_with_string (name_string);
+	return cerver_http_header_with_string (name_string);
 
 }
 
 u8 http_headers_add (
-	HttpHeaders *headers, const http_header type,
+	HttpHeaders *headers, const CerverHttpHeader type,
 	const char *value, const size_t value_length
 ) {
 
@@ -262,7 +262,7 @@ u8 http_headers_add (
 		headers && http_headers_type_is_known (type)
 		&& http_header_value_is_valid (value, value_length)
 	) {
-		const char *name = http_header_string (type);
+		const char *name = cerver_http_header_to_string (type);
 
 		retval = http_headers_append (
 			headers, type, name, strlen (name), value, value_length
@@ -285,7 +285,7 @@ u8 http_headers_add_with_name (
 		headers && http_header_name_is_valid (name, name_length)
 		&& http_header_value_is_valid (value, value_length)
 	) {
-		const http_header type = http_headers_name_type (name, name_length);
+		const CerverHttpHeader type = http_headers_name_type (name, name_length);
 
 		retval = http_headers_type_is_known (type) ?
 			http_headers_add (headers, type, value, value_length) :
@@ -301,7 +301,7 @@ u8 http_headers_add_with_name (
 // a known header matches by its type and any other one by its name without case
 static bool http_headers_field_matches (
 	const HttpHeaders *headers, const HttpHeaderField *field,
-	const http_header type, const char *name, const size_t name_length
+	const CerverHttpHeader type, const char *name, const size_t name_length
 ) {
 
 	return http_headers_type_is_known (type) ? (field->type == type) : (
@@ -340,7 +340,7 @@ static void http_headers_remove_field (
 
 static unsigned int http_headers_remove_matches (
 	HttpHeaders *headers,
-	const http_header type, const char *name, const size_t name_length
+	const CerverHttpHeader type, const char *name, const size_t name_length
 ) {
 
 	unsigned int removed = 0;
@@ -366,7 +366,7 @@ static unsigned int http_headers_remove_matches (
 }
 
 u8 http_headers_set (
-	HttpHeaders *headers, const http_header type,
+	HttpHeaders *headers, const CerverHttpHeader type,
 	const char *value, const size_t value_length
 ) {
 
@@ -409,7 +409,7 @@ u8 http_headers_set_with_name (
 }
 
 unsigned int http_headers_remove (
-	HttpHeaders *headers, const http_header type
+	HttpHeaders *headers, const CerverHttpHeader type
 ) {
 
 	return (headers && http_headers_type_is_known (type)) ?
@@ -431,7 +431,7 @@ unsigned int http_headers_remove_with_name (
 // the header in the position between the ones that match, and how many match
 static const HttpHeaderField *http_headers_find_matches (
 	const HttpHeaders *headers,
-	const http_header type, const char *name, const size_t name_length,
+	const CerverHttpHeader type, const char *name, const size_t name_length,
 	const unsigned int position, unsigned int *count
 ) {
 
@@ -455,7 +455,7 @@ static const HttpHeaderField *http_headers_find_matches (
 }
 
 unsigned int http_headers_count (
-	const HttpHeaders *headers, const http_header type
+	const HttpHeaders *headers, const CerverHttpHeader type
 ) {
 
 	unsigned int count = 0;
@@ -486,7 +486,7 @@ unsigned int http_headers_count_with_name (
 }
 
 const HttpHeaderField *http_headers_find (
-	const HttpHeaders *headers, const http_header type, const unsigned int position
+	const HttpHeaders *headers, const CerverHttpHeader type, const unsigned int position
 ) {
 
 	return (headers && http_headers_type_is_known (type)) ?

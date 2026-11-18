@@ -8,23 +8,12 @@
 #include <cerver/core/types.h>
 #include <cerver/events/events.h>
 
-// the web servers of the tests run once with each way of handling their connections:
-// a thread for each one (the default) or event loops
-#define TEST_HANDLER_VARIABLE				"CERVER_TEST_HANDLER"
-#define TEST_HANDLER_EVENTS					"events"
+// a web cerver always handles its connections with event loops:
+// the web servers of the tests run once with each backend of the loops (CERVER_TEST_BACKEND)
 
-// the I/O threads of a web server of the tests with event loops, 1 by default
+// the I/O threads of a web server of the tests, the default of the cerver (one for each processor) without it
 #define TEST_IO_THREADS_VARIABLE			"CERVER_TEST_IO_THREADS"
 #define TEST_IO_THREADS_BASE				10
-
-static inline CerverHandlerType test_handler_type (void) {
-
-	const char *handler = getenv (TEST_HANDLER_VARIABLE);
-
-	return (handler && !strcmp (handler, TEST_HANDLER_EVENTS)) ?
-		CERVER_HANDLER_TYPE_EVENTS : CERVER_HANDLER_TYPE_THREADS;
-
-}
 
 // returns 0 when the variable is not set: cerver_set_io_threads () keeps its default
 static inline unsigned int test_io_threads (void) {
@@ -49,7 +38,7 @@ static inline bool test_backend_is (const char *name) {
 
 }
 
-// what a web server of the tests passes to cerver_set_events_backend (), right after its handler type
+// what a web server of the tests passes to cerver_set_events_backend ()
 static inline CerverEventsBackend test_events_backend (void) {
 
 	CerverEventsBackend backend = CERVER_EVENTS_BACKEND_AUTO;
@@ -62,11 +51,11 @@ static inline CerverEventsBackend test_events_backend (void) {
 }
 
 // whether a web server of the tests keeps its connections between requests: "1" asks for it and "0"
-// closes each one after its response; without the variable the cerver decides, only the event loops keep them
+// closes each one after its response; without the variable the cerver decides, and it keeps them
 #define TEST_KEEP_ALIVE_VARIABLE			"CERVER_TEST_KEEP_ALIVE"
 #define TEST_KEEP_ALIVE_ENABLED				"1"
 
-// returns true when the variable is set: the server calls http_cerver_set_keep_alive () with test_keep_alive ()
+// returns true when the variable is set: the server calls cerver_http_set_keep_alive () with test_keep_alive ()
 static inline bool test_keep_alive_is_set (void) {
 
 	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
@@ -80,9 +69,7 @@ static inline bool test_keep_alive (void) {
 
 	const char *keep_alive = getenv (TEST_KEEP_ALIVE_VARIABLE);
 
-	return (keep_alive && keep_alive[0]) ?
-		!strcmp (keep_alive, TEST_KEEP_ALIVE_ENABLED) :
-		(test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
+	return (keep_alive && keep_alive[0]) ? !strcmp (keep_alive, TEST_KEEP_ALIVE_ENABLED) : true;
 
 }
 

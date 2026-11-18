@@ -19,13 +19,13 @@ static void test_date_format (void) {
 
 	char date[HTTP_DATE_SIZE] = { 0 };
 
-	test_check_unsigned_eq (http_date_format (TEST_DATE_EXAMPLE_TIME, date), HTTP_DATE_LENGTH, NULL);
+	test_check_unsigned_eq (cerver_http_date_format (TEST_DATE_EXAMPLE_TIME, date), HTTP_DATE_LENGTH, NULL);
 	test_check_str_eq (date, test_date_example, NULL);
 
-	test_check_unsigned_eq (http_date_format (TEST_DATE_LEAP_TIME, date), HTTP_DATE_LENGTH, NULL);
+	test_check_unsigned_eq (cerver_http_date_format (TEST_DATE_LEAP_TIME, date), HTTP_DATE_LENGTH, NULL);
 	test_check_str_eq (date, test_date_leap, NULL);
 
-	test_check_unsigned_eq (http_date_format (TEST_DATE_EXAMPLE_TIME, NULL), 0, NULL);
+	test_check_unsigned_eq (cerver_http_date_format (TEST_DATE_EXAMPLE_TIME, NULL), 0, NULL);
 
 }
 
@@ -33,27 +33,27 @@ static void test_date_format (void) {
 static void test_date_current (void) {
 
 	const time_t before = time (NULL);
-	const char *date = http_date_current ();
+	const char *date = cerver_http_date_current ();
 	const time_t after = time (NULL);
 
 	test_check_ptr (date);
 	test_check_unsigned_eq (strlen (date), HTTP_DATE_LENGTH, NULL);
 
 	time_t parsed = 0;
-	test_check_true (http_date_parse (date, strlen (date), &parsed));
+	test_check_true (cerver_http_date_parse (date, strlen (date), &parsed));
 	test_check (((parsed >= before) && (parsed <= after)), "the current date is not now");
 
-	test_check_ptr_eq (http_date_current (), date);
+	test_check_ptr_eq (cerver_http_date_current (), date);
 
 }
 
 static void test_date_parse_valid (void) {
 
 	time_t parsed = 0;
-	test_check_true (http_date_parse (test_date_example, strlen (test_date_example), &parsed));
+	test_check_true (cerver_http_date_parse (test_date_example, strlen (test_date_example), &parsed));
 	test_check_long_int_eq ((long) parsed, (long) TEST_DATE_EXAMPLE_TIME, NULL);
 
-	test_check_true (http_date_parse (test_date_leap, strlen (test_date_leap), &parsed));
+	test_check_true (cerver_http_date_parse (test_date_leap, strlen (test_date_leap), &parsed));
 	test_check_long_int_eq ((long) parsed, (long) TEST_DATE_LEAP_TIME, NULL);
 
 }
@@ -80,14 +80,14 @@ static void test_date_parse_invalid (void) {
 
 	time_t parsed = 0;
 	for (size_t i = 0; i < (sizeof (invalid) / sizeof (const char *)); i++) {
-		test_check_false (http_date_parse (invalid[i], strlen (invalid[i]), &parsed));
+		test_check_false (cerver_http_date_parse (invalid[i], strlen (invalid[i]), &parsed));
 	}
 
-	test_check_false (http_date_parse (NULL, HTTP_DATE_LENGTH, &parsed));
-	test_check_false (http_date_parse (test_date_example, HTTP_DATE_LENGTH, NULL));
+	test_check_false (cerver_http_date_parse (NULL, HTTP_DATE_LENGTH, &parsed));
+	test_check_false (cerver_http_date_parse (test_date_example, HTTP_DATE_LENGTH, NULL));
 
 	// a length that is not the one of the date
-	test_check_false (http_date_parse (test_date_example, HTTP_DATE_LENGTH - 1, &parsed));
+	test_check_false (cerver_http_date_parse (test_date_example, HTTP_DATE_LENGTH - 1, &parsed));
 
 }
 

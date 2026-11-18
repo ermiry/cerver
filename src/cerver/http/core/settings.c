@@ -64,7 +64,7 @@
 
 #pragma region headers
 
-void http_cerver_set_date_header (
+void cerver_http_set_date_header (
 	HttpCerver *http_cerver, const bool date_header
 ) {
 
@@ -72,7 +72,7 @@ void http_cerver_set_date_header (
 
 }
 
-void http_cerver_set_request_id (
+void cerver_http_set_request_id (
 	HttpCerver *http_cerver, const bool request_id
 ) {
 
@@ -80,7 +80,7 @@ void http_cerver_set_request_id (
 
 }
 
-void http_cerver_set_compression_min_size (
+void cerver_http_set_compression_min_size (
 	HttpCerver *http_cerver, const size_t min_size
 ) {
 
@@ -88,7 +88,7 @@ void http_cerver_set_compression_min_size (
 
 }
 
-void http_cerver_set_compression_level (
+void cerver_http_set_compression_level (
 	HttpCerver *http_cerver, const int level
 ) {
 
@@ -99,7 +99,7 @@ void http_cerver_set_compression_level (
 
 		else {
 			cerver_log_warning (
-				"http_cerver_set_compression_level () - %d is not between %d and %d",
+				"cerver_http_set_compression_level () - %d is not between %d and %d",
 				level, HTTP_COMPRESSION_MIN_LEVEL, HTTP_COMPRESSION_MAX_LEVEL
 			);
 		}
@@ -111,15 +111,15 @@ void http_cerver_set_compression_level (
 
 #pragma region proxies
 
-void http_cerver_set_trusted_proxies (
-	HttpCerver *http_cerver, const HttpTrustedProxies trusted_proxies
+void cerver_http_set_trusted_proxies (
+	HttpCerver *http_cerver, const CerverHttpTrustedProxies trusted_proxies
 ) {
 
 	if (http_cerver) http_cerver->trusted_proxies = trusted_proxies;
 
 }
 
-u8 http_cerver_add_trusted_proxy (
+u8 cerver_http_add_trusted_proxy (
 	HttpCerver *http_cerver, const char *cidr
 ) {
 
@@ -133,7 +133,7 @@ u8 http_cerver_add_trusted_proxy (
 			);
 		}
 
-		else if (!http_proxy_network_parse (
+		else if (!cerver_http_proxy_network_parse (
 			cidr, &http_cerver->trusted_proxies_networks[http_cerver->n_trusted_proxies]
 		)) {
 			http_tree_error (
@@ -157,7 +157,7 @@ u8 http_cerver_add_trusted_proxy (
 
 // adds a new domain to the HTTP cerver's origins whitelist
 // returns 0 on success, 1 on error
-u8 http_cerver_add_origin_to_whitelist (
+u8 cerver_http_add_origin_to_whitelist (
 	HttpCerver *http_cerver, const char *domain
 ) {
 
@@ -165,7 +165,7 @@ u8 http_cerver_add_origin_to_whitelist (
 
 	if (http_cerver && domain) {
 		if (http_cerver->n_origins < HTTP_ORIGINS_SIZE) {
-			http_origin_init (
+			cerver_http_origin_init (
 				&http_cerver->origins_whitelist[http_cerver->n_origins],
 				domain
 			);
@@ -180,7 +180,7 @@ u8 http_cerver_add_origin_to_whitelist (
 
 }
 
-void http_cerver_print_origins_whitelist (
+void cerver_http_print_origins_whitelist (
 	const HttpCerver *http_cerver
 ) {
 
@@ -210,7 +210,7 @@ void http_cerver_print_origins_whitelist (
 
 #pragma region data
 
-const void *http_cerver_get_custom_data (
+const void *cerver_http_get_custom_data (
 	const HttpCerver *http_cerver
 ) {
 
@@ -218,7 +218,7 @@ const void *http_cerver_get_custom_data (
 
 }
 
-void http_cerver_set_custom_data (
+void cerver_http_set_custom_data (
 	HttpCerver *http_cerver, void *custom_data
 ) {
 
@@ -226,7 +226,7 @@ void http_cerver_set_custom_data (
 
 }
 
-void http_cerver_set_delete_custom_data (
+void cerver_http_set_delete_custom_data (
 	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
 ) {
 
@@ -234,7 +234,7 @@ void http_cerver_set_delete_custom_data (
 
 }
 
-void http_cerver_set_default_delete_custom_data (
+void cerver_http_set_default_delete_custom_data (
 	HttpCerver *http_cerver
 ) {
 
@@ -251,9 +251,9 @@ void http_cerver_set_default_delete_custom_data (
 // if the response has the same header type,
 // it will be used instead of the global header
 // returns 0 on success, 1 on error
-u8 http_cerver_add_responses_header (
+u8 cerver_http_add_responses_header (
 	HttpCerver *http_cerver,
-	const http_header type, const char *actual_header
+	const CerverHttpHeader type, const char *actual_header
 ) {
 
 	return (http_cerver && actual_header) ? http_headers_set (
@@ -262,10 +262,10 @@ u8 http_cerver_add_responses_header (
 
 }
 
-// works like http_cerver_add_responses_header () with the name of any header,
+// works like cerver_http_add_responses_header () with the name of any header,
 // it replaces the ones with the same name
 // returns 0 on success, 1 on error
-u8 http_cerver_add_responses_header_with_name (
+u8 cerver_http_add_responses_header_with_name (
 	HttpCerver *http_cerver, const char *name, const char *value
 ) {
 

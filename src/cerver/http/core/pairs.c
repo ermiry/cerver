@@ -199,7 +199,7 @@ typedef void (*HttpQueryPiece) (
 );
 
 // splits a query by '&' and each piece by its first '='
-static void http_query_split (
+static void cerver_http_query_split (
 	const char *first, const char *last, HttpQueryPiece piece, void *args
 ) {
 
@@ -247,7 +247,7 @@ static void http_query_split (
 }
 
 // a pair that the list does not take is deleted (it was lost)
-static void http_query_pairs_insert (
+static void cerver_http_query_pairs_insert (
 	void *pairs_ptr,
 	const char *key_first, const char *key_after,
 	const char *value_first, const char *value_after
@@ -267,7 +267,7 @@ DoubleList *http_parse_query_into_pairs (
 	if (first && last) {
 		pairs = dlist_init (key_value_pair_delete, NULL);
 
-		if (pairs) http_query_split (first, last, http_query_pairs_insert, pairs);
+		if (pairs) cerver_http_query_split (first, last, cerver_http_query_pairs_insert, pairs);
 	}
 
 	return pairs;
@@ -286,7 +286,7 @@ typedef struct HttpQueryArena {
 } HttpQueryArena;
 
 // the pieces of a query, one more than its '&'
-static size_t http_query_pieces_count (const char *first, const char *last) {
+static size_t cerver_http_query_pieces_count (const char *first, const char *last) {
 
 	size_t pieces = 1;
 	for (const char *walk = first; walk < last; walk++) {
@@ -297,14 +297,14 @@ static size_t http_query_pieces_count (const char *first, const char *last) {
 
 }
 
-static String *http_query_arena_piece (struct Arena *arena, const char *first, const char *after) {
+static String *cerver_http_query_arena_piece (struct Arena *arena, const char *first, const char *after) {
 
 	return str_create_from_bytes_arena (arena, first, (size_t) (after - first));
 
 }
 
 // a piece without a '=' is not a pair, like in a list
-static void http_query_arena_insert (
+static void cerver_http_query_arena_insert (
 	void *query_ptr,
 	const char *key_first, const char *key_after,
 	const char *value_first, const char *value_after
@@ -315,15 +315,15 @@ static void http_query_arena_insert (
 	if (key_first && key_after && value_first && value_after && (query->n_pairs < query->size)) {
 		KeyValuePair *pair = &query->pairs[query->n_pairs];
 
-		pair->key = http_query_arena_piece (query->arena, key_first, key_after);
-		pair->value = http_query_arena_piece (query->arena, value_first, value_after);
+		pair->key = cerver_http_query_arena_piece (query->arena, key_first, key_after);
+		pair->value = cerver_http_query_arena_piece (query->arena, value_first, value_after);
 
 		if (pair->key && pair->value) query->n_pairs += 1;
 	}
 
 }
 
-KeyValuePair *http_query_pairs_arena (
+KeyValuePair *cerver_http_query_pairs_arena (
 	struct Arena *arena, const char *first, const char *last, size_t *n_pairs
 ) {
 
@@ -332,14 +332,14 @@ KeyValuePair *http_query_pairs_arena (
 	if (n_pairs) *n_pairs = 0;
 
 	if (arena && first && last && n_pairs) {
-		const size_t size = http_query_pieces_count (first, last);
+		const size_t size = cerver_http_query_pieces_count (first, last);
 
 		HttpQueryArena query = {
 			arena, (KeyValuePair *) arena_alloc (arena, size * sizeof (KeyValuePair)), 0, size
 		};
 
 		if (query.pairs) {
-			http_query_split (first, last, http_query_arena_insert, &query);
+			cerver_http_query_split (first, last, cerver_http_query_arena_insert, &query);
 
 			pairs = query.pairs;
 			*n_pairs = query.n_pairs;
@@ -350,7 +350,7 @@ KeyValuePair *http_query_pairs_arena (
 
 }
 
-const String *http_query_pairs_find (
+const String *cerver_http_query_pairs_find (
 	const KeyValuePair *pairs, const size_t n_pairs, const char *key
 ) {
 
@@ -366,7 +366,7 @@ const String *http_query_pairs_find (
 
 }
 
-DoubleList *http_query_pairs_list (const KeyValuePair *pairs, const size_t n_pairs) {
+DoubleList *cerver_http_query_pairs_list (const KeyValuePair *pairs, const size_t n_pairs) {
 
 	DoubleList *list = (pairs && n_pairs) ? dlist_init (key_value_pair_delete, NULL) : NULL;
 	if (list) {
@@ -375,7 +375,7 @@ DoubleList *http_query_pairs_list (const KeyValuePair *pairs, const size_t n_pai
 			const String *key = pairs[idx].key;
 			const String *value = pairs[idx].value;
 
-			http_query_pairs_insert (list, key->str, key->str + key->len, value->str, value->str + value->len);
+			cerver_http_query_pairs_insert (list, key->str, key->str + key->len, value->str, value->str + value->len);
 		}
 	}
 
@@ -383,7 +383,7 @@ DoubleList *http_query_pairs_list (const KeyValuePair *pairs, const size_t n_pai
 
 }
 
-const String *http_query_pairs_get_value (
+const String *cerver_http_query_pairs_get_value (
 	const DoubleList *pairs, const char *key
 ) {
 
@@ -391,7 +391,7 @@ const String *http_query_pairs_get_value (
 
 }
 
-void http_query_pairs_print (const DoubleList *pairs) {
+void cerver_http_query_pairs_print (const DoubleList *pairs) {
 
 	key_value_pairs_print (pairs);
 

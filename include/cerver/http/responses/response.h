@@ -1,1209 +1,570 @@
 /**
  * @file cerver/http/responses/response.h
- * @brief The HTTP responses: their headers, their bodies, how they are compiled and sent, and the helpers that
- * render text, json, files and videos.
+ * @brief The response of a context: its status, its headers and how it is sent; and the prepared responses.
  */
 
 #ifndef _CERVER_HTTP_RESPONSE_H_
 #define _CERVER_HTTP_RESPONSE_H_
 
-#include <sys/stat.h>
-#include <sys/uio.h>
+#include <stdbool.h>
+#include <stddef.h>
 
-#include "cerver/types/string.h"
 #include "cerver/types/types.h"
 
-#include "cerver/handler/handler.h"
+#include "cerver/config.h"
 
-#include "cerver/http/core/utils.h"
-#include "cerver/http/headers/fields.h"
+#include "cerver/http/core/context.h"
+#include "cerver/http/headers/types.h"
 #include "cerver/http/requests/content.h"
 #include "cerver/http/responses/status.h"
-#include "cerver/http/security/origin.h"
-
-/**
- * @defgroup http_responses Responses
- * @ingroup http
- * @brief The responses of an HTTP cerver.
- */
-
-/**
- * @defgroup http_responses_defaults Values
- * @ingroup http_responses
- * @brief The sizes, the options and the fixed responses.
- * @{
- */
-
-/** @brief The responses that the pool of the responses starts with. */
-#define HTTP_RESPONSE_POOL_INIT					32
-
-/** @brief The size of the status line and the Server header of a response. */
-#define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
-
-/**
- * @brief The size of the buffer of a response where its header is written when it fits.
- *
- * The main header with the type and the length of its body take less than 2^8.
- */
-#define HTTP_RESPONSE_HEADER_BUFFER_SIZE		(1 << 8)
-
-/**
- * @brief The value of the Connection header of a response after which cerver closes the connection.
- *
- * A connection that cerver closes must say so (RFC 9112 9.6), otherwise a client (like nginx) may reuse it and its
- * next request gets reset when cerver closes the socket; the header is added when the response is sent, as it
- * depends on the connection.
- */
-#define HTTP_RESPONSE_CONNECTION_CLOSE			"close"
-
-/** @brief The Connection header of #HTTP_RESPONSE_CONNECTION_CLOSE, with its line end. */
-#define HTTP_RESPONSE_CONNECTION_CLOSE_HEADER	"Connection: " HTTP_RESPONSE_CONNECTION_CLOSE "\r\n"
-
-/**
- * @brief The value of the Connection header of a response to an HTTP/1.0 client whose connection cerver keeps for
- * its next request; an HTTP/1.1 client keeps its connection without the header.
- *
- * @since 3.0b-5
- */
-#define HTTP_RESPONSE_CONNECTION_KEEP_ALIVE		"keep-alive"
-
-/** @brief The size of the digits of the biggest length of a body. */
-#define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		32
-
-/** @brief The size of the longest value of a header that is written with a format. */
-#define HTTP_RESPONSE_HEADER_FORMAT_SIZE		(1 << 10)
-
-/** @brief A response is sent as its header and its data, in a single system call. */
-#define HTTP_RESPONSE_PARTS						2
-
-/**
- * @brief A response is sent as its header (without the empty line that ends it), the headers that cerver adds for
- * the request, the empty line and its data.
- */
-#define HTTP_RESPONSE_MESSAGE_PARTS				4
-
-/** @brief An option of http_response_send_message (): the entity tag and the compression of the endpoint apply. */
-#define HTTP_RESPONSE_SEND_OPTION_TRANSFORM		(1 << 0)
-
-/** @brief An option of http_response_send_message (): the header starts a stream. */
-#define HTTP_RESPONSE_SEND_OPTION_STREAM		(1 << 1)
-
-/** @brief An option of http_response_send_message (): only the header is sent, its body goes after it (a file). */
-#define HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY	(1 << 2)
-
-/** @brief The size of the pieces in which a file is sent. */
-#define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
-
-/** @brief The size of the piece of a video that is sent when the range does not say it. */
-#define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
-
-/** @brief The Retry-After of the response that the cerver sends when it can not handle a new connection. */
-#define HTTP_RESPONSE_RETRY_AFTER_SECONDS		"1"
-
-/** @brief The body of #HTTP_RESPONSE_SERVICE_UNAVAILABLE. */
-#define HTTP_RESPONSE_SERVICE_UNAVAILABLE_BODY	"{\"error\": \"Service unavailable!\"}"
-
-/**
- * @brief The complete response that the cerver sends when it can not handle a new connection (the thpool is full
- * or the cerver is being drained): a 503 that closes the connection.
- */
-#define HTTP_RESPONSE_SERVICE_UNAVAILABLE						\
-	"HTTP/1.1 503 Service Unavailable\r\n"						\
-	"Content-Type: application/json\r\n"						\
-	"Content-Length: 33\r\n"									\
-	"Retry-After: " HTTP_RESPONSE_RETRY_AFTER_SECONDS "\r\n"	\
-	HTTP_RESPONSE_CONNECTION_CLOSE_HEADER						\
-	"\r\n"														\
-	HTTP_RESPONSE_SERVICE_UNAVAILABLE_BODY
-
-/** @} */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct _HttpCerver;
-struct _HttpReceive;
+struct _HttpResponse;
 
 /**
- * @defgroup http_responses_main Response
+ * @defgroup http_responses Responses
+ * @ingroup http
+ * @brief The responses of HTTP: the one that a handler writes in the context of its request, the prepared ones,
+ * the status and the content types.
+ */
+
+/**
+ * @defgroup http_response Response
  * @ingroup http_responses
- * @brief The struct of a response, its headers and its body.
+ * @brief How a handler answers its request.
+ *
+ * The response of a request is written to its context: a handler sets its status and its headers, and then it
+ * sends it with one of the send methods, that write it to the connection of the request. cerver adds the headers
+ * of the connection and of the request (Connection, Date, the id of the request, the CORS, the entity tag and
+ * the compression of its endpoint) and the Content-Length of what is sent.
+ *
+ * A request takes one response. A handler that returns without sending one is answered with 500; a second
+ * response is refused. A response to a HEAD request is sent without its body.
  * @{
  */
 
 /**
- * @brief An HTTP response.
+ * @defgroup http_response_write Status and headers
+ * @ingroup http_response
+ * @brief What a handler sets before it sends its response.
+ * @{
  */
-struct _HttpResponse {
-
-	/** @brief The status of the response, HTTP_STATUS_OK by default. */
-	http_status status;
-
-	/**
-	 * @brief What the response says, without the protocol that sends it: its headers in the order they were added,
-	 * a name can be repeated.
-	 */
-	HttpHeaders headers;
-
-	/**
-	 * @brief The status and the headers as HTTP/1.1 sends them, compiled from #headers when the response is sent;
-	 * a change of the headers or the status releases it, so it is compiled again.
-	 */
-	void *header;
-	/** @brief The length of #header. */
-	size_t header_len;
-
-	/**
-	 * @brief The header was set as bytes with http_response_set_header (), so it is sent as it is and #headers are
-	 * not in it.
-	 */
-	bool header_is_raw;
-
-	/**
-	 * @brief Where the header is written when it fits, then #header points to it, so a response without custom
-	 * headers does not allocate it.
-	 */
-	char header_buffer[HTTP_RESPONSE_HEADER_BUFFER_SIZE];
-
-	/** @brief The body of the response. */
-	void *data;
-	/** @brief The length of the body. */
-	size_t data_len;
-	/** @brief The body is a reference: the response does not free it. */
-	bool data_ref;
-
-	/** @brief The compiled response: the header followed by the body, from http_response_compile (). */
-	void *res;
-	/** @brief The length of #res. */
-	size_t res_len;
-
-	/** @brief The next response of the list of released ones that are reused. */
-	struct _HttpResponse *recycle_next;
-
-};
-
-/** @brief An HTTP response, see struct _HttpResponse. */
-typedef struct _HttpResponse HttpResponse;
 
 /**
- * @brief Takes a released response to reuse it, or allocates a new one, with the default values.
+ * @brief Sets the status of the response of a request.
  *
- * @return the response, NULL if it could not be allocated
- * @note For the internal methods of cerver: an application creates a response with http_response_create () or
- * takes one with http_response_get ().
+ * @param[in,out] context the context of the request
+ * @param[in] status the status; without this call a response is sent with HTTP_STATUS_OK
+ * @since 3.0b-12
  */
-CERVER_PRIVATE void *http_response_new (void);
-
-/**
- * @brief Resets a response to its default values: it releases its headers, its header, its body (unless it is a
- * reference) and its compiled response.
- *
- * @param[in,out] response the response, it must not be NULL
- * @note For the internal methods of cerver.
- */
-CERVER_PRIVATE void http_response_reset (HttpResponse *response);
-
-/**
- * @brief Releases a response and all of its data: it is reset and kept to be reused.
- *
- * @param[in] res_ptr the response, it can be NULL
- */
-CERVER_EXPORT void http_response_delete (void *res_ptr);
-
-/**
- * @brief Takes a response from the pool of the responses, ready to be used.
- *
- * @return the response, given back with http_response_return (); NULL if the pool could not produce one, or
- * without the pool, which exists while an HTTP cerver is running (http_responses_init ())
- */
-CERVER_EXPORT HttpResponse *http_response_get (void);
-
-/**
- * @brief Resets a response that was taken with http_response_get () and gives it back to the pool.
- *
- * @param[in] response the response, it can be NULL
- * @note Without the pool, or when the pool can not take it, the response is released.
- */
-CERVER_EXPORT void http_response_return (HttpResponse *response);
-
-/**
- * @brief Sets the status of a response.
- *
- * A different status releases the compiled header, so it is compiled again.
- *
- * @param[in,out] response the response
- * @param[in] status the status
- */
-CERVER_EXPORT void http_response_set_status (
-	HttpResponse *response, const http_status status
+CERVER_EXPORT void cerver_http_response_set_status (
+	CerverHttpContext *context, const CerverHttpStatus status
 );
 
 /**
- * @brief Sets the header of a response as the bytes that are sent.
+ * @brief Sets a header of the response of a request; the values that the header had are replaced.
  *
- * It replaces the existing one, and the headers that were added to the response are not sent.
- *
- * @param[in,out] response the response
- * @param[in] header the status line and the headers, with the empty line; the response owns them and frees them
- * when it is deleted; NULL only releases the current header
- * @param[in] header_len the length of the header
- */
-CERVER_EXPORT void http_response_set_header (
-	HttpResponse *response, const void *header, const size_t header_len
-);
-
-/**
- * @brief Sets a header of a response: it replaces the ones that it has with the same type.
- *
- * @param[in,out] response the response
- * @param[in] type the header
- * @param[in] value the value, copied; it can not have a CR, a LF or a NUL
+ * @param[in,out] context the context of the request
+ * @param[in] header the header, one of #HTTP_HEADERS_MAP
+ * @param[in] value its value, copied
  * @retval 0 the header was set
- * @retval 1 a NULL argument or a value that is not valid
+ * @retval 1 a NULL context or value, a value that is not valid in a header (it has a line break), or the header
+ * did not fit
+ * @since 3.0b-12 it replaces http_response_header_set () and http_response_add_header ().
  */
-CERVER_EXPORT u8 http_response_header_set (
-	HttpResponse *response, const http_header type, const char *value
+CERVER_EXPORT u8 cerver_http_response_set_header (
+	CerverHttpContext *context,
+	const CerverHttpHeader header, const char *value
 );
 
 /**
- * @brief Adds a header to a response, after the ones that it has, so a header can be repeated, like Set-Cookie.
+ * @brief Adds a value to a header of the response of a request, for the headers that are repeated (Set-Cookie).
  *
- * @param[in,out] response the response
- * @param[in] type the header
- * @param[in] value the value, copied; it can not have a CR, a LF or a NUL
- * @retval 0 the header was added
- * @retval 1 a NULL argument or a value that is not valid
+ * @param[in,out] context the context of the request
+ * @param[in] header the header, one of #HTTP_HEADERS_MAP
+ * @param[in] value the value, copied
+ * @retval 0 the value was added
+ * @retval 1 it was not, see cerver_http_response_set_header ()
+ * @since 3.0b-12 it replaces http_response_header_add ().
  */
-CERVER_EXPORT u8 http_response_header_add (
-	HttpResponse *response, const http_header type, const char *value
+CERVER_EXPORT u8 cerver_http_response_add_header (
+	CerverHttpContext *context,
+	const CerverHttpHeader header, const char *value
 );
 
 /**
- * @brief Removes the headers of a response with a type.
+ * @brief Sets a header of the response of a request with its name; the values that the header had are replaced.
  *
- * @param[in,out] response the response
- * @param[in] type the header
- * @return the number of headers that were removed, 0 for a NULL response
- */
-CERVER_EXPORT unsigned int http_response_header_remove (
-	HttpResponse *response, const http_header type
-);
-
-/**
- * @brief Returns the number of headers of a response with a type.
- *
- * @param[in] response the response
- * @param[in] type the header
- * @return the number of headers, 0 for a NULL response
- */
-CERVER_EXPORT unsigned int http_response_header_count (
-	const HttpResponse *response, const http_header type
-);
-
-/**
- * @brief Returns the value of a header of a response, the one in a position between the ones with the type.
- *
- * @param[in] response the response
- * @param[in] type the header
- * @param[in] position the position, 0 is the first one that was added
- * @param[out] value_length the length of the value, 0 when it does not have it; it can be NULL
- * @return the value, that does not end with a terminator; NULL if the response does not have it
- */
-CERVER_EXPORT const char *http_response_header_get (
-	const HttpResponse *response, const http_header type,
-	const unsigned int position, size_t *value_length
-);
-
-/**
- * @brief Works like http_response_header_set () with the name of any header.
- *
- * @param[in,out] response the response
- * @param[in] name the name, a token that is compared without case
- * @param[in] value the value
+ * @param[in,out] context the context of the request
+ * @param[in] name the name of the header
+ * @param[in] value its value, copied
  * @retval 0 the header was set
- * @retval 1 a NULL argument, a name that is not a token or a value that is not valid
+ * @retval 1 a NULL argument, a name or a value that is not valid in a header, or the header did not fit
+ * @since 3.0b-12 it replaces http_response_header_set_with_name ().
  */
-CERVER_EXPORT u8 http_response_header_set_with_name (
-	HttpResponse *response, const char *name, const char *value
+CERVER_EXPORT u8 cerver_http_response_set_header_with_name (
+	CerverHttpContext *context,
+	const char *name, const char *value
 );
 
 /**
- * @brief Works like http_response_header_add () with the name of any header.
+ * @brief Adds a value to a header of the response of a request with its name.
  *
- * @param[in,out] response the response
- * @param[in] name the name, a token that is compared without case
- * @param[in] value the value
- * @retval 0 the header was added
- * @retval 1 a NULL argument, a name that is not a token or a value that is not valid
+ * @param[in,out] context the context of the request
+ * @param[in] name the name of the header
+ * @param[in] value the value, copied
+ * @retval 0 the value was added
+ * @retval 1 it was not, see cerver_http_response_set_header_with_name ()
+ * @since 3.0b-12 it replaces http_response_header_add_with_name ().
  */
-CERVER_EXPORT u8 http_response_header_add_with_name (
-	HttpResponse *response, const char *name, const char *value
-);
-
-/**
- * @brief Works like http_response_header_remove () with the name of any header.
- *
- * @param[in,out] response the response
- * @param[in] name the name
- * @return the number of headers that were removed, 0 for a NULL argument
- */
-CERVER_EXPORT unsigned int http_response_header_remove_with_name (
-	HttpResponse *response, const char *name
-);
-
-/**
- * @brief Works like http_response_header_count () with the name of any header.
- *
- * @param[in] response the response
- * @param[in] name the name
- * @return the number of headers, 0 for a NULL argument
- */
-CERVER_EXPORT unsigned int http_response_header_count_with_name (
-	const HttpResponse *response, const char *name
-);
-
-/**
- * @brief Works like http_response_header_get () with the name of any header.
- *
- * @param[in] response the response
- * @param[in] name the name
- * @param[in] position the position, 0 is the first one that was added
- * @param[out] value_length the length of the value, 0 when it does not have it; it can be NULL
- * @return the value, that does not end with a terminator; NULL if the response does not have it
- */
-CERVER_EXPORT const char *http_response_header_get_with_name (
-	const HttpResponse *response, const char *name,
-	const unsigned int position, size_t *value_length
-);
-
-/**
- * @brief Sets a header of a response, like http_response_header_set ().
- *
- * @param[in,out] response the response
- * @param[in] type the header
- * @param[in] actual_header the value
- * @retval 0 the header was set
- * @retval 1 a NULL argument or a value that is not valid
- */
-CERVER_EXPORT u8 http_response_add_header (
-	HttpResponse *response,
-	const http_header type, const char *actual_header
-);
-
-/**
- * @brief Works like http_response_add_header () with a value written with a format.
- *
- * @param[in,out] response the response
- * @param[in] type the header
- * @param[in] format the printf () format of the value
- * @param[in] ... the arguments of the format
- * @retval 0 the header was set
- * @retval 1 a NULL argument, a value longer than #HTTP_RESPONSE_HEADER_FORMAT_SIZE - 1 (it is not added cut) or one
- * that is not valid
- */
-CERVER_EXPORT u8 http_response_add_custom_header (
-	HttpResponse *response,
-	const http_header type, const char *format, ...
-) CERVER_PRINTF_FORMAT (3, 4);
-
-/**
- * @brief Sets the Content-Type header of a response.
- *
- * @param[in,out] response the response
- * @param[in] type the content type
- * @retval 0 the header was set
- * @retval 1 a NULL response or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_content_type_header (
-	HttpResponse *response, const ContentType type
-);
-
-/**
- * @brief Sets the Content-Length header of a response.
- *
- * @param[in,out] response the response
- * @param[in] length the length of the body
- * @retval 0 the header was set
- * @retval 1 a NULL response or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_content_length_header (
-	HttpResponse *response, const size_t length
-);
-
-/**
- * @brief Sets the Content-Type header to application/json and the Content-Length of a response.
- *
- * @param[in,out] response the response
- * @param[in] json_len the length of the json body
- */
-CERVER_EXPORT void http_response_add_json_headers (
-	HttpResponse *response, const size_t json_len
-);
-
-/**
- * @brief Sets the Access-Control-Allow-Origin header of a response.
- *
- * @param[in,out] response the response
- * @param[in] origin the origin
- * @retval 0 the header was set
- * @retval 1 a NULL argument or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_cors_header (
-	HttpResponse *response, const char *origin
-);
-
-/**
- * @brief Works like http_response_add_cors_header () with an HttpOrigin.
- *
- * @param[in,out] response the response
- * @param[in] origin the origin
- * @retval 0 the header was set
- * @retval 1 a NULL argument or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_cors_header_from_origin (
-	HttpResponse *response, const HttpOrigin *origin
-);
-
-/**
- * @brief Works like http_response_add_cors_header (), only if the domain is in the origins whitelist.
- *
- * @param[in,out] response the response
- * @param[in] domain the domain, compared exactly with each origin of the whitelist
- * @retval 0 the header was set
- * @retval 1 a NULL argument, no HTTP cerver, a domain that is not in the whitelist, or the header was not set
- * @note The whitelist is the one of the HTTP cerver of the responses (http_responses_init ()).
- */
-CERVER_EXPORT u8 http_response_add_whitelist_cors_header (
-	HttpResponse *response, const char *domain
-);
-
-/**
- * @brief Works like http_response_add_whitelist_cors_header () with an HttpOrigin.
- *
- * @param[in,out] response the response
- * @param[in] origin the origin
- * @retval 0 the header was set
- * @retval 1 a NULL argument, an origin that is not in the whitelist, or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_origin (
-	HttpResponse *response, const HttpOrigin *origin
-);
-
-/**
- * @brief Sets the Access-Control-Allow-Origin header of a response when the Origin of the request is in the
- * origins whitelist.
- *
- * @param[in] http_receive the receive of the request
- * @param[in,out] response the response
- * @retval 0 the header was set
- * @retval 1 a NULL receive or request, a request without an Origin, an origin that is not in the whitelist, or the
- * header was not set
- */
-CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_request (
-	const struct _HttpReceive *http_receive,
-	HttpResponse *response
-);
-
-/**
- * @brief Sets the Access-Control-Allow-Credentials header of a response to "true", needed when a CORS request has
- * an Authorization header.
- *
- * @param[in,out] response the response
- * @retval 0 the header was set
- * @retval 1 a NULL response or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_cors_allow_credentials_header (
-	HttpResponse *response
-);
-
-/**
- * @brief Sets the Access-Control-Allow-Methods header of a response, needed in the responses to the preflight
- * OPTIONS requests.
- *
- * @param[in,out] response the response
- * @param[in] methods the list of methods, like "GET, HEAD, OPTIONS"
- * @retval 0 the header was set
- * @retval 1 a NULL argument or the header was not set
- */
-CERVER_EXPORT u8 http_response_add_cors_allow_methods_header (
-	HttpResponse *response, const char *methods
-);
-
-/**
- * @brief Sets the header `Content-Range: bytes <start>-<end>/<file size>` of a response.
- *
- * @param[in,out] response the response
- * @param[in] bytes_range the range
- * @retval 0 the header was set
- * @retval 1 a NULL argument or the header was not set
- */
-CERVER_PUBLIC u8 http_response_add_content_range_header (
-	HttpResponse *response, const BytesRange *bytes_range
-);
-
-/**
- * @brief Sets the headers of a piece of a video: Accept-Ranges (bytes), Content-Type, Content-Length (the chunk
- * size of the range) and Content-Range.
- *
- * @param[in,out] response the response
- * @param[in] content_type the content type of the video
- * @param[in] bytes_range the range, it must not be NULL
- */
-CERVER_PUBLIC void http_response_add_video_headers (
-	HttpResponse *response,
-	const ContentType content_type, const BytesRange *bytes_range
-);
-
-/**
- * @brief Sets the body of a response; it replaces the existing one.
- *
- * The body that the response owned is freed, a reference is not.
- *
- * @param[in,out] response the response
- * @param[in] data the body, allocated with malloc (); the response owns it and frees it when it is deleted; NULL
- * leaves the response without a body
- * @param[in] data_len the length of the body
- */
-CERVER_EXPORT void http_response_set_data (
-	HttpResponse *response, const void *data, const size_t data_len
-);
-
-/**
- * @brief Sets a reference to the body of a response: it is not copied and it is not freed, like
- * packet_set_data_ref ().
- *
- * @param[in,out] response the response
- * @param[in] data the body, that must live until the response is sent
- * @param[in] data_size the length of the body
- * @retval 0 the reference was set
- * @retval 1 a NULL argument
- */
-CERVER_EXPORT u8 http_response_set_data_ref (
-	HttpResponse *response, const void *data, const size_t data_size
-);
-
-/**
- * @brief Creates a response with a status and a copy of a body.
- *
- * @param[in] status the status
- * @param[in] data the body, copied, so the original can be released; NULL for a response without a body
- * @param[in] data_len the length of the body
- * @return the new response, released with http_response_delete (); NULL if it could not be allocated
- */
-CERVER_EXPORT HttpResponse *http_response_create (
-	const http_status status, const void *data, size_t data_len
-);
-
-/**
- * @brief Compiles the status and the headers of a response into its header, as HTTP/1.1 sends them, with the
- * default headers of the HTTP cerver that the response does not have.
- *
- * @param[in,out] response the response, it must not be NULL
- */
-CERVER_PUBLIC void http_response_compile_header (
-	HttpResponse *response
-);
-
-/**
- * @brief Compiles the header (if it is not compiled) and the body of a response into a continuous buffer, its
- * field res.
- *
- * @param[in,out] response the response
- * @retval 0 the response was compiled
- * @retval 1 a NULL response or the buffer could not be allocated
- */
-CERVER_EXPORT u8 http_response_compile (
-	HttpResponse *response
-);
-
-/**
- * @brief Prints the compiled response, if it was compiled.
- *
- * @param[in] response the response
- */
-CERVER_PUBLIC void http_response_print (
-	const HttpResponse *response
+CERVER_EXPORT u8 cerver_http_response_add_header_with_name (
+	CerverHttpContext *context,
+	const char *name, const char *value
 );
 
 /** @} */
 
 /**
- * @defgroup http_responses_send Send
- * @ingroup http_responses
- * @brief Sending a response to the connection of a request.
- *
- * Every response that cerver sends marks the request as answered, even if the client is already gone.
+ * @defgroup http_response_send Send
+ * @ingroup http_response
+ * @brief The methods that send the response of a request, with the status and the headers of its context.
  * @{
  */
 
 /**
- * @brief Sends a complete header and its data, with the headers that cerver adds for the request (Connection,
- * Date, X-Request-Id, CORS, Vary), and with the entity tag and the compression of the endpoint when the options have
- * #HTTP_RESPONSE_SEND_OPTION_TRANSFORM.
+ * @brief Sends the response of a request with a body, as it is: its Content-Type is the one that the handler set.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status of the response
- * @param[in] headers the headers that the header was compiled from, NULL when only its bytes are known
- * @param[in] header the header, it ends with an empty line; one that does not is sent as it is
- * @param[in] header_len the length of the header
- * @param[in] data the body
- * @param[in] data_len the length of the body
- * @param[in] options the HTTP_RESPONSE_SEND_OPTION_* flags
- * @retval 0 the response was sent
- * @retval 1 it was not sent
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] data the body, copied to the connection; NULL for a response without one
+ * @param[in] length the bytes of the body
+ * @retval 0 the response was given to the connection
+ * @retval 1 a NULL context, a request that was already answered, or the connection failed
+ * @since 3.0b-12 it replaces http_response_create_and_send () and http_response_send_split ().
  */
-CERVER_PRIVATE u8 http_response_send_message (
-	const struct _HttpReceive *http_receive, const http_status status,
-	const HttpHeaders *headers,
-	const void *header, const size_t header_len,
-	const void *data, const size_t data_len,
-	const unsigned int options
+CERVER_EXPORT u8 cerver_http_response_send (
+	CerverHttpContext *context,
+	const void *data, const size_t length
 );
 
 /**
- * @brief Answers with 304 Not Modified, with the headers of the response that it replaces.
+ * @brief Sends the response of a request with a body of a content type.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] header the header of the response that is replaced
- * @param[in] header_len the length of the header
- * @retval 0 the response was sent
- * @retval 1 it was not sent
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] type the content type of the body, one of #HTTP_CONTENT_TYPE_MAP
+ * @param[in] data the body, copied to the connection
+ * @param[in] length the bytes of the body
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12
  */
-CERVER_PRIVATE u8 http_response_send_not_modified_header (
-	const struct _HttpReceive *http_receive,
-	const void *header, const size_t header_len
+CERVER_EXPORT u8 cerver_http_response_send_content (
+	CerverHttpContext *context, const CerverHttpContentType type,
+	const void *data, const size_t length
 );
 
 /**
- * @brief Sends the parts with a single system call and adds them to the sent bytes.
+ * @brief Sends the response of a request with a text/plain body.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] parts the parts
- * @param[in] n_parts the number of parts
- * @retval 0 the parts were sent
- * @retval 1 they were not sent
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] text the text, copied to the connection
+ * @param[in] length the bytes of the text
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_render_text ().
  */
-CERVER_PRIVATE u8 http_response_send_pieces (
-	const struct _HttpReceive *http_receive, struct iovec *parts, const int n_parts
+CERVER_EXPORT u8 cerver_http_response_send_text (
+	CerverHttpContext *context,
+	const char *text, const size_t length
 );
 
 /**
- * @brief Sends a response to the connection of a request.
+ * @brief Sends the response of a request with an application/json body.
  *
- * A compiled response is sent as it is; otherwise its header is compiled (if it is not) and sent with its body.
- *
- * @param[in,out] response the response, it still belongs to the caller
- * @param[in] http_receive the receive of the request
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, a receive without a connection, or it was not sent
+ * @param[in,out] context the context of the request
+ * @param[in] json the JSON text, copied to the connection; it is sent as it is
+ * @param[in] length the bytes of the JSON
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_render_json (), http_response_json_custom_send () and
+ * http_response_json_custom_reference_send ().
  */
-CERVER_EXPORT u8 http_response_send (
-	HttpResponse *response,
-	const struct _HttpReceive *http_receive
+CERVER_EXPORT u8 cerver_http_response_send_json (
+	CerverHttpContext *context,
+	const char *json, const size_t length
 );
 
 /**
- * @brief Sends the compiled header and the body of a response without the continuous buffer of
- * http_response_compile ().
+ * @brief Sends a file as the response of a request, with the content type of its extension, its Last-Modified
+ * and its entity tag; a request that already has the file is answered with 304.
  *
- * @param[in] response the response, with its header compiled and a body
- * @param[in] http_receive the receive of the request
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, a receive without a connection, a response without a header or without a body, or it
- * was not sent
- */
-CERVER_EXPORT u8 http_response_send_split (
-	HttpResponse *response,
-	const struct _HttpReceive *http_receive
-);
-
-/**
- * @brief Creates, compiles, sends and releases a response with a status and a copy of a body.
- *
- * @param[in] status the status
- * @param[in] data the body, copied
- * @param[in] data_len the length of the body
- * @param[in] http_receive the receive of the request
- * @retval 0 the response was sent
- * @retval 1 it could not be created, compiled or sent
- */
-CERVER_EXPORT u8 http_response_create_and_send (
-	const http_status status, const void *data, size_t data_len,
-	const struct _HttpReceive *http_receive
-);
-
-/**
- * @brief Sends a file whose status is already known, with its Content-Type, its Content-Length and its validators
- * (ETag, Last-Modified).
- *
- * A 200 to a request whose validators match is answered with 304 Not Modified; a HEAD request only gets the header.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
+ * @param[in,out] context the context of the request
  * @param[in] filename the path of the file
- * @param[in] filestatus the status of the file
- * @retval 0 the file was sent
- * @retval 1 it was not sent
- * @note For the internal methods of cerver.
+ * @retval 0 the file was given to the connection
+ * @retval 1 the file was not found (the request is not answered: its handler answers it, for example with
+ * CERVER_HTTP_COMMON_RESPONSE_NOT_FOUND), or the connection failed
+ * @since 3.0b-12 it replaces http_response_send_file () and http_response_send_file_generate ().
  */
-CERVER_PRIVATE u8 http_response_send_file_internal (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *filename,
-	struct stat *filestatus
+CERVER_EXPORT u8 cerver_http_response_send_file (
+	CerverHttpContext *context, const char *filename
 );
 
 /**
- * @brief Opens a file and sends it to the client, with the header generated from the file (see
- * http_response_send_file_internal ()).
+ * @brief Sends a video as the response of a request: the range of bytes that the request asks for, with 206, or
+ * the whole file.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] filename the path of the file
- * @retval 0 the file was sent
- * @retval 1 the file was not found or it was not sent
- */
-CERVER_EXPORT u8 http_response_send_file (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *filename
-);
-
-/**
- * @brief Works like http_response_send_file () with a path written with a format.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] format the printf () format of the path, truncated to FILENAME_DEFAULT_SIZE - 1 characters
- * @param[in] ... the arguments of the format
- * @retval 0 the file was sent
- * @retval 1 the file was not found or it was not sent
- */
-CERVER_EXPORT u8 http_response_send_file_generate (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *format, ...
-) CERVER_PRINTF_FORMAT (3, 4);
-
-/** @} */
-
-/**
- * @defgroup http_responses_render Render
- * @ingroup http_responses
- * @brief Sending a text or a json as the body of a response.
- * @{
- */
-
-/**
- * @brief Sends a text with the text/html content type.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] text the text, it is not copied
- * @param[in] text_len the length of the text
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, a receive without a connection, or it was not sent
- */
-CERVER_EXPORT u8 http_response_render_text (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *text, const size_t text_len
-);
-
-/**
- * @brief Sends a json with the application/json content type.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] json the json, it is not copied
- * @param[in] json_len the length of the json
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, a receive without a connection, or it was not sent
- */
-CERVER_EXPORT u8 http_response_render_json (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *json, const size_t json_len
-);
-
-/** @} */
-
-/**
- * @defgroup http_responses_videos Videos
- * @ingroup http_responses
- * @brief Sending a piece of a video with 206 Partial Content.
- * @{
- */
-
-/**
- * @brief Sends a video with the Range of the request, as RFC 9110 says.
- *
- * Without a Range (or with an invalid one, like `bytes=9-1`) the whole video goes with 200; a range that starts
- * inside the video goes with 206 Partial Content and its Content-Range: `bytes=N-M` includes M and ends with the
- * video, a range without an end (`bytes=N-`) sends at most #HTTP_RESPONSE_VIDEO_CHUNK_SIZE bytes, and `bytes=-N` the
- * last N; a range that starts after the end of the video gets 416 with a Content-Range of the unsatisfied range
- * (`bytes`, an asterisk, a slash and the size of the video). The content type comes from the extension of the file
- * (MP4 without one).
- *
- * @param[in] http_receive the receive of the request
+ * @param[in,out] context the context of the request
  * @param[in] filename the path of the video
- * @retval 0 the response was sent
- * @retval 1 the video was not found, it could not be opened, or the response could not be created or sent
- * @since 2.0b-75 (the 200 and the 416)
+ * @retval 0 the video was given to the connection, or its range can not be served and the request was answered
+ * with 416
+ * @retval 1 the file was not found (the request is not answered: its handler answers it), or the connection
+ * failed
+ * @since 3.0b-12 it replaces http_response_handle_video () and http_response_handle_video_generate ().
  */
-CERVER_EXPORT u8 http_response_handle_video (
-	const struct _HttpReceive *http_receive,
-	const char *filename
-);
-
-/**
- * @brief Works like http_response_handle_video () with a path written with a format.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] format the printf () format of the path, truncated to FILENAME_DEFAULT_SIZE - 1 characters
- * @param[in] ... the arguments of the format
- * @retval 0 the piece was sent
- * @retval 1 the video was not found, it could not be opened or the piece was not sent
- */
-CERVER_EXPORT u8 http_response_handle_video_generate (
-	const struct _HttpReceive *http_receive,
-	const char *format, ...
-) CERVER_PRINTF_FORMAT (2, 3);
-
-/** @} */
-
-/**
- * @defgroup http_responses_json Json
- * @ingroup http_responses
- * @brief The responses with a json body.
- *
- * The keys and the values are escaped as json; a value that is not UTF-8, or a real that is NaN, gives no response.
- * The responses that are created are released with http_response_delete ().
- * @{
- */
-
-/**
- * @brief Creates a compiled response with a json body that is a reference: it is not copied and it is not freed.
- *
- * @param[in] status the status
- * @param[in] json the json, that must live until the response is sent
- * @param[in] json_len the length of the json
- * @return the new response, NULL for a NULL json or if it could not be allocated
- */
-CERVER_EXPORT HttpResponse *http_response_create_json (
-	const http_status status, const char *json, const size_t json_len
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": "value"}`.
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value, a string
- * @return the new response, NULL for a NULL argument or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
-	const http_status status, const char *key, const char *value
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": value}`, with an int.
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @return the new response, NULL for a NULL key or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_int_value (
-	const http_status status, const char *key, const int value
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"key": value}`, with an int.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_int_value_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *key, const int value
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": value}`, with a long.
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @return the new response, NULL for a NULL key or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_large_int_value (
-	const http_status status, const char *key, const long value
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"key": value}`, with a long.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_large_int_value_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *key, const long value
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": value}`, with a double.
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value, written without the locale
- * @return the new response, NULL for a NULL key, a NaN or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_real_value (
-	const http_status status, const char *key, const double value
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"key": value}`, with a double.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_real_value_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *key, const double value
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": true}` or `{"key": false}`.
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @return the new response, NULL for a NULL key or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_bool_value (
-	const http_status status, const char *key, const bool value
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"key": true}` or `{"key": false}`.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_bool_value_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *key, const bool value
-);
-
-/**
- * @brief Creates a compiled response with the body `{"msg": "message"}`.
- *
- * @param[in] status the status
- * @param[in] msg the message
- * @return the new response, NULL for a NULL message or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_msg (
-	const http_status status, const char *msg
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"msg": "message"}`.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] msg the message
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_msg_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *msg
-);
-
-/**
- * @brief Creates a compiled response with the body `{"error": "message"}`.
- *
- * @param[in] status the status
- * @param[in] error_msg the message of the error
- * @return the new response, NULL for a NULL message or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_error (
-	const http_status status, const char *error_msg
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"error": "message"}`.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] error_msg the message of the error
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_error_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *error_msg
-);
-
-/**
- * @brief Creates a compiled response with the body `{"key": "value"}`, like
- * http_response_create_json_key_value ().
- *
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @return the new response, NULL for a NULL argument or if the json could not be created
- */
-CERVER_EXPORT HttpResponse *http_response_json_key_value (
-	const http_status status, const char *key, const char *value
-);
-
-/**
- * @brief Creates, sends and releases a response with the body `{"key": "value"}`.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] key the key
- * @param[in] value the value
- * @retval 0 the response was sent
- * @retval 1 it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_key_value_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *key, const char *value
-);
-
-/**
- * @brief Creates a compiled response with a copy of a json as its body.
- *
- * @param[in] status the status
- * @param[in] json the json, a string that is copied
- * @return the new response, NULL for a NULL json or if it could not be allocated
- */
-CERVER_EXPORT HttpResponse *http_response_json_custom (
-	const http_status status, const char *json
-);
-
-/**
- * @brief Creates, sends and releases a response with a copy of a json as its body.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] json the json, a string that is copied
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, or it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_custom_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status, const char *json
-);
-
-/**
- * @brief Creates a compiled response with a reference to a json as its body: it is not copied and it is not freed.
- *
- * @param[in] status the status
- * @param[in] json the json, that must live until the response is sent
- * @param[in] json_len the length of the json
- * @return the new response, NULL for a NULL json or if it could not be allocated
- */
-CERVER_EXPORT HttpResponse *http_response_json_custom_reference (
-	const http_status status,
-	const char *json, const size_t json_len
-);
-
-/**
- * @brief Creates, sends and releases a response with a reference to a json as its body.
- *
- * @param[in] http_receive the receive of the request
- * @param[in] status the status
- * @param[in] json the json, it is not copied
- * @param[in] json_len the length of the json
- * @retval 0 the response was sent
- * @retval 1 a NULL argument, or it could not be created or sent
- */
-CERVER_EXPORT u8 http_response_json_custom_reference_send (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *json, const size_t json_len
+CERVER_EXPORT u8 cerver_http_response_send_video (
+	CerverHttpContext *context, const char *filename
 );
 
 /** @} */
 
 /**
- * @defgroup http_responses_producer Producer
- * @ingroup http_responses
- * @brief The producer of the responses that the HTTP cervers of the process share.
+ * @defgroup http_response_json JSON answers
+ * @ingroup http_response
+ * @brief One call answers of an object with one member; each one sets the status of the response and sends it.
  * @{
  */
 
 /**
- * @brief Creates the producer of the responses and its pool.
+ * @brief Answers a request with `{"msg": "<message>"}`.
  *
- * The producer is shared by every HTTP cerver of the process: the origins whitelist and the default headers of its
- * compiled responses are the ones of the first HTTP cerver that started.
- *
- * @param[in] http_cerver the HTTP cerver
- * @retval 0 the producer was created
- * @retval 1 it could not be created
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] message the message, escaped as a JSON string
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_msg_send ().
  */
-CERVER_PRIVATE unsigned int http_responses_init (
-	const struct _HttpCerver *http_cerver
+CERVER_EXPORT u8 cerver_http_response_send_json_message (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *message
 );
 
 /**
- * @brief Moves the producer to a cerver that is still alive when its own one ends.
+ * @brief Answers a request with `{"error": "<error>"}`.
  *
- * @param[in] ended the HTTP cerver that ended
- * @param[in] alive an HTTP cerver that is still alive
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] error the error, escaped as a JSON string
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_error_send ().
  */
-CERVER_PRIVATE void http_responses_follow (
-	const struct _HttpCerver *ended, const struct _HttpCerver *alive
+CERVER_EXPORT u8 cerver_http_response_send_json_error (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *error
 );
 
 /**
- * @brief Releases the producer of the responses and its pool.
+ * @brief Answers a request with `{"<key>": "<value>"}`.
  *
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] key the key, escaped as a JSON string
+ * @param[in] value the value, escaped as a JSON string
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_key_value_send ().
  */
-CERVER_PRIVATE void http_responses_end (void);
+CERVER_EXPORT u8 cerver_http_response_send_json_key_value (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const char *value
+);
 
 /**
- * @brief Sends #HTTP_RESPONSE_SERVICE_UNAVAILABLE without blocking to a connection that the cerver can not handle
- * (the thpool is full or the cerver is being drained); the socket is not closed.
+ * @brief Answers a request with `{"<key>": <value>}`, an integer.
  *
- * @param[in] sock_fd the socket of the connection
- * @retval 0 the whole response was sent
- * @retval 1 a negative socket, or it was not sent completely
- * @note For the internal methods of cerver.
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] key the key, escaped as a JSON string
+ * @param[in] value the value
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_int_value_send () and http_response_json_large_int_value_send ().
  */
-CERVER_PRIVATE u8 http_response_send_service_unavailable (
-	const int sock_fd
+CERVER_EXPORT u8 cerver_http_response_send_json_integer (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const i64 value
 );
+
+/**
+ * @brief Answers a request with `{"<key>": <value>}`, a real number.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] key the key, escaped as a JSON string
+ * @param[in] value the value
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_real_value_send ().
+ */
+CERVER_EXPORT u8 cerver_http_response_send_json_real (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const double value
+);
+
+/**
+ * @brief Answers a request with `{"<key>": true}` or `{"<key>": false}`.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] status the status of the response
+ * @param[in] key the key, escaped as a JSON string
+ * @param[in] value the value
+ * @retval 0 the response was given to the connection
+ * @retval 1 it was not, see cerver_http_response_send ()
+ * @since 3.0b-12 it replaces http_response_json_bool_value_send ().
+ */
+CERVER_EXPORT u8 cerver_http_response_send_json_boolean (
+	CerverHttpContext *context,
+	const CerverHttpStatus status, const char *key, const bool value
+);
+
+/** @} */
+
+/**
+ * @defgroup http_response_stream Stream
+ * @ingroup http_response
+ * @brief A response whose length is not known when it starts: it is sent in pieces, with the chunked transfer
+ * encoding of HTTP/1.1.
+ * @{
+ */
+
+/**
+ * @brief Starts the response of a request as a stream: its status and its headers are sent, and its body follows
+ * in pieces.
+ *
+ * @param[in,out] context the context of the request
+ * @retval 0 the stream started
+ * @retval 1 a NULL context, a request that was already answered, or the connection failed
+ * @warning A handler that runs in an event loop writes its pieces to the memory of its connection, and they are
+ * sent when it returns: a long stream belongs to a pool of threads (cerver/http/core/pool.h), whose handler waits
+ * for its client when it writes faster than it is read.
+ * @since 3.0b-12 it replaces http_response_stream_begin (), that took a response.
+ */
+CERVER_EXPORT u8 cerver_http_response_stream_begin (
+	CerverHttpContext *context
+);
+
+/**
+ * @brief Sends a piece of the body of a response that was started as a stream.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] data the piece, copied to the connection
+ * @param[in] length the bytes of the piece; a piece without bytes is not sent
+ * @retval 0 the piece was given to the connection
+ * @retval 1 the response is not a stream, or the connection failed: the handler stops writing
+ * @since 3.0b-12 it replaces http_response_stream_write ().
+ */
+CERVER_EXPORT u8 cerver_http_response_stream_write (
+	CerverHttpContext *context,
+	const void *data, const size_t length
+);
+
+/**
+ * @brief Ends a response that was started as a stream; a handler that returns without ending its stream has it
+ * ended by cerver.
+ *
+ * @param[in,out] context the context of the request
+ * @retval 0 the end of the stream was given to the connection
+ * @retval 1 the response is not a stream, or the connection failed
+ * @since 3.0b-12 it replaces http_response_stream_end ().
+ */
+CERVER_EXPORT u8 cerver_http_response_stream_end (
+	CerverHttpContext *context
+);
+
+/**
+ * @brief Returns whether the response of a request is a stream that has not ended.
+ *
+ * @param[in] context the context of the request
+ * @retval true the stream started and it has not ended nor failed
+ * @retval false any other response
+ * @since 3.0b-12 it replaces http_response_stream_is_active ().
+ */
+CERVER_EXPORT bool cerver_http_response_stream_is_active (
+	const CerverHttpContext *context
+);
+
+/** @} */
+
+/**
+ * @defgroup http_response_prepared Prepared responses
+ * @ingroup http_response
+ * @brief A response that is built once and sent to many requests: its bytes are ready, so sending it only adds
+ * the headers of each request.
+ *
+ * A prepared response is created and changed before the cerver starts (or by one thread, before the others know
+ * it); after that it is only sent, by any number of threads at the same time.
+ * @{
+ */
+
+/**
+ * @brief A response that is built once and sent many times.
+ *
+ * @since 3.0b-12 it replaces HttpResponse, whose fields are not public anymore.
+ */
+typedef struct _HttpResponse CerverHttpPrepared;
+
+/**
+ * @brief Creates a prepared response with a status and a body.
+ *
+ * @param[in] status the status
+ * @param[in] type the content type of the body, HTTP_CONTENT_TYPE_NONE for none
+ * @param[in] data the body, copied; NULL for a response without one
+ * @param[in] length the bytes of the body
+ * @return the response, released with cerver_http_prepared_delete (); NULL if it could not be created
+ * @since 3.0b-12 it replaces http_response_create () followed by http_response_compile ().
+ */
+CERVER_EXPORT CerverHttpPrepared *cerver_http_prepared_create (
+	const CerverHttpStatus status, const CerverHttpContentType type,
+	const void *data, const size_t length
+);
+
+/**
+ * @brief Creates a prepared response with `{"msg": "<message>"}`.
+ *
+ * @param[in] status the status
+ * @param[in] message the message, escaped as a JSON string
+ * @return the response, released with cerver_http_prepared_delete (); NULL if it could not be created
+ * @since 3.0b-12 it replaces http_response_json_msg ().
+ */
+CERVER_EXPORT CerverHttpPrepared *cerver_http_prepared_create_json_message (
+	const CerverHttpStatus status, const char *message
+);
+
+/**
+ * @brief Creates a prepared response with `{"error": "<error>"}`.
+ *
+ * @param[in] status the status
+ * @param[in] error the error, escaped as a JSON string
+ * @return the response, released with cerver_http_prepared_delete (); NULL if it could not be created
+ * @since 3.0b-12 it replaces http_response_json_error ().
+ */
+CERVER_EXPORT CerverHttpPrepared *cerver_http_prepared_create_json_error (
+	const CerverHttpStatus status, const char *error
+);
+
+/**
+ * @brief Creates a prepared response with `{"<key>": "<value>"}`.
+ *
+ * @param[in] status the status
+ * @param[in] key the key, escaped as a JSON string
+ * @param[in] value the value, escaped as a JSON string
+ * @return the response, released with cerver_http_prepared_delete (); NULL if it could not be created
+ * @since 3.0b-12 it replaces http_response_json_key_value ().
+ */
+CERVER_EXPORT CerverHttpPrepared *cerver_http_prepared_create_json_key_value (
+	const CerverHttpStatus status, const char *key, const char *value
+);
+
+/**
+ * @brief Sets a header of a prepared response; the values that the header had are replaced.
+ *
+ * @param[in,out] prepared the response
+ * @param[in] header the header, one of #HTTP_HEADERS_MAP
+ * @param[in] value its value, copied
+ * @retval 0 the header was set and the response is ready again
+ * @retval 1 a NULL argument, a value that is not valid in a header, or the header did not fit
+ * @warning Only before the response is shared between threads.
+ * @since 3.0b-12 it replaces http_response_header_set () of a response.
+ */
+CERVER_EXPORT u8 cerver_http_prepared_set_header (
+	CerverHttpPrepared *prepared,
+	const CerverHttpHeader header, const char *value
+);
+
+/**
+ * @brief Sets a header of a prepared response with its name; the values that the header had are replaced.
+ *
+ * @param[in,out] prepared the response
+ * @param[in] name the name of the header
+ * @param[in] value its value, copied
+ * @retval 0 the header was set and the response is ready again
+ * @retval 1 a NULL argument, a name or a value that is not valid in a header, or the header did not fit
+ * @warning Only before the response is shared between threads.
+ * @since 3.0b-12 it replaces http_response_header_set_with_name () of a response.
+ */
+CERVER_EXPORT u8 cerver_http_prepared_set_header_with_name (
+	CerverHttpPrepared *prepared,
+	const char *name, const char *value
+);
+
+/**
+ * @brief Releases a prepared response.
+ *
+ * @param[in] prepared the response, it can be NULL; never one of the common ones of cerver
+ * @since 3.0b-12 it replaces http_response_delete ().
+ */
+CERVER_EXPORT void cerver_http_prepared_delete (
+	CerverHttpPrepared *prepared
+);
+
+/**
+ * @brief Sends a prepared response as the response of a request; the status and the headers of its context are
+ * not used.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] prepared the response
+ * @retval 0 the response was given to the connection
+ * @retval 1 a NULL argument, a request that was already answered, or the connection failed
+ * @since 3.0b-12 it replaces http_response_send ().
+ */
+CERVER_EXPORT u8 cerver_http_response_send_prepared (
+	CerverHttpContext *context, const CerverHttpPrepared *prepared
+);
+
+/**
+ * @brief The prepared responses that every cerver has.
+ *
+ * @since 3.0b-12 they replace the global responses `oki_doki`, `bad_request_error`, `bad_user_error`,
+ * `bad_auth_error`, `not_found_error` and `server_error`.
+ */
+typedef enum CerverHttpCommonResponse {
+
+	/** @brief 200 with `{"oki": "doki"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_OK				= 0,
+	/** @brief 400 with `{"error": "Bad request!"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST		= 1,
+	/** @brief 400 with `{"error": "Bad user!"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_BAD_USER		= 2,
+	/** @brief 401 with `{"error": "Failed to authenticate!"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_BAD_AUTH		= 3,
+	/** @brief 404 with `{"error": "Not found!"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_NOT_FOUND		= 4,
+	/** @brief 500 with `{"error": "Internal error!"}`. */
+	CERVER_HTTP_COMMON_RESPONSE_SERVER_ERROR	= 5,
+
+	/** @brief The number of common responses, the first value that is not valid. */
+	CERVER_HTTP_COMMON_RESPONSE_SIZE			= 6
+
+} CerverHttpCommonResponse;
+
+/**
+ * @brief Answers a request with one of the common responses of cerver.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] common the common response
+ * @retval 0 the response was given to the connection
+ * @retval 1 a NULL context, a value out of #CerverHttpCommonResponse, a request that was already answered, or the
+ * connection failed
+ * @since 3.0b-12
+ */
+CERVER_EXPORT u8 cerver_http_response_send_common (
+	CerverHttpContext *context, const CerverHttpCommonResponse common
+);
+
+/** @} */
 
 /** @} */
 

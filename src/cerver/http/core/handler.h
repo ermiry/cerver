@@ -1,6 +1,8 @@
 /**
+ * @internal
  * @file cerver/http/core/handler.h
- * @brief The HttpReceive: the state of an HTTP connection and of the request that it is receiving.
+ * @brief The HttpReceive: the state of an HTTP connection and of the request that it is receiving. It is the
+ * CerverHttpContext that a handler takes, which an application only reaches through its methods.
  */
 
 #ifndef _CERVER_HTTP_CORE_HANDLER_H_
@@ -9,6 +11,11 @@
 #include "cerver/config.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/types.h"
+#include "cerver/http/requests/internal.h"
+#include "cerver/http/responses/prepared.h"
+#include "cerver/http/responses/stream.h"
+#include "cerver/http/routes/internal.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -93,13 +100,13 @@ typedef enum HttpReceiveDispatch {
 	/** @brief A redirect of its trailing slash. */
 	HTTP_RECEIVE_DISPATCH_REDIRECT				= 5,
 	/**
-	 * @brief The health route of the cerver (http_cerver_set_health_route ()).
+	 * @brief The health route of the cerver (cerver_http_set_health_route ()).
 	 *
 	 * @since 3.0b-5
 	 */
 	HTTP_RECEIVE_DISPATCH_HEALTH				= 6,
 	/**
-	 * @brief The ready route of the cerver (http_cerver_set_ready_route ()).
+	 * @brief The ready route of the cerver (cerver_http_set_ready_route ()).
 	 *
 	 * @since 3.0b-5
 	 */
@@ -280,9 +287,6 @@ struct _HttpReceive {
 	/** @brief The endpoint that handles the request. */
 	HttpEndpoint *endpoint;
 
-	/** @brief The route of the first routes API of the endpoint, NULL for the new endpoints. */
-	HttpRoute *route;
-
 	/** @brief The static file that was served. */
 	const char *served_file;
 
@@ -293,7 +297,7 @@ struct _HttpReceive {
 	size_t max_body_size;
 
 	/** @brief The status of the response. */
-	http_status status;
+	CerverHttpStatus status;
 	/** @brief The bytes of the response that were sent. */
 	size_t sent;
 
@@ -333,6 +337,14 @@ struct _HttpReceive {
 	HttpStream stream;
 
 	/**
+	 * @brief The response that the handler of the request is writing (its status and its headers), taken from the
+	 * cache of the thread that first wrote it; NULL until then, and again once it was sent or the request ended.
+	 *
+	 * @since 3.0b-12
+	 */
+	struct _HttpResponse *writer;
+
+	/**
 	 * @brief The arena that the owner of the receive lends to it: the data of its request lives there and it is
 	 * released all at once when the request ends; NULL in a receive that allocates the memory of its request.
 	 */
@@ -359,10 +371,10 @@ struct _HttpReceive {
 	double request_deadline;
 
 	/** @brief The stage that the request has reached. */
-	HttpStage stage;
+	CerverHttpStage stage;
 
 	/** @brief How the client left, when a recv () or a send () found that it was gone. */
-	HttpAbortReason abort_reason;
+	CerverHttpAbortReason abort_reason;
 
 	/** @brief A send () of the response failed. */
 	bool response_failed;
@@ -381,7 +393,7 @@ struct _HttpReceive {
 	bool upgraded;
 
 	/** @brief The last state of the client that was found, a gone client never comes back. */
-	HttpClientState client_state;
+	CerverHttpClientState client_state;
 
 	/**
 	 * @brief The connection of the event loop that owns the receive, NULL with the other handler types.
@@ -573,8 +585,8 @@ CERVER_EXPORT const HttpEndpoint *http_receive_get_endpoint (
 );
 
 /**
- * @brief Returns the custom data of the endpoint that handles a request: its own, the one that it inherits from its
- * groups, or the one of its route of the first routes API.
+ * @brief Returns the custom data of the endpoint that handles a request: its own, or the one that it inherits from
+ * its groups.
  *
  * @param[in] http_receive the receive
  * @return the data, NULL if it has none or for a NULL receive
@@ -619,7 +631,7 @@ CERVER_EXPORT const char *http_receive_get_allow (
  * @param[in] http_receive the receive
  * @return the stage, HTTP_STAGE_QUEUED for a NULL receive
  */
-CERVER_EXPORT HttpStage http_receive_get_stage (
+CERVER_EXPORT CerverHttpStage http_receive_get_stage (
 	const HttpReceive *http_receive
 );
 
@@ -632,7 +644,7 @@ CERVER_EXPORT HttpStage http_receive_get_stage (
  * @return HTTP_CLIENT_STATE_CONNECTED, HTTP_CLIENT_STATE_CLOSED when the client closed its side (an EOF), or
  * HTTP_CLIENT_STATE_RESET when its connection failed (a RST) and for a NULL receive; a gone client never comes back
  */
-CERVER_EXPORT HttpClientState http_receive_get_client_state (
+CERVER_EXPORT CerverHttpClientState http_receive_get_client_state (
 	const HttpReceive *http_receive
 );
 
@@ -640,7 +652,7 @@ CERVER_EXPORT HttpClientState http_receive_get_client_state (
  * @brief Returns whether the client of a request is gone.
  *
  * A client is gone when it reset its connection, when it closed its side and the cerver takes it as gone
- * (http_cerver_set_half_close_is_gone ()), or when a send () of the response failed: a stream whose write fails is
+ * (cerver_http_set_half_close_is_gone ()), or when a send () of the response failed: a stream whose write fails is
  * also gone, and its handler must stop writing.
  *
  * @param[in] http_receive the receive

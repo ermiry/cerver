@@ -320,7 +320,7 @@ struct EventDispatcher {
 };
 
 /** @internal @brief The lanes that a loop has at most: one for each pool of an HTTP cerver. */
-#define EVENT_LOOP_LANES_SIZE				HTTP_CERVER_POOLS_SIZE
+#define EVENT_LOOP_LANES_SIZE				CERVER_HTTP_POOLS_SIZE
 
 /** @internal @brief The lane of the default pool, the one that every loop has. */
 #define EVENT_LOOP_LANE_DEFAULT				0

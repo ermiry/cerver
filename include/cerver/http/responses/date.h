@@ -38,7 +38,7 @@ extern "C" {
  * @param[out] date where the date is written, at least #HTTP_DATE_SIZE bytes
  * @return the length of the date (#HTTP_DATE_LENGTH), 0 on error
  */
-CERVER_PUBLIC size_t http_date_format (
+CERVER_PUBLIC size_t cerver_http_date_format (
 	const time_t seconds, char *date
 );
 
@@ -50,7 +50,7 @@ CERVER_PUBLIC size_t http_date_format (
  * @return the date, that belongs to the thread and is valid until its next call
  * @threadsafety Safe: each thread has its own date.
  */
-CERVER_PUBLIC const char *http_date_current (void);
+CERVER_PUBLIC const char *cerver_http_date_current (void);
 
 /**
  * @brief Parses an IMF-fixdate, the only format that cerver accepts in the conditional requests
@@ -61,7 +61,7 @@ CERVER_PUBLIC const char *http_date_current (void);
  * @param[out] seconds the parsed time
  * @return true on success; false for a NULL argument or a date that is not an IMF-fixdate
  */
-CERVER_PUBLIC bool http_date_parse (
+CERVER_PUBLIC bool cerver_http_date_parse (
 	const char *value, const size_t length, time_t *seconds
 );
 

@@ -5,8 +5,8 @@
 
 #include "cerver/http/requests/content.h"
 
-const char *http_content_type_extension (
-	const ContentType content_type
+const char *cerver_http_content_type_extension (
+	const CerverHttpContentType content_type
 ) {
 
 	switch (content_type) {
@@ -15,12 +15,12 @@ const char *http_content_type_extension (
 		#undef XX
 	}
 
-	return http_content_type_extension (HTTP_CONTENT_TYPE_NONE);
+	return cerver_http_content_type_extension (HTTP_CONTENT_TYPE_NONE);
 
 }
 
-const char *http_content_type_description (
-	const ContentType content_type
+const char *cerver_http_content_type_description (
+	const CerverHttpContentType content_type
 ) {
 
 	switch (content_type) {
@@ -29,12 +29,12 @@ const char *http_content_type_description (
 		#undef XX
 	}
 
-	return http_content_type_description (HTTP_CONTENT_TYPE_NONE);
+	return cerver_http_content_type_description (HTTP_CONTENT_TYPE_NONE);
 
 }
 
-const char *http_content_type_mime (
-	const ContentType content_type
+const char *cerver_http_content_type_mime (
+	const CerverHttpContentType content_type
 ) {
 
 	switch (content_type) {
@@ -43,12 +43,12 @@ const char *http_content_type_mime (
 		#undef XX
 	}
 
-	return http_content_type_mime (HTTP_CONTENT_TYPE_NONE);
+	return cerver_http_content_type_mime (HTTP_CONTENT_TYPE_NONE);
 
 }
 
 // a NULL mime is not found
-ContentType http_content_type_with_mime (
+CerverHttpContentType cerver_http_content_type_with_mime (
 	const char *mime_string
 ) {
 
@@ -63,7 +63,7 @@ ContentType http_content_type_with_mime (
 }
 
 // a NULL extension is not found
-ContentType http_content_type_with_extension (
+CerverHttpContentType cerver_http_content_type_with_extension (
 	const char *extension_string
 ) {
 
@@ -78,7 +78,7 @@ ContentType http_content_type_with_extension (
 }
 
 // a NULL extension is not found
-const char *http_content_type_mime_with_extension (
+const char *cerver_http_content_type_mime_with_extension (
 	const char *extension_string
 ) {
 
@@ -93,7 +93,7 @@ const char *http_content_type_mime_with_extension (
 }
 
 // a NULL content type is not json
-bool http_content_type_is_json (
+bool cerver_http_content_type_is_json (
 	const char *description
 ) {
 
@@ -101,7 +101,7 @@ bool http_content_type_is_json (
 
 }
 
-ContentType http_content_type_from_filename (
+CerverHttpContentType cerver_http_content_type_from_filename (
 	const char *filename
 ) {
 
@@ -110,6 +110,6 @@ ContentType http_content_type_from_filename (
 		filename, &ext_len
 	);
 
-	return ext ? http_content_type_with_extension (ext) : HTTP_CONTENT_TYPE_NONE;
+	return ext ? cerver_http_content_type_with_extension (ext) : HTTP_CONTENT_TYPE_NONE;
 
 }

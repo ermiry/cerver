@@ -46,7 +46,7 @@ extern "C" {
 struct _HttpHeaderField {
 
 	/** @brief The type of the header, HTTP_HEADER_UNDEFINED when its name is not one of the known headers. */
-	http_header type;
+	CerverHttpHeader type;
 
 	/** @brief Where its line starts in the buffer of the list. */
 	unsigned int offset;
@@ -142,7 +142,7 @@ CERVER_PRIVATE void http_headers_reset (HttpHeaders *headers);
  * @retval 1 a NULL list, an unknown type, an invalid value, or the list is full
  */
 CERVER_PRIVATE u8 http_headers_add (
-	HttpHeaders *headers, const http_header type,
+	HttpHeaders *headers, const CerverHttpHeader type,
 	const char *value, const size_t value_length
 );
 
@@ -175,7 +175,7 @@ CERVER_PRIVATE u8 http_headers_add_with_name (
  * not fit, after the old ones were removed
  */
 CERVER_PRIVATE u8 http_headers_set (
-	HttpHeaders *headers, const http_header type,
+	HttpHeaders *headers, const CerverHttpHeader type,
 	const char *value, const size_t value_length
 );
 
@@ -205,7 +205,7 @@ CERVER_PRIVATE u8 http_headers_set_with_name (
  * @return the headers that were removed, 0 for a NULL list or an unknown type
  */
 CERVER_PRIVATE unsigned int http_headers_remove (
-	HttpHeaders *headers, const http_header type
+	HttpHeaders *headers, const CerverHttpHeader type
 );
 
 /**
@@ -228,7 +228,7 @@ CERVER_PRIVATE unsigned int http_headers_remove_with_name (
  * @return the headers, 0 for a NULL list or an unknown type
  */
 CERVER_PRIVATE unsigned int http_headers_count (
-	const HttpHeaders *headers, const http_header type
+	const HttpHeaders *headers, const CerverHttpHeader type
 );
 
 /**
@@ -252,7 +252,7 @@ CERVER_PRIVATE unsigned int http_headers_count_with_name (
  * @return the header, that belongs to the list; NULL if there is none in the position
  */
 CERVER_PRIVATE const HttpHeaderField *http_headers_find (
-	const HttpHeaders *headers, const http_header type, const unsigned int position
+	const HttpHeaders *headers, const CerverHttpHeader type, const unsigned int position
 );
 
 /**

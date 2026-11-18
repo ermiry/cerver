@@ -7,7 +7,9 @@
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/headers/fields.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/request.h>
 #include <cerver/http/security/proxy.h>
 
@@ -22,9 +24,9 @@ static const char *test_proxy_long_zone = { "fe80:1111:2222:3333:4444:5555:6666:
 static bool test_contains (const char *cidr, const char *ip) {
 
 	HttpProxyNetwork network;
-	test_check_true (http_proxy_network_parse (cidr, &network));
+	test_check_true (cerver_http_proxy_network_parse (cidr, &network));
 
-	return http_proxy_network_contains (&network, ip, strlen (ip));
+	return cerver_http_proxy_network_contains (&network, ip, strlen (ip));
 
 }
 
@@ -32,20 +34,20 @@ static void test_proxy_network_parse (void) {
 
 	HttpProxyNetwork network;
 
-	test_check_true (http_proxy_network_parse ("10.0.0.0/8", &network));
+	test_check_true (cerver_http_proxy_network_parse ("10.0.0.0/8", &network));
 	test_check_unsigned_eq (network.prefix, 8, NULL);
 
 	// an address without a prefix is a single host
-	test_check_true (http_proxy_network_parse ("192.168.1.1", &network));
+	test_check_true (cerver_http_proxy_network_parse ("192.168.1.1", &network));
 	test_check_unsigned_eq (network.prefix, 32, NULL);
 
-	test_check_true (http_proxy_network_parse ("fc00::/7", &network));
+	test_check_true (cerver_http_proxy_network_parse ("fc00::/7", &network));
 	test_check_unsigned_eq (network.prefix, 7, NULL);
 
-	test_check_true (http_proxy_network_parse ("::1", &network));
+	test_check_true (cerver_http_proxy_network_parse ("::1", &network));
 	test_check_unsigned_eq (network.prefix, 128, NULL);
 
-	test_check_true (http_proxy_network_parse ("0.0.0.0/0", &network));
+	test_check_true (cerver_http_proxy_network_parse ("0.0.0.0/0", &network));
 	test_check_unsigned_eq (network.prefix, 0, NULL);
 
 	static const char *invalid[] = {
@@ -55,11 +57,11 @@ static void test_proxy_network_parse (void) {
 	};
 
 	for (size_t i = 0; i < (sizeof (invalid) / sizeof (const char *)); i++) {
-		test_check_false (http_proxy_network_parse (invalid[i], &network));
+		test_check_false (cerver_http_proxy_network_parse (invalid[i], &network));
 	}
 
-	test_check_false (http_proxy_network_parse (NULL, &network));
-	test_check_false (http_proxy_network_parse ("10.0.0.0/8", NULL));
+	test_check_false (cerver_http_proxy_network_parse (NULL, &network));
+	test_check_false (cerver_http_proxy_network_parse ("10.0.0.0/8", NULL));
 
 }
 
@@ -92,12 +94,12 @@ static void test_proxy_network_contains (void) {
 
 }
 
-static HttpCerver *test_proxy_cerver (const HttpTrustedProxies trusted_proxies) {
+static HttpCerver *test_proxy_cerver (const CerverHttpTrustedProxies trusted_proxies) {
 
-	HttpCerver *http_cerver = http_cerver_create (NULL);
+	HttpCerver *http_cerver = cerver_http_create (NULL);
 	test_check_ptr (http_cerver);
 
-	http_cerver_set_trusted_proxies (http_cerver, trusted_proxies);
+	cerver_http_set_trusted_proxies (http_cerver, trusted_proxies);
 
 	return http_cerver;
 
@@ -105,7 +107,7 @@ static HttpCerver *test_proxy_cerver (const HttpTrustedProxies trusted_proxies) 
 
 static bool test_trusted (const HttpCerver *http_cerver, const char *ip) {
 
-	return http_proxy_is_trusted (http_cerver, ip, strlen (ip));
+	return cerver_http_proxy_is_trusted (http_cerver, ip, strlen (ip));
 
 }
 
@@ -115,7 +117,7 @@ static void test_proxy_is_trusted (void) {
 	test_check_false (test_trusted (http_cerver, test_proxy_nginx));
 	test_check_false (test_trusted (http_cerver, "127.0.0.1"));
 
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 	test_check_true (test_trusted (http_cerver, test_proxy_nginx));
 	test_check_true (test_trusted (http_cerver, "127.0.0.1"));
 	test_check_true (test_trusted (http_cerver, "10.8.0.1"));
@@ -126,20 +128,20 @@ static void test_proxy_is_trusted (void) {
 	test_check_false (test_trusted (http_cerver, test_proxy_client));
 	test_check_false (test_trusted (http_cerver, "2001:db8::1"));
 
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_LIST);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_LIST);
 	test_check_false (test_trusted (http_cerver, test_proxy_nginx));
-	test_check_unsigned_eq (http_cerver_add_trusted_proxy (http_cerver, "172.18.0.0/16"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_add_trusted_proxy (http_cerver, test_proxy_outside), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_trusted_proxy (http_cerver, "172.18.0.0/16"), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_trusted_proxy (http_cerver, test_proxy_outside), 0, NULL);
 	test_check_true (test_trusted (http_cerver, test_proxy_nginx));
 	test_check_true (test_trusted (http_cerver, test_proxy_outside));
 	test_check_false (test_trusted (http_cerver, "172.19.0.1"));
 	test_check_false (test_trusted (http_cerver, "127.0.0.1"));
 
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_ALL);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_ALL);
 	test_check_true (test_trusted (http_cerver, test_proxy_client));
 	test_check_false (test_trusted (http_cerver, "not an address"));
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 }
 
@@ -148,18 +150,18 @@ static void test_proxy_add_errors (void) {
 
 	HttpCerver *http_cerver = test_proxy_cerver (HTTP_TRUSTED_PROXIES_LIST);
 
-	test_check_unsigned_eq (http_cerver_add_trusted_proxy (http_cerver, "10.0.0.0/40"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 1, NULL);
+	test_check_unsigned_eq (cerver_http_add_trusted_proxy (http_cerver, "10.0.0.0/40"), 1, NULL);
+	test_check_unsigned_eq (cerver_http_routes_errors_count (http_cerver), 1, NULL);
 
 	for (unsigned int i = 0; i < HTTP_TRUSTED_PROXIES_SIZE; i++) {
-		test_check_unsigned_eq (http_cerver_add_trusted_proxy (http_cerver, "10.0.0.0/8"), 0, NULL);
+		test_check_unsigned_eq (cerver_http_add_trusted_proxy (http_cerver, "10.0.0.0/8"), 0, NULL);
 	}
 
-	test_check_unsigned_eq (http_cerver_add_trusted_proxy (http_cerver, "10.0.0.0/8"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 2, NULL);
+	test_check_unsigned_eq (cerver_http_add_trusted_proxy (http_cerver, "10.0.0.0/8"), 1, NULL);
+	test_check_unsigned_eq (cerver_http_routes_errors_count (http_cerver), 2, NULL);
 	test_check_unsigned_eq (http_cerver->n_trusted_proxies, HTTP_TRUSTED_PROXIES_SIZE, NULL);
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 }
 
@@ -175,7 +177,7 @@ static void test_proxy_expect_client (
 	if (forwarded_for) request->headers[HTTP_HEADER_FORWARDED_FOR] = str_new (forwarded_for);
 	if (real_ip) request->headers[HTTP_HEADER_REAL_IP] = str_new (real_ip);
 
-	http_proxy_resolve_client_ip (http_cerver, peer, request, request->client_ip);
+	cerver_http_proxy_resolve_client_ip (http_cerver, peer, request, request->client_ip);
 	test_check_str_eq (http_request_get_client_ip (request), expected, NULL);
 
 	http_request_delete (request);
@@ -190,7 +192,7 @@ static void test_proxy_resolve (void) {
 	test_proxy_expect_client (http_cerver, test_proxy_nginx, NULL, test_proxy_client, test_proxy_nginx);
 	test_proxy_expect_client (http_cerver, test_proxy_nginx, NULL, NULL, test_proxy_nginx);
 
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 
 	// nginx in a private network forwards the client
 	test_proxy_expect_client (http_cerver, test_proxy_nginx, test_proxy_client, NULL, test_proxy_client);
@@ -226,34 +228,34 @@ static void test_proxy_resolve (void) {
 	test_proxy_expect_client (http_cerver, test_proxy_link_local, test_proxy_client, NULL, test_proxy_client);
 
 	// a peer with a long zone is kept whole, it was cut at INET6_ADDRSTRLEN bytes
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_NONE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_NONE);
 	test_proxy_expect_client (http_cerver, test_proxy_long_zone, test_proxy_client, NULL, test_proxy_long_zone);
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 
 	// a peer that is not a trusted proxy is the client
 	test_proxy_expect_client (http_cerver, test_proxy_outside, test_proxy_client, test_proxy_client, test_proxy_outside);
 
 	// any peer is trusted
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_ALL);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_ALL);
 	test_proxy_expect_client (http_cerver, test_proxy_outside, "1.2.3.4, 203.0.113.7", NULL, "1.2.3.4");
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 	// without a peer
 	char client_ip[HTTP_CLIENT_IP_SIZE] = { 0 };
-	http_proxy_resolve_client_ip (NULL, NULL, NULL, client_ip);
+	cerver_http_proxy_resolve_client_ip (NULL, NULL, NULL, client_ip);
 	test_check_str_eq (client_ip, "", NULL);
 
 }
 
 static void test_proxy_strings (void) {
 
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE), "None", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_LIST), "List", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_PRIVATE), "Private", NULL);
-	test_check_str_eq (http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_ALL), "All", NULL);
+	test_check_str_eq (cerver_http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE), "None", NULL);
+	test_check_str_eq (cerver_http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_LIST), "List", NULL);
+	test_check_str_eq (cerver_http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_PRIVATE), "Private", NULL);
+	test_check_str_eq (cerver_http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_ALL), "All", NULL);
 
-	test_check_ptr (http_trusted_proxies_description (HTTP_TRUSTED_PROXIES_ALL));
+	test_check_ptr (cerver_http_trusted_proxies_description (HTTP_TRUSTED_PROXIES_ALL));
 
 }
 

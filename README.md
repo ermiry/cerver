@@ -163,7 +163,7 @@ LD_LIBRARY_PATH=bin ./examples/bin/start client
 
 ### A web cerver
 
-[examples/web/web.c](./examples/web/web.c) is a web cerver with static files and a few routes. A web cerver is created with `CERVER_TYPE_WEB`, and its routes are registered in its `HttpCerver`:
+[examples/web/web.c](./examples/web/web.c) is a web cerver with static files and a few routes. A web cerver is created with `CERVER_TYPE_WEB`: it runs on event loops, one for each processor, and its routes are the endpoints of the groups of its `CerverHttp`:
 
 ``` c
 web_cerver = cerver_create (
@@ -172,15 +172,15 @@ web_cerver = cerver_create (
 
 if (web_cerver) {
 	cerver_set_thpool_n_threads (web_cerver, 4);
-	cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
 
-	HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (web_cerver);
 
-	http_cerver_static_path_add (http_cerver, "./examples/web/public");
+	cerver_http_static_path_add (http_cerver, "./examples/web/public");
+
+	CerverHttpGroup *main_group = cerver_http_group_create (http_cerver, "/");
 
 	// GET /test
-	HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
-	http_cerver_route_register (http_cerver, test_route);
+	(void) cerver_http_group_get (main_group, "test", test_handler);
 
 	if (!cerver_start (web_cerver)) {
 		finish ();
@@ -192,24 +192,14 @@ if (web_cerver) {
 }
 ```
 
-Each handler gets the request and sends its response:
+Each handler takes the context of its request: it reads the request and writes its response with it. A handler runs in the event loop that read its request, so one that waits (a database, another service, a file) chooses a pool of threads (`cerver_http_set_handlers_pool ()`, `cerver_http_endpoint_set_pool ()`):
 
 ``` c
-static void test_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void test_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Test route works!"
 	);
-
-	if (res) {
-		(void) http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 ```

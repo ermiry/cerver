@@ -297,7 +297,7 @@ typedef struct CerverHttpField {
 	CerverHttpSpan value;
 
 	/** @brief The known header of the name (case insensitive), `HTTP_HEADER_UNDEFINED` for any other one. */
-	http_header type;
+	CerverHttpHeader type;
 
 	/** @brief Its flags, #CERVER_HTTP_FIELD_FOLDED. */
 	unsigned int flags;

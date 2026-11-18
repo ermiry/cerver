@@ -20,7 +20,8 @@
 #include <cerver/core/cerver.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/settings.h>
@@ -56,13 +57,9 @@
 
 static Cerver *fuzz_cerver = NULL;
 
-static void fuzz_ok_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void fuzz_ok_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -78,16 +75,13 @@ static bool fuzz_web_sockets = true;
 // so it depends only on the bytes of the request
 #define FUZZ_AUTHORIZATION_ACCEPTED		'a'
 
-static unsigned int fuzz_authentication (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int fuzz_authentication (CerverHttpContext *context) {
 
-	(void) http_receive;
-
-	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
 	return (
-		authorization && authorization->len && (authorization->str[0] == FUZZ_AUTHORIZATION_ACCEPTED)
+		!cerver_http_view_is_missing (authorization) && authorization.length
+		&& (authorization.data[0] == FUZZ_AUTHORIZATION_ACCEPTED)
 	) ? 0 : 1;
 
 }
@@ -95,51 +89,51 @@ static unsigned int fuzz_authentication (
 // the requests with a custom authentication: before their body, with it, and their uploads
 static void fuzz_routes_secure (HttpCerver *http_cerver) {
 
-	HttpGroup *secure = http_cerver_group_create (http_cerver, "secure");
-	http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_group_set_authentication_handler (secure, fuzz_authentication);
+	HttpGroup *secure = cerver_http_group_create (http_cerver, "secure");
+	cerver_http_group_set_auth (secure, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_group_set_authentication_handler (secure, fuzz_authentication);
 
-	(void) http_group_get (secure, "users/:id", fuzz_ok_handler);
-	(void) http_group_post (secure, "items", fuzz_ok_handler);
+	(void) cerver_http_group_get (secure, "users/:id", fuzz_ok_handler);
+	(void) cerver_http_group_post (secure, "items", fuzz_ok_handler);
 
-	HttpEndpoint *upload = http_group_post (secure, "upload", fuzz_ok_handler);
-	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	HttpEndpoint *upload = cerver_http_group_post (secure, "upload", fuzz_ok_handler);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	HttpEndpoint *with_body = http_group_post (secure, "body", fuzz_ok_handler);
-	http_endpoint_set_authentication_with_body (with_body, true);
+	HttpEndpoint *with_body = cerver_http_group_post (secure, "body", fuzz_ok_handler);
+	cerver_http_endpoint_set_authentication_with_body (with_body, true);
 
 }
 
 // the upgrades to WebSocket, a socket pair never starts their connections
 static void fuzz_routes_web_socket (HttpGroup *api) {
 
-	HttpEndpoint *socket = http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
+	HttpEndpoint *socket = cerver_http_group_web_socket_add (api, "socket", &fuzz_web_socket_handlers);
 	const char *protocols[] = { "chat", "superchat" };
-	(void) http_endpoint_set_web_socket_protocols (socket, protocols, 2);
-	http_endpoint_set_web_socket_compression (socket, true);
-	http_endpoint_set_web_socket_origin_check (socket, true);
+	(void) cerver_http_endpoint_set_web_socket_protocols (socket, protocols, 2);
+	cerver_http_endpoint_set_web_socket_compression (socket, true);
+	cerver_http_endpoint_set_web_socket_origin_check (socket, true);
 
 }
 
 static void fuzz_routes (HttpCerver *http_cerver) {
 
-	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
+	HttpGroup *api = cerver_http_group_create (http_cerver, "api");
 
 	// the conditional requests, the compression and the CORS of every response
-	http_group_set_cors (api, true);
-	http_group_set_etag (api, true);
-	http_group_set_compression (api, true);
+	cerver_http_group_set_cors (api, true);
+	cerver_http_group_set_etag (api, true);
+	cerver_http_group_set_compression (api, true);
 
-	(void) http_group_get (api, "users/:id<int>", fuzz_ok_handler);
-	(void) http_group_get (api, "users/:name", fuzz_ok_handler);
-	(void) http_group_post (api, "items/:id<uuid>/update", fuzz_ok_handler);
-	(void) http_group_patch (api, "files/*", fuzz_ok_handler);
+	(void) cerver_http_group_get (api, "users/:id<int>", fuzz_ok_handler);
+	(void) cerver_http_group_get (api, "users/:name", fuzz_ok_handler);
+	(void) cerver_http_group_post (api, "items/:id<uuid>/update", fuzz_ok_handler);
+	(void) cerver_http_group_patch (api, "files/*", fuzz_ok_handler);
 
-	HttpEndpoint *upload = http_group_post (api, "upload", fuzz_ok_handler);
-	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	HttpEndpoint *upload = cerver_http_group_post (api, "upload", fuzz_ok_handler);
+	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
 
-	HttpEndpoint *private_endpoint = http_group_get (api, "private", fuzz_ok_handler);
-	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
+	HttpEndpoint *private_endpoint = cerver_http_group_get (api, "private", fuzz_ok_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
 
 	if (fuzz_web_sockets) fuzz_routes_web_socket (api);
 
@@ -174,24 +168,24 @@ static void fuzz_cerver_create (void) {
 
 	if (!fuzz_cerver) abort ();
 
-	HttpCerver *http_cerver = (HttpCerver *) fuzz_cerver->cerver_data;
+	HttpCerver *http_cerver = cerver_http_get (fuzz_cerver);
 
 	fuzz_routes (http_cerver);
 
 	// the request id, and the client's address from X-Forwarded-For and X-Real-IP
-	http_cerver_set_request_id (http_cerver, true);
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
-	(void) http_cerver_add_origin_to_whitelist (http_cerver, FUZZ_ORIGIN);
+	cerver_http_set_request_id (http_cerver, true);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	(void) cerver_http_add_origin_to_whitelist (http_cerver, FUZZ_ORIGIN);
 
 	(void) mkdir (FUZZ_UPLOADS_PATH, FUZZ_DIRECTORY_MODE);
-	http_cerver_set_uploads_path (http_cerver, FUZZ_UPLOADS_PATH);
-	http_cerver_set_default_uploads_filename_generator (http_cerver);
-	http_cerver_set_uploads_delete_when_done (http_cerver, true);
+	cerver_http_set_uploads_path (http_cerver, FUZZ_UPLOADS_PATH);
+	cerver_http_set_default_uploads_filename_generator (http_cerver);
+	cerver_http_set_uploads_delete_when_done (http_cerver, true);
 
 	fuzz_public_create ();
-	(void) http_cerver_static_path_add (http_cerver, FUZZ_PUBLIC_PATH);
+	(void) cerver_http_static_path_add (http_cerver, FUZZ_PUBLIC_PATH);
 
-	if (http_cerver_init (http_cerver)) abort ();
+	if (cerver_http_init (http_cerver)) abort ();
 
 }
 

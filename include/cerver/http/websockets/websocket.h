@@ -190,7 +190,7 @@ CERVER_EXPORT struct _HttpCerver *http_web_socket_get_http_cerver (const HttpWeb
 CERVER_EXPORT const struct _HttpEndpoint *http_web_socket_get_endpoint (const HttpWebSocket *web_socket);
 
 /**
- * @brief Returns the custom data of the endpoint of a connection (http_endpoint_set_custom_data (), or the one that
+ * @brief Returns the custom data of the endpoint of a connection (cerver_http_endpoint_set_custom_data (), or the one that
  * it inherits).
  *
  * @param[in] web_socket the connection

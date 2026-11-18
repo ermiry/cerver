@@ -4,10 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/pool.h>
 #include <cerver/http/core/routes.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/request.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
@@ -21,7 +23,7 @@
 #define TREE_POOLS					4
 #define TREE_POOL_THREADS			1
 
-static const RequestMethod tree_methods[TREE_METHODS] = {
+static const CerverHttpMethod tree_methods[TREE_METHODS] = {
 	REQUEST_METHOD_GET, REQUEST_METHOD_POST, REQUEST_METHOD_PUT,
 	REQUEST_METHOD_DELETE, REQUEST_METHOD_PATCH
 };
@@ -32,12 +34,9 @@ static const char *tree_pool_name = { "slow" };
 // the last one is an error of the tree when it is compiled
 static const char *tree_pools[TREE_POOLS] = { NULL, "default", "slow", "missing" };
 
-static void tree_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void tree_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -70,10 +69,10 @@ static void tree_register (HttpGroup *group, const char *line) {
 
 	const unsigned char selector = (unsigned char) line[0];
 
-	const RequestMethod method = tree_methods[selector % TREE_METHODS];
-	HttpEndpoint *endpoint = http_group_route_add (group, method, line + 1, tree_handler);
+	const CerverHttpMethod method = tree_methods[selector % TREE_METHODS];
+	HttpEndpoint *endpoint = cerver_http_group_route_add (group, method, line + 1, tree_handler);
 
-	http_endpoint_set_pool (endpoint, tree_pools[(selector / TREE_METHODS) % TREE_POOLS]);
+	cerver_http_endpoint_set_pool (endpoint, tree_pools[(selector / TREE_METHODS) % TREE_POOLS]);
 
 }
 
@@ -88,12 +87,12 @@ static void tree_match (const HttpCerver *http_cerver, const char *line) {
 
 int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 
-	HttpCerver *http_cerver = http_cerver_create (NULL);
+	HttpCerver *http_cerver = cerver_http_create (NULL);
 	if (!http_cerver) return 0;
 
-	(void) http_cerver_pool_create (http_cerver, tree_pool_name, TREE_POOL_THREADS);
+	(void) cerver_http_pool_create (http_cerver, tree_pool_name, TREE_POOL_THREADS);
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "");
+	HttpGroup *group = cerver_http_group_create (http_cerver, "");
 
 	size_t position = 0;
 	bool registering = true;
@@ -108,7 +107,7 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 	}
 
 	// a registration error leaves the tree without endpoints, the urls are matched anyway
-	(void) http_cerver_routes_compile (http_cerver);
+	(void) cerver_http_routes_compile (http_cerver);
 
 	while (position < size) {
 		char *line = tree_next_line (data, size, &position);
@@ -119,7 +118,7 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 		free (line);
 	}
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 	return 0;
 

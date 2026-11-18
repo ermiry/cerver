@@ -271,7 +271,7 @@ static int outcome_llhttp_headers (llhttp_t *parser) {
 	if (!http) return -1;
 
 	// a request of HTTP/0.9 takes any method of llhttp, cerver only the ones of its table
-	if ((parser->type == HTTP_REQUEST) && !http_request_method_is_valid ((RequestMethod) parser->method)) return -1;
+	if ((parser->type == HTTP_REQUEST) && !cerver_http_method_is_valid ((CerverHttpMethod) parser->method)) return -1;
 
 	const bool served = (parser->http_major == OUTCOME_VERSION_MAJOR);
 	if (!served && !(state->lenient & HTTP_PARSER_LENIENT_VERSION)) {

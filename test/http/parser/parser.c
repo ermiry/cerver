@@ -627,7 +627,7 @@ static void test_parser_fields_types (void) {
 	static char upper[TEST_PARSER_TEXT_SIZE];
 
 	for (unsigned int type = 0; type < HTTP_HEADER_UNDEFINED; type++) {
-		const char *name = http_header_string ((http_header) type);
+		const char *name = cerver_http_header_to_string ((CerverHttpHeader) type);
 		const size_t length = strlen (name);
 
 		for (size_t i = 0; i <= length; i++) {

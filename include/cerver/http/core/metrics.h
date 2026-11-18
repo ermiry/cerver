@@ -1,6 +1,6 @@
 /**
  * @file cerver/http/core/metrics.h
- * @brief The metrics of an HttpCerver in the Prometheus text format.
+ * @brief The metrics of a CerverHttp in the Prometheus text format.
  */
 
 #ifndef _CERVER_HTTP_METRICS_H_
@@ -15,7 +15,7 @@
 /**
  * @defgroup http_metrics Metrics
  * @ingroup http_core
- * @brief The metrics of an HttpCerver, for Prometheus.
+ * @brief The metrics of a CerverHttp, for Prometheus.
  * @{
  */
 
@@ -44,11 +44,11 @@ struct _HttpCerver;
  * requests, the threads of its pool, its WebSocket connections and, for every endpoint, its requests, its bytes and
  * the histogram of its process times.
  *
- * @param[in] http_cerver the HttpCerver
+ * @param[in] http_cerver the CerverHttp
  * @return a new string that must be deleted with str_delete (), empty if its memory could not be reserved; NULL for
- * a NULL HttpCerver or if the string could not be allocated
+ * a NULL CerverHttp or if the string could not be allocated
  */
-CERVER_PUBLIC String *http_cerver_metrics_generate (
+CERVER_PUBLIC String *cerver_http_metrics_generate (
 	const struct _HttpCerver *http_cerver
 );
 
