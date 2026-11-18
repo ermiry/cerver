@@ -573,8 +573,6 @@ static void http_cerver_admin_handler_connections_stats (
 	cerver_json_writer_object_begin (writer);
 
 	http_json_member_integer (writer, "n_reused", (i64) CERVER_STATS_GET (http_cerver->n_reused_connections));
-	http_json_member_integer (writer, "n_followed", (i64) CERVER_STATS_GET (http_cerver->n_followed_requests));
-	http_json_member_integer (writer, "n_pool_read", (i64) CERVER_STATS_GET (http_cerver->n_pool_read_requests));
 	http_json_member_integer (writer, "n_ended", (i64) ended);
 	http_json_member_integer (writer, "n_requests", (i64) CERVER_STATS_GET (http_cerver->n_connection_requests));
 
