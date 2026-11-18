@@ -1,6 +1,6 @@
 /**
  * @file cerver/http/core/uploads.h
- * @brief Where and how the files of the multipart requests of an HttpCerver are saved.
+ * @brief Where and how the files of the multipart requests of a CerverHttp are saved.
  */
 
 #ifndef _CERVER_HTTP_CORE_UPLOADS_H_
@@ -19,42 +19,42 @@ extern "C" {
  * @ingroup http_core
  * @brief The directory, the names and the modes of the uploaded files.
  *
- * The setters ignore a NULL HttpCerver.
+ * The setters ignore a NULL CerverHttp.
  * @{
  */
 
 /**
  * @brief Sets the directory where the files of the multipart requests are saved, replacing the previous one.
  *
- * @param[in,out] http_cerver the HttpCerver
- * @param[in] uploads_path the path, truncated to HTTP_CERVER_UPLOADS_PATH_SIZE - 1 characters; NULL keeps the
+ * @param[in,out] http_cerver the CerverHttp
+ * @param[in] uploads_path the path, truncated to CERVER_HTTP_UPLOADS_PATH_SIZE - 1 characters; NULL keeps the
  * current one
  */
-CERVER_EXPORT void http_cerver_set_uploads_path (
-	HttpCerver *http_cerver, const char *uploads_path
+CERVER_EXPORT void cerver_http_set_uploads_path (
+	CerverHttp *http_cerver, const char *uploads_path
 );
 
 /**
- * @brief Works like http_cerver_set_uploads_path () with a path generated from a format.
+ * @brief Works like cerver_http_set_uploads_path () with a path generated from a format.
  *
- * @param[in,out] http_cerver the HttpCerver
+ * @param[in,out] http_cerver the CerverHttp
  * @param[in] format the printf () format of the path, NULL keeps the current one
  * @param[in] ... the arguments of the format
  * @note A path that does not fit is truncated, and its length is the one of the part that was kept; a format that
  * fails leaves the path empty, which disables the uploads.
  */
-CERVER_EXPORT void http_cerver_generate_uploads_path (
-	HttpCerver *http_cerver, const char *format, ...
+CERVER_EXPORT void cerver_http_generate_uploads_path (
+	CerverHttp *http_cerver, const char *format, ...
 ) CERVER_PRINTF_FORMAT (2, 3);
 
 /**
  * @brief Sets the mode of the uploaded files.
  *
- * @param[in,out] http_cerver the HttpCerver
- * @param[in] file_mode the mode, the default is #HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
+ * @param[in,out] http_cerver the CerverHttp
+ * @param[in] file_mode the mode, the default is #CERVER_HTTP_DEFAULT_UPLOADS_FILE_MODE
  */
-CERVER_EXPORT void http_cerver_set_uploads_file_mode (
-	HttpCerver *http_cerver, const unsigned int file_mode
+CERVER_EXPORT void cerver_http_set_uploads_file_mode (
+	CerverHttp *http_cerver, const unsigned int file_mode
 );
 
 /**
@@ -65,12 +65,10 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
  * cerver, even if its fd is reused in the same second, and the index keeps unique the files of a request with the
  * same filename.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] request the request, whose current part gets the name
+ * @param[in,out] context the context of the request, whose current part gets the name
  */
-CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
+CERVER_EXPORT void cerver_http_default_uploads_filename_generator (
+	CerverHttpContext *context
 );
 
 /**
@@ -78,38 +76,35 @@ CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
  *
  * The method sets the generated filename of the current part, up to HTTP_MULTI_PART_GENERATED_FILENAME_SIZE.
  *
- * @param[in,out] http_cerver the HttpCerver
+ * @param[in,out] http_cerver the CerverHttp
  * @param[in] uploads_filename_generator the method, NULL to save each file with the sanitized filename of its part;
  * a method that does not set a name also falls back to it, with a warning
  * @warning With CERVER_HANDLER_TYPE_EVENTS the method runs in an I/O thread, that reads no other connection until
  * it returns: it must not wait.
  */
-CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
-	HttpCerver *http_cerver,
-	void (*uploads_filename_generator)(
-		const struct _HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+CERVER_EXPORT void cerver_http_set_uploads_filename_generator (
+	CerverHttp *http_cerver,
+	CerverHttpHandler uploads_filename_generator
 );
 
 /**
- * @brief Sets http_cerver_default_uploads_filename_generator () as the generator of the names of the uploaded
+ * @brief Sets cerver_http_default_uploads_filename_generator () as the generator of the names of the uploaded
  * files.
  *
- * @param[in,out] http_cerver the HttpCerver
+ * @param[in,out] http_cerver the CerverHttp
  */
-CERVER_EXPORT void http_cerver_set_default_uploads_filename_generator (
-	HttpCerver *http_cerver
+CERVER_EXPORT void cerver_http_set_default_uploads_filename_generator (
+	CerverHttp *http_cerver
 );
 
 /**
  * @brief Sets the mode of the directories of the uploads.
  *
- * @param[in,out] http_cerver the HttpCerver
- * @param[in] dir_mode the mode, the default is #HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
+ * @param[in,out] http_cerver the CerverHttp
+ * @param[in] dir_mode the mode, the default is #CERVER_HTTP_DEFAULT_UPLOADS_DIR_MODE
  */
-CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
-	HttpCerver *http_cerver, const unsigned int dir_mode
+CERVER_EXPORT void cerver_http_set_uploads_dir_mode (
+	CerverHttp *http_cerver, const unsigned int dir_mode
 );
 
 /**
@@ -118,49 +113,44 @@ CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
  * The format is "%d-%ld-%zu" with the socket of the connection, time (NULL) and the sequence of the request; the
  * files of the request share its sequence.
  *
- * @param[in] http_receive the receive of the request
- * @param[in] request the request, that gets the directory
+ * @param[in,out] context the context of the request, that gets the directory
  */
-CERVER_EXPORT void http_cerver_default_uploads_dirname_generator (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
+CERVER_EXPORT void cerver_http_default_uploads_dirname_generator (
+	CerverHttpContext *context
 );
 
 /**
  * @brief Sets the method that generates, for each multipart request, the directory inside the uploads path where
  * its files are saved.
  *
- * @param[in,out] http_cerver the HttpCerver
+ * @param[in,out] http_cerver the CerverHttp
  * @param[in] uploads_dirname_generator the method, NULL to save the files in the uploads path
  * @warning With CERVER_HANDLER_TYPE_EVENTS the method runs in an I/O thread, that reads no other connection until
  * it returns: it must not wait.
  */
-CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
-	HttpCerver *http_cerver,
-	void (*uploads_dirname_generator)(
-		const struct _HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+CERVER_EXPORT void cerver_http_set_uploads_dirname_generator (
+	CerverHttp *http_cerver,
+	CerverHttpHandler uploads_dirname_generator
 );
 
 /**
- * @brief Sets http_cerver_default_uploads_dirname_generator () as the generator of the directories of the uploads.
+ * @brief Sets cerver_http_default_uploads_dirname_generator () as the generator of the directories of the uploads.
  *
- * @param[in,out] http_cerver the HttpCerver
+ * @param[in,out] http_cerver the CerverHttp
  */
-CERVER_EXPORT void http_cerver_set_default_uploads_dirname_generator (
-	HttpCerver *http_cerver
+CERVER_EXPORT void cerver_http_set_default_uploads_dirname_generator (
+	CerverHttp *http_cerver
 );
 
 /**
  * @brief Sets whether the uploaded files are deleted when their request ends, unless they were kept with
  * http_request_multi_part_keep_files ().
  *
- * @param[in,out] http_cerver the HttpCerver
- * @param[in] value true to delete them, the default is #HTTP_CERVER_DEFAULT_UPLOADS_DELETE
+ * @param[in,out] http_cerver the CerverHttp
+ * @param[in] value true to delete them, the default is #CERVER_HTTP_DEFAULT_UPLOADS_DELETE
  */
-CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
-	HttpCerver *http_cerver, bool value
+CERVER_EXPORT void cerver_http_set_uploads_delete_when_done (
+	CerverHttp *http_cerver, bool value
 );
 
 /** @} */

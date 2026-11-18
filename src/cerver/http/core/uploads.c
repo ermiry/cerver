@@ -67,12 +67,12 @@
 
 // sets the default uploads path where any multipart file will be saved
 // this method will replace the previous value with the new one
-void http_cerver_set_uploads_path (
+void cerver_http_set_uploads_path (
 	HttpCerver *http_cerver, const char *uploads_path
 ) {
 
 	if (http_cerver && uploads_path) {
-		(void) c_string_copy_bounded (http_cerver->uploads_path, uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE);
+		(void) c_string_copy_bounded (http_cerver->uploads_path, uploads_path, CERVER_HTTP_UPLOADS_PATH_SIZE);
 
 		http_cerver->uploads_path_len = (int) strlen (
 			http_cerver->uploads_path
@@ -81,10 +81,10 @@ void http_cerver_set_uploads_path (
 
 }
 
-// works like http_cerver_set_uploads_path () but can generate
+// works like cerver_http_set_uploads_path () but can generate
 // a custom path on the fly using variable arguments,
 // its length is the one of the path that fits, an error leaves it empty
-void http_cerver_generate_uploads_path (
+void cerver_http_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 ) {
 
@@ -93,7 +93,7 @@ void http_cerver_generate_uploads_path (
 		va_start (args, format);
 
 		if (vsnprintf (
-			http_cerver->uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE - 1,
+			http_cerver->uploads_path, CERVER_HTTP_UPLOADS_PATH_SIZE - 1,
 			format, args
 		) < 0) {
 			http_cerver->uploads_path[0] = '\0';
@@ -107,8 +107,8 @@ void http_cerver_generate_uploads_path (
 }
 
 // sets the mode_t to be used when creating uploads files
-// the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
-void http_cerver_set_uploads_file_mode (
+// the default value is CERVER_HTTP_DEFAULT_UPLOADS_FILE_MODE
+void cerver_http_set_uploads_file_mode (
 	HttpCerver *http_cerver, const unsigned int file_mode
 ) {
 
@@ -139,10 +139,11 @@ static size_t http_receive_upload_sequence (const HttpReceive *http_receive) {
 // with format "%d-%ld-%zu-%u-%s" using "sock_fd-time (NULL)-sequence-file index-multi_part->filename"
 // the sequence is unique for each request of the cerver, even if its fd is reused in the same second,
 // and the file index keeps unique the files of a request that have the same filename
-void http_cerver_default_uploads_filename_generator (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
+void cerver_http_default_uploads_filename_generator (
+	CerverHttpContext *http_receive
 ) {
+
+	const HttpRequest *request = http_receive->request;
 
 	const MultiPart *mpart = http_request_get_current_mpart (request);
 
@@ -162,12 +163,9 @@ void http_cerver_default_uploads_filename_generator (
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
 // with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_SIZE
-void http_cerver_set_uploads_filename_generator (
+void cerver_http_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
-	void (*uploads_filename_generator)(
-		const HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+	CerverHttpHandler uploads_filename_generator
 ) {
 
 	if (http_cerver) {
@@ -177,20 +175,20 @@ void http_cerver_set_uploads_filename_generator (
 }
 
 // sets the HTTP cerver's uploads filename generator
-// to be http_cerver_default_uploads_filename_generator ()
-void http_cerver_set_default_uploads_filename_generator (
+// to be cerver_http_default_uploads_filename_generator ()
+void cerver_http_set_default_uploads_filename_generator (
 	HttpCerver *http_cerver
 ) {
 
 	if (http_cerver) {
-		http_cerver->uploads_filename_generator = http_cerver_default_uploads_filename_generator;
+		http_cerver->uploads_filename_generator = cerver_http_default_uploads_filename_generator;
 	}
 
 }
 
 // sets the mode_t value to be used when creating uploads dirs
-// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
-void http_cerver_set_uploads_dir_mode (
+// the default value is CERVER_HTTP_DEFAULT_UPLOADS_DIR_MODE
+void cerver_http_set_uploads_dir_mode (
 	HttpCerver *http_cerver, const unsigned int dir_mode
 ) {
 
@@ -203,13 +201,12 @@ void http_cerver_set_uploads_dir_mode (
 // method that can be used to generate multi-part uploads dirnames
 // with format "%d-%ld-%zu" using "sock_fd-time (NULL)-sequence"
 // the files of the request share its sequence
-void http_cerver_default_uploads_dirname_generator (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
+void cerver_http_default_uploads_dirname_generator (
+	CerverHttpContext *http_receive
 ) {
 
 	http_request_set_dirname (
-		request,
+		http_receive->request,
 		"%d-%ld-%zu",
 		http_receive->cr->connection->socket->sock_fd,
 		time (NULL),
@@ -221,12 +218,9 @@ void http_cerver_default_uploads_dirname_generator (
 // sets a method to be called on every new multi-part request
 // that will be used to generate a new directory
 // inside the uploads path to save all the files from the request
-void http_cerver_set_uploads_dirname_generator (
+void cerver_http_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
-	void (*uploads_dirname_generator)(
-		const HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+	CerverHttpHandler uploads_dirname_generator
 ) {
 
 	if (http_cerver) {
@@ -236,13 +230,13 @@ void http_cerver_set_uploads_dirname_generator (
 }
 
 // sets the HTTP cerver's uploads dirname generator
-// to be http_cerver_default_uploads_dirname_generator ()
-void http_cerver_set_default_uploads_dirname_generator (
+// to be cerver_http_default_uploads_dirname_generator ()
+void cerver_http_set_default_uploads_dirname_generator (
 	HttpCerver *http_cerver
 ) {
 
 	if (http_cerver) {
-		http_cerver->uploads_dirname_generator = http_cerver_default_uploads_dirname_generator;
+		http_cerver->uploads_dirname_generator = cerver_http_default_uploads_dirname_generator;
 	}
 
 }
@@ -250,8 +244,8 @@ void http_cerver_set_default_uploads_dirname_generator (
 // specifies whether uploads are deleted after the requested has ended
 // unless the request files have been explicitly saved using
 // http_request_multi_part_keep_files ()
-// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
-void http_cerver_set_uploads_delete_when_done (
+// the default value is CERVER_HTTP_DEFAULT_UPLOADS_DELETE
+void cerver_http_set_uploads_delete_when_done (
 	HttpCerver *http_cerver, bool value
 ) {
 
