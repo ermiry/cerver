@@ -12,8 +12,9 @@ typedef enum FaultsFunction {
 	FAULTS_FUNCTION_CALLOC = 1,
 	FAULTS_FUNCTION_REALLOC = 2,
 	FAULTS_FUNCTION_THREAD = 3,
+	FAULTS_FUNCTION_SYSCALL = 4,
 
-	FAULTS_FUNCTION_COUNT = 4
+	FAULTS_FUNCTION_COUNT = 5
 
 } FaultsFunction;
 
@@ -32,6 +33,10 @@ extern void faults_arm (
 extern void faults_arm_after (
 	const FaultsFunction function, const bool this_thread, const size_t size, const unsigned int passed
 );
+
+// the next call of syscall () with a number fails once with an errno, after some calls with that number were
+// left to pass: cerver makes the system calls of io_uring with syscall (), no other one
+extern void faults_arm_syscall (const long number, const int error, const unsigned int passed);
 
 // the function does not fail, even if it was armed and not called
 extern void faults_disarm (const FaultsFunction function);
