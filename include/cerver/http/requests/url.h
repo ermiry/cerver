@@ -29,7 +29,7 @@ extern "C" {
  * @param[in] str the string
  * @return a new string, released with free (); NULL for a NULL string or if it could not be allocated
  */
-CERVER_PUBLIC char *http_url_encode (const char *str);
+CERVER_PUBLIC char *cerver_http_url_encode (const char *str);
 
 /**
  * @brief Returns the url-decoded version of a string.
@@ -39,7 +39,7 @@ CERVER_PUBLIC char *http_url_encode (const char *str);
  * @param[in] str the string
  * @return a new string, released with free (); NULL for a NULL string or if it could not be allocated
  */
-CERVER_PUBLIC char *http_url_decode (const char *str);
+CERVER_PUBLIC char *cerver_http_url_decode (const char *str);
 
 /**
  * @brief Percent-decodes a path segment.
@@ -52,7 +52,7 @@ CERVER_PUBLIC char *http_url_decode (const char *str);
  * @param[in] length the bytes of the segment
  * @return the length of the decoded value
  */
-CERVER_PUBLIC size_t http_url_decode_path (
+CERVER_PUBLIC size_t cerver_http_url_decode_path (
 	char *destination, const char *source, const size_t length
 );
 

@@ -104,13 +104,13 @@ extern "C" {
 /**
  * @brief A content type, one `HTTP_CONTENT_TYPE_<name>` for each row of #HTTP_CONTENT_TYPE_MAP.
  */
-typedef enum ContentType {
+typedef enum CerverHttpContentType {
 
 	#define XX(num, name, extension, description, mime) HTTP_CONTENT_TYPE_##name = num,
 	HTTP_CONTENT_TYPE_MAP(XX)
 	#undef XX
 
-} ContentType;
+} CerverHttpContentType;
 
 /**
  * @brief Returns the extension of a content type, like "json".
@@ -119,8 +119,8 @@ typedef enum ContentType {
  * @return the extension of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value out
  * of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_content_type_extension (
-	const ContentType content_type
+CERVER_PUBLIC const char *cerver_http_content_type_extension (
+	const CerverHttpContentType content_type
 );
 
 /**
@@ -130,8 +130,8 @@ CERVER_PUBLIC const char *http_content_type_extension (
  * @return the description of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value
  * out of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_content_type_description (
-	const ContentType content_type
+CERVER_PUBLIC const char *cerver_http_content_type_description (
+	const CerverHttpContentType content_type
 );
 
 /**
@@ -141,8 +141,8 @@ CERVER_PUBLIC const char *http_content_type_description (
  * @return the mime of its row in #HTTP_CONTENT_TYPE_MAP, or the one of HTTP_CONTENT_TYPE_NONE for a value out of
  * the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_content_type_mime (
-	const ContentType content_type
+CERVER_PUBLIC const char *cerver_http_content_type_mime (
+	const CerverHttpContentType content_type
 );
 
 /**
@@ -152,7 +152,7 @@ CERVER_PUBLIC const char *http_content_type_mime (
  * @return the first row of #HTTP_CONTENT_TYPE_MAP with the mime, HTTP_CONTENT_TYPE_NONE for a NULL or an unknown
  * mime
  */
-CERVER_PUBLIC ContentType http_content_type_with_mime (
+CERVER_PUBLIC CerverHttpContentType cerver_http_content_type_with_mime (
 	const char *mime_string
 );
 
@@ -162,7 +162,7 @@ CERVER_PUBLIC ContentType http_content_type_with_mime (
  * @param[in] extension_string the extension, like "png"
  * @return the content type, HTTP_CONTENT_TYPE_NONE for a NULL or an unknown extension
  */
-CERVER_PUBLIC ContentType http_content_type_with_extension (
+CERVER_PUBLIC CerverHttpContentType cerver_http_content_type_with_extension (
 	const char *extension_string
 );
 
@@ -172,7 +172,7 @@ CERVER_PUBLIC ContentType http_content_type_with_extension (
  * @param[in] extension_string the extension, like "png"
  * @return the mime, a static string that must not be freed; NULL for a NULL or an unknown extension
  */
-CERVER_PUBLIC const char *http_content_type_mime_with_extension (
+CERVER_PUBLIC const char *cerver_http_content_type_mime_with_extension (
 	const char *extension_string
 );
 
@@ -183,7 +183,7 @@ CERVER_PUBLIC const char *http_content_type_mime_with_extension (
  * @return true for json, false for any other value or NULL
  * @note A value with parameters, like "application/json; charset=utf-8", is not json for it.
  */
-CERVER_PUBLIC bool http_content_type_is_json (
+CERVER_PUBLIC bool cerver_http_content_type_is_json (
 	const char *description
 );
 
@@ -193,7 +193,7 @@ CERVER_PUBLIC bool http_content_type_is_json (
  * @param[in] filename the name of the file
  * @return the content type, HTTP_CONTENT_TYPE_NONE when it has no extension or an unknown one
  */
-CERVER_PUBLIC ContentType http_content_type_from_filename (
+CERVER_PUBLIC CerverHttpContentType cerver_http_content_type_from_filename (
 	const char *filename
 );
 

@@ -13,7 +13,7 @@
 /**
  * @defgroup http_requests Requests
  * @ingroup http
- * @brief The requests that an HttpCerver receives: their methods, their urls, their contents and their bodies.
+ * @brief The requests that a CerverHttp receives: their methods, their urls, their contents and their bodies.
  */
 
 /**
@@ -77,7 +77,7 @@ extern "C" {
 /**
  * @brief The method of a request, one `REQUEST_METHOD_<name>` for each row of #REQUEST_METHOD_MAP.
  */
-typedef enum RequestMethod {
+typedef enum CerverHttpMethod {
 
 	#define XX(num, name, string) REQUEST_METHOD_##name = num,
 	REQUEST_METHOD_MAP(XX)
@@ -86,7 +86,7 @@ typedef enum RequestMethod {
 	/** @brief Any method outside #REQUEST_METHOD_MAP, the method of a request that has not been parsed. */
 	REQUEST_METHOD_UNDEFINED = 255
 
-} RequestMethod;
+} CerverHttpMethod;
 
 /**
  * @brief Returns the string of a method.
@@ -95,8 +95,8 @@ typedef enum RequestMethod {
  * @return the string of its row in #REQUEST_METHOD_MAP, "Undefined" for a method outside it; a static string that
  * must not be freed
  */
-CERVER_PUBLIC const char *http_request_method_str (
-	const RequestMethod request_method
+CERVER_PUBLIC const char *cerver_http_method_to_string (
+	const CerverHttpMethod request_method
 );
 
 /**
@@ -105,8 +105,8 @@ CERVER_PUBLIC const char *http_request_method_str (
  * @param[in] request_method the method
  * @return true for a method of the table
  */
-CERVER_PUBLIC bool http_request_method_is_valid (
-	const RequestMethod request_method
+CERVER_PUBLIC bool cerver_http_method_is_valid (
+	const CerverHttpMethod request_method
 );
 
 /** @} */

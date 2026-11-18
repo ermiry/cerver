@@ -4,8 +4,8 @@
 
 static const char *request_method_undefined = { "Undefined" };
 
-const char *http_request_method_str (
-	const RequestMethod request_method
+const char *cerver_http_method_to_string (
+	const CerverHttpMethod request_method
 ) {
 
 	switch (request_method) {
@@ -21,8 +21,8 @@ const char *http_request_method_str (
 }
 
 // returns true if the method is one of REQUEST_METHOD_MAP
-bool http_request_method_is_valid (
-	const RequestMethod request_method
+bool cerver_http_method_is_valid (
+	const CerverHttpMethod request_method
 ) {
 
 	switch (request_method) {
