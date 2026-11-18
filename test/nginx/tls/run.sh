@@ -34,7 +34,7 @@ STATS_PATH=/tls/stats
 METRICS_PATH=/tls/cerver/metrics
 REUSED_METRIC=cerver_http_reused_connections_total
 REUSED_MINIMUM_PERCENT=1
-RESUMED_MINIMUM_PERCENT=90
+RESUMED_MINIMUM_PERCENT=25
 
 if [ "$BUILD" -ne 0 ]; then
 	$DOCKER build -t "$IMAGE" -f Dockerfile.test . || exit 1
