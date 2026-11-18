@@ -2,16 +2,16 @@ FROM gcc:16.2 as builder
 
 WORKDIR /opt/cerver
 
-RUN apt-get update && apt-get install -y libssl-dev
+RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev
 
 # cerver
 COPY . .
-RUN make TYPE=test -j4 && make TYPE=test -j4 examples
+RUN make TYPE=test CURL=1 -j4 && make TYPE=test CURL=1 -j4 examples
 
 ############
 FROM debian:trixie-slim
 
-ARG RUNTIME_DEPS='libssl-dev'
+ARG RUNTIME_DEPS='libssl-dev libcurl4-openssl-dev'
 
 RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
 
