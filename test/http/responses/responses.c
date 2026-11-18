@@ -9,6 +9,8 @@
 
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/responses/response.h>
 #include <cerver/http/security/origin.h>
 
@@ -42,7 +44,7 @@ static HttpCerver *http_cerver = NULL;
 
 // the response has one header with the type and its line is the expected one
 static void responses_check_header (
-	const HttpResponse *response, const http_header type, const char *expected_line
+	const HttpResponse *response, const CerverHttpHeader type, const char *expected_line
 ) {
 
 	test_check_unsigned_eq (http_response_header_count (response, type), 1, NULL);
@@ -99,12 +101,12 @@ static void test_http_responses_init (void) {
 		CERVER_VERSION
 	);
 
-	http_cerver = http_cerver_new ();
+	http_cerver = cerver_http_new ();
 
 	test_check_ptr (http_cerver);
 
 	test_check_unsigned_eq (
-		http_responses_init (http_cerver), 0, "Failed to init HTTP responses!"
+		http_responses_init (), 0, "Failed to init HTTP responses!"
 	);
 
 }
@@ -113,7 +115,7 @@ static void test_http_responses_end (void) {
 
 	http_responses_end ();
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 }
 
@@ -224,7 +226,7 @@ static void test_http_response_add_header (void) {
 	// add one header
 	result = http_response_add_header (
 		response, HTTP_HEADER_CONTENT_TYPE,
-		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
+		cerver_http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
 	);
 
 	test_check_unsigned_eq (result, 0, NULL);
@@ -377,7 +379,7 @@ static const char *first_cookie = { "session=first; Path=/" };
 static const char *second_cookie = { "theme=dark; Path=/" };
 
 static void responses_check_value (
-	const HttpResponse *response, const http_header type,
+	const HttpResponse *response, const CerverHttpHeader type,
 	const unsigned int position, const char *expected
 ) {
 
@@ -553,7 +555,7 @@ static void test_http_response_header_invalid (void) {
 
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
 	test_check_unsigned_eq (http_response_add_header (response, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
-	test_check_unsigned_eq (http_response_add_header (response, (http_header) HTTP_HEADERS_SIZE, "one"), 1, NULL);
+	test_check_unsigned_eq (http_response_add_header (response, (CerverHttpHeader) HTTP_HEADERS_SIZE, "one"), 1, NULL);
 
 	test_check_unsigned_eq (http_response_header_add (NULL, HTTP_HEADER_LOCATION, "/home"), 1, NULL);
 	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_LOCATION, NULL), 1, NULL);
@@ -649,57 +651,40 @@ static void test_http_response_header_compiled_again (void) {
 
 }
 
-// the headers of the cerver are added to a response that does not have them
+// the headers of a cerver are kept by it: the header that a response compiles has none of them,
+// they are added when a request of that cerver sends it
 static void test_http_response_header_defaults (void) {
 
-	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-cache"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-store"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header_with_name (http_cerver, "X-Frame-Options", "DENY"), 0, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_LOCATION, "/home\r\nX-Other: 1"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header (http_cerver, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
-	test_check_unsigned_eq (http_cerver_add_responses_header (NULL, HTTP_HEADER_LOCATION, "/home"), 1, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-cache"), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header (http_cerver, HTTP_HEADER_CACHE_CONTROL, "no-store"), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header_with_name (http_cerver, "X-Frame-Options", "DENY"), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header (http_cerver, HTTP_HEADER_LOCATION, "/home\r\nX-Other: 1"), 1, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header (http_cerver, HTTP_HEADER_UNDEFINED, "one"), 1, NULL);
+	test_check_unsigned_eq (cerver_http_add_responses_header (NULL, HTTP_HEADER_LOCATION, "/home"), 1, NULL);
 
 	test_check_unsigned_eq (http_cerver->response_headers.count, 2, NULL);
 
 	// a response without headers
 	HttpResponse *response = test_http_response_new ();
-	responses_check_compiled (response, "200 OK", "Cache-Control: no-store\r\nX-Frame-Options: DENY\r\n");
+	responses_check_compiled (response, "200 OK", "");
 	http_response_delete (response);
 
-	// they go after the headers of the response
+	// a response with its own headers
 	response = test_http_response_new ();
 	test_check_unsigned_eq (http_response_add_content_length_header (response, 128), 0, NULL);
-	responses_check_compiled (
-		response, "200 OK",
-		"Content-Length: 128\r\nCache-Control: no-store\r\nX-Frame-Options: DENY\r\n"
-	);
+	responses_check_compiled (response, "200 OK", "Content-Length: 128\r\n");
 
 	http_response_delete (response);
 
-	// the header of the response is used instead of the one of the cerver
-	response = test_http_response_new ();
-	test_check_unsigned_eq (http_response_header_add (response, HTTP_HEADER_CACHE_CONTROL, "max-age=64"), 0, NULL);
-	test_check_unsigned_eq (http_response_header_add_with_name (response, "x-frame-options", "SAMEORIGIN"), 0, NULL);
-	responses_check_compiled (
-		response, "200 OK",
-		"Cache-Control: max-age=64\r\nx-frame-options: SAMEORIGIN\r\n"
-	);
-
-	http_response_delete (response);
-
-	// the json responses have them
+	// the json responses do not have them either
 	response = http_response_json_key_value (HTTP_STATUS_OK, "oki", "doki");
 	test_check_ptr (response);
-	test_check_true (strstr ((const char *) response->header, "\r\nCache-Control: no-store\r\n") != NULL);
-	test_check_true (strstr ((const char *) response->header, "\r\nX-Frame-Options: DENY\r\n") != NULL);
+	test_check_true (strstr ((const char *) response->header, "Cache-Control") == NULL);
+	test_check_true (strstr ((const char *) response->header, "X-Frame-Options") == NULL);
 	http_response_delete (response);
 
 	// the next tests have no headers of the cerver
 	http_headers_reset (&http_cerver->response_headers);
-
-	response = test_http_response_new ();
-	responses_check_compiled (response, "200 OK", "");
-	http_response_delete (response);
 
 }
 
@@ -763,7 +748,7 @@ static void test_http_response_add_cors_header_from_origin (void) {
 	HttpResponse *response = test_http_response_new ();
 
 	HttpOrigin origin = CERVER_ZERO_INITIALIZER;
-	http_origin_init (&origin, domain);
+	cerver_http_origin_init (&origin, domain);
 
 	u8 result = http_response_add_cors_header_from_origin (
 		response, &origin
@@ -895,9 +880,16 @@ static void test_http_response_headers_null (void) {
 	HttpResponse *response = test_http_response_new ();
 
 	test_check_unsigned_eq (http_response_add_cors_header_from_origin (response, NULL), 1, "added a NULL origin");
-	test_check_unsigned_eq (http_response_add_whitelist_cors_header (response, NULL), 1, "added a NULL domain");
 	test_check_unsigned_eq (
-		http_response_add_whitelist_cors_header_from_origin (response, NULL), 1, "added a NULL whitelist origin"
+		http_response_add_whitelist_cors_header (http_cerver, response, NULL), 1, "added a NULL domain"
+	);
+	test_check_unsigned_eq (
+		http_response_add_whitelist_cors_header (NULL, response, "https://ermiry.com"), 1,
+		"added a domain without a cerver"
+	);
+	test_check_unsigned_eq (
+		http_response_add_whitelist_cors_header_from_origin (http_cerver, response, NULL), 1,
+		"added a NULL whitelist origin"
 	);
 	test_check_unsigned_eq (
 		http_response_add_whitelist_cors_header_from_request (NULL, response), 1, "added the origin of a NULL request"

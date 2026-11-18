@@ -7,6 +7,7 @@
 #include <cerver/types/string.h>
 
 #include <cerver/http/headers/fields.h>
+#include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/conditional.h>
 
@@ -23,7 +24,7 @@ static const char *test_conditional_last_modified = { "Sun, 06 Nov 1994 08:49:37
 
 static void test_etag_from_data (void) {
 
-	test_conditional_etag_length = http_etag_from_data (
+	test_conditional_etag_length = cerver_http_etag_from_data (
 		test_conditional_body, strlen (test_conditional_body), false, test_conditional_etag
 	);
 
@@ -34,17 +35,17 @@ static void test_etag_from_data (void) {
 
 	// the same body always has the same entity tag
 	char again[HTTP_ETAG_SIZE] = { 0 };
-	(void) http_etag_from_data (test_conditional_body, strlen (test_conditional_body), false, again);
+	(void) cerver_http_etag_from_data (test_conditional_body, strlen (test_conditional_body), false, again);
 	test_check_str_eq (again, test_conditional_etag, NULL);
 
 	// a different body has another one
 	char other[HTTP_ETAG_SIZE] = { 0 };
-	(void) http_etag_from_data ("{}", 2, false, other);
+	(void) cerver_http_etag_from_data ("{}", 2, false, other);
 	test_check (strcmp (other, test_conditional_etag), NULL);
 
 	// the compressed representation has the suffix
 	char compressed[HTTP_ETAG_SIZE] = { 0 };
-	const size_t compressed_length = http_etag_from_data (
+	const size_t compressed_length = cerver_http_etag_from_data (
 		test_conditional_body, strlen (test_conditional_body), true, compressed
 	);
 
@@ -52,8 +53,8 @@ static void test_etag_from_data (void) {
 	test_check (strstr (compressed, HTTP_ETAG_COMPRESSED_SUFFIX "\"") != NULL, NULL);
 
 	// an empty body has an entity tag too
-	test_check_unsigned_eq (http_etag_from_data (NULL, 0, false, other), 18, NULL);
-	test_check_unsigned_eq (http_etag_from_data (NULL, 1, false, other), 0, NULL);
+	test_check_unsigned_eq (cerver_http_etag_from_data (NULL, 0, false, other), 18, NULL);
+	test_check_unsigned_eq (cerver_http_etag_from_data (NULL, 1, false, other), 0, NULL);
 
 }
 
@@ -65,16 +66,16 @@ static void test_etag_from_file (void) {
 	file_status.st_mtime = 16;
 
 	char etag[HTTP_ETAG_SIZE] = { 0 };
-	test_check_unsigned_eq (http_etag_from_file (&file_status, etag), 9, NULL);
+	test_check_unsigned_eq (cerver_http_etag_from_file (&file_status, etag), 9, NULL);
 	test_check_str_eq (etag, "W/\"ff-10\"", NULL);
 
-	test_check_unsigned_eq (http_etag_from_file (NULL, etag), 0, NULL);
+	test_check_unsigned_eq (cerver_http_etag_from_file (NULL, etag), 0, NULL);
 
 }
 
 static bool test_none_match (const char *if_none_match) {
 
-	return http_etag_none_match (
+	return cerver_http_etag_none_match (
 		if_none_match, strlen (if_none_match),
 		test_conditional_etag, test_conditional_etag_length
 	);
@@ -116,13 +117,13 @@ static void test_etag_none_match (void) {
 	// an unterminated quote does not read past the value
 	test_check_false (test_none_match ("\"abc"));
 
-	test_check_false (http_etag_none_match (NULL, 0, test_conditional_etag, test_conditional_etag_length));
-	test_check_false (http_etag_none_match ("*", 1, NULL, 0));
+	test_check_false (cerver_http_etag_none_match (NULL, 0, test_conditional_etag, test_conditional_etag_length));
+	test_check_false (cerver_http_etag_none_match ("*", 1, NULL, 0));
 
 }
 
 static HttpRequest *test_conditional_request (
-	const RequestMethod method, const char *if_none_match, const char *if_modified_since
+	const CerverHttpMethod method, const char *if_none_match, const char *if_modified_since
 ) {
 
 	HttpRequest *request = http_request_new ();
@@ -137,13 +138,13 @@ static HttpRequest *test_conditional_request (
 }
 
 static bool test_conditional (
-	const RequestMethod method, const char *if_none_match, const char *if_modified_since,
+	const CerverHttpMethod method, const char *if_none_match, const char *if_modified_since,
 	const time_t last_modified
 ) {
 
 	HttpRequest *request = test_conditional_request (method, if_none_match, if_modified_since);
 
-	const bool not_modified = http_conditional_not_modified (
+	const bool not_modified = cerver_http_conditional_not_modified (
 		request, test_conditional_etag, test_conditional_etag_length, last_modified
 	);
 
@@ -180,7 +181,7 @@ static void test_conditional_not_modified (void) {
 
 	// a request without conditions
 	test_check_false (test_conditional (REQUEST_METHOD_GET, NULL, NULL, modified));
-	test_check_false (http_conditional_not_modified (NULL, test_conditional_etag, test_conditional_etag_length, 0));
+	test_check_false (cerver_http_conditional_not_modified (NULL, test_conditional_etag, test_conditional_etag_length, 0));
 
 }
 

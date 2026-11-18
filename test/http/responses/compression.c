@@ -16,7 +16,7 @@
 
 static bool test_accepts (const char *accept_encoding) {
 
-	return http_compression_accepts_gzip (accept_encoding, strlen (accept_encoding));
+	return cerver_http_compression_accepts_gzip (accept_encoding, strlen (accept_encoding));
 
 }
 
@@ -43,13 +43,13 @@ static void test_compression_accepts_gzip (void) {
 	test_check_false (test_accepts ("gzip;q=0, *"));
 	test_check_true (test_accepts ("*;q=0, gzip"));
 
-	test_check_false (http_compression_accepts_gzip (NULL, 0));
+	test_check_false (cerver_http_compression_accepts_gzip (NULL, 0));
 
 }
 
 static bool test_compressible (const char *content_type) {
 
-	return http_compression_is_compressible (content_type, strlen (content_type));
+	return cerver_http_compression_is_compressible (content_type, strlen (content_type));
 
 }
 
@@ -71,7 +71,7 @@ static void test_compression_is_compressible (void) {
 	test_check_false (test_compressible ("application/zip"));
 	test_check_false (test_compressible (""));
 
-	test_check_false (http_compression_is_compressible (NULL, 0));
+	test_check_false (cerver_http_compression_is_compressible (NULL, 0));
 
 }
 
@@ -86,12 +86,12 @@ static void test_compression_gzip (void) {
 
 	void *compressed = NULL;
 	size_t compressed_length = 0;
-	const bool done = http_compression_gzip (
+	const bool done = cerver_http_compression_gzip (
 		arena, body, TEST_COMPRESSION_BODY_SIZE, HTTP_COMPRESSION_DEFAULT_LEVEL,
 		&compressed, &compressed_length
 	);
 
-	if (http_compression_available ()) {
+	if (cerver_http_compression_available ()) {
 		test_check_true (done);
 		test_check_ptr (compressed);
 		test_check (compressed_length < TEST_COMPRESSION_BODY_SIZE, "the body was not compressed");
@@ -107,11 +107,11 @@ static void test_compression_gzip (void) {
 	}
 
 	// nothing to compress
-	test_check_false (http_compression_gzip (
+	test_check_false (cerver_http_compression_gzip (
 		arena, body, 0, HTTP_COMPRESSION_DEFAULT_LEVEL, &compressed, &compressed_length
 	));
 
-	test_check_false (http_compression_gzip (
+	test_check_false (cerver_http_compression_gzip (
 		NULL, body, TEST_COMPRESSION_BODY_SIZE, HTTP_COMPRESSION_DEFAULT_LEVEL, &compressed, &compressed_length
 	));
 
@@ -122,7 +122,7 @@ static void test_compression_gzip (void) {
 
 void http_tests_compression (void) {
 
-	(void) printf ("Testing HTTP compression (%s zlib)...\n", http_compression_available () ? "with" : "without");
+	(void) printf ("Testing HTTP compression (%s zlib)...\n", cerver_http_compression_available () ? "with" : "without");
 
 	test_compression_accepts_gzip ();
 
