@@ -33,6 +33,8 @@
 #include "cerver/http/responses/response.h"
 #include "cerver/http/websockets/internal.h"
 
+#include "cerver/tls/internal.h"
+
 #include "cerver/utils/log.h"
 
 // how much a buffer of a connection grows each time that it is full
@@ -47,6 +49,7 @@ static void http_connection_unavailable (HttpConnection *connection);
 static void http_connection_kept (HttpConnection *connection);
 static void http_connection_idle (HttpConnection *connection);
 static void http_connection_parked_count (const HttpConnection *connection);
+static void http_connection_read (HttpConnection *connection);
 
 #pragma region buffers
 
@@ -193,6 +196,7 @@ const char *http_connection_state_string (const HttpConnectionState state) {
 		case HTTP_CONNECTION_STATE_WRITE: name = "Write"; break;
 		case HTTP_CONNECTION_STATE_CLOSING: name = "Closing"; break;
 		case HTTP_CONNECTION_STATE_IDLE: name = "Idle"; break;
+		case HTTP_CONNECTION_STATE_HANDSHAKE: name = "Handshake"; break;
 		default: break;
 	}
 
@@ -373,6 +377,63 @@ static unsigned int http_connection_wait (
 
 #pragma endregion
 
+#pragma region tls
+
+// the TLS of the socket of the connection, NULL for a plain one or once its socket was released
+static TlsConnection *http_connection_tls (const HttpConnection *connection) {
+
+	const Socket *socket = connection->cerver_receive.socket;
+
+	return socket ? socket->tls : NULL;
+
+}
+
+// what its TLS already has to be read: records that came and decrypted bytes that a read did not take,
+// that the poller does not report again
+static bool http_connection_tls_pending (const HttpConnection *connection) {
+
+	TlsConnection *tls = http_connection_tls (connection);
+
+	return tls && tls_connection_pending (tls);
+
+}
+
+// one read of what the client sent; with TLS its records are decrypted, and a read never waits
+// returns the bytes, 0 when the client left and less than 0 with errno
+static ssize_t http_connection_receive (
+	const HttpConnection *connection, void *buffer, const size_t size, const int flags
+) {
+
+	TlsConnection *tls = http_connection_tls (connection);
+
+	return tls ?
+		tls_connection_receive (tls, buffer, size, MSG_DONTWAIT) :
+		recv (http_connection_fd (connection), buffer, size, flags);
+
+}
+
+// a connection that waits to read whose TLS already has bytes reads them now, its poller does not report them:
+// a read that is running reads them after its step, so a burst of records is not read by nested calls
+static void http_connection_tls_read_pending (HttpConnection *connection) {
+
+	if (http_connection_tls_pending (connection)) {
+		if (connection->reading) connection->reread = true;
+		else http_connection_read (connection);
+	}
+
+}
+
+// the close_notify of a connection that ends goes before the shutdown of its writes, without waiting
+// for its socket: the close of the socket does not send it again
+static void http_connection_tls_close (const HttpConnection *connection) {
+
+	TlsConnection *tls = http_connection_tls (connection);
+	if (tls) tls_connection_close_now (tls);
+
+}
+
+#pragma endregion
+
 #pragma region end
 
 // what is left of a connection after its socket ended or was taken by a WebSocket:
@@ -425,6 +486,8 @@ static void http_connection_recycle (HttpConnection *connection) {
 
 	connection->drained = 0;
 
+	connection->handshake_deadline = 0;
+
 	connection->job = HTTP_CONNECTION_JOB_NONE;
 	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
 
@@ -466,6 +529,9 @@ static void http_connection_end (HttpConnection *connection) {
 	if (http_receive_is_between_requests (&connection->receive)) event_loop_idle_closed (loop);
 	else http_access_request (&connection->receive);
 
+	// the close of the socket would wait for a full socket to take the close_notify
+	http_connection_tls_close (connection);
+
 	connection_drop (loop->cerver, connection->peer);
 
 	http_connection_request_release (connection);
@@ -480,6 +546,8 @@ static void http_connection_close (HttpConnection *connection) {
 
 	const int sock_fd = http_connection_fd (connection);
 
+	http_connection_tls_close (connection);
+
 	(void) shutdown (sock_fd, SHUT_WR);
 	(void) http_receive_drain_available (sock_fd);
 
@@ -489,6 +557,7 @@ static void http_connection_close (HttpConnection *connection) {
 
 // reads what the client of a closing connection still sends, without waiting
 // the connection ends with the end of the client, an error or HTTP_RECEIVE_DRAIN_SIZE bytes
+// the records of a client with TLS are thrown away as they came, without decrypting them
 static void http_connection_drain (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
@@ -521,6 +590,8 @@ static void http_connection_drain (HttpConnection *connection) {
 // sending it, so its writes are shut down and the rest is read for a short time before the close
 static void http_connection_linger (HttpConnection *connection) {
 
+	http_connection_tls_close (connection);
+
 	(void) shutdown (http_connection_fd (connection), SHUT_WR);
 
 	http_connection_set_state (connection, HTTP_CONNECTION_STATE_CLOSING);
@@ -544,9 +615,13 @@ static void http_connection_linger (HttpConnection *connection) {
 
 #pragma region output
 
+// what the socket did not take: the plain bytes that the connection keeps, or the records that its TLS keeps
 static bool http_connection_output_is_pending (const HttpConnection *connection) {
 
-	return connection->output.offset < connection->output.length;
+	TlsConnection *tls = http_connection_tls (connection);
+
+	return (connection->output.offset < connection->output.length)
+		|| (tls && tls_connection_output_waiting (tls));
 
 }
 
@@ -580,9 +655,23 @@ static unsigned int http_connection_output_keep (
 
 }
 
+// TLS encrypts all the parts, after the records that it still keeps, and sends what the socket takes now:
+// the rest waits in its output, not in the one of the connection
+// returns the bytes of the parts that it took, an errno in error when it failed
+static size_t http_connection_send_tls (
+	TlsConnection *tls, const struct iovec *parts, const int n_parts, int *error
+) {
+
+	const ssize_t written = tls_connection_write (tls, parts, n_parts);
+	if (written < 0) *error = errno;
+
+	return (written > 0) ? (size_t) written : 0;
+
+}
+
 // one sendmsg () that never waits
 // returns the bytes that the socket took, an errno in error when it failed
-static size_t http_connection_send_once (
+static size_t http_connection_send_plain (
 	const HttpConnection *connection, const struct iovec *parts, const int n_parts, int *error
 ) {
 
@@ -603,6 +692,18 @@ static size_t http_connection_send_once (
 
 }
 
+static size_t http_connection_send_once (
+	const HttpConnection *connection, const struct iovec *parts, const int n_parts, int *error
+) {
+
+	TlsConnection *tls = http_connection_tls (connection);
+
+	return tls ?
+		http_connection_send_tls (tls, parts, n_parts, error) :
+		http_connection_send_plain (connection, parts, n_parts, error);
+
+}
+
 u8 http_connection_send (
 	HttpConnection *connection, const struct iovec *parts, const int n_parts,
 	size_t *sent, int *error
@@ -613,9 +714,9 @@ u8 http_connection_send (
 
 	int failure = 0;
 
-	// nothing is sent ahead of what is still kept
-	const size_t taken = http_connection_output_is_pending (connection) ?
-		0 : http_connection_send_once (connection, parts, n_parts, &failure);
+	// nothing is sent ahead of what is still kept; TLS keeps its own records in order
+	const bool sends = http_connection_tls (connection) || !http_connection_output_is_pending (connection);
+	const size_t taken = sends ? http_connection_send_once (connection, parts, n_parts, &failure) : 0;
 
 	if (!failure && (taken < total) && http_connection_output_keep (connection, parts, n_parts, taken)) {
 		failure = ENOBUFS;
@@ -640,9 +741,9 @@ static void http_connection_proceed (
 	switch (next) {
 		case HTTP_CONNECTION_NEXT_READ:
 			http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
-			(void) http_connection_wait (
-				connection, EVENT_INTEREST_READ, http_connection_read_deadline (connection)
-			);
+			if (!http_connection_wait (connection, EVENT_INTEREST_READ, http_connection_read_deadline (connection))) {
+				http_connection_tls_read_pending (connection);
+			}
 			break;
 
 		case HTTP_CONNECTION_NEXT_LINGER:
@@ -689,15 +790,12 @@ static void http_connection_settle (
 
 }
 
-// writes what is left of the output when the socket can be written
-static void http_connection_flush (HttpConnection *connection) {
+// sends the plain bytes that the connection keeps until the socket is full
+static void http_connection_flush_plain (HttpConnection *connection, int *failure, bool *full) {
 
 	HttpConnectionBuffer *output = &connection->output;
 
-	int failure = 0;
-	bool full = false;
-
-	while (http_connection_output_is_pending (connection) && !failure && !full) {
+	while ((output->offset < output->length) && !*failure && !*full) {
 		const ssize_t result = send (
 			http_connection_fd (connection),
 			output->data + output->offset, output->length - output->offset,
@@ -705,9 +803,33 @@ static void http_connection_flush (HttpConnection *connection) {
 		);
 
 		if (result >= 0) output->offset += (size_t) result;
-		else if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) full = true;
-		else if (errno != EINTR) failure = errno;
+		else if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) *full = true;
+		else if (errno != EINTR) *failure = errno;
 	}
+
+}
+
+// sends the records that TLS keeps, what the socket does not take still waits
+static void http_connection_flush_tls (TlsConnection *tls, int *failure, bool *full) {
+
+	const ssize_t waiting = tls_connection_flush (tls);
+
+	if (waiting < 0) *failure = errno;
+	else *full = (waiting > 0);
+
+}
+
+// writes what is left of the output when the socket can be written
+static void http_connection_flush (HttpConnection *connection) {
+
+	HttpConnectionBuffer *output = &connection->output;
+	TlsConnection *tls = http_connection_tls (connection);
+
+	int failure = 0;
+	bool full = false;
+
+	if (tls) http_connection_flush_tls (tls, &failure, &full);
+	else http_connection_flush_plain (connection, &failure, &full);
 
 	if (failure) {
 		http_receive_response_failed (&connection->receive, failure);
@@ -1205,12 +1327,12 @@ static void http_connection_idle_leave (HttpConnection *connection) {
 // one read of what the client sent: a short read is not followed by another one,
 // the poller reports the socket again when there is more
 // the first bytes that an idle connection receives start its next request
-static void http_connection_read (HttpConnection *connection) {
+static void http_connection_read_once (HttpConnection *connection) {
 
 	EventLoop *loop = connection->loop;
 	HttpReceive *receive = &connection->receive;
 
-	const ssize_t received = recv (http_connection_fd (connection), loop->buffer, loop->buffer_size, 0);
+	const ssize_t received = http_connection_receive (connection, loop->buffer, loop->buffer_size, 0);
 	const int error = (received < 0) ? errno : 0;
 
 	receive->diagnostics.last_rc = received;
@@ -1230,6 +1352,26 @@ static void http_connection_read (HttpConnection *connection) {
 	else {
 		http_connection_read_failed (connection, error);
 	}
+
+}
+
+// a step of the read can leave bytes in the TLS of the connection that the poller will not report (a burst of
+// records, decrypted bytes that did not fit): the step asks for another read, and the connection is the one
+// of the loop when it does; a connection that went to its pool or ended never asks for it
+static void http_connection_read (HttpConnection *connection) {
+
+	connection->reading = true;
+
+	bool reading = true;
+	while (reading) {
+		connection->reread = false;
+
+		http_connection_read_once (connection);
+
+		reading = connection->reread;
+	}
+
+	connection->reading = false;
 
 }
 
@@ -1310,6 +1452,17 @@ static void http_connection_continue (HttpConnection *connection) {
 
 }
 
+// the records of the next request of a connection with TLS came with the last one: its poller would not report
+// them to an idle connection, so the loop reads them like the first bytes of one, without giving it to its idle
+// ones; a read that finds no request in them makes it idle
+static void http_connection_tls_next (HttpConnection *connection) {
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_IDLE);
+
+	http_connection_tls_read_pending (connection);
+
+}
+
 // the next request of a connection that is kept, once the one that ended was logged and released:
 // the bytes that followed it are a pipelined request, without them the connection waits idle
 // a loop that stops does not keep its connections
@@ -1320,6 +1473,7 @@ static void http_connection_next (HttpConnection *connection) {
 
 	if (http_connection_loop_is_stopping (connection)) http_connection_close (connection);
 	else if (connection->pending.length) http_connection_continue (connection);
+	else if (http_connection_tls_pending (connection)) http_connection_tls_next (connection);
 	else http_connection_idle (connection);
 
 }
@@ -1358,6 +1512,69 @@ static void http_connection_kept (HttpConnection *connection) {
 	if (http_receive_reset (receive)) http_connection_close (connection);
 	else if (connection->pending.length) http_connection_requeue (connection);
 	else http_connection_next (connection);
+
+}
+
+#pragma endregion
+
+#pragma region handshake
+
+// the handshake of TLS ended: the clock of the first request starts now, and the request that the client sent
+// with its last records is read like the first bytes of any connection
+static void http_connection_handshake_done (HttpConnection *connection) {
+
+	http_connection_deadline_clear (connection);
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	http_connection_request_deadlines (connection);
+
+	http_connection_read (connection);
+
+}
+
+// advances the handshake with what the socket has, and waits in the poller for what it needs next,
+// until the deadline of the handshake; one that failed was counted by its reason
+static void http_connection_handshake (HttpConnection *connection) {
+
+	switch (tls_connection_handshake_advance (http_connection_tls (connection))) {
+		case TLS_HANDSHAKE_STEP_DONE:
+			http_connection_handshake_done (connection);
+			break;
+
+		case TLS_HANDSHAKE_STEP_READ:
+			(void) http_connection_wait (connection, EVENT_INTEREST_READ, connection->handshake_deadline);
+			break;
+
+		case TLS_HANDSHAKE_STEP_WRITE:
+			(void) http_connection_wait (connection, EVENT_INTEREST_WRITE, connection->handshake_deadline);
+			break;
+
+		default:
+			http_connection_end (connection);
+			break;
+	}
+
+}
+
+static void http_connection_handshake_start (HttpConnection *connection) {
+
+	const EventLoop *loop = connection->loop;
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_HANDSHAKE);
+
+	connection->handshake_deadline = loop->now + cerver_tls_handshake_timeout (loop->cerver);
+
+	http_connection_handshake (connection);
+
+}
+
+// a handshake that did not end in time is counted as a timeout of TLS
+static void http_connection_handshake_expired (HttpConnection *connection) {
+
+	tls_connection_handshake_expired (http_connection_tls (connection));
+
+	http_connection_end (connection);
 
 }
 
@@ -1410,14 +1627,25 @@ static unsigned int http_connection_start (HttpConnection *connection, Connectio
 
 }
 
+// what the client sent with its connection is read now, most requests never wait for the poller;
+// the connection of a cerver with TLS runs its handshake first, one without memory for it is closed
+static void http_connection_open (HttpConnection *connection) {
+
+	Cerver *cerver = connection->loop->cerver;
+
+	if (!cerver->tls) http_connection_read (connection);
+	else if (cerver_tls_attach (cerver, connection->peer->socket)) http_connection_handshake_start (connection);
+	else http_connection_end (connection);
+
+}
+
 unsigned int http_connection_accepted (EventLoop *loop, Connection *peer) {
 
 	unsigned int retval = 1;
 
 	HttpConnection *connection = event_loop_connection_take (loop);
 	if (connection && !http_connection_start (connection, peer)) {
-		// what the client sent with its connection is read now, most requests never wait for the poller
-		http_connection_read (connection);
+		http_connection_open (connection);
 
 		retval = 0;
 	}
@@ -1508,9 +1736,12 @@ static void http_connection_work_return (HttpConnection *connection) {
 // the connection waits for its next request: the thread gives it to the idle connections of its loop
 // and arms its socket by itself, the loop is not woken up and finds the connection
 // when its client sends its next request
+// a connection whose TLS already has bytes goes back to its loop, that reads them: the socket of an idle
+// connection is only armed for what the poller reports
 static void http_connection_work_idle (HttpConnection *connection) {
 
-	if (http_connection_idle_enter (connection)) http_connection_work_abandon (connection);
+	if (http_connection_tls_pending (connection)) http_connection_work_return (connection);
+	else if (http_connection_idle_enter (connection)) http_connection_work_abandon (connection);
 
 }
 
@@ -1611,12 +1842,13 @@ static bool http_connection_follow_waits (const HttpConnection *connection, cons
 // returns the bytes, 0 when its client left and less than 0 without them
 static ssize_t http_connection_follow_read (const HttpConnection *connection) {
 
-	const int sock_fd = http_connection_fd (connection);
 	const u64 deadline = http_connection_microseconds () + connection->receive.http_cerver->keep_alive_follow;
 
 	ssize_t received = 0;
 	do {
-		received = recv (sock_fd, http_connection_follow_buffer, HTTP_CONNECTION_FOLLOW_BUFFER_SIZE, MSG_DONTWAIT);
+		received = http_connection_receive (
+			connection, http_connection_follow_buffer, HTTP_CONNECTION_FOLLOW_BUFFER_SIZE, MSG_DONTWAIT
+		);
 	} while (
 		(received < 0) && ((errno == EAGAIN) || (errno == EINTR))
 		&& http_connection_follow_waits (connection, deadline)
@@ -1913,11 +2145,11 @@ static void http_connection_work_idle_end (HttpConnection *connection) {
 // returns the bytes, 0 when its client left and less than 0 with errno
 static ssize_t http_connection_work_receive (const HttpConnection *connection) {
 
-	const int sock_fd = http_connection_fd (connection);
-
 	ssize_t received = 0;
 	do {
-		received = recv (sock_fd, http_connection_follow_buffer, HTTP_CONNECTION_FOLLOW_BUFFER_SIZE, MSG_DONTWAIT);
+		received = http_connection_receive (
+			connection, http_connection_follow_buffer, HTTP_CONNECTION_FOLLOW_BUFFER_SIZE, MSG_DONTWAIT
+		);
 	} while ((received < 0) && (errno == EINTR));
 
 	return received;
@@ -2198,6 +2430,11 @@ void http_connection_ready (HttpConnection *connection, const unsigned int ready
 			http_connection_drain (connection);
 			break;
 
+		// an error or a hang up is found by the handshake
+		case HTTP_CONNECTION_STATE_HANDSHAKE:
+			http_connection_handshake (connection);
+			break;
+
 		// a connection in another state is not watched
 		default:
 			http_connection_unwatch (connection);
@@ -2242,6 +2479,10 @@ static void http_connection_expired (HttpConnection *connection) {
 
 		case HTTP_CONNECTION_STATE_CLOSING:
 			http_connection_end (connection);
+			break;
+
+		case HTTP_CONNECTION_STATE_HANDSHAKE:
+			http_connection_handshake_expired (connection);
 			break;
 
 		// an idle connection has no timer: its loop checks its idle ones (http_connection_idle_expired ())
@@ -2294,6 +2535,11 @@ void http_connection_abort (HttpConnection *connection) {
 		// a connection that waits for its next request has nothing to be answered
 		case HTTP_CONNECTION_STATE_IDLE:
 			http_connection_idle_close (connection);
+			break;
+
+		// a client that is still in its handshake has sent no request
+		case HTTP_CONNECTION_STATE_HANDSHAKE:
+			http_connection_end (connection);
 			break;
 
 		// the other states end by themselves: a write, a close, or a job of the pool
