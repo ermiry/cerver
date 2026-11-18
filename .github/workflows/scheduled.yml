@@ -230,7 +230,7 @@ jobs:
           retention-days: 14
 
   performance:
-    name: Cerver performance
+    name: Cerver allocations
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -239,7 +239,7 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev valgrind
 
-      - name: Performance
+      - name: HTTP allocations
         run: bash test/performance.sh
 
       - name: Core allocations

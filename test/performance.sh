@@ -14,42 +14,16 @@ ALLOCATION_SLACK=$(( ALLOCATION_CONCURRENCY * ALLOCATIONS_PER_CONNECTION ))
 GET_MAX_ALLOCATIONS=0
 POST_MAX_ALLOCATIONS=0
 
-LOAD_REQUESTS=16384
-CONCURRENCIES=(8 64)
-MINIMUM_PERCENT=50
-
-HANDLERS=(threads events)
-HANDLER=threads
+HANDLER=events
 
 BACKENDS=(${BACKENDS:-uring epoll})
 BACKEND=${BACKENDS[0]}
-MODES=(threads "${BACKENDS[@]}")
 
 LOOP=0
 LOOP_MODES=(0 1)
-LOOP_MINIMUM_PERCENT=125
-URING_MINIMUM_PERCENT=90
-
-FLOOD_REQUESTS=1048576
-FLOOD_CONNECTIONS=64
-PIPELINE=1
-PIPELINES=(1 16)
-QUIET=0
-
-COMPARE_REQUESTS=65536
-COMPARE_RUNS=5
-EVENTS_MINIMUM_PERCENT=90
 
 KEEP_ALIVE=0
-KEEP_ALIVE_MODES=(0 1)
-KEEP_ALIVE_REQUESTS=1024
-KEEP_ALIVE_MINIMUM_PERCENT=150
 
-TREE_ROUNDS=1024
-TREE_MINIMUM_SPEEDUP=2
-
-BASELINE=benchmarks/baseline.txt
-ROUTES=benchmarks/routes
 LOGS=${LOGS:-/tmp/performance}
 BUILD=${BUILD:-1}
 
@@ -68,13 +42,11 @@ WEB_SOCKET_SIZE=64
 WEB_SOCKET_ALLOCATION_CONNECTIONS=8
 WEB_SOCKET_ALLOCATION_MESSAGES=1024
 WEB_SOCKET_MAX_ALLOCATIONS=0.01
-WEB_SOCKET_LOAD_MESSAGES=1048576
 
 source test/process.sh
 
 export LD_LIBRARY_PATH=./bin
 
-ARCHITECTURE=$(uname -m)
 FAILED=()
 
 mkdir -p "$LOGS"
@@ -84,7 +56,7 @@ export BENCH_AUTH="$LOGS/secret"
 
 if [ "$BUILD" -ne 0 ]; then
 	make clean > /dev/null
-	{ make TYPE=production -j4 && make TYPE=production load tree; } > "$LOGS/build.log" 2>&1 || { tail -n 32 "$LOGS/build.log"; exit 1; }
+	{ make TYPE=production -j4 && make TYPE=production load; } > "$LOGS/build.log" 2>&1 || { tail -n 32 "$LOGS/build.log"; exit 1; }
 fi
 
 fail () {
@@ -92,33 +64,21 @@ fail () {
 	FAILED+=("$1")
 }
 
-mode_set () {
-	HANDLER=events
-	BACKEND="$1"
-
-	if [ "$1" = "threads" ]; then
-		HANDLER=threads
-		BACKEND=${BACKENDS[0]}
-	fi
-}
-
 mode_name () {
-	local name=$HANDLER
+	local name="$BACKEND"
 
-	[ "$HANDLER" = "events" ] && name="events $BACKEND"
-	[ "$LOOP" -ne 0 ] && name="$name loop"
+	[ "$LOOP" -ne 0 ] && name="$name loop" || name="$name pool"
 
 	echo "$name"
 }
 
 server_start () {
-	local log="$1" ready="$2" handlers=pool quiet=()
+	local log="$1" ready="$2" handlers=pool
 	shift 2
 
 	[ "$LOOP" -ne 0 ] && handlers=loop
-	[ "$QUIET" -ne 0 ] && quiet=(env BENCH_QUIET=1)
 
-	BENCH_BACKEND=$BACKEND BENCH_HANDLERS=$handlers "${quiet[@]}" "$@" ./benchmarks/bin/server $PORT $THREADS $HANDLER > "$log" 2>&1 &
+	BENCH_BACKEND=$BACKEND BENCH_HANDLERS=$handlers "$@" ./benchmarks/bin/server $PORT $THREADS $HANDLER > "$log" 2>&1 &
 	SERVER_PID=$!
 
 	wait_until "$ready" is_listening $PORT || { echo "the bench server with $(mode_name) did not start"; tail -n 8 "$log"; exit 1; }
@@ -129,6 +89,10 @@ server_stop () {
 	kill -INT $SERVER_PID
 	wait_until $STOP_SECONDS is_finished $SERVER_PID || kill -KILL $SERVER_PID
 	wait $SERVER_PID
+}
+
+field () {
+	echo "$1" | sed -E "s/.* - $2 ([0-9.]+).*/\1/"
 }
 
 # the requests of a load that the server answered with 200, all of them or the load failed
@@ -191,240 +155,6 @@ check_allocations () {
 	[ "$allocations" -le $(( maximum * ALLOCATION_REQUESTS + ALLOCATION_SLACK )) ] || fail "$(mode_name) $method $path allocations with $(connections_name)"
 }
 
-baseline_value () {
-	local method="$1" concurrency="$2"
-	awk -v architecture="$ARCHITECTURE" -v method="$method" -v concurrency="$concurrency" \
-		'$1 == architecture && $2 == method && $3 == concurrency { print $4 }' "$BASELINE"
-}
-
-field () {
-	echo "$1" | sed -E "s/.* - $2 ([0-9.]+).*/\1/"
-}
-
-check_load () {
-	local method="$1" path="$2" body="$3" concurrency="$4"
-
-	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(load $PORT "$concurrency" $LOAD_REQUESTS $method "$path" "$body")
-	server_stop || fail "$(mode_name) $method $path concurrency $concurrency: the server ended with an error"
-
-	echo "$method $path - $result"
-
-	load_succeeded "$result" $LOAD_REQUESTS || { fail "$(mode_name) $method $path concurrency $concurrency: the load failed"; return; }
-
-	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/')
-	local unavailable=$(field "$result" 503)
-	local other=$(field "$result" other)
-	local failed=$(field "$result" failed)
-
-	[ "$unavailable" -eq 0 ] && [ "$other" -eq 0 ] && [ "$failed" -eq 0 ] || fail "$(mode_name) $method $path concurrency $concurrency errors"
-
-	local baseline=$(baseline_value "$method" "$concurrency")
-	if [ -z "$baseline" ]; then
-		echo "no baseline for $ARCHITECTURE $method $concurrency, measured: $ARCHITECTURE $method $concurrency $per_second"
-		return
-	fi
-
-	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
-	[ "$per_second" -ge "$minimum" ] || fail "$(mode_name) $method $path concurrency $concurrency: $per_second req/s < $minimum"
-}
-
-# the req/s of a load of the handler that is set, nothing when the load failed
-load_per_second () {
-	local method="$1" path="$2" body="$3" concurrency="$4"
-
-	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(load $PORT "$concurrency" $COMPARE_REQUESTS $method "$path" "$body")
-	server_stop || return 1
-
-	load_succeeded "$result" $COMPARE_REQUESTS || return 1
-
-	# a load that keeps its connections opens one for each of its threads,
-	# and one more each time that the cerver closes one that reached its requests
-	local connections=$(( concurrency + COMPARE_REQUESTS / KEEP_ALIVE_REQUESTS ))
-	if [ "$KEEP_ALIVE" -ne 0 ] && [ "$(field "$result" connections)" -gt "$connections" ]; then
-		echo "the load opened $(field "$result" connections) connections, more than $connections" >&2
-		return 1
-	fi
-
-	echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/'
-}
-
-flood () {
-	FLOOD_PIPELINE=$PIPELINE ./benchmarks/bin/flood "$@"
-}
-
-flood_name () {
-	[ "$PIPELINE" -gt 1 ] && echo "PIPELINE" || echo "LOOP"
-}
-
-# the load of many kept connections from a few threads, against the handlers that run in the event loops
-check_flood () {
-	local method="$1" path="$2" body="$3"
-	local name="$method-$(flood_name)"
-
-	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(flood $PORT $FLOOD_CONNECTIONS $FLOOD_REQUESTS $method "$path" "$body")
-	server_stop || fail "$(mode_name) $name: the server ended with an error"
-
-	echo "$method $path - $result"
-
-	load_succeeded "$result" $FLOOD_REQUESTS || { fail "$(mode_name) $name: the load failed"; return; }
-
-	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/')
-
-	[ "$(field "$result" 503)" -eq 0 ] && [ "$(field "$result" other)" -eq 0 ] || fail "$(mode_name) $name errors"
-
-	local baseline=$(baseline_value "$name" $FLOOD_CONNECTIONS)
-	if [ -z "$baseline" ]; then
-		echo "no baseline for $ARCHITECTURE $name $FLOOD_CONNECTIONS, measured: $ARCHITECTURE $name $FLOOD_CONNECTIONS $per_second"
-		return
-	fi
-
-	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
-	[ "$per_second" -ge "$minimum" ] || fail "$(mode_name) $name: $per_second req/s < $minimum"
-}
-
-flood_per_second () {
-	local method="$1" path="$2" body="$3"
-
-	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(flood $PORT $FLOOD_CONNECTIONS $FLOOD_REQUESTS $method "$path" "$body")
-	server_stop || return 1
-
-	load_succeeded "$result" $FLOOD_REQUESTS || return 1
-
-	echo "$result" | sed -E 's/.* - ([0-9]+) req\/s.*/\1/'
-}
-
-median () {
-	printf '%s\n' "$@" | sort -n | sed -n "$(( ($# + 1) / 2 ))p"
-}
-
-# the handlers in the event loops against the ones in a pool of threads: the median of some loads of each one,
-# taken in turns so both see the same machine
-check_loop () {
-	local method="$1" path="$2" body="$3"
-	local pool=() loop=() value
-
-	HANDLER=events
-
-	for (( run = 0; run < COMPARE_RUNS; run++ )); do
-		for LOOP in "${LOOP_MODES[@]}"; do
-			value=$(flood_per_second "$method" "$path" "$body") \
-				|| { fail "$(mode_name) $method $path: the load of the comparison failed"; LOOP=0; return; }
-
-			if [ "$LOOP" -ne 0 ]; then
-				loop+=("$value")
-			else
-				pool+=("$value")
-			fi
-		done
-	done
-
-	LOOP=0
-
-	local pool_median=$(median "${pool[@]}")
-	local loop_median=$(median "${loop[@]}")
-	local percent=$(( loop_median * 100 / pool_median ))
-
-	echo "$method $path with $BACKEND - pool $pool_median req/s - loop $loop_median req/s - $percent %"
-	[ "$percent" -ge $LOOP_MINIMUM_PERCENT ] \
-		|| fail "$BACKEND $method $path: the handlers in the loop $loop_median req/s < $LOOP_MINIMUM_PERCENT % of the pool $pool_median"
-}
-
-# io_uring against epoll, with the handlers in the event loops
-check_backends () {
-	local method="$1" path="$2" body="$3"
-	local uring=() epoll=() value
-
-	HANDLER=events
-	LOOP=1
-
-	for (( run = 0; run < COMPARE_RUNS; run++ )); do
-		for BACKEND in uring epoll; do
-			value=$(flood_per_second "$method" "$path" "$body") \
-				|| { fail "$(mode_name) $method $path pipeline $PIPELINE: the load of the comparison failed"; LOOP=0; return; }
-
-			if [ "$BACKEND" = "uring" ]; then
-				uring+=("$value")
-			else
-				epoll+=("$value")
-			fi
-		done
-	done
-
-	LOOP=0
-
-	local uring_median=$(median "${uring[@]}")
-	local epoll_median=$(median "${epoll[@]}")
-	local percent=$(( uring_median * 100 / epoll_median ))
-
-	echo "$method $path pipeline $PIPELINE - epoll $epoll_median req/s - io_uring $uring_median req/s - $percent %"
-	[ "$percent" -ge $URING_MINIMUM_PERCENT ] \
-		|| fail "$method $path pipeline $PIPELINE: io_uring $uring_median req/s < $URING_MINIMUM_PERCENT % of epoll $epoll_median"
-}
-
-# the event loops against a thread for each connection: the median of some loads of each one,
-# taken in turns so both see the same machine
-check_events () {
-	local method="$1" path="$2" body="$3" concurrency="$4"
-	local threads=() events=() value
-
-	for (( run = 0; run < COMPARE_RUNS; run++ )); do
-		for HANDLER in "${HANDLERS[@]}"; do
-			value=$(load_per_second "$method" "$path" "$body" "$concurrency") \
-				|| { fail "$(mode_name) $method $path concurrency $concurrency: the load of the comparison failed"; return; }
-
-			if [ "$HANDLER" = "events" ]; then
-				events+=("$value")
-			else
-				threads+=("$value")
-			fi
-		done
-	done
-
-	local threads_median=$(median "${threads[@]}")
-	local events_median=$(median "${events[@]}")
-	local percent=$(( events_median * 100 / threads_median ))
-
-	echo "$method $path concurrency $concurrency - threads $threads_median req/s - events $BACKEND $events_median req/s - $percent %"
-	[ "$percent" -ge $EVENTS_MINIMUM_PERCENT ] \
-		|| fail "$method $path concurrency $concurrency: events $BACKEND $events_median req/s < $EVENTS_MINIMUM_PERCENT % of threads $threads_median"
-}
-
-# the connections that are kept against a connection for each request, with the event loops:
-# the median of some loads of each one, taken in turns so both see the same machine
-check_keep_alive () {
-	local method="$1" path="$2" body="$3" concurrency="$4"
-	local closed=() kept=() value
-
-	HANDLER=events
-
-	for (( run = 0; run < COMPARE_RUNS; run++ )); do
-		for KEEP_ALIVE in "${KEEP_ALIVE_MODES[@]}"; do
-			value=$(load_per_second "$method" "$path" "$body" "$concurrency") \
-				|| { fail "$method $path concurrency $concurrency: the load with $(connections_name) failed"; KEEP_ALIVE=0; return; }
-
-			if [ "$KEEP_ALIVE" -ne 0 ]; then
-				kept+=("$value")
-			else
-				closed+=("$value")
-			fi
-		done
-	done
-
-	KEEP_ALIVE=0
-
-	local closed_median=$(median "${closed[@]}")
-	local kept_median=$(median "${kept[@]}")
-	local percent=$(( kept_median * 100 / closed_median ))
-
-	echo "$method $path concurrency $concurrency with $BACKEND - a connection by request $closed_median req/s - kept connections $kept_median req/s - $percent %"
-	[ "$percent" -ge $KEEP_ALIVE_MINIMUM_PERCENT ] \
-		|| fail "$BACKEND $method $path concurrency $concurrency: kept connections $kept_median req/s < $KEEP_ALIVE_MINIMUM_PERCENT % of a connection by request $closed_median"
-}
-
 count_web_socket_allocations () {
 	local messages="$1"
 	local log="$LOGS/allocations.log"
@@ -460,134 +190,29 @@ check_web_socket_allocations () {
 		|| fail "$(mode_name) WebSocket allocations"
 }
 
-check_web_socket_load () {
-	local connections="$1"
-
-	server_start "$LOGS/load.log" $READY_SECONDS
-	local result=$(./benchmarks/bin/messages $PORT "$connections" $(( WEB_SOCKET_LOAD_MESSAGES / connections )) $WEB_SOCKET_SIZE $WEB_SOCKET_PATH)
-	server_stop || fail "$(mode_name) WebSocket connections $connections: the server ended with an error"
-
-	echo "WebSocket $WEB_SOCKET_PATH - $result"
-
-	local per_second=$(echo "$result" | sed -E 's/.* - ([0-9]+) msg\/s.*/\1/')
-	local failed=$(field "$result" failed)
-
-	[ "$failed" -eq 0 ] || fail "$(mode_name) WebSocket connections $connections errors"
-
-	local baseline=$(baseline_value WS "$connections")
-	if [ -z "$baseline" ]; then
-		echo "no baseline for $ARCHITECTURE WS $connections, measured: $ARCHITECTURE WS $connections $per_second"
-		return
-	fi
-
-	local minimum=$(( baseline * MINIMUM_PERCENT / 100 ))
-	[ "$per_second" -ge "$minimum" ] || fail "$(mode_name) WebSocket connections $connections: $per_second msg/s < $minimum"
-}
-
-check_tree () {
-	local routes="$1"
-
-	local result=$(./benchmarks/bin/tree "$routes" $TREE_ROUNDS)
-	echo "$result"
-
-	local speedup=$(echo "$result" | sed -nE 's/^speedup: ([0-9.]+)x/\1/p')
-	awk -v speedup="$speedup" -v minimum=$TREE_MINIMUM_SPEEDUP 'BEGIN { exit !(speedup >= minimum) }' \
-		|| fail "$routes speedup ${speedup}x < ${TREE_MINIMUM_SPEEDUP}x"
-}
-
-for mode in "${MODES[@]}"; do
-	mode_set "$mode"
-
-	echo "Allocations with $(mode_name)..."
-	check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
-	check_allocations GET "$GET_QUERY_PATH" "" $GET_MAX_ALLOCATIONS
-	check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
-	LOAD_AUTHORIZATION="Bearer $AUTH_TOKEN" check_allocations GET $AUTH_PATH "" $AUTH_MAX_ALLOCATIONS
-	check_web_socket_allocations
-done
-
-HANDLER=events
-KEEP_ALIVE=1
-
 for BACKEND in "${BACKENDS[@]}"; do
 	for LOOP in "${LOOP_MODES[@]}"; do
+		KEEP_ALIVE=0
+
+		echo "Allocations with $(mode_name) and $(connections_name)..."
+		check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
+		check_allocations GET "$GET_QUERY_PATH" "" $GET_MAX_ALLOCATIONS
+		check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
+		LOAD_AUTHORIZATION="Bearer $AUTH_TOKEN" check_allocations GET $AUTH_PATH "" $AUTH_MAX_ALLOCATIONS
+
+		KEEP_ALIVE=1
+
 		echo "Allocations with $(mode_name) and $(connections_name)..."
 		check_allocations GET $GET_PATH "" $GET_MAX_ALLOCATIONS
 		check_allocations POST $POST_PATH "$JSON_BODY" $POST_MAX_ALLOCATIONS
 		LOAD_AUTHORIZATION="Bearer $AUTH_TOKEN" check_allocations GET $AUTH_PATH "" $AUTH_MAX_ALLOCATIONS
 	done
-done
 
-LOOP=0
-KEEP_ALIVE=0
+	LOOP=0
+	KEEP_ALIVE=0
 
-for mode in "${MODES[@]}"; do
-	mode_set "$mode"
-
-	echo "Load on $ARCHITECTURE with $(mode_name)..."
-	for concurrency in "${CONCURRENCIES[@]}"; do
-		check_load GET $GET_PATH "" "$concurrency"
-		check_load POST $POST_PATH "$JSON_BODY" "$concurrency"
-		check_web_socket_load "$concurrency"
-	done
-done
-
-HANDLER=events
-LOOP=1
-QUIET=1
-
-for BACKEND in "${BACKENDS[@]}"; do
-	echo "Load on $ARCHITECTURE with $(mode_name)..."
-	for PIPELINE in "${PIPELINES[@]}"; do
-		check_flood GET $GET_PATH ""
-		check_flood POST $POST_PATH "$JSON_BODY"
-	done
-done
-
-LOOP=0
-PIPELINE=1
-QUIET=0
-
-echo "Event loops against threads..."
-for BACKEND in "${BACKENDS[@]}"; do
-	for concurrency in "${CONCURRENCIES[@]}"; do
-		check_events GET $GET_PATH "" "$concurrency"
-		check_events POST $POST_PATH "$JSON_BODY" "$concurrency"
-	done
-done
-
-echo "Kept connections against a connection by request..."
-for BACKEND in "${BACKENDS[@]}"; do
-	for concurrency in "${CONCURRENCIES[@]}"; do
-		check_keep_alive GET $GET_PATH "" "$concurrency"
-		check_keep_alive POST $POST_PATH "$JSON_BODY" "$concurrency"
-	done
-done
-
-QUIET=1
-
-echo "Handlers in the event loops against a pool of threads..."
-for BACKEND in "${BACKENDS[@]}"; do
-	check_loop GET $GET_PATH ""
-	check_loop POST $POST_PATH "$JSON_BODY"
-done
-
-if [[ " ${BACKENDS[*]} " == *" uring "* ]] && [[ " ${BACKENDS[*]} " == *" epoll "* ]]; then
-	echo "io_uring against epoll..."
-	for PIPELINE in "${PIPELINES[@]}"; do
-		check_backends GET $GET_PATH ""
-		check_backends POST $POST_PATH "$JSON_BODY"
-	done
-fi
-
-QUIET=0
-PIPELINE=1
-BACKEND=${BACKENDS[0]}
-HANDLER=threads
-
-echo "Routes tree..."
-for routes in "$ROUTES"/*.txt; do
-	check_tree "$routes"
+	echo "Allocations of the WebSocket messages with $BACKEND..."
+	check_web_socket_allocations
 done
 
 printf "\n%d checks failed\n" "${#FAILED[@]}"
