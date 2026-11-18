@@ -8,7 +8,7 @@
 
 #include <cerver/collections/arena.h>
 
-#include <cerver/http/requests/request.h>
+#include "cerver/http/requests/internal.h"
 
 #include <cerver/json/document.h>
 #include <cerver/json/events.h>

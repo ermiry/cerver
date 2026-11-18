@@ -17,7 +17,8 @@
 #include <cerver/core/end.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
+#include "cerver/http/core/handler.h"
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
 #include <cerver/http/core/pairs.h>
@@ -26,6 +27,7 @@
 #include <cerver/http/parser/parser.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
+#include "cerver/http/responses/prepared.h"
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/security/auth.h>
@@ -72,11 +74,11 @@
 
 #define FAULTS_HTTP_BEARER				"Bearer header.claims.signature"
 
-#define FAULTS_HTTP_CERVER_NAME			"faults-http"
-#define FAULTS_HTTP_CERVER_PORT			7016
+#define FAULTS_CERVER_HTTP_NAME			"faults-http"
+#define FAULTS_CERVER_HTTP_PORT			7016
 
 // a pair without memory for its key is not added (it copied the key into NULL)
-static void faults_http_query_pairs (void) {
+static void faults_cerver_http_query_pairs (void) {
 
 	const char *query = FAULTS_HTTP_QUERY;
 
@@ -92,7 +94,7 @@ static void faults_http_query_pairs (void) {
 }
 
 // adds the static path with a fault armed in one of the allocations of its path
-static void faults_http_static_path_add_failed (
+static void faults_cerver_http_static_path_add_failed (
 	HttpCerver *http_cerver, const FaultsFunction function, const size_t size
 ) {
 
@@ -100,7 +102,7 @@ static void faults_http_static_path_add_failed (
 
 	const unsigned int triggered = faults_triggered (function);
 	faults_arm (function, true, size);
-	HttpStaticPath *static_path = http_cerver_static_path_add (http_cerver, FAULTS_HTTP_STATIC_PATH);
+	HttpStaticPath *static_path = cerver_http_static_path_add (http_cerver, FAULTS_HTTP_STATIC_PATH);
 	faults_disarm (function);
 
 	test_check_unsigned_eq (faults_triggered (function), triggered + 1, "the path did not fail");
@@ -113,16 +115,16 @@ static void faults_http_static_path_add_failed (
 static void faults_http_static_path (void) {
 
 	// the lists of the HttpCerver are created with it, without a cerver
-	HttpCerver *http_cerver = http_cerver_create (NULL);
+	HttpCerver *http_cerver = cerver_http_create (NULL);
 	test_check_ptr (http_cerver);
 
-	faults_http_static_path_add_failed (http_cerver, FAULTS_FUNCTION_CALLOC, sizeof (FAULTS_HTTP_STATIC_PATH));
-	faults_http_static_path_add_failed (http_cerver, FAULTS_FUNCTION_MALLOC, sizeof (String));
+	faults_cerver_http_static_path_add_failed (http_cerver, FAULTS_FUNCTION_CALLOC, sizeof (FAULTS_HTTP_STATIC_PATH));
+	faults_cerver_http_static_path_add_failed (http_cerver, FAULTS_FUNCTION_MALLOC, sizeof (String));
 
-	test_check_ptr (http_cerver_static_path_add (http_cerver, FAULTS_HTTP_STATIC_PATH));
+	test_check_ptr (cerver_http_static_path_add (http_cerver, FAULTS_HTTP_STATIC_PATH));
 	test_check_unsigned_eq ((unsigned int) dlist_size (http_cerver->static_paths), 1, NULL);
 
-	http_cerver_delete (http_cerver);
+	cerver_http_delete (http_cerver);
 
 }
 
@@ -180,7 +182,7 @@ static void faults_http_json_generate (HttpCerver *http_cerver) {
 
 	// the arena
 	faults_arm (FAULTS_FUNCTION_MALLOC, true, FAULTS_ANY_SIZE);
-	char *json = http_cerver_admin_generate_workers_json (http_cerver);
+	char *json = cerver_http_admin_generate_workers_json (http_cerver);
 	faults_disarm (FAULTS_FUNCTION_MALLOC);
 
 	test_check_null_ptr (json);
@@ -190,25 +192,22 @@ static void faults_http_json_generate (HttpCerver *http_cerver) {
 	triggered = faults_triggered (FAULTS_FUNCTION_MALLOC);
 
 	faults_arm (FAULTS_FUNCTION_MALLOC, true, sizeof (FAULTS_HTTP_WORKERS_JSON));
-	json = http_cerver_admin_generate_workers_json (http_cerver);
+	json = cerver_http_admin_generate_workers_json (http_cerver);
 	faults_disarm (FAULTS_FUNCTION_MALLOC);
 
 	test_check_null_ptr (json);
 	test_check_unsigned_eq (faults_triggered (FAULTS_FUNCTION_MALLOC), triggered + 1, "the text was not copied");
 
-	json = http_cerver_admin_generate_workers_json (http_cerver);
+	json = cerver_http_admin_generate_workers_json (http_cerver);
 	test_check_ptr (json);
 	test_check_str_eq (json, FAULTS_HTTP_WORKERS_JSON, NULL);
 	free (json);
 
 }
 
-static void faults_http_handler (
-	const struct _HttpReceive *http_receive, const HttpRequest *request
-) {
+static void faults_http_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -218,15 +217,15 @@ static void faults_http_json_generate_large (HttpCerver *http_cerver) {
 
 	for (unsigned int i = 0; i < FAULTS_HTTP_ROUTES; i++) {
 		char name[FAULTS_HTTP_ROUTE_SIZE] = { 0 };
-		(void) snprintf (name, FAULTS_HTTP_ROUTE_SIZE, "faults/%u", i);
+		(void) snprintf (name, FAULTS_HTTP_ROUTE_SIZE, "/faults/%u", i);
 
-		HttpRoute *route = http_route_create (REQUEST_METHOD_GET, name, faults_http_handler);
-		test_check_ptr (route);
-		http_cerver_route_register (http_cerver, route);
+		CerverHttpGroup *group = cerver_http_group_create (http_cerver, name);
+		test_check_ptr (group);
+		test_check_ptr (cerver_http_group_root_add (group, REQUEST_METHOD_GET, faults_http_handler));
 	}
 
 	// the text is one that only fits in the block
-	char *json = http_cerver_admin_generate_routes_stats_json (http_cerver);
+	char *json = cerver_http_admin_generate_routes_stats_json (http_cerver);
 	test_check_ptr (json);
 	test_check (strlen (json) >= (FAULTS_HTTP_LARGE_TEXT_SIZE / 2), "the stats of the routes fit in a chunk");
 	test_check (strlen (json) < FAULTS_HTTP_LARGE_TEXT_SIZE, "the stats of the routes do not fit in the block");
@@ -235,7 +234,7 @@ static void faults_http_json_generate_large (HttpCerver *http_cerver) {
 	const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_MALLOC);
 
 	faults_arm (FAULTS_FUNCTION_MALLOC, true, FAULTS_HTTP_LARGE_BLOCK_SIZE);
-	json = http_cerver_admin_generate_routes_stats_json (http_cerver);
+	json = cerver_http_admin_generate_routes_stats_json (http_cerver);
 	faults_disarm (FAULTS_FUNCTION_MALLOC);
 
 	test_check_null_ptr (json);
@@ -281,7 +280,7 @@ static void faults_http_bearer_arena (HttpCerver *http_cerver) {
 	const unsigned int triggered = faults_triggered (FAULTS_FUNCTION_MALLOC);
 
 	faults_arm (FAULTS_FUNCTION_MALLOC, true, FAULTS_ANY_SIZE);
-	const bool valid = http_cerver_auth_validate_jwt (
+	const bool valid = cerver_http_auth_validate_jwt (
 		http_cerver, FAULTS_HTTP_BEARER, http_decode_data_into_json, &decoded
 	);
 	faults_disarm (FAULTS_FUNCTION_MALLOC);
@@ -308,30 +307,27 @@ static void faults_http_bearer_arena (HttpCerver *http_cerver) {
 static const char *faults_http_ok = { "HTTP/1.1 200" };
 static const char *faults_http_server_error = { "HTTP/1.1 500" };
 
-static void faults_http_fields_handler (const HttpReceive *http_receive, const HttpRequest *request) {
+static void faults_http_fields_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_json_msg_send (http_receive, HTTP_STATUS_OK, "fields");
+	(void) cerver_http_response_send_json_message (context, HTTP_STATUS_OK, "fields");
 
 }
 
-static Cerver *faults_http_cerver_create (void) {
+static Cerver *faults_cerver_http_create (void) {
 
 	Cerver *cerver = cerver_create (
-		CERVER_TYPE_WEB, FAULTS_HTTP_CERVER_NAME, FAULTS_HTTP_CERVER_PORT, PROTOCOL_TCP, false, FAULTS_HTTP_CONNECTIONS
+		CERVER_TYPE_WEB, FAULTS_CERVER_HTTP_NAME, FAULTS_CERVER_HTTP_PORT, PROTOCOL_TCP, false, FAULTS_HTTP_CONNECTIONS
 	);
 
 	test_check_ptr (cerver);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 	test_check_ptr (http_cerver);
 
-	http_cerver_route_register (
-		http_cerver, http_route_create (REQUEST_METHOD_GET, "fields", faults_http_fields_handler)
-	);
+	CerverHttpGroup *fields = cerver_http_group_create (http_cerver, "/fields");
+	test_check_ptr (cerver_http_group_root_add (fields, REQUEST_METHOD_GET, faults_http_fields_handler));
 
-	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_http_init (http_cerver), 0, NULL);
 
 	return cerver;
 
@@ -396,7 +392,7 @@ static void faults_http_receive (Cerver *cerver, const char *request, const size
 // answered with 500 instead of reading its head with the fields that fit
 static void faults_http_fields_grow (void) {
 
-	Cerver *cerver = faults_http_cerver_create ();
+	Cerver *cerver = faults_cerver_http_create ();
 
 	char request[FAULTS_HTTP_REQUEST_SIZE];
 	const size_t length = faults_http_fields_request (request);
@@ -427,29 +423,29 @@ void faults_tests_http (void) {
 
 	(void) printf ("Testing FAULTS http...\n");
 
-	faults_http_query_pairs ();
+	faults_cerver_http_query_pairs ();
 
 	faults_http_static_path ();
 
-	// the responses need their producer
-	HttpCerver *responses_cerver = http_cerver_new ();
+	// the responses need their pool
+	HttpCerver *responses_cerver = cerver_http_new ();
 	test_check_ptr (responses_cerver);
-	test_check_unsigned_eq (http_responses_init (responses_cerver), 0, NULL);
+	test_check_unsigned_eq (http_responses_init (), 0, NULL);
 
 	faults_http_json_body ();
 	faults_http_json_body_long ();
 
 	http_responses_end ();
-	http_cerver_delete (responses_cerver);
+	cerver_http_delete (responses_cerver);
 
 	// the json of the admin routes and a bearer need a whole cerver, that never starts
-	Cerver *cerver = cerver_create_web (FAULTS_HTTP_CERVER_NAME, FAULTS_HTTP_CERVER_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
+	Cerver *cerver = cerver_create_web (FAULTS_CERVER_HTTP_NAME, FAULTS_CERVER_HTTP_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	faults_http_json_generate (http_cerver_get (cerver));
-	faults_http_json_generate_large (http_cerver_get (cerver));
+	faults_http_json_generate (cerver_http_get (cerver));
+	faults_http_json_generate_large (cerver_http_get (cerver));
 	faults_http_claims_json ();
-	faults_http_bearer_arena (http_cerver_get (cerver));
+	faults_http_bearer_arena (cerver_http_get (cerver));
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
