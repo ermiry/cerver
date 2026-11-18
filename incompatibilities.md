@@ -3,6 +3,31 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-23 (from 2.1b-22)
+
+TLS in the event loop (F8b of `roadmap.md` §4.8.9): a web cerver with `CERVER_HANDLER_TYPE_EVENTS` can use TLS. A
+cerver without TLS, and one with TLS and threads, behave as before; no public struct changes its size.
+
+**A cerver with an event loop and TLS**
+
+- `cerver_set_tls ()` takes its settings and returns 0 (it returned 1 and the cerver had no TLS), and
+  `cerver_start ()` starts it.
+- The loop runs each handshake without a thread: a client that is slow or silent in its handshake only holds its
+  place in the poller until the deadline of the handshake (`tls_settings_set_handshake_timeout_milliseconds ()`,
+  2^13 ms), counted as `TLS_FAILURE_TIMEOUT`. The clock of the first request (its headers and request timeouts)
+  starts when the handshake ends.
+- At its limit of connections the cerver stops accepting, as without TLS: `TLS_FAILURE_REJECTED` only counts the
+  connections that a full cerver with threads closes.
+- The loop sends the `close_notify` of a connection that it closes without waiting for its socket: a socket that
+  does not take it now (or, with kTLS, one with records that still wait) is closed without it. A handler in the pool
+  and a cerver with threads still wait for it up to 2^8 ms.
+
+**HTTP**
+
+- `HttpRouteSettings.client_certificate` starts as `HTTP_CLIENT_CERTIFICATE_NONE` in every group and endpoint: in the
+  2.1b-22 it was not initialized, and an endpoint could answer 403 at random to a request without a certificate
+  (most often the upgrade of a WebSocket).
+
 ## 2.1b-22 (from 2.1b-21)
 
 TLS over threads and in the clients (F8a of `roadmap.md` §4.8): every TCP cerver (`CUSTOM`, `GAME`, `WEB`, `FILES`,

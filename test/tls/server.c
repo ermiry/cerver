@@ -8,16 +8,21 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <cerver/connection/connection.h>
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
+#include <cerver/handler/handler.h>
+#include <cerver/network/socket.h>
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 #include <cerver/http/routes/tree.h>
@@ -25,10 +30,39 @@
 #include <cerver/tls/cerver.h>
 #include <cerver/tls/tls.h>
 
+#include "cerver/crypto/provider.h"
+#include "cerver/tls/internal.h"
+
 #include "../test.h"
 #include "tls.h"
 
 #define SERVER_THREADS						4
+
+// one event loop, so a client that blocked it would block every other one
+#define SERVER_IO_THREADS					1
+
+// the requests that a client writes one after the other, each one in its own record, before it reads
+#define SERVER_BURST_REQUESTS				(1 << 3)
+#define SERVER_BURST_BUFFER_SIZE			(1 << 14)
+
+// the send buffer of the socket of the tracked response, far smaller than the response
+#define SERVER_TRACKED_SEND_BUFFER			(1 << 14)
+// the looks at what waits while the client does not read
+#define SERVER_MARK_SAMPLES					(1 << 6)
+// the mark and two records with their overhead
+#define SERVER_MARK_LIMIT					(TLS_OUTPUT_FLUSH_MARK + (2 * (TLS_RECORD_PLAINTEXT_SIZE + (1 << 9))))
+
+// where the log of the start of a cerver is read
+#define SERVER_LOG_TEMPLATE					"/tmp/cerver-tls-log-XXXXXX"
+#define SERVER_LOG_SIZE						(1 << 14)
+
+#define SERVER_SECONDS_PER_DAY				(60L * 60L * 24L)
+#define SERVER_EXPIRY_WARNING_SECONDS		(TLS_CERTIFICATE_EXPIRY_WARNING_DAYS * SERVER_SECONDS_PER_DAY)
+
+// a full cerver: one thread for a handshake and one place in its queue, and the pause between its connections
+#define SERVER_FULL_THREADS					1
+#define SERVER_FULL_QUEUE					1
+#define SERVER_FULL_PAUSE_MILLISECONDS		(1 << 6)
 
 // the bytes of the large response, more than a few records and more than the flush mark
 #define SERVER_LARGE_SIZE					((1 << 20) + 333)
@@ -45,6 +79,11 @@
 
 // the milliseconds that a reload waits for the files to settle
 #define SERVER_WATCH_DEBOUNCE				(1 << 7)
+// the key is renamed a quarter of the debounce after its certificate
+#define SERVER_WATCH_SPLIT					4
+// the debounces that the test waits after the reload, for a reload that should not come
+#define SERVER_WATCH_SETTLE					2
+#define SERVER_MICROSECONDS_PER_MILLISECOND	1000
 
 static const unsigned char server_alpn_h2[] = { 2, 'h', '2' };
 static const unsigned char server_alpn_both[] = { 2, 'h', '2', 8, 'h', 't', 't', 'p', '/', '1', '.', '1' };
@@ -52,9 +91,27 @@ static const unsigned char server_alpn_both[] = { 2, 'h', '2', 8, 'h', 't', 't',
 static const char *server_hello_request = "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n";
 static const char *server_close_request = "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
 
+static const char *server_ok_status = "HTTP/1.1 200";
+
+static const char *server_expiry_warning = "expires in";
+
+static const char *server_tracked_request = "GET /tracked HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+
+// a path without a route, the default route of cerver answers it
+static const char *server_default_request = "GET /nothing HTTP/1.1\r\nHost: localhost\r\n\r\n";
+
+// the first bytes of the header of a record of a handshake, never the whole header
+static const unsigned char server_partial_record[] = { 0x16, 0x03 };
+
 static u16 server_port = TLS_TEST_PORT_BASE;
 
 static char *server_large = NULL;
+
+// every test of the server runs with threads and with the event loop
+static CerverHandlerType server_handler_type = CERVER_HANDLER_TYPE_THREADS;
+
+// the TLS of the request of the tracked response while its handler sends it
+static TlsConnection *server_tracked_tls = NULL;
 
 typedef struct TlsServer {
 
@@ -104,10 +161,29 @@ static void server_large_handler (const HttpReceive *receive, const HttpRequest 
 
 }
 
+// the large response with a small buffer of its socket, so most of it waits: the test reads what its TLS keeps
+static void server_tracked_handler (const HttpReceive *receive, const HttpRequest *request) {
+
+	(void) request;
+
+	Socket *socket = receive->cr->connection->socket;
+
+	const int size = SERVER_TRACKED_SEND_BUFFER;
+	(void) setsockopt (socket->sock_fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof (size));
+
+	__atomic_store_n (&server_tracked_tls, socket->tls, __ATOMIC_SEQ_CST);
+
+	(void) http_response_render_text (receive, HTTP_STATUS_OK, server_large, SERVER_LARGE_SIZE);
+
+	__atomic_store_n (&server_tracked_tls, NULL, __ATOMIC_SEQ_CST);
+
+}
+
 static void server_routes (HttpCerver *http_cerver) {
 
 	HttpGroup *root = http_cerver_group_create (http_cerver, "");
 	(void) http_group_get (root, "hello", server_hello);
+	(void) http_group_get (root, "tracked", server_tracked_handler);
 	(void) http_group_post (root, "echo", server_echo);
 	(void) http_group_get (root, "name", server_name);
 	(void) http_group_get (root, "certificate", server_certificate);
@@ -141,9 +217,10 @@ static Cerver *server_create (const u16 port, TlsSettings *settings) {
 	Cerver *cerver = cerver_create_web ("tls-test", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (cerver, server_handler_type);
 	cerver_set_reusable_address_flags (cerver, true);
 	cerver_set_thpool_n_threads (cerver, SERVER_THREADS);
+	cerver_set_io_threads (cerver, SERVER_IO_THREADS);
 
 	server_routes ((HttpCerver *) cerver->cerver_data);
 
@@ -175,7 +252,8 @@ static void server_wait_listen (const u16 port) {
 
 }
 
-static TlsServer *server_start (TlsSettings *settings) {
+// a cerver whose connections are kept in the two handler types
+static TlsServer *server_start_kept (TlsSettings *settings, const bool keep_alive) {
 
 	TlsServer *server = (TlsServer *) calloc (1, sizeof (TlsServer));
 	test_check_ptr (server);
@@ -183,10 +261,18 @@ static TlsServer *server_start (TlsSettings *settings) {
 	server->port = server_port++;
 	server->cerver = server_create (server->port, settings);
 
+	if (keep_alive) http_cerver_set_keep_alive ((HttpCerver *) server->cerver->cerver_data, true);
+
 	test_check_int_eq (pthread_create (&server->thread, NULL, server_thread, server), 0, NULL);
 	server_wait_listen (server->port);
 
 	return server;
+
+}
+
+static TlsServer *server_start (TlsSettings *settings) {
+
+	return server_start_kept (settings, false);
 
 }
 
@@ -517,6 +603,47 @@ static void test_server_resumption (const TestCertificates *certificates) {
 
 }
 
+// returns whether a connection with the session resumed it
+static bool server_resumes (const TlsServer *server, const RawTlsOptions *base, SSL_SESSION *session) {
+
+	RawTlsOptions options = *base;
+	options.session = session;
+
+	RawTls *raw = raw_tls_connect (server->port, &options);
+	test_check_true (raw->connected);
+
+	const bool resumed = (SSL_session_reused (raw->ssl) == 1);
+	test_check_unsigned_eq (raw_tls_request (raw, server_hello_request, NULL, 0), 200, NULL);
+	raw_tls_close (raw);
+
+	return resumed;
+
+}
+
+// a ticket of the key before the current one still resumes after a rotation, the cerver keeps two keys: one that
+// is two rotations old is not resumed
+static void test_server_ticket_rotation (const TestCertificates *certificates) {
+
+	TlsServer *server = server_start (server_settings (certificates));
+
+	// the response of a request orders the start of the cerver (its context) before the read of the test
+	RawTlsOptions options = server_options (certificates);
+	SSL_SESSION *session = server_session (server, &options);
+
+	CryptoTlsContext *context = ((const CerverTls *) server->cerver->tls)->context;
+
+	cerver_crypto_provider_tls_context_rotate_ticket_keys (context);
+	test_check_true (server_resumes (server, &options, session));
+
+	cerver_crypto_provider_tls_context_rotate_ticket_keys (context);
+	test_check_false (server_resumes (server, &options, session));
+
+	SSL_SESSION_free (session);
+
+	server_stop (server);
+
+}
+
 static void test_server_early_data (const TestCertificates *certificates) {
 
 	TlsSettings *settings = server_settings (certificates);
@@ -674,7 +801,7 @@ static void test_server_reload_signal_and_watch (const TestCertificates *certifi
 	server->port = server_port++;
 	server->cerver = server_create (server->port, settings);
 	cerver_tls_set_reload_signal (server->cerver, SIGUSR1);
-	cerver_tls_set_reload_watch (server->cerver, true, SERVER_WATCH_DEBOUNCE);
+	cerver_tls_set_reload_watch (server->cerver, true, test_milliseconds (SERVER_WATCH_DEBOUNCE));
 	test_check_int_eq (pthread_create (&server->thread, NULL, server_thread, server), 0, NULL);
 	server_wait_listen (server->port);
 
@@ -682,12 +809,19 @@ static void test_server_reload_signal_and_watch (const TestCertificates *certifi
 	test_check_int_eq (raise (SIGUSR1), 0, NULL);
 	test_check_true (server_wait_stat (server, server_reloads, 1) >= 1);
 
-	// a renewal of the files is reloaded after the debounce: a reload that saw the new certificate with the old key
-	// (the files were renamed one after the other) fails and keeps the previous one, the next change reloads both
+	// a renewal of the files is reloaded once, after the debounce: every change of the folder (the temporary files,
+	// the certificate that is renamed before its key) starts the debounce again, so the reload sees both files; a
+	// reload at each change would read the new certificate with the old key, and fail
 	test_certificates_replace (certificates->other_chain, chain);
+	(void) usleep ((useconds_t) (test_milliseconds (SERVER_WATCH_DEBOUNCE) * SERVER_MICROSECONDS_PER_MILLISECOND / SERVER_WATCH_SPLIT));
 	test_certificates_replace (certificates->other_key, key);
 	test_check_true (server_wait_stat (server, server_reloads, 2) >= 2);
 	test_check_true (server_wait_name (server, certificates, "other.test"));
+
+	(void) usleep ((useconds_t) (test_milliseconds (SERVER_WATCH_DEBOUNCE) * SERVER_MICROSECONDS_PER_MILLISECOND * SERVER_WATCH_SETTLE));
+	const TlsStats stats = server_stats (server);
+	test_check_unsigned_eq ((unsigned int) stats.reloads, 2, NULL);
+	test_check_unsigned_eq ((unsigned int) stats.reload_failures, 0, NULL);
 
 	server_stop (server);
 
@@ -729,11 +863,11 @@ static void test_server_start_errors (const TestCertificates *certificates) {
 	(void) tls_settings_set_ciphers (ciphers, "TLS_NOT_A_CIPHER", NULL);
 	server_check_start_fails (ciphers);
 
-	// a cerver with an event loop has TLS with F8b
+	// a cerver with an event loop has TLS since 2.1b-23
 	Cerver *events = cerver_create_web ("tls-events", server_port++, CERVER_DEFAULT_CONNECTION_QUEUE);
 	cerver_set_handler_type (events, CERVER_HANDLER_TYPE_EVENTS);
-	test_check_unsigned_eq (cerver_set_tls (events, server_settings (certificates)), 1, NULL);
-	test_check_false (cerver_has_tls (events));
+	test_check_unsigned_eq (cerver_set_tls (events, server_settings (certificates)), 0, NULL);
+	test_check_true (cerver_has_tls (events));
 	(void) cerver_teardown (events);
 
 }
@@ -836,7 +970,297 @@ static void test_server_handshake_timeout (const TestCertificates *certificates)
 
 }
 
+// reads until the responses of the expected requests arrived, returns how many arrived
+static unsigned int server_read_responses (RawTls *raw, const char *status_line, const unsigned int expected) {
+
+	char *buffer = (char *) calloc (1, SERVER_BURST_BUFFER_SIZE);
+	test_check_ptr (buffer);
+
+	unsigned int found = 0;
+	size_t size = 0;
+	size_t read = 0;
+	while ((found < expected) && (size < (SERVER_BURST_BUFFER_SIZE - 1))
+		&& (SSL_read_ex (raw->ssl, buffer + size, SERVER_BURST_BUFFER_SIZE - 1 - size, &read) == 1)) {
+		size += read;
+		buffer[size] = '\0';
+
+		found = 0;
+		for (const char *status = strstr (buffer, status_line); status; status = strstr (status + 1, status_line)) {
+			found += 1;
+		}
+	}
+
+	free (buffer);
+	ERR_clear_error ();
+
+	return found;
+
+}
+
+// writes the same request many times, each one in its own record, before reading any response
+static void server_write_burst (RawTls *raw, const char *request) {
+
+	const size_t length = strlen (request);
+	for (unsigned int index = 0; index < SERVER_BURST_REQUESTS; index++) {
+		size_t written = 0;
+		test_check_int_eq (SSL_write_ex (raw->ssl, request, length, &written), 1, NULL);
+	}
+
+}
+
+// like server_write_burst (), with each request split in two records: the first one leaves its headers incomplete
+static void server_write_split_burst (RawTls *raw, const char *request) {
+
+	const size_t length = strlen (request);
+	const size_t half = length / 2;
+	for (unsigned int index = 0; index < SERVER_BURST_REQUESTS; index++) {
+		size_t written = 0;
+		test_check_int_eq (SSL_write_ex (raw->ssl, request, half, &written), 1, NULL);
+		test_check_int_eq (SSL_write_ex (raw->ssl, request + half, length - half, &written), 1, NULL);
+	}
+
+}
+
+// a response that never comes fails the read instead of waiting for the alarm
+static void server_read_timeout (const RawTls *raw) {
+
+	struct timeval timeout = { (time_t) (TEST_WAIT_SECONDS * test_time_scale ()), 0 };
+	test_check_int_eq (setsockopt (raw->fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof (timeout)), 0, NULL);
+
+}
+
+// requests that come together, each one in its own record, are all answered: with the event loop the records
+// that one read brought wait in the TLS of the connection, and its poller does not report them again;
+// the loop answers the ones of the default route by itself, the pool the ones of a handler
+static void test_server_burst (const TestCertificates *certificates) {
+
+	TlsServer *server = server_start_kept (server_settings (certificates), true);
+
+	RawTlsOptions options = server_options (certificates);
+	RawTls *raw = raw_tls_connect (server->port, &options);
+	test_check_true (raw->connected);
+	server_read_timeout (raw);
+
+	server_write_burst (raw, server_default_request);
+	test_check_unsigned_eq (server_read_responses (raw, server_ok_status, SERVER_BURST_REQUESTS), SERVER_BURST_REQUESTS, NULL);
+
+	server_write_burst (raw, server_hello_request);
+	test_check_unsigned_eq (server_read_responses (raw, server_ok_status, SERVER_BURST_REQUESTS), SERVER_BURST_REQUESTS, NULL);
+
+	server_write_split_burst (raw, server_default_request);
+	test_check_unsigned_eq (server_read_responses (raw, server_ok_status, SERVER_BURST_REQUESTS), SERVER_BURST_REQUESTS, NULL);
+
+	server_write_split_burst (raw, server_hello_request);
+	test_check_unsigned_eq (server_read_responses (raw, server_ok_status, SERVER_BURST_REQUESTS), SERVER_BURST_REQUESTS, NULL);
+
+	// and the connection is still kept
+	test_check_unsigned_eq (raw_tls_request (raw, server_hello_request, NULL, 0), 200, NULL);
+
+	raw_tls_close (raw);
+
+	server_stop (server);
+
+}
+
+// a client that never ends its handshake does not hold the others: the loop waits for its records in its poller
+static void test_server_handshake_waits (const TestCertificates *certificates) {
+
+	TlsServer *server = server_start (server_settings (certificates));
+
+	const int silent = socket (AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in address;
+	(void) memset (&address, 0, sizeof (address));
+	address.sin_family = AF_INET;
+	address.sin_port = htons (server->port);
+	address.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+	test_check_int_eq (connect (silent, (struct sockaddr *) &address, sizeof (address)), 0, NULL);
+
+	// half of a record header
+	test_check_int_eq ((int) send (silent, server_partial_record, sizeof (server_partial_record), 0), (int) sizeof (server_partial_record), NULL);
+
+	RawTlsOptions options = server_options (certificates);
+	test_check_unsigned_eq (server_status (server, &options, server_hello_request, NULL), 200, NULL);
+
+	(void) close (silent);
+
+	server_stop (server);
+
+}
+
+// a TCP connection that sends nothing: with threads it holds the thread of its handshake until the deadline
+static int server_connect_silent (const u16 port) {
+
+	const int fd = socket (AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in address;
+	(void) memset (&address, 0, sizeof (address));
+	address.sin_family = AF_INET;
+	address.sin_port = htons (port);
+	address.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+	test_check_int_eq (connect (fd, (struct sockaddr *) &address, sizeof (address)), 0, NULL);
+
+	return fd;
+
+}
+
+static u64 server_rejected (const TlsStats *stats) { return stats->failures[TLS_FAILURE_REJECTED]; }
+
+static u64 server_closed (const TlsStats *stats) { return stats->failures[TLS_FAILURE_CLOSED]; }
+
+// the encrypted bytes that wait in the output of a connection
+static size_t server_tls_waiting (TlsConnection *tls) {
+
+	(void) pthread_mutex_lock (&tls->mutex);
+	const size_t waiting = tls->output.end - tls->output.start;
+	(void) pthread_mutex_unlock (&tls->mutex);
+
+	return waiting;
+
+}
+
+// a sender encrypts up to the mark of TLS_OUTPUT_FLUSH_MARK before it sends: with a client that does not read, what
+// waits encrypted never passes the mark by more than a record, the rest of the response is not encrypted yet
+static void test_server_flush_mark (const TestCertificates *certificates) {
+
+	TlsServer *server = server_start (server_settings (certificates));
+
+	RawTlsOptions options = server_options (certificates);
+	RawTls *raw = raw_tls_connect (server->port, &options);
+	test_check_true (raw->connected);
+	server_read_timeout (raw);
+
+	size_t written = 0;
+	test_check_int_eq (SSL_write_ex (raw->ssl, server_tracked_request, strlen (server_tracked_request), &written), 1, NULL);
+
+	TlsConnection *tls = NULL;
+	while (!(tls = __atomic_load_n (&server_tracked_tls, __ATOMIC_SEQ_CST))) (void) usleep (1 << 10);
+
+	size_t most = 0;
+	for (unsigned int sample = 0; sample < SERVER_MARK_SAMPLES; sample++) {
+		const size_t waiting = server_tls_waiting (tls);
+		if (waiting > most) most = waiting;
+		(void) usleep (1 << 12);
+	}
+
+	test_check_true (most <= SERVER_MARK_LIMIT);
+
+	// the whole response still arrives
+	char *buffer = (char *) malloc (SERVER_LARGE_SIZE);
+	test_check_ptr (buffer);
+	size_t total = 0;
+	size_t read = 0;
+	while ((total < SERVER_LARGE_SIZE) && (SSL_read_ex (raw->ssl, buffer, SERVER_LARGE_SIZE, &read) == 1)) total += read;
+	test_check_true (total >= SERVER_LARGE_SIZE);
+	free (buffer);
+
+	raw_tls_close (raw);
+
+	server_stop (server);
+
+}
+
+// a certificate that expires before TLS_CERTIFICATE_EXPIRY_WARNING_DAYS is a warning of the start of its cerver,
+// that goes to stderr: the test reads it from a file while the cerver starts
+static void test_server_expiry_warning (const TestCertificates *certificates) {
+
+	char path[] = SERVER_LOG_TEMPLATE;
+	const int log = mkstemp (path);
+	test_check_int_gt (log, -1);
+
+	const int saved = dup (STDERR_FILENO);
+	test_check_int_eq (dup2 (log, STDERR_FILENO), STDERR_FILENO, NULL);
+
+	TlsSettings *settings = tls_settings_create ();
+	test_check_unsigned_eq (tls_settings_add_certificate (settings, certificates->expiring_chain, certificates->expiring_key), 0, NULL);
+	TlsServer *server = server_start (settings);
+
+	test_check_int_eq (dup2 (saved, STDERR_FILENO), STDERR_FILENO, NULL);
+	(void) close (saved);
+
+	char logged[SERVER_LOG_SIZE] = { 0 };
+	const ssize_t logged_size = pread (log, logged, sizeof (logged) - 1, 0);
+	test_check_true (logged_size > 0);
+	test_check_ptr (strstr (logged, server_expiry_warning));
+
+	(void) close (log);
+	(void) unlink (path);
+
+	TlsStats stats = server_stats (server);
+	test_check_true ((stats.certificate_expiry_seconds > 0) && (stats.certificate_expiry_seconds < SERVER_EXPIRY_WARNING_SECONDS));
+
+	server_stop (server);
+
+}
+
+// a full web cerver with threads closes a connection without its handshake: a 503 in plain would be the first bytes
+// of a TLS stream; the thread runs the handshake of a silent client, and another one waits in the queue
+static void test_server_full (const TestCertificates *certificates) {
+
+	TlsServer *server = (TlsServer *) calloc (1, sizeof (TlsServer));
+	test_check_ptr (server);
+	server->port = server_port++;
+	server->cerver = server_create (server->port, server_settings (certificates));
+	cerver_set_thpool_n_threads (server->cerver, SERVER_FULL_THREADS);
+	cerver_set_thpool_queue_size (server->cerver, SERVER_FULL_QUEUE);
+	cerver_set_overload_policy (server->cerver, CERVER_OVERLOAD_POLICY_REJECT);
+	test_check_int_eq (pthread_create (&server->thread, NULL, server_thread, server), 0, NULL);
+	server_wait_listen (server->port);
+
+	// the thread is free again once the connection of the wait for the listen ended its handshake (it closed); the
+	// test never reads the thpool, that the thread of the cerver made
+	test_check_true (server_wait_stat (server, server_closed, 1) >= 1);
+
+	// one handshake in the thread, one in the queue: whatever place each one takes, the third one has none
+	const int working = server_connect_silent (server->port);
+	(void) usleep ((useconds_t) (test_milliseconds (SERVER_FULL_PAUSE_MILLISECONDS) * SERVER_MICROSECONDS_PER_MILLISECOND));
+
+	const int queued = server_connect_silent (server->port);
+	(void) usleep ((useconds_t) (test_milliseconds (SERVER_FULL_PAUSE_MILLISECONDS) * SERVER_MICROSECONDS_PER_MILLISECOND));
+
+	const int rejected = server_connect_silent (server->port);
+	char response[SERVER_NAME_SIZE] = { 0 };
+	test_check_true (recv (rejected, response, sizeof (response) - 1, 0) <= 0);
+	test_check_null_ptr (strstr (response, "503"));
+	(void) close (rejected);
+
+	test_check_true (server_wait_stat (server, server_rejected, 1) >= 1);
+
+	(void) close (queued);
+	(void) close (working);
+
+	server_stop (server);
+
+}
+
 #pragma endregion
+
+static void server_tests (const TestCertificates *certificates) {
+
+	test_server_versions (certificates);
+	test_server_ciphers (certificates);
+	test_server_sni (certificates);
+	test_server_alpn (certificates);
+	test_server_mtls_required (certificates);
+	test_server_mtls_optional (certificates);
+	test_server_resumption (certificates);
+	test_server_ticket_rotation (certificates);
+	test_server_early_data (certificates);
+	test_server_reload (certificates);
+	test_server_reload_signal_and_watch (certificates);
+	test_server_start_errors (certificates);
+	test_server_large (certificates, false);
+	test_server_large (certificates, true);
+	test_server_close_notify (certificates);
+	test_server_handshake_timeout (certificates);
+	test_server_burst (certificates);
+	test_server_handshake_waits (certificates);
+
+	// an event loop stops accepting at its limit of connections, it never rejects one
+	if (server_handler_type == CERVER_HANDLER_TYPE_THREADS) test_server_full (certificates);
+
+	test_server_expiry_warning (certificates);
+	test_server_flush_mark (certificates);
+
+}
 
 void tls_tests_server (const TestCertificates *certificates) {
 
@@ -846,21 +1270,11 @@ void tls_tests_server (const TestCertificates *certificates) {
 	test_check_ptr (server_large);
 	for (size_t index = 0; index < SERVER_LARGE_SIZE; index++) server_large[index] = (char) ('a' + (index % 26));
 
-	test_server_versions (certificates);
-	test_server_ciphers (certificates);
-	test_server_sni (certificates);
-	test_server_alpn (certificates);
-	test_server_mtls_required (certificates);
-	test_server_mtls_optional (certificates);
-	test_server_resumption (certificates);
-	test_server_early_data (certificates);
-	test_server_reload (certificates);
-	test_server_reload_signal_and_watch (certificates);
-	test_server_start_errors (certificates);
-	test_server_large (certificates, false);
-	test_server_large (certificates, true);
-	test_server_close_notify (certificates);
-	test_server_handshake_timeout (certificates);
+	server_handler_type = CERVER_HANDLER_TYPE_THREADS;
+	server_tests (certificates);
+
+	server_handler_type = CERVER_HANDLER_TYPE_EVENTS;
+	server_tests (certificates);
 
 	free (server_large);
 

@@ -193,6 +193,8 @@ struct _TlsConnection {
 	TlsBuffer early;
 	/** @internal @brief The client sent early data and the cerver took it. */
 	bool early_data;
+	/** @internal @brief The early data was read: always in a client, in a cerver once the client sent it all. */
+	bool early_ended;
 
 	/** @internal @brief The handshake ended. */
 	bool established;
@@ -222,6 +224,23 @@ struct _TlsConnection {
 
 /** @internal @brief The TLS of a connection, see struct _TlsConnection. */
 typedef struct _TlsConnection TlsConnection;
+
+/**
+ * @internal
+ * @brief What a handshake that never waits needs next (tls_connection_handshake_advance ()).
+ */
+typedef enum TlsHandshakeStep {
+
+	/** @internal @brief It ended and everything that it wrote was sent. */
+	TLS_HANDSHAKE_STEP_DONE		= 0,
+	/** @internal @brief It waits for the next records of the peer: the socket can be read. */
+	TLS_HANDSHAKE_STEP_READ		= 1,
+	/** @internal @brief Its records wait in the output: the socket can be written. */
+	TLS_HANDSHAKE_STEP_WRITE	= 2,
+	/** @internal @brief It failed, the reason was counted. */
+	TLS_HANDSHAKE_STEP_FAILED	= 3
+
+} TlsHandshakeStep;
 
 /**
  * @internal
@@ -399,6 +418,31 @@ CERVER_HIDDEN TlsFailure tls_connection_handshake (
 
 /**
  * @internal
+ * @brief Advances the handshake with what the socket has now, and sends what it wrote, without waiting: the
+ * handshake of a connection of an event loop, that waits for the socket in its poller.
+ *
+ * Once it ended, a call only sends what still waits in the output.
+ *
+ * @param[in,out] connection the connection
+ * @return what the handshake needs next; a failure was counted in the counters
+ * @warning With kTLS, the records of the handshake that wait when the kernel takes the key are sent first, waiting
+ * up to #TLS_CLOSE_TIMEOUT_MILLISECONDS for the socket.
+ * @since 2.1b-23
+ */
+CERVER_HIDDEN TlsHandshakeStep tls_connection_handshake_advance (TlsConnection *connection);
+
+/**
+ * @internal
+ * @brief Counts a handshake that did not end in time: the deadline of a handshake that never waits is the one of
+ * the poller of its loop.
+ *
+ * @param[in,out] connection the connection, nothing more can be read or sent with it
+ * @since 2.1b-23
+ */
+CERVER_HIDDEN void tls_connection_handshake_expired (TlsConnection *connection);
+
+/**
+ * @internal
  * @brief Receives and decrypts, like recv ().
  *
  * @param[in,out] connection the connection
@@ -496,6 +540,16 @@ CERVER_HIDDEN u8 tls_connection_send_file_until (
  * @param[in,out] connection the connection
  */
 CERVER_HIDDEN void tls_connection_close (TlsConnection *connection);
+
+/**
+ * @internal
+ * @brief Writes the close_notify once and sends what the socket takes now, without waiting: the close of a
+ * connection of an event loop. A later tls_connection_close () does nothing.
+ *
+ * @param[in,out] connection the connection
+ * @since 2.1b-23
+ */
+CERVER_HIDDEN void tls_connection_close_now (TlsConnection *connection);
 
 /**
  * @internal
@@ -626,6 +680,28 @@ CERVER_HIDDEN void cerver_tls_end (struct _Cerver *cerver);
  * @return true when the handshake ended (now or before)
  */
 CERVER_HIDDEN bool cerver_tls_accept (struct _Cerver *cerver, struct _Socket *socket);
+
+/**
+ * @internal
+ * @brief Gives a socket of a cerver its TLS with the current context, without its handshake: the connection of an
+ * event loop runs it without waiting (tls_connection_handshake_advance ()).
+ *
+ * @param[in] cerver the cerver, with TLS
+ * @param[in,out] socket the socket of the connection, without TLS
+ * @return true when the socket has its TLS; false without memory (counted as #TLS_FAILURE_MEMORY)
+ * @since 2.1b-23
+ */
+CERVER_HIDDEN bool cerver_tls_attach (struct _Cerver *cerver, struct _Socket *socket);
+
+/**
+ * @internal
+ * @brief Returns the deadline of each handshake of a cerver.
+ *
+ * @param[in] cerver the cerver, with TLS
+ * @return the milliseconds
+ * @since 2.1b-23
+ */
+CERVER_HIDDEN unsigned int cerver_tls_handshake_timeout (const struct _Cerver *cerver);
 
 /**
  * @internal

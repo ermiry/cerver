@@ -21,6 +21,10 @@
 #define SEND_PIECES				3
 #define SEND_PIECE_SIZE			1000
 #define ROUTE_BODY_SIZE			((4096 * 3) + 123)
+#define ROUTE_TLS_BODY_SIZE		(1 << 8)
+
+// what marks a socket with TLS for the route, never read
+static char route_tls_mark = 0;
 
 // a peer that never reads: more data than any socket buffer of a socketpair, in packets that time out
 #define SEND_TIMEOUT_DATA_SIZE		(1 << 23)
@@ -1039,6 +1043,48 @@ static void test_packets_route_between_connections (void) {
 
 }
 
+// a route between connections refuses a socket with TLS on either side, without moving a byte: splice () would move
+// its records as they are; the TLS is only marked, the route never touches it
+static void route_check_refused (SendPair *from, SendPair *to, PacketHeader *header, Socket *secure) {
+
+	secure->tls = (struct _TlsConnection *) &route_tls_mark;
+
+	size_t sent = 0;
+	test_check_unsigned_eq (packet_route_between_connections (from->connection, to->connection, header, &sent), 1, NULL);
+	test_check_unsigned_eq (sent, 0, NULL);
+
+	secure->tls = NULL;
+
+	// the body still waits in the from connection
+	char byte = 0;
+	test_check (recv (from->connection->socket->sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT) == 1, NULL);
+
+}
+
+static void test_packets_route_refuses_tls (void) {
+
+	SendPair from = send_pair_create ();
+	SendPair to = send_pair_create ();
+
+	char body[ROUTE_TLS_BODY_SIZE];
+	send_fill (body, ROUTE_TLS_BODY_SIZE, 't');
+	test_check (send (from.fds[1], body, ROUTE_TLS_BODY_SIZE, 0) == (ssize_t) ROUTE_TLS_BODY_SIZE, NULL);
+
+	PacketHeader header;
+	(void) memset (&header, 0, sizeof (PacketHeader));
+	header.packet_type = PACKET_TYPE_APP;
+	header.request_type = SEND_REQUEST_TYPE;
+	header.packet_size = PACKET_HEADER_SIZE + ROUTE_TLS_BODY_SIZE;
+	header.version = packet_version_local ();
+
+	route_check_refused (&from, &to, &header, from.connection->socket);
+	route_check_refused (&from, &to, &header, to.connection->socket);
+
+	send_pair_delete (&to);
+	send_pair_delete (&from);
+
+}
+
 // the same protocol id and major with a minor that is not newer passes,
 // it used to accept older majors and reject older minors
 static void test_packets_check (void) {
@@ -1310,6 +1356,7 @@ int main (void) {
 	test_packets_send_to_socket ();
 	test_packets_send_request ();
 	test_packets_route_between_connections ();
+	test_packets_route_refuses_tls ();
 	test_packets_check ();
 
 	// errors

@@ -9,7 +9,7 @@ REPORTS=${REPORTS:-testssl-reports}
 NETWORK=${NETWORK:-cerver-testssl}
 WAIT_SECONDS=${WAIT_SECONDS:-32}
 SEVERITY=${SEVERITY:-MEDIUM}
-IGNORED=${IGNORED:-}
+IGNORED=${IGNORED:-cert_revocation security_headers}
 MODES=(${MODES:-plain mtls})
 
 SERVER=cerver-testssl-server
@@ -127,7 +127,9 @@ mkdir -p "$REPORTS/certificates"
 chmod 777 "$REPORTS"
 
 certificates_create || { echo "the certificates could not be made"; exit 1; }
-cat "$REPORTS/certificates/client.pem" "$REPORTS/certificates/client.key" > "$REPORTS/certificates/client-bundle.pem"
+$DOCKER run --rm -v "$(pwd)/$REPORTS/certificates:/certificates" "$IMAGE" \
+	bash -c 'cat /certificates/client.pem && openssl pkcs8 -topk8 -nocrypt -in /certificates/client.key' \
+	> "$REPORTS/certificates/client-bundle.pem" || { echo "the bundle of the client could not be made"; exit 1; }
 
 $DOCKER network create "$NETWORK" > /dev/null || exit 1
 

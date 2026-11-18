@@ -183,6 +183,9 @@ TlsConnection *tls_connection_create (
 		connection->ktls_allowed = ktls;
 		connection->counters = counters;
 
+		// a client never reads early data; a cerver without it ends its early step at once
+		connection->early_ended = !server;
+
 		bool created = tls_buffer_init (&connection->input, TLS_INPUT_SIZE)
 			&& tls_buffer_init (&connection->output, TLS_OUTPUT_INITIAL_SIZE);
 
@@ -591,19 +594,19 @@ static bool tls_connection_handshake_early (TlsConnection *connection, TlsFailur
 
 // one step of the handshake with the mutex held
 static CryptoTlsResult tls_connection_handshake_step (
-	TlsConnection *connection, bool *early_ended, TlsFailure *failure
+	TlsConnection *connection, TlsFailure *failure
 ) {
 
 	CryptoTlsResult result = CRYPTO_TLS_RESULT_WANT_READ;
 
 	(void) pthread_mutex_lock (&connection->mutex);
 
-	if (!*early_ended) {
-		*early_ended = tls_connection_handshake_early (connection, failure);
+	if (!connection->early_ended) {
+		connection->early_ended = tls_connection_handshake_early (connection, failure);
 		if (*failure != TLS_FAILURE_NONE) result = CRYPTO_TLS_RESULT_FAILED;
 	}
 
-	if (*early_ended && (*failure == TLS_FAILURE_NONE)) {
+	if (connection->early_ended && (*failure == TLS_FAILURE_NONE)) {
 		result = cerver_crypto_provider_tls_session_handshake (connection->session, failure);
 	}
 
@@ -667,13 +670,10 @@ TlsFailure tls_connection_handshake (
 	socket_deadline_create_milliseconds (&deadline, timeout_milliseconds);
 	connection->deadline = &deadline;
 
-	// a client never reads early data; a cerver without it ends its early step at once
-	bool early_ended = !connection->server;
-
 	TlsFailure failure = TLS_FAILURE_NONE;
 	bool running = true;
 	while (running) {
-		const CryptoTlsResult result = tls_connection_handshake_step (connection, &early_ended, &failure);
+		const CryptoTlsResult result = tls_connection_handshake_step (connection, &failure);
 
 		// every flight is sent before waiting for the next one
 		int error = 0;
@@ -711,6 +711,91 @@ TlsFailure tls_connection_handshake (
 	if (failure != TLS_FAILURE_NONE) (void) tls_connection_failed (connection, failure);
 
 	return failure;
+
+}
+
+// the handshake ended: what it wrote last (the Finished of a cerver of TLS 1.2, the tickets) can still wait
+static TlsHandshakeStep tls_connection_handshake_done (TlsConnection *connection, const ssize_t waiting) {
+
+	if (!connection->established) (void) tls_connection_established (connection);
+
+	return waiting ? TLS_HANDSHAKE_STEP_WRITE : TLS_HANDSHAKE_STEP_DONE;
+
+}
+
+// what a step of the handshake that never waits needs next, once what it wrote was sent once
+static TlsHandshakeStep tls_connection_handshake_next (
+	TlsConnection *connection, const CryptoTlsResult result, const ssize_t waiting, TlsFailure *failure
+) {
+
+	TlsHandshakeStep step = TLS_HANDSHAKE_STEP_FAILED;
+
+	if (*failure != TLS_FAILURE_NONE) step = TLS_HANDSHAKE_STEP_FAILED;
+	else if (waiting < 0) *failure = TLS_FAILURE_SYSTEM;
+	else if (result == CRYPTO_TLS_RESULT_DONE) step = tls_connection_handshake_done (connection, waiting);
+	else if (result == CRYPTO_TLS_RESULT_CLOSED) *failure = TLS_FAILURE_CLOSED;
+	else if (result == CRYPTO_TLS_RESULT_FAILED) *failure = TLS_FAILURE_PROTOCOL;
+	else step = waiting ? TLS_HANDSHAKE_STEP_WRITE : TLS_HANDSHAKE_STEP_READ;
+
+	return step;
+
+}
+
+// takes the records of the peer that already came, without waiting for them
+// returns true when the handshake can advance with them
+static bool tls_connection_handshake_take (TlsConnection *connection, TlsFailure *failure) {
+
+	(void) pthread_mutex_lock (&connection->mutex);
+	const bool arrived = tls_buffer_has_record (&connection->input);
+	(void) pthread_mutex_unlock (&connection->mutex);
+
+	bool advances = arrived;
+
+	if (!arrived) {
+		const ssize_t received = tls_connection_receive_records (connection, MSG_DONTWAIT);
+		advances = (received > 0);
+
+		if (!received) *failure = TLS_FAILURE_CLOSED;
+		else if ((received < 0) && !tls_connection_would_block (errno)) *failure = TLS_FAILURE_SYSTEM;
+	}
+
+	return advances;
+
+}
+
+TlsHandshakeStep tls_connection_handshake_advance (TlsConnection *connection) {
+
+	TlsFailure failure = TLS_FAILURE_NONE;
+	TlsHandshakeStep step = TLS_HANDSHAKE_STEP_READ;
+
+	bool advancing = true;
+	while (advancing) {
+		const CryptoTlsResult result = connection->established ?
+			CRYPTO_TLS_RESULT_DONE : tls_connection_handshake_step (connection, &failure);
+
+		// every flight is sent before the next one is read
+		const ssize_t waiting = tls_connection_flush (connection);
+
+		step = tls_connection_handshake_next (connection, result, waiting, &failure);
+
+		// the records that came are read until the socket has none: its poller would not report them again
+		advancing = (step == TLS_HANDSHAKE_STEP_READ) && tls_connection_handshake_take (connection, &failure);
+	}
+
+	if (failure != TLS_FAILURE_NONE) {
+		(void) tls_connection_failed (connection, failure);
+		step = TLS_HANDSHAKE_STEP_FAILED;
+	}
+
+	return step;
+
+}
+
+void tls_connection_handshake_expired (TlsConnection *connection) {
+
+	(void) pthread_mutex_lock (&connection->mutex);
+	(void) tls_connection_failed (connection, TLS_FAILURE_TIMEOUT);
+	(void) pthread_mutex_unlock (&connection->mutex);
 
 }
 
@@ -1111,6 +1196,35 @@ void tls_connection_close (TlsConnection *connection) {
 
 		(void) tls_connection_flush_until (connection, target, &deadline, &error);
 	}
+
+}
+
+// the close_notify with the mutex held; with kTLS the alert leaves at once, so it only goes after the data
+// that waits, and a socket that does not take that data now gets no alert
+static void tls_connection_close_notify_now (TlsConnection *connection) {
+
+	if (connection->ktls_send) (void) tls_connection_output_send_once (connection);
+
+	if (!connection->ktls_send || !tls_buffer_used (&connection->output)) {
+		cerver_crypto_provider_tls_session_close (connection->session);
+	}
+
+}
+
+void tls_connection_close_now (TlsConnection *connection) {
+
+	(void) pthread_mutex_lock (&connection->mutex);
+
+	const bool closing = connection->established && !connection->sent_close && !connection->failed;
+	if (closing) {
+		connection->sent_close = true;
+
+		tls_connection_close_notify_now (connection);
+	}
+
+	(void) tls_connection_output_send_once (connection);
+
+	(void) pthread_mutex_unlock (&connection->mutex);
 
 }
 

@@ -12,6 +12,7 @@
 #include "cerver/config.h"
 
 #include "cerver/events/internal.h"
+#include "cerver/network/socket.h"
 
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/internal.h"
@@ -21,6 +22,8 @@
 #include "cerver/http/websockets/websocket.h"
 
 #include "cerver/threads/thpool.h"
+
+#include "cerver/tls/internal.h"
 
 // F6b: a WebSocket connection of the server in the event loop (CERVER_HANDLER_TYPE_EVENTS)
 // the loop reads it and parses its frames, it answers the pings and the closing handshake, and it writes its
@@ -488,6 +491,10 @@ static void http_web_socket_loop_finalize (HttpWebSocket *web_socket) {
 static void http_web_socket_loop_end_writes (HttpWebSocket *web_socket) {
 
 	if (!web_socket->writes_ended) {
+		// the close_notify of its TLS leaves without waiting for a full socket, the end of the writes only sends it once
+		const Socket *socket = web_socket->socket;
+		if (socket && socket->tls) tls_connection_close_now (socket->tls);
+
 		web_socket->transport->end_writes (web_socket);
 
 		(void) pthread_mutex_lock (&web_socket->send_mutex);
@@ -625,6 +632,24 @@ static void http_web_socket_loop_read (HttpWebSocket *web_socket) {
 
 }
 
+// the loop reads the connection now: no job has it, and it reads its frames or drains its peer
+static bool http_web_socket_loop_reads (const HttpWebSocket *web_socket) {
+
+	return !web_socket->finished && !http_web_socket_loop_is_aborted (web_socket)
+		&& ((web_socket->reading && !web_socket->job) || web_socket->draining);
+
+}
+
+// what its TLS already has (records that one read brought, decrypted bytes that did not fit) is read now:
+// its poller does not report it again; each read takes at least a record
+static void http_web_socket_loop_read_pending (HttpWebSocket *web_socket) {
+
+	while (http_web_socket_loop_reads (web_socket) && web_socket->transport->pending (web_socket)) {
+		http_web_socket_loop_read (web_socket);
+	}
+
+}
+
 // a write that is reported, also with the hang up of the peer: the queue tells if it failed
 static void http_web_socket_loop_writable (HttpWebSocket *web_socket, const unsigned int ready) {
 
@@ -703,6 +728,8 @@ static void http_web_socket_loop_update (HttpWebSocket *web_socket) {
 
 	if (!web_socket->released) {
 		if (!web_socket->finished) {
+			http_web_socket_loop_read_pending (web_socket);
+
 			http_web_socket_loop_end_progress (web_socket);
 		}
 
@@ -1084,7 +1111,7 @@ static bool http_web_socket_park_linger_wait (const HttpWebSocket *web_socket, c
 // message of a peer that answers at once goes to the thread that is still running, like the thread of a connection
 // in THREADS, instead of a thread of the pool that has slept the longest
 // returns true when the connection has something to read first
-static bool http_web_socket_park_linger (const HttpWebSocket *web_socket, const EventIdle *idle) {
+static bool http_web_socket_park_linger_look (const HttpWebSocket *web_socket, const EventIdle *idle) {
 
 	// once each few messages the thread looks if something of the pool is ready now, and goes to it: the threads
 	// that wait take the rest, and a thread that keeps its connection does not leave the others waiting (a look
@@ -1098,6 +1125,14 @@ static bool http_web_socket_park_linger (const HttpWebSocket *web_socket, const 
 	}
 
 	return !busy && http_web_socket_park_linger_wait (web_socket, idle);
+
+}
+
+// what its TLS already has is read without waiting: its socket does not show it, and the poller of the pool would
+// leave it there while the connection waits in its park
+static bool http_web_socket_park_linger (const HttpWebSocket *web_socket, const EventIdle *idle) {
+
+	return web_socket->transport->pending (web_socket) || http_web_socket_park_linger_look (web_socket, idle);
 
 }
 

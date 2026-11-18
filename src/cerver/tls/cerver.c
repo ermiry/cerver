@@ -95,8 +95,7 @@ u8 cerver_set_tls (Cerver *cerver, TlsSettings *settings) {
 
 	u8 retval = 1;
 
-	const bool valid = cerver && settings && (cerver->protocol == PROTOCOL_TCP)
-		&& (cerver->handler_type != CERVER_HANDLER_TYPE_EVENTS);
+	const bool valid = cerver && settings && (cerver->protocol == PROTOCOL_TCP);
 
 	CerverTls *tls = valid ? cerver_tls_create (settings) : NULL;
 	if (tls) {
@@ -106,13 +105,6 @@ u8 cerver_set_tls (Cerver *cerver, TlsSettings *settings) {
 	}
 
 	else {
-		if (cerver && settings && (cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS)) {
-			cerver_log_error (
-				"Cerver %s can not use TLS with CERVER_HANDLER_TYPE_EVENTS before F8b",
-				cerver->info ? cerver->info->name : ""
-			);
-		}
-
 		tls_settings_delete (settings);
 	}
 
@@ -240,32 +232,40 @@ u8 cerver_tls_reload (Cerver *cerver) {
 
 #pragma region connections
 
+bool cerver_tls_attach (Cerver *cerver, Socket *socket) {
+
+	CerverTls *tls = cerver->tls;
+
+	CryptoTlsContext *context = cerver_tls_context_get (tls);
+	TlsConnection *connection = context ? tls_connection_create (
+		context, socket->sock_fd, true, tls->settings->ktls, NULL, NULL, &tls->counters
+	) : NULL;
+
+	cerver_crypto_provider_tls_context_release (context);
+
+	if (connection) socket->tls = connection;
+	else tls_counter_add (&tls->counters.stats.failures[TLS_FAILURE_MEMORY], 1);
+
+	return (connection != NULL);
+
+}
+
+unsigned int cerver_tls_handshake_timeout (const Cerver *cerver) {
+
+	return cerver->tls->settings->handshake_timeout_milliseconds;
+
+}
+
 bool cerver_tls_accept (Cerver *cerver, Socket *socket) {
 
 	bool retval = false;
-
-	CerverTls *tls = cerver->tls;
 
 	if (socket->tls) {
 		retval = socket->tls->established;
 	}
 
-	else {
-		CryptoTlsContext *context = cerver_tls_context_get (tls);
-		TlsConnection *connection = context ? tls_connection_create (
-			context, socket->sock_fd, true, tls->settings->ktls, NULL, NULL, &tls->counters
-		) : NULL;
-
-		cerver_crypto_provider_tls_context_release (context);
-
-		if (connection) {
-			socket->tls = connection;
-			retval = (tls_connection_handshake (connection, tls->settings->handshake_timeout_milliseconds) == TLS_FAILURE_NONE);
-		}
-
-		else {
-			tls_counter_add (&tls->counters.stats.failures[TLS_FAILURE_MEMORY], 1);
-		}
+	else if (cerver_tls_attach (cerver, socket)) {
+		retval = (tls_connection_handshake (socket->tls, cerver_tls_handshake_timeout (cerver)) == TLS_FAILURE_NONE);
 	}
 
 	return retval;
@@ -665,20 +665,12 @@ u8 cerver_tls_start (Cerver *cerver) {
 	if (tls) {
 		retval = 1;
 
-		if (cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS) {
-			cerver_log_error (
-				"Cerver %s can not use TLS with CERVER_HANDLER_TYPE_EVENTS before F8b", cerver->info->name
-			);
-		}
+		CryptoTlsContext *context = cerver_tls_context_build (cerver, tls);
+		if (context) {
+			cerver_tls_context_set (tls, context);
 
-		else {
-			CryptoTlsContext *context = cerver_tls_context_build (cerver, tls);
-			if (context) {
-				cerver_tls_context_set (tls, context);
-
-				retval = cerver_tls_handshakes_start (cerver);
-				if (!retval && cerver_tls_maintenance_needed (tls)) retval = cerver_tls_maintenance_start (cerver);
-			}
+			retval = cerver_tls_handshakes_start (cerver);
+			if (!retval && cerver_tls_maintenance_needed (tls)) retval = cerver_tls_maintenance_start (cerver);
 		}
 	}
 

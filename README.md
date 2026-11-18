@@ -43,7 +43,7 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 - **Two models**: `CERVER_HANDLER_TYPE_THREADS`, a thread for each connection that is read, or `CERVER_HANDLER_TYPE_EVENTS`, event loops with epoll that read and parse every connection without waiting and give the requests to the pools, with the connections that are kept waiting in their loop and a wait or a 503 when the pools are full
 - **Named pools** for the endpoints that must not wait for the others, with health and ready routes
 - **WebSocket** (RFC 6455) with permessage-deflate (RFC 7692), in endpoints and groups, with subprotocols, the origins, ping and pong, rooms, broadcasts, a bounded output queue with backpressure in each connection, and a client with reconnection and `wss://`; with the event loop a connection lives in its loop and its methods run in the pool of its endpoint (or in its loop, for short methods)
-- **TLS for HTTP** with the threads model: the name that the client asked for, the certificate of the client in each request, endpoints and groups that require it, and the authentication by certificate
+- **TLS for HTTP** with the threads model and with the event loop, whose handshakes never take a thread: the name that the client asked for, the certificate of the client in each request, endpoints and groups that require it, and the authentication by certificate
 - **Routes** in a radix tree, with groups that pass their settings to their subgroups and endpoints, path parameters with validators, wildcards, middlewares, and automatic `OPTIONS`, 405 and 308 responses
 - **JWT authentication** with HMAC, RSA or ECDSA keys (HS, RS and ES of 256, 384 and 512 bits), validated against their algorithm when the cerver starts
 - **Uploads** of multipart forms, with their own limits and a path that never keeps the files of a request that failed
@@ -63,7 +63,7 @@ Zero warnings with gcc, g++ and clang, unit and integration tests in IPv4 and IP
 |---|---|---|
 | **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver, without HTTP |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus the HTTP server. It reaches `master` with the release 2.0 |
-| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, named pools, WebSocket and TLS over threads; then TLS in the loop and HTTP/2 (its [roadmap](./roadmap.md)) |
+| **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, named pools, WebSocket and TLS over threads and in the loop; then the asynchronous authentication and HTTP/2 (its [roadmap](./roadmap.md)) |
 | **3.0** | `labs` (development), `labs-beta` | The next major line, with cerver's own code in place of the code of other projects |
 
 The changes between versions are in [CHANGELOG.md](./CHANGELOG.md) and [incompatibilities.md](./incompatibilities.md).
@@ -251,7 +251,7 @@ bash test/nginx/tls/run.sh                              # nginx in front of a we
 bash test/tls/testssl.sh                                # testssl.sh against the defaults of TLS
 ```
 
-`CERVER_TEST_HANDLER=events` runs the web tests with the event loop, and `test/run.sh` runs the WebSocket ones in both models. `test/bin/tls` makes its certificates in each run and tests TLS against raw clients of OpenSSL, with OCSP and a PKCS#11 token of SoftHSM2 when the image has them.
+`CERVER_TEST_HANDLER=events` runs the web tests with the event loop, and `test/run.sh` runs the WebSocket ones in both models. `test/bin/tls` makes its certificates in each run and tests TLS against raw clients of OpenSSL, its web cervers with threads and with the event loop, with OCSP and a PKCS#11 token of SoftHSM2 when the image has them.
 
 Build the image with `--build-arg SANITIZER=address,undefined` (or `thread`) to run them with the sanitizers.
 

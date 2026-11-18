@@ -26,8 +26,10 @@ struct _Cerver;
  * @brief TLS for every TCP cerver: CUSTOM, GAME, WEB, FILES and BALANCER.
  *
  * A cerver with TLS only listens TLS on its port. The handshake of a web cerver runs in the thread of its thpool
- * that receives the connection; the one of any other cerver in a pool of its own, before its info packet is sent.
- * When a web cerver is full, a connection is closed without its handshake.
+ * that receives the connection, or in its event loop with CERVER_HANDLER_TYPE_EVENTS (since 2.1b-23: the loop waits
+ * for the records of the client in its poller, until the deadline of the handshake); the one of any other cerver in
+ * a pool of its own, before its info packet is sent. When a web cerver with threads is full, a connection is closed
+ * without its handshake; one with an event loop stops accepting at its limit of connections.
  * @{
  */
 
@@ -40,8 +42,8 @@ struct _Cerver;
  * @param[in,out] cerver a TCP cerver that has not started
  * @param[in] settings the settings, owned by the cerver even when it fails
  * @retval 0 the cerver uses TLS
- * @retval 1 a NULL argument, an UDP cerver, one with CERVER_HANDLER_TYPE_EVENTS (it has TLS with F8b), or no memory
- * @since 2.1b-22
+ * @retval 1 a NULL argument, an UDP cerver or no memory
+ * @since 2.1b-22 (with CERVER_HANDLER_TYPE_EVENTS since 2.1b-23)
  */
 CERVER_EXPORT u8 cerver_set_tls (struct _Cerver *cerver, TlsSettings *settings);
 

@@ -78,7 +78,15 @@ typedef enum HttpConnectionState {
 	/** @internal @brief Its writes were shut down, the loop reads what the client still sends before closing it. */
 	HTTP_CONNECTION_STATE_CLOSING			= 6,
 	/** @internal @brief It was kept after a request and its client has not sent the next one. */
-	HTTP_CONNECTION_STATE_IDLE				= 7
+	HTTP_CONNECTION_STATE_IDLE				= 7,
+	/**
+	 * @internal
+	 * @brief The loop runs the handshake of its TLS, before its first request, with the deadline of the handshakes
+	 * of its cerver.
+	 *
+	 * @since 2.1b-23
+	 */
+	HTTP_CONNECTION_STATE_HANDSHAKE			= 8
 
 } HttpConnectionState;
 
@@ -201,6 +209,13 @@ struct HttpConnection {
 	u64 request_deadline;
 	/** @internal @brief The deadline of its headers. */
 	u64 headers_deadline;
+	/**
+	 * @internal
+	 * @brief The deadline of the handshake of its TLS, from its accept.
+	 *
+	 * @since 2.1b-23
+	 */
+	u64 handshake_deadline;
 
 	/** @internal @brief The connection of the cerver: its socket, its address and its stats. */
 	Connection *peer;
@@ -232,6 +247,21 @@ struct HttpConnection {
 
 	/** @internal @brief The bytes that were read from a connection that is closing. */
 	size_t drained;
+
+	/**
+	 * @internal
+	 * @brief The loop is reading it: a read of its TLS that is needed meanwhile is done by that read, not by a new one.
+	 *
+	 * @since 2.1b-23
+	 */
+	bool reading;
+	/**
+	 * @internal
+	 * @brief Its TLS still has bytes that its poller will not report: the read that is running reads again.
+	 *
+	 * @since 2.1b-23
+	 */
+	bool reread;
 
 	/** @internal @brief The job that the pool runs, or that waits for a place while it is parked. */
 	HttpConnectionJob job;

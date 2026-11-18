@@ -13,6 +13,7 @@
 #include <cerver/core/start.h>
 
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/client.h>
 #include <cerver/http/websockets/settings.h>
@@ -25,6 +26,9 @@
 #include "tls.h"
 
 #define WEBSOCKET_THREADS				4
+
+// one event loop
+#define WEBSOCKET_IO_THREADS			1
 
 #define WEBSOCKET_SMALL_MESSAGES		(1 << 9)
 #define WEBSOCKET_SMALL_SIZE			(1 << 7)
@@ -161,17 +165,20 @@ static void websocket_exchange (HttpWebSocketClient *client, const unsigned int 
 
 }
 
-void tls_tests_websocket (const TestCertificates *certificates) {
-
-	(void) printf ("Testing TLS WebSocket...\n");
-
-	const u16 port = WEBSOCKET_PORT;
+// wss:// with threads, and with the event loop: there the records that one read brought wait in the TLS of the
+// connection, the poller does not report them again; without the parks of the pool (pool_read) the loop reads
+// every connection, with them the threads of the pool read most of them
+static void websocket_check (
+	const TestCertificates *certificates, const CerverHandlerType handler_type, const u16 port, const bool pool_read
+) {
 
 	Cerver *cerver = cerver_create_web ("tls-websocket", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (cerver, handler_type);
 	cerver_set_reusable_address_flags (cerver, true);
 	cerver_set_thpool_n_threads (cerver, WEBSOCKET_THREADS);
+	cerver_set_io_threads (cerver, WEBSOCKET_IO_THREADS);
+	http_cerver_set_keep_alive_pool_read ((HttpCerver *) cerver->cerver_data, pool_read);
 
 	TlsSettings *settings = tls_settings_create ();
 	test_check_unsigned_eq (tls_settings_add_certificate (settings, certificates->server_chain, certificates->server_key), 0, NULL);
@@ -205,6 +212,16 @@ void tls_tests_websocket (const TestCertificates *certificates) {
 	test_check_unsigned_eq (cerver_shutdown (cerver), 0, NULL);
 	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+void tls_tests_websocket (const TestCertificates *certificates) {
+
+	(void) printf ("Testing TLS WebSocket...\n");
+
+	websocket_check (certificates, CERVER_HANDLER_TYPE_THREADS, WEBSOCKET_PORT, true);
+	websocket_check (certificates, CERVER_HANDLER_TYPE_EVENTS, WEBSOCKET_PORT + 1, true);
+	websocket_check (certificates, CERVER_HANDLER_TYPE_EVENTS, WEBSOCKET_PORT + 2, false);
 
 	free (websocket_expected);
 	websocket_expected = NULL;

@@ -39,6 +39,10 @@ typedef struct TestCertificates {
 	char expired_chain[TEST_CERTIFICATE_PATH_SIZE];
 	char expired_key[TEST_CERTIFICATE_PATH_SIZE];
 
+	// valid, it expires before the warning of cerver (TLS_CERTIFICATE_EXPIRY_WARNING_DAYS)
+	char expiring_chain[TEST_CERTIFICATE_PATH_SIZE];
+	char expiring_key[TEST_CERTIFICATE_PATH_SIZE];
+
 	char mismatch_key[TEST_CERTIFICATE_PATH_SIZE];
 
 	char stranger_chain[TEST_CERTIFICATE_PATH_SIZE];

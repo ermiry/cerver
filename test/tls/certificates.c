@@ -16,6 +16,8 @@
 #define CERTIFICATES_DAY						(60L * 60L * 24L)
 // the days that a test certificate is valid
 #define CERTIFICATES_VALID_DAYS					(1L << 10)
+// the days of the one that expires soon, fewer than the warning of cerver
+#define CERTIFICATES_EXPIRING_DAYS				(1L << 3)
 
 // the template of the folder of a run
 #define CERTIFICATES_DIRECTORY_TEMPLATE			"/tmp/cerver-tls-XXXXXX"
@@ -177,6 +179,9 @@ void test_certificates_create (TestCertificates *certificates) {
 	const CertificateRequest expired = { "localhost", "DNS:localhost", false, -2, -1, 6 };
 	certificates_leaf (certificates, &expired, authority, authority_key, certificates->expired_chain, certificates->expired_key, "expired");
 
+	const CertificateRequest expiring = { "localhost", "DNS:localhost,IP:127.0.0.1", false, -1, CERTIFICATES_EXPIRING_DAYS, 8 };
+	certificates_leaf (certificates, &expiring, authority, authority_key, certificates->expiring_chain, certificates->expiring_key, "expiring");
+
 	// a key that is not the one of the server
 	certificates_path (certificates->mismatch_key, certificates->directory, "mismatch.key");
 	EVP_PKEY *mismatch = certificates_key ();
@@ -216,6 +221,7 @@ void test_certificates_delete (TestCertificates *certificates) {
 		certificates->wildcard_chain, certificates->wildcard_key,
 		certificates->client_chain, certificates->client_key,
 		certificates->expired_chain, certificates->expired_key,
+		certificates->expiring_chain, certificates->expiring_key,
 		certificates->mismatch_key,
 		certificates->stranger_chain, certificates->stranger_key
 	};

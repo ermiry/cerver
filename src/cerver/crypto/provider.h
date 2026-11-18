@@ -106,6 +106,16 @@ CERVER_HIDDEN void cerver_crypto_provider_tls_context_release (CryptoTlsContext 
 
 /**
  * @internal
+ * @brief Rotates the keys of the tickets of a context now, as its clock does every
+ * #TLS_TICKET_KEYS_ROTATION_SECONDS: the tests of the rotation can not wait for it.
+ *
+ * @param[in,out] context the context of a cerver; a context with shared keys (a file of keys) keeps them
+ * @since 2.1b-23
+ */
+CERVER_PRIVATE void cerver_crypto_provider_tls_context_rotate_ticket_keys (CryptoTlsContext *context);
+
+/**
+ * @internal
  * @brief Returns the seconds until the first certificate of the context expires.
  *
  * @param[in] context the context of a cerver
