@@ -112,7 +112,7 @@ const char *http_receive_status_str (
 }
 
 
-const char *http_stage_string (const HttpStage stage) {
+const char *cerver_http_stage_string (const CerverHttpStage stage) {
 
 	switch (stage) {
 		#define XX(num, name, string, label) case HTTP_STAGE_##name: return #string;
@@ -120,11 +120,11 @@ const char *http_stage_string (const HttpStage stage) {
 		#undef XX
 	}
 
-	return http_stage_string (HTTP_STAGE_QUEUED);
+	return cerver_http_stage_string (HTTP_STAGE_QUEUED);
 
 }
 
-const char *http_stage_label (const HttpStage stage) {
+const char *cerver_http_stage_label (const CerverHttpStage stage) {
 
 	switch (stage) {
 		#define XX(num, name, string, label) case HTTP_STAGE_##name: return #label;
@@ -132,11 +132,11 @@ const char *http_stage_label (const HttpStage stage) {
 		#undef XX
 	}
 
-	return http_stage_label (HTTP_STAGE_QUEUED);
+	return cerver_http_stage_label (HTTP_STAGE_QUEUED);
 
 }
 
-const char *http_abort_reason_string (const HttpAbortReason reason) {
+const char *cerver_http_abort_reason_string (const CerverHttpAbortReason reason) {
 
 	switch (reason) {
 		#define XX(num, name, string, label) case HTTP_ABORT_REASON_##name: return #string;
@@ -144,11 +144,11 @@ const char *http_abort_reason_string (const HttpAbortReason reason) {
 		#undef XX
 	}
 
-	return http_abort_reason_string (HTTP_ABORT_REASON_CLOSED);
+	return cerver_http_abort_reason_string (HTTP_ABORT_REASON_CLOSED);
 
 }
 
-const char *http_abort_reason_label (const HttpAbortReason reason) {
+const char *cerver_http_abort_reason_label (const CerverHttpAbortReason reason) {
 
 	switch (reason) {
 		#define XX(num, name, string, label) case HTTP_ABORT_REASON_##name: return #label;
@@ -156,11 +156,11 @@ const char *http_abort_reason_label (const HttpAbortReason reason) {
 		#undef XX
 	}
 
-	return http_abort_reason_label (HTTP_ABORT_REASON_CLOSED);
+	return cerver_http_abort_reason_label (HTTP_ABORT_REASON_CLOSED);
 
 }
 
-const char *http_client_state_string (const HttpClientState state) {
+const char *cerver_http_client_state_string (const CerverHttpClientState state) {
 
 	switch (state) {
 		#define XX(num, name, string) case HTTP_CLIENT_STATE_##name: return #string;
@@ -168,7 +168,7 @@ const char *http_client_state_string (const HttpClientState state) {
 		#undef XX
 	}
 
-	return http_client_state_string (HTTP_CLIENT_STATE_CONNECTED);
+	return cerver_http_client_state_string (HTTP_CLIENT_STATE_CONNECTED);
 
 }
 
@@ -207,7 +207,6 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->dispatch = HTTP_RECEIVE_DISPATCH_NONE;
 	http_receive->node = NULL;
 	http_receive->endpoint = NULL;
-	http_receive->route = NULL;
 	http_receive->served_file = NULL;
 
 	http_receive->head = false;
@@ -230,6 +229,8 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 
 	http_receive->stream.state = HTTP_STREAM_STATE_NONE;
 	http_receive->stream.chunked = false;
+
+	http_receive->writer = NULL;
 
 	http_receive->start_time = 0;
 	http_receive->received = 0;
@@ -346,13 +347,13 @@ static u8 http_receive_request_create (HttpReceive *http_receive) {
 	HttpRequest *request = arena ? http_request_new_arena (arena) : http_request_new ();
 	HttpRouteFileStats *file_stats = arena ?
 		(HttpRouteFileStats *) arena_alloc (arena, sizeof (HttpRouteFileStats)) :
-		http_route_file_stats_new ();
+		cerver_http_route_file_stats_new ();
 
 	if (request && file_stats) {
 		request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
 
 		// the stats in an arena are released with it
-		if (arena) http_route_file_stats_init (file_stats);
+		if (arena) cerver_http_route_file_stats_init (file_stats);
 
 		http_receive->request = request;
 		http_receive->file_stats = file_stats;
@@ -362,7 +363,7 @@ static u8 http_receive_request_create (HttpReceive *http_receive) {
 
 	else if (!arena) {
 		if (request) http_request_delete (request);
-		if (file_stats) http_route_file_stats_delete (file_stats);
+		if (file_stats) cerver_http_route_file_stats_delete (file_stats);
 	}
 
 	return retval;
@@ -562,15 +563,17 @@ static void http_receive_request_end (HttpReceive *http_receive) {
 
 	http_receive_web_socket_release (http_receive);
 
+	// a response that its handler wrote and never sent
+	http_response_writer_release (http_receive);
+
 	http_request_delete (http_receive->request);
 	http_receive->request = NULL;
 
 	http_receive->node = NULL;
 	http_receive->endpoint = NULL;
-	http_receive->route = NULL;
 
 	// the stats in an arena are released with it
-	if (!http_receive->arena) http_route_file_stats_delete (http_receive->file_stats);
+	if (!http_receive->arena) cerver_http_route_file_stats_delete (http_receive->file_stats);
 	http_receive->file_stats = NULL;
 
 	// the parser of the parts lives in the receive
@@ -678,11 +681,7 @@ const void *http_receive_get_route_custom_data (
 
 	if (http_receive) {
 		if (http_receive->endpoint) {
-			custom_data = http_endpoint_get_custom_data (http_receive->endpoint);
-		}
-
-		else if (http_receive->route) {
-			custom_data = http_receive->route->custom_data;
+			custom_data = cerver_http_endpoint_get_custom_data (http_receive->endpoint);
 		}
 	}
 
@@ -715,14 +714,14 @@ const char *http_receive_get_allow (
 
 }
 
-HttpStage http_receive_get_stage (const HttpReceive *http_receive) {
+CerverHttpStage http_receive_get_stage (const HttpReceive *http_receive) {
 
 	return http_receive ? http_receive->stage : HTTP_STAGE_QUEUED;
 
 }
 
 // an EOF (error 0) is a close, any error of a recv () or a send () is a failed connection
-static inline HttpAbortReason http_receive_abort_reason (const int error) {
+static inline CerverHttpAbortReason http_receive_abort_reason (const int error) {
 
 	return error ? HTTP_ABORT_REASON_RESET : HTTP_ABORT_REASON_CLOSED;
 
@@ -760,7 +759,7 @@ static void http_receive_count_gone (
 ) {
 
 	HttpCerver *http_cerver = http_receive->http_cerver;
-	const HttpStage stage = http_receive->stage;
+	const CerverHttpStage stage = http_receive->stage;
 
 	if (http_receive_error_is_timeout (error)) {
 		CERVER_STATS_ADD (http_cerver->n_vanished_requests[stage], 1);
@@ -831,7 +830,7 @@ void http_receive_response_sent (HttpReceive *http_receive) {
 
 	if (
 		written && http_receive->http_cerver
-		&& ((size_t) http_receive->status < HTTP_CERVER_RESPONSES_STATUS_SIZE)
+		&& ((size_t) http_receive->status < CERVER_HTTP_RESPONSES_STATUS_SIZE)
 	) {
 		CERVER_STATS_ADD (http_receive->http_cerver->n_responses_by_status[http_receive->status], 1);
 	}
@@ -849,11 +848,11 @@ void http_receive_response_cut (HttpReceive *http_receive, const size_t sent) {
 
 // the state that the events of a poll () on the client's socket tell,
 // a peek at its data tells an EOF from a failed connection
-static HttpClientState http_receive_client_state_from_events (
+static CerverHttpClientState http_receive_client_state_from_events (
 	const int sock_fd, const short events
 ) {
 
-	HttpClientState state = HTTP_CLIENT_STATE_CONNECTED;
+	CerverHttpClientState state = HTTP_CLIENT_STATE_CONNECTED;
 
 	char byte = 0;
 	const ssize_t peeked = recv (sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT);
@@ -872,9 +871,9 @@ static HttpClientState http_receive_client_state_from_events (
 }
 
 // a gone client never comes back, a closed one can still reset its connection
-static HttpClientState http_receive_client_state_check (const HttpReceive *http_receive) {
+static CerverHttpClientState http_receive_client_state_check (const HttpReceive *http_receive) {
 
-	HttpClientState state = HTTP_CLIENT_STATE_RESET;
+	CerverHttpClientState state = HTTP_CLIENT_STATE_RESET;
 
 	const Connection *connection = http_receive->cr ? http_receive->cr->connection : NULL;
 	const int sock_fd = (connection && connection->socket) ? connection->socket->sock_fd : -1;
@@ -891,14 +890,14 @@ static HttpClientState http_receive_client_state_check (const HttpReceive *http_
 
 }
 
-HttpClientState http_receive_get_client_state (const HttpReceive *http_receive) {
+CerverHttpClientState http_receive_get_client_state (const HttpReceive *http_receive) {
 
-	HttpClientState state = HTTP_CLIENT_STATE_RESET;
+	CerverHttpClientState state = HTTP_CLIENT_STATE_RESET;
 
 	HttpReceive *receive = (HttpReceive *) http_receive;
 	if (receive) {
 		if (receive->client_state != HTTP_CLIENT_STATE_RESET) {
-			const HttpClientState found = http_receive_client_state_check (receive);
+			const CerverHttpClientState found = http_receive_client_state_check (receive);
 			if (found > receive->client_state) receive->client_state = found;
 		}
 
@@ -914,7 +913,7 @@ bool http_receive_is_client_gone (const HttpReceive *http_receive) {
 	bool gone = true;
 
 	if (http_receive) {
-		const HttpClientState state = http_receive_get_client_state (http_receive);
+		const CerverHttpClientState state = http_receive_get_client_state (http_receive);
 
 		gone = (state == HTTP_CLIENT_STATE_RESET)
 			|| ((state == HTTP_CLIENT_STATE_CLOSED) && http_receive->http_cerver->half_close_is_gone)
@@ -925,50 +924,44 @@ bool http_receive_is_client_gone (const HttpReceive *http_receive) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
-void http_receive_handle_default_route (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+void http_receive_handle_default_route (HttpReceive *http_receive) {
 
 	(void) http_response_send (catch_all, http_receive);
 
 }
 
-void http_receive_handle_not_found_route (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+void http_receive_handle_not_found_route (HttpReceive *http_receive) {
 
 	(void) http_response_send (not_found_error, http_receive);
 
 }
-
-#pragma GCC diagnostic pop
 
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (
 	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
 ) {
 
+	// the request is only used by the debug log
+	(void) request;
+
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_UNHANDLED;
 
 	#ifdef HTTP_RECEIVE_DEBUG
 	cerver_log_warning (
 		"No matching route for %s %s",
-		http_request_method_str (request->method),
+		cerver_http_method_to_string (request->method),
 		request->url->str
 	);
 	#endif
 
 	if (http_cerver->not_found_handler) {
 		// handle with not found route
-		http_cerver->not_found (http_receive, request);
+		http_cerver->not_found (http_receive);
 	}
 
 	else {
 		// handle with default route
-		http_cerver->default_handler (http_receive, request);
+		http_cerver->default_handler (http_receive);
 
 		CERVER_STATS_ADD (http_cerver->n_catch_all_requests, 1);
 	}
@@ -977,13 +970,13 @@ static void http_receive_handle_catch_all (
 
 // a key or a value of a query is decoded in its own memory, the decoded one is never longer:
 // a '+' is a space and then the escapes are decoded, so an escaped '+' is kept
-static void http_query_piece_decode (String *piece) {
+static void cerver_http_query_piece_decode (String *piece) {
 
 	for (size_t idx = 0; idx < piece->len; idx++) {
 		if (piece->str[idx] == query_encoded_space) piece->str[idx] = query_space;
 	}
 
-	piece->len = http_url_decode_path (piece->str, piece->str, piece->len);
+	piece->len = cerver_http_url_decode_path (piece->str, piece->str, piece->len);
 	piece->str[piece->len] = '\0';
 
 }
@@ -992,17 +985,17 @@ static void http_query_piece_decode (String *piece) {
 // and then each key and each value is decoded, so an escaped separator is part of its value:
 // decoding the whole text first made a new pair out of "%26" and "%3D"
 // they live in the arena of the request, its lists are only created when they are asked for
-static KeyValuePair *http_query_pairs_decoded (
+static KeyValuePair *cerver_http_query_pairs_decoded (
 	HttpRequest *request, const String *query, size_t *n_pairs
 ) {
 
-	KeyValuePair *pairs = http_query_pairs_arena (
+	KeyValuePair *pairs = cerver_http_query_pairs_arena (
 		http_request_get_arena (request), query->str, query->str + query->len, n_pairs
 	);
 
 	for (size_t idx = 0; idx < *n_pairs; idx++) {
-		http_query_piece_decode (pairs[idx].key);
-		http_query_piece_decode (pairs[idx].value);
+		cerver_http_query_piece_decode (pairs[idx].key);
+		cerver_http_query_piece_decode (pairs[idx].value);
 	}
 
 	return pairs;
@@ -1012,7 +1005,7 @@ static KeyValuePair *http_query_pairs_decoded (
 // parses the query of the request into its query params
 static void http_receive_parse_query (HttpRequest *request) {
 
-	request->query_pairs = http_query_pairs_decoded (request, request->query, &request->n_query_pairs);
+	request->query_pairs = cerver_http_query_pairs_decoded (request, request->query, &request->n_query_pairs);
 
 }
 
@@ -1024,7 +1017,7 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 		content_type
 		&& !strncmp (form_urlencoded_value, content_type->str, form_urlencoded_value_len)
 	) {
-		request->body_pairs = http_query_pairs_decoded (request, request->body, &request->n_body_pairs);
+		request->body_pairs = cerver_http_query_pairs_decoded (request, request->body, &request->n_body_pairs);
 	}
 
 }
@@ -1032,16 +1025,16 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 // runs the before middlewares, the handler and the after middlewares
 
 static void http_receive_handle_endpoint (
-	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
+	HttpReceive *http_receive, const HttpEndpoint *endpoint
 ) {
 
 	const HttpMiddlewares *middlewares = &endpoint->resolved.middlewares;
 
-	if (http_middlewares_run_before (middlewares, http_receive, request)) {
-		endpoint->handler (http_receive, request);
+	if (http_middlewares_run_before (middlewares, http_receive)) {
+		endpoint->handler (http_receive);
 	}
 
-	http_middlewares_run_after (middlewares, http_receive, request);
+	http_middlewares_run_after (middlewares, http_receive);
 
 	// a stream that the handler did not end is ended by cerver
 	if (http_response_stream_is_active (http_receive)) {
@@ -1050,8 +1043,9 @@ static void http_receive_handle_endpoint (
 
 }
 
-// an upgrade that passed its checks, a request without one goes to the handler of the endpoint,
-// a route of the first API with the modifier is answered with 501
+// an upgrade that passed its checks, a request without one goes to the handler of the endpoint;
+// an endpoint with the modifier and without the handlers of a WebSocket is a registration error, and one without
+// a handler of its own answers a request without an upgrade with 426 before this: the 501 is only a defense
 static void http_receive_handle_match_web_socket (
 	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
 ) {
@@ -1061,7 +1055,7 @@ static void http_receive_handle_match_web_socket (
 	}
 
 	else if (endpoint->handler && http_endpoint_is_web_socket (endpoint)) {
-		http_receive_handle_endpoint (http_receive, request, endpoint);
+		http_receive_handle_endpoint (http_receive, endpoint);
 	}
 
 	else {
@@ -1087,7 +1081,7 @@ static void http_receive_handle_match (
 			break;
 
 		default:
-			http_receive_handle_endpoint (http_receive, request, endpoint);
+			http_receive_handle_endpoint (http_receive, endpoint);
 			break;
 	}
 
@@ -1119,10 +1113,10 @@ static bool http_receive_handle_select_auth_bearer (
 	// and a token can only be validated with the cerver's public key
 	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
 	const char *token = authorization ?
-		http_cerver_auth_bearer_token (authorization->str, authorization->len) : NULL;
+		cerver_http_auth_bearer_token (authorization->str, authorization->len) : NULL;
 
 	// the claims are read in the arena of the request
-	const CerverJsonValue *claims = token ? http_cerver_auth_jwt_verify (
+	const CerverJsonValue *claims = token ? cerver_http_auth_jwt_verify (
 		http_cerver, http_request_get_arena (request),
 		token, authorization->len - HTTP_JWT_BEARER_PREFIX_LENGTH
 	) : NULL;
@@ -1149,16 +1143,13 @@ static bool http_receive_handle_select_auth_bearer (
 
 // returns true if the route's custom authentication handler accepts the request
 static bool http_receive_handle_select_auth_custom (
-	HttpReceive *http_receive,
-	const HttpRouteSettings *found, HttpRequest *request
+	HttpReceive *http_receive, const HttpRouteSettings *found
 ) {
 
 	bool authenticated = false;
 
 	if (found->authentication_handler) {
-		if (!found->authentication_handler (
-			http_receive, request
-		)) {
+		if (!found->authentication_handler (http_receive)) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_success ("Success authentication with custom method!");
 			#endif
@@ -1214,9 +1205,7 @@ static bool http_receive_handle_authenticate (
 
 		// a custom method is used to handle authentication
 		case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
-			authenticated = http_receive_handle_select_auth_custom (
-				http_receive, found, request
-			);
+			authenticated = http_receive_handle_select_auth_custom (http_receive, found);
 		} break;
 
 		default: {
@@ -1268,16 +1257,15 @@ static void http_receive_select_method (
 ) {
 
 	const HttpRouteNode *node = http_receive->node;
-	const RequestMethod method = request->method;
+	const CerverHttpMethod method = request->method;
 
-	HttpEndpoint *endpoint = http_request_method_is_valid (method) ? node->endpoints[method] : NULL;
+	HttpEndpoint *endpoint = cerver_http_method_is_valid (method) ? node->endpoints[method] : NULL;
 	if (!endpoint && (method == REQUEST_METHOD_HEAD) && node->endpoints[REQUEST_METHOD_GET]) {
 		endpoint = node->endpoints[REQUEST_METHOD_GET];
 		http_receive->head = true;
 	}
 
 	http_receive->endpoint = endpoint;
-	http_receive->route = endpoint ? endpoint->route : NULL;
 
 	if (endpoint) http_receive->dispatch = HTTP_RECEIVE_DISPATCH_ENDPOINT;
 	else if (method == REQUEST_METHOD_OPTIONS) http_receive->dispatch = HTTP_RECEIVE_DISPATCH_OPTIONS;
@@ -1401,7 +1389,7 @@ static bool http_receive_uploads_directory_path (
 	HttpRequest *request = http_receive->request;
 
 	if (http_cerver->uploads_dirname_generator && (http_cerver->uploads_path_len > 0)) {
-		http_cerver->uploads_dirname_generator (http_receive, request);
+		http_cerver->uploads_dirname_generator (http_receive);
 
 		// a name that did not fit is not used
 		if (request->dirname_len >= REQUEST_DIRNAME_SIZE) {
@@ -1597,7 +1585,7 @@ static void http_receive_identify (HttpReceive *http_receive) {
 
 	if (http_cerver->request_id) http_request_resolve_id (request);
 
-	http_proxy_resolve_client_ip (
+	cerver_http_proxy_resolve_client_ip (
 		http_cerver,
 		http_receive->cr->connection ? http_receive->cr->connection->ip : NULL,
 		request, request->client_ip
@@ -1643,7 +1631,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, const CerverH
 	// the headers are complete, what follows is the body
 	http_receive->stage = HTTP_STAGE_BODY;
 
-	request->method = (RequestMethod) parser->head.method;
+	request->method = (CerverHttpMethod) parser->head.method;
 
 	http_receive_identify (http_receive);
 
@@ -1654,7 +1642,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, const CerverH
 	}
 
 	// a method that the parser accepts but cerver does not know (RFC 9110 section 9.1)
-	if (!http_request_method_is_valid (request->method)) {
+	if (!cerver_http_method_is_valid (request->method)) {
 		return http_receive_reject (
 			http_receive, not_implemented_error, HTTP_RECEIVE_STATUS_REJECTED
 		);
@@ -1664,7 +1652,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, const CerverH
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
 		"%s %s",
-		http_request_method_str (request->method),
+		cerver_http_method_to_string (request->method),
 		request->url->str
 	);
 	#endif
@@ -1798,20 +1786,20 @@ static int http_receive_handle_headers_completed (HttpReceive *http_receive) {
 
 // sets in real_filename (PATH_MAX bytes) the real path of the url inside the static path
 // returns false if the path does not fit or if it is outside the static path ("..", symbolic links)
-static bool http_static_path_resolve (
+static bool cerver_http_static_path_resolve (
 	const HttpStaticPath *static_path, const char *url, char *real_filename
 ) {
 
-	char filename[HTTP_CERVER_STATIC_FILE_SIZE] = { 0 };
+	char filename[CERVER_HTTP_STATIC_FILE_SIZE] = { 0 };
 	char real_static_path[PATH_MAX] = { 0 };
 
 	// a path that does not fit is never truncated
 	const int written = snprintf (
-		filename, HTTP_CERVER_STATIC_FILE_SIZE,
+		filename, CERVER_HTTP_STATIC_FILE_SIZE,
 		"%s%s", static_path->path->str, url
 	);
 
-	if ((written < 0) || (written >= HTTP_CERVER_STATIC_FILE_SIZE)) return false;
+	if ((written < 0) || (written >= CERVER_HTTP_STATIC_FILE_SIZE)) return false;
 
 	if (!realpath (filename, real_filename)) return false;
 	if (!realpath (static_path->path->str, real_static_path)) return false;
@@ -1826,7 +1814,7 @@ static bool http_static_path_resolve (
 // the first static path that has the file of the url, with its real path and its status,
 // only regular files are served
 // returns NULL if none has it
-static const HttpStaticPath *http_static_path_find (
+static const HttpStaticPath *cerver_http_static_path_find (
 	const HttpCerver *http_cerver, const char *url,
 	char *real_filename, struct stat *filestatus
 ) {
@@ -1838,7 +1826,7 @@ static const HttpStaticPath *http_static_path_find (
 
 		(void) memset (filestatus, 0, sizeof (struct stat));
 		if (
-			http_static_path_resolve (static_path, url, real_filename)
+			cerver_http_static_path_resolve (static_path, url, real_filename)
 			&& !stat (real_filename, filestatus) && S_ISREG (filestatus->st_mode)
 		) {
 			found = static_path;
@@ -1850,7 +1838,7 @@ static const HttpStaticPath *http_static_path_find (
 }
 
 // the first static path that has authentication, NULL if every one is public
-static const HttpStaticPath *http_static_path_first_protected (const HttpCerver *http_cerver) {
+static const HttpStaticPath *cerver_http_static_path_first_protected (const HttpCerver *http_cerver) {
 
 	const HttpStaticPath *found = NULL;
 
@@ -1876,11 +1864,11 @@ static bool http_receive_handle_static_authenticate (
 	char real_filename[PATH_MAX] = { 0 };
 	struct stat filestatus = CERVER_ZERO_INITIALIZER;
 
-	const HttpStaticPath *static_path = http_static_path_find (
+	const HttpStaticPath *static_path = cerver_http_static_path_find (
 		http_receive->http_cerver, request->url->str, real_filename, &filestatus
 	);
 
-	if (!static_path) static_path = http_static_path_first_protected (http_receive->http_cerver);
+	if (!static_path) static_path = cerver_http_static_path_first_protected (http_receive->http_cerver);
 
 	if (static_path && (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE)) {
 		HttpRouteSettings settings;
@@ -1905,7 +1893,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	char real_filename[PATH_MAX] = { 0 };
 	struct stat filestatus = CERVER_ZERO_INITIALIZER;
 
-	const bool found = http_static_path_find (
+	const bool found = cerver_http_static_path_find (
 		http_receive->http_cerver, http_receive->request->url->str, real_filename, &filestatus
 	) != NULL;
 
@@ -1998,7 +1986,7 @@ static void http_receive_handle_method_not_allowed (HttpReceive *http_receive) {
 
 	const HttpHandler handler = http_receive->http_cerver->tree->method_not_allowed_handler;
 	if (handler) {
-		handler (http_receive, http_receive->request);
+		handler (http_receive);
 		return;
 	}
 
@@ -2055,7 +2043,7 @@ static void http_receive_handle_ready (HttpReceive *http_receive) {
 
 	HttpCerver *http_cerver = http_receive->http_cerver;
 
-	if (http_cerver_is_ready (http_cerver)) {
+	if (cerver_http_is_ready (http_cerver)) {
 		CERVER_STATS_ADD (http_cerver->n_ready_requests, 1);
 
 		(void) http_response_send (oki_doki, http_receive);
@@ -2124,7 +2112,7 @@ static void http_receive_handle_unanswered (HttpReceive *http_receive) {
 			LOG_TYPE_WARNING, LOG_TYPE_HTTP,
 			"http_receive_handle () - the request was not answered - fd %d - %s %s",
 			http_receive->cr->connection->socket->sock_fd,
-			http_request_method_str (http_receive->request->method),
+			cerver_http_method_to_string (http_receive->request->method),
 			http_receive_url (http_receive)
 		);
 
