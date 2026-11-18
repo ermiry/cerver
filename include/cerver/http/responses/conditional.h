@@ -50,7 +50,7 @@ struct _HttpRequest;
  * @param[out] etag where the entity tag is written, at least #HTTP_ETAG_SIZE bytes
  * @return the length of the entity tag, 0 on error
  */
-CERVER_PUBLIC size_t http_etag_from_data (
+CERVER_PUBLIC size_t cerver_http_etag_from_data (
 	const void *data, const size_t length,
 	const bool compressed, char *etag
 );
@@ -62,7 +62,7 @@ CERVER_PUBLIC size_t http_etag_from_data (
  * @param[out] etag where the entity tag is written, at least #HTTP_ETAG_SIZE bytes
  * @return the length of the entity tag, 0 on error
  */
-CERVER_PUBLIC size_t http_etag_from_file (
+CERVER_PUBLIC size_t cerver_http_etag_from_file (
 	const struct stat *file_status, char *etag
 );
 
@@ -76,7 +76,7 @@ CERVER_PUBLIC size_t http_etag_from_file (
  * @param[in] etag_length the length of the entity tag
  * @return true if it matches; false for a NULL argument or an empty entity tag
  */
-CERVER_PUBLIC bool http_etag_none_match (
+CERVER_PUBLIC bool cerver_http_etag_none_match (
 	const char *if_none_match, const size_t if_none_match_length,
 	const char *etag, const size_t etag_length
 );
@@ -93,7 +93,7 @@ CERVER_PUBLIC bool http_etag_none_match (
  * @param[in] last_modified the last modification of the response, 0 is not used
  * @return true if the response can be 304; false for a NULL request or another method
  */
-CERVER_PUBLIC bool http_conditional_not_modified (
+CERVER_PUBLIC bool cerver_http_conditional_not_modified (
 	const struct _HttpRequest *request,
 	const char *etag, const size_t etag_length,
 	const time_t last_modified
