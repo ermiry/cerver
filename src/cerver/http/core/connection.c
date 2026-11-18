@@ -298,7 +298,7 @@ static u64 http_connection_read_deadline (const HttpConnection *connection) {
 	const HttpCerver *http_cerver = connection->receive.http_cerver;
 
 	u64 deadline = connection->loop->now + (
-		http_cerver->idle_timeout ? http_cerver->idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS
+		http_cerver->idle_timeout ? http_cerver->idle_timeout : CERVER_HTTP_DEFAULT_IDLE_TIMEOUT_MILLISECONDS
 	);
 
 	if (connection->request_deadline && (connection->request_deadline < deadline)) {
@@ -373,7 +373,7 @@ static void http_connection_request_release (HttpConnection *connection) {
 	const EventLoop *loop = connection->loop;
 	if (loop->observer) loop->observer (&connection->receive, loop->observer_args);
 
-	http_cerver_connection_ended (connection->receive.http_cerver, connection->receive.n_requests);
+	cerver_http_connection_ended (connection->receive.http_cerver, connection->receive.n_requests);
 
 	http_receive_delete (&connection->receive);
 
@@ -1333,8 +1333,16 @@ static bool http_connection_pool_is_loop (const struct HttpPool *pool) {
 
 }
 
+// what reads the disk never runs in an event loop: a file of a static path is served by the default pool of threads
+static bool http_connection_reads_disk (const HttpConnection *connection) {
+
+	return connection->receive.type == HTTP_RECEIVE_TYPE_FILE;
+
+}
+
 // the job of a request runs in the pool that its endpoint or one of its groups chose, or in the one that its
-// cerver set for the others; the default one runs the rest, and the ones of a pool that the loop has no lane for
+// cerver set for the others (the event loops, until it chooses another one); the default pool of threads runs
+// what reads the disk, and the requests of a pool that the loop has no lane for
 static void http_connection_pool_select (HttpConnection *connection) {
 
 	const HttpCerver *http_cerver = connection->receive.http_cerver;
@@ -1342,7 +1350,9 @@ static void http_connection_pool_select (HttpConnection *connection) {
 
 	struct HttpPool *pool = endpoint ? endpoint->resolved.pool : NULL;
 
-	if (!pool && http_cerver) pool = http_cerver->handlers_pool;
+	if (!pool && http_cerver && !http_connection_reads_disk (connection)) {
+		pool = http_cerver->handlers_pool;
+	}
 
 	if (
 		!pool
@@ -1389,7 +1399,7 @@ static void http_connection_park (HttpConnection *connection) {
 	http_connection_deadline_set (
 		connection,
 		loop->now + (
-			(u64) http_pool_wait_timeout (loop->cerver, connection->pool)
+			(u64) cerver_http_pool_wait_timeout (loop->cerver, connection->pool)
 			* HTTP_CONNECTION_MILLISECONDS_PER_SECOND
 		)
 	);
@@ -1401,8 +1411,8 @@ static bool http_connection_can_wait (const HttpConnection *connection) {
 
 	const EventLoop *loop = connection->loop;
 
-	return (http_pool_overload_policy (loop->cerver, connection->pool) == CERVER_OVERLOAD_POLICY_WAIT)
-		&& http_pool_wait_timeout (loop->cerver, connection->pool)
+	return (cerver_http_pool_overload_policy (loop->cerver, connection->pool) == CERVER_OVERLOAD_POLICY_WAIT)
+		&& cerver_http_pool_wait_timeout (loop->cerver, connection->pool)
 		&& !__atomic_load_n (&loop->rejecting, __ATOMIC_ACQUIRE);
 
 }
@@ -1489,7 +1499,7 @@ unsigned int http_connection_unpark (HttpConnection *connection) {
 
 	const unsigned int retval = http_connection_dispatch (connection);
 	if (retval) http_connection_deadline_set (connection, deadline);
-	else http_pool_parked_count (pool, waited);
+	else cerver_http_pool_parked_count (pool, waited);
 
 	return retval;
 
@@ -1499,7 +1509,7 @@ unsigned int http_connection_unpark (HttpConnection *connection) {
 // or its connection ended
 static void http_connection_parked_count (const HttpConnection *connection) {
 
-	http_pool_parked_count (connection->pool, connection->loop->now - connection->parked_since);
+	cerver_http_pool_parked_count (connection->pool, connection->loop->now - connection->parked_since);
 
 }
 
