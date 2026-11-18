@@ -31,19 +31,13 @@ static bool event_dispatcher_thpool_is_full (const EventDispatcher *dispatcher) 
 
 }
 
-static bool event_dispatcher_thpool_is_awaited (const EventDispatcher *dispatcher) {
-
-	return thpool_has_queued ((const Thpool *) dispatcher->data);
-
-}
-
 void event_dispatcher_thpool (EventDispatcher *dispatcher, Thpool *thpool) {
 
 	if (dispatcher) {
 		dispatcher->submit = event_dispatcher_thpool_submit;
 		dispatcher->is_full = event_dispatcher_thpool_is_full;
-		dispatcher->is_awaited = event_dispatcher_thpool_is_awaited;
 		dispatcher->data = thpool;
+		dispatcher->in_loop = false;
 	}
 
 }
@@ -77,8 +71,8 @@ void event_dispatcher_inline (EventDispatcher *dispatcher) {
 	if (dispatcher) {
 		dispatcher->submit = event_dispatcher_inline_submit;
 		dispatcher->is_full = event_dispatcher_inline_is_full;
-		dispatcher->is_awaited = NULL;
 		dispatcher->data = NULL;
+		dispatcher->in_loop = true;
 	}
 
 }
