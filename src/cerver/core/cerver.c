@@ -30,6 +30,7 @@
 #include "cerver/core/internal.h"
 #include "cerver/core/start.h"
 #include "cerver/core/update.h"
+#include "cerver/events/events.h"
 #include "cerver/files/cerver.h"
 #include "cerver/files/files.h"
 #include "cerver/handler/errors.h"
@@ -978,9 +979,13 @@ Cerver *cerver_create (
 					cerver->delete_cerver_data = game_delete;
 				} break;
 
+				// the connections of a web cerver are handled by event loops, one for each processor by default
 				case CERVER_TYPE_WEB: {
-					cerver->cerver_data = http_cerver_create (cerver);
-					cerver->delete_cerver_data = http_cerver_delete;
+					cerver->cerver_data = cerver_http_create (cerver);
+					cerver->delete_cerver_data = cerver_http_delete;
+
+					cerver->handler_type = CERVER_HANDLER_TYPE_EVENTS;
+					cerver->n_io_threads = CERVER_IO_THREADS_PER_CORE;
 				} break;
 
 				case CERVER_TYPE_FILES: {
