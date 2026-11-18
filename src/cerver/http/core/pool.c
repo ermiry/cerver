@@ -32,7 +32,7 @@
 
 #pragma region pool
 
-static bool http_pool_name_is_valid (const char *name) {
+static bool cerver_http_pool_name_is_valid (const char *name) {
 
 	const size_t length = strlen (name);
 
@@ -40,7 +40,7 @@ static bool http_pool_name_is_valid (const char *name) {
 
 }
 
-static HttpPool *http_pool_new (
+static HttpPool *cerver_http_pool_new (
 	HttpCerver *http_cerver, const char *name, const unsigned int n_threads
 ) {
 
@@ -62,11 +62,11 @@ static HttpPool *http_pool_new (
 }
 
 // adds a pool at the end of the ones of its cerver
-static HttpPool *http_cerver_pool_add (
+static HttpPool *cerver_http_pool_add (
 	HttpCerver *http_cerver, const char *name, const unsigned int n_threads
 ) {
 
-	HttpPool *pool = http_pool_new (http_cerver, name, n_threads);
+	HttpPool *pool = cerver_http_pool_new (http_cerver, name, n_threads);
 	if (pool) {
 		http_cerver->pools[http_cerver->n_pools] = pool;
 		http_cerver->n_pools += 1;
@@ -76,31 +76,31 @@ static HttpPool *http_cerver_pool_add (
 
 }
 
-static bool http_cerver_pool_can_be_created (
+static bool cerver_http_pool_can_be_created (
 	const HttpCerver *http_cerver, const char *name, const unsigned int n_threads
 ) {
 
 	return http_cerver && name && n_threads
 		&& !http_cerver->pools_started
-		&& (http_cerver->n_pools < HTTP_CERVER_POOLS_SIZE)
-		&& http_pool_name_is_valid (name)
-		&& !http_cerver_pool_get_with_name (http_cerver, name);
+		&& (http_cerver->n_pools < CERVER_HTTP_POOLS_SIZE)
+		&& cerver_http_pool_name_is_valid (name)
+		&& !cerver_http_pool_get_with_name (http_cerver, name);
 
 }
 
-HttpPool *http_cerver_pool_create (
+HttpPool *cerver_http_pool_create (
 	HttpCerver *http_cerver, const char *name, const unsigned int n_threads
 ) {
 
 	HttpPool *pool = NULL;
 
-	if (http_cerver_pool_can_be_created (http_cerver, name, n_threads)) {
-		pool = http_cerver_pool_add (http_cerver, name, n_threads);
+	if (cerver_http_pool_can_be_created (http_cerver, name, n_threads)) {
+		pool = cerver_http_pool_add (http_cerver, name, n_threads);
 	}
 
 	else {
 		cerver_log_error (
-			"http_cerver_pool_create () - the pool \"%s\" of %u threads can not be created",
+			"cerver_http_pool_create () - the pool \"%s\" of %u threads can not be created",
 			name ? name : "", n_threads
 		);
 	}
@@ -109,7 +109,7 @@ HttpPool *http_cerver_pool_create (
 
 }
 
-HttpPool *http_cerver_pool_get_with_name (
+HttpPool *cerver_http_pool_get_with_name (
 	const HttpCerver *http_cerver, const char *name
 ) {
 
@@ -130,16 +130,17 @@ HttpPool *http_cerver_pool_get_with_name (
 
 }
 
-u8 http_cerver_set_handlers_pool (
+u8 cerver_http_set_handlers_pool (
 	HttpCerver *http_cerver, const char *name
 ) {
 
 	u8 retval = 1;
 
 	if (http_cerver) {
-		HttpPool *pool = name ? http_cerver_pool_get_with_name (http_cerver, name) : NULL;
+		// without a name the handlers go back to the event loops, the pool of a cerver that chose none
+		HttpPool *pool = name ? cerver_http_pool_get_with_name (http_cerver, name) : http_cerver->loop_pool;
 
-		if (pool || !name) {
+		if (pool) {
 			http_cerver->handlers_pool = pool;
 
 			retval = 0;
@@ -150,13 +151,13 @@ u8 http_cerver_set_handlers_pool (
 
 }
 
-const char *http_pool_get_name (const HttpPool *pool) {
+const char *cerver_http_pool_get_name (const HttpPool *pool) {
 
 	return pool ? pool->name : NULL;
 
 }
 
-void http_pool_set_queue_size (
+void cerver_http_pool_set_queue_size (
 	HttpPool *pool, const unsigned int queue_size
 ) {
 
@@ -164,24 +165,24 @@ void http_pool_set_queue_size (
 
 }
 
-static bool http_pool_overload_policy_is_valid (const CerverOverloadPolicy policy) {
+static bool cerver_http_pool_overload_policy_is_valid (const CerverOverloadPolicy policy) {
 
 	return (policy > CERVER_OVERLOAD_POLICY_NONE) && (policy < CERVER_OVERLOAD_POLICY_MAX);
 
 }
 
-void http_pool_set_overload_policy (
+void cerver_http_pool_set_overload_policy (
 	HttpPool *pool, const CerverOverloadPolicy policy
 ) {
 
-	if (pool && http_pool_overload_policy_is_valid (policy)) {
+	if (pool && cerver_http_pool_overload_policy_is_valid (policy)) {
 		pool->overload_policy = policy;
 		pool->policy_configured = true;
 	}
 
 }
 
-void http_pool_set_wait_timeout (
+void cerver_http_pool_set_wait_timeout (
 	HttpPool *pool, const unsigned int seconds
 ) {
 
@@ -192,7 +193,7 @@ void http_pool_set_wait_timeout (
 
 }
 
-CerverOverloadPolicy http_pool_overload_policy (
+CerverOverloadPolicy cerver_http_pool_overload_policy (
 	const struct _Cerver *cerver, const struct HttpPool *pool
 ) {
 
@@ -200,7 +201,7 @@ CerverOverloadPolicy http_pool_overload_policy (
 
 }
 
-unsigned int http_pool_wait_timeout (
+unsigned int cerver_http_pool_wait_timeout (
 	const struct _Cerver *cerver, const struct HttpPool *pool
 ) {
 
@@ -208,7 +209,7 @@ unsigned int http_pool_wait_timeout (
 
 }
 
-void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds) {
+void cerver_http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds) {
 
 	if (pool) {
 		const u64 microseconds = milliseconds * THPOOL_MICROSECONDS_PER_MILLISECOND;
@@ -228,19 +229,22 @@ void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds) {
 
 // the default pool is the first one of the cerver; the one of the event loops has no threads,
 // so it is apart from the ones that have a lane in each loop
-unsigned int http_cerver_pools_create (struct _HttpCerver *http_cerver) {
+// the handlers of a cerver run in its event loops until it chooses another pool for them
+unsigned int cerver_http_pools_create (struct _HttpCerver *http_cerver) {
 
-	http_cerver->loop_pool = http_pool_new (http_cerver, HTTP_POOL_LOOP_NAME, 0);
+	http_cerver->loop_pool = cerver_http_pool_new (http_cerver, HTTP_POOL_LOOP_NAME, 0);
 	if (http_cerver->loop_pool) http_cerver->loop_pool->in_loop = true;
 
-	return (http_cerver->loop_pool && http_cerver_pool_add (http_cerver, HTTP_POOL_DEFAULT_NAME, 0)) ? 0 : 1;
+	http_cerver->handlers_pool = http_cerver->loop_pool;
+
+	return (http_cerver->loop_pool && cerver_http_pool_add (http_cerver, HTTP_POOL_DEFAULT_NAME, 0)) ? 0 : 1;
 
 }
 
-void http_cerver_pools_delete (struct _HttpCerver *http_cerver) {
+void cerver_http_pools_delete (struct _HttpCerver *http_cerver) {
 
 	// a cerver that was not ended, like the one of a test that only was initialized
-	http_cerver_pools_end (http_cerver);
+	cerver_http_pools_end (http_cerver);
 
 	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
 		free (http_cerver->pools[idx]);
@@ -257,7 +261,7 @@ void http_cerver_pools_delete (struct _HttpCerver *http_cerver) {
 
 // the thpool of a named pool, with its own threads and its own queue
 // returns 0 on success, 1 on error
-static unsigned int http_pool_start (HttpPool *pool) {
+static unsigned int cerver_http_pool_start (HttpPool *pool) {
 
 	unsigned int errors = 1;
 
@@ -284,7 +288,7 @@ static unsigned int http_pool_start (HttpPool *pool) {
 
 }
 
-static void http_pool_start_log (const HttpPool *pool) {
+static void cerver_http_pool_start_log (const HttpPool *pool) {
 
 	const Cerver *cerver = pool->http_cerver->cerver;
 
@@ -292,13 +296,13 @@ static void http_pool_start_log (const HttpPool *pool) {
 		"Cerver %s pool %s: %u threads - %u queue size - %s overload policy",
 		cerver->info->name, pool->name,
 		pool->n_threads, thpool_get_queue_size (pool->thpool),
-		cerver_overload_policy_to_string (http_pool_overload_policy (cerver, pool))
+		cerver_overload_policy_to_string (cerver_http_pool_overload_policy (cerver, pool))
 	);
 
 }
 
 // returns 0 on success, 1 on error
-static unsigned int http_cerver_pools_start_named (HttpCerver *http_cerver) {
+static unsigned int cerver_http_pools_start_named (HttpCerver *http_cerver) {
 
 	unsigned int errors = 0;
 
@@ -306,9 +310,9 @@ static unsigned int http_cerver_pools_start_named (HttpCerver *http_cerver) {
 		HttpPool *pool = http_cerver->pools[idx];
 
 		// a cerver that is initialized again keeps the threads that it has
-		if (!pool->owns_thpool) errors = http_pool_start (pool);
+		if (!pool->owns_thpool) errors = cerver_http_pool_start (pool);
 
-		if (!errors) http_pool_start_log (pool);
+		if (!errors) cerver_http_pool_start_log (pool);
 	}
 
 	if (errors) {
@@ -323,7 +327,7 @@ static unsigned int http_cerver_pools_start_named (HttpCerver *http_cerver) {
 
 // only an event loop gives each request to the pool of its endpoint:
 // with the other handler types the thread that has a connection handles its requests
-static void http_cerver_pools_unused (const HttpCerver *http_cerver) {
+static void cerver_http_pools_unused (const HttpCerver *http_cerver) {
 
 	if (http_cerver->n_pools > (HTTP_POOL_DEFAULT_INDEX + 1)) {
 		cerver_log_warning (
@@ -338,7 +342,7 @@ static void http_cerver_pools_unused (const HttpCerver *http_cerver) {
 }
 
 // the default pool is the thpool that the cerver already started
-static void http_cerver_pools_start_default (HttpCerver *http_cerver) {
+static void cerver_http_pools_start_default (HttpCerver *http_cerver) {
 
 	if (http_cerver->n_pools) {
 		HttpPool *pool = http_cerver->pools[HTTP_POOL_DEFAULT_INDEX];
@@ -349,20 +353,20 @@ static void http_cerver_pools_start_default (HttpCerver *http_cerver) {
 
 }
 
-unsigned int http_cerver_pools_start (struct _HttpCerver *http_cerver) {
+unsigned int cerver_http_pools_start (struct _HttpCerver *http_cerver) {
 
 	unsigned int errors = 0;
 
 	http_cerver->pools_started = true;
 
-	http_cerver_pools_start_default (http_cerver);
+	cerver_http_pools_start_default (http_cerver);
 
 	if (http_cerver->cerver->handler_type == CERVER_HANDLER_TYPE_EVENTS) {
-		errors = http_cerver_pools_start_named (http_cerver);
+		errors = cerver_http_pools_start_named (http_cerver);
 	}
 
 	else {
-		http_cerver_pools_unused (http_cerver);
+		cerver_http_pools_unused (http_cerver);
 	}
 
 	return errors;
@@ -370,7 +374,7 @@ unsigned int http_cerver_pools_start (struct _HttpCerver *http_cerver) {
 }
 
 // what is left of the time that the pools share
-static time_t http_cerver_pools_drain_timeout (const time_t timeout, const time_t deadline) {
+static time_t cerver_http_pools_drain_timeout (const time_t timeout, const time_t deadline) {
 
 	time_t left = timeout;
 
@@ -383,7 +387,7 @@ static time_t http_cerver_pools_drain_timeout (const time_t timeout, const time_
 
 }
 
-unsigned int http_cerver_pools_drain (
+unsigned int cerver_http_pools_drain (
 	struct _HttpCerver *http_cerver, const bool run_queued, const time_t timeout
 ) {
 
@@ -396,7 +400,7 @@ unsigned int http_cerver_pools_drain (
 
 		if (
 			pool->owns_thpool
-			&& thpool_drain (pool->thpool, run_queued, http_cerver_pools_drain_timeout (timeout, deadline))
+			&& thpool_drain (pool->thpool, run_queued, cerver_http_pools_drain_timeout (timeout, deadline))
 		) {
 			working += 1;
 		}
@@ -406,7 +410,7 @@ unsigned int http_cerver_pools_drain (
 
 }
 
-void http_cerver_pools_end (struct _HttpCerver *http_cerver) {
+void cerver_http_pools_end (struct _HttpCerver *http_cerver) {
 
 	for (unsigned int idx = HTTP_POOL_DEFAULT_INDEX + 1; idx < http_cerver->n_pools; idx++) {
 		HttpPool *pool = http_cerver->pools[idx];
@@ -422,7 +426,7 @@ void http_cerver_pools_end (struct _HttpCerver *http_cerver) {
 
 }
 
-unsigned int http_cerver_pools_working (const struct _HttpCerver *http_cerver) {
+unsigned int cerver_http_pools_working (const struct _HttpCerver *http_cerver) {
 
 	unsigned int working = 0;
 
@@ -436,7 +440,7 @@ unsigned int http_cerver_pools_working (const struct _HttpCerver *http_cerver) {
 
 }
 
-unsigned int http_cerver_pools_queued (const struct _HttpCerver *http_cerver) {
+unsigned int cerver_http_pools_queued (const struct _HttpCerver *http_cerver) {
 
 	unsigned int queued = 0;
 
@@ -455,7 +459,7 @@ unsigned int http_cerver_pools_queued (const struct _HttpCerver *http_cerver) {
 #pragma region health
 
 // the path of a route that the cerver answers by itself
-static void http_cerver_set_own_route (String **route, const char *path) {
+static void cerver_http_set_own_route (String **route, const char *path) {
 
 	str_delete (*route);
 
@@ -463,25 +467,25 @@ static void http_cerver_set_own_route (String **route, const char *path) {
 
 }
 
-void http_cerver_set_health_route (
+void cerver_http_set_health_route (
 	HttpCerver *http_cerver, const char *path
 ) {
 
-	if (http_cerver) http_cerver_set_own_route (&http_cerver->health_route, path);
+	if (http_cerver) cerver_http_set_own_route (&http_cerver->health_route, path);
 
 }
 
-void http_cerver_set_ready_route (
+void cerver_http_set_ready_route (
 	HttpCerver *http_cerver, const char *path
 ) {
 
-	if (http_cerver) http_cerver_set_own_route (&http_cerver->ready_route, path);
+	if (http_cerver) cerver_http_set_own_route (&http_cerver->ready_route, path);
 
 }
 
 // a pool can take a request when its queue has a place and no request waits for one
 // a pool without threads (a named one without an event loop) takes none: it is not counted
-static bool http_pool_is_ready (const HttpPool *pool) {
+static bool cerver_http_pool_is_ready (const HttpPool *pool) {
 
 	return !pool->thpool || (
 		!thpool_is_full (pool->thpool)
@@ -490,7 +494,7 @@ static bool http_pool_is_ready (const HttpPool *pool) {
 
 }
 
-bool http_cerver_is_ready (const HttpCerver *http_cerver) {
+bool cerver_http_is_ready (const HttpCerver *http_cerver) {
 
 	bool ready = false;
 
@@ -498,7 +502,7 @@ bool http_cerver_is_ready (const HttpCerver *http_cerver) {
 		ready = true;
 
 		for (unsigned int idx = 0; (idx < http_cerver->n_pools) && ready; idx++) {
-			ready = http_pool_is_ready (http_cerver->pools[idx]);
+			ready = cerver_http_pool_is_ready (http_cerver->pools[idx]);
 		}
 	}
 
