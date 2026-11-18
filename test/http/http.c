@@ -724,8 +724,16 @@ static void http_tests_main (void) {
 // the pools of threads run alone to be repeated, their requests wait and move between threads
 #define POOLS_ONLY_VARIABLE					"POOLS_ONLY"
 
+// the handlers of the event loops run alone to be repeated, for each backend of the loops
+#define LOOP_ONLY_VARIABLE					"LOOP_ONLY"
+
 // the parser runs alone, its units take a second
 #define PARSER_ONLY_VARIABLE				"PARSER_ONLY"
+
+// the suites that drive event loops run alone, for each backend of the loops
+#define RECEIVE_ONLY_VARIABLE				"RECEIVE_ONLY"
+#define SERVER_ONLY_VARIABLE				"SERVER_ONLY"
+#define FEATURES_ONLY_VARIABLE				"FEATURES_ONLY"
 
 int main (void) {
 
@@ -733,6 +741,21 @@ int main (void) {
 
 	if (getenv (PARSER_ONLY_VARIABLE)) {
 		http_tests_parser ();
+		return 0;
+	}
+
+	if (getenv (RECEIVE_ONLY_VARIABLE)) {
+		http_tests_receive ();
+		return 0;
+	}
+
+	if (getenv (SERVER_ONLY_VARIABLE)) {
+		http_tests_server ();
+		return 0;
+	}
+
+	if (getenv (FEATURES_ONLY_VARIABLE)) {
+		http_tests_features ();
 		return 0;
 	}
 
@@ -748,6 +771,11 @@ int main (void) {
 
 	if (getenv (POOLS_ONLY_VARIABLE)) {
 		http_tests_pools ();
+		return 0;
+	}
+
+	if (getenv (LOOP_ONLY_VARIABLE)) {
+		http_tests_loop ();
 		return 0;
 	}
 
@@ -797,6 +825,9 @@ int main (void) {
 
 	// the pools of threads of the routes, and the health and ready routes
 	http_tests_pools ();
+
+	// the handlers that run in the event loops, and the pipelines that a loop handles in a row
+	http_tests_loop ();
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();
