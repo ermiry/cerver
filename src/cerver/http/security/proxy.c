@@ -10,8 +10,9 @@
 #include "cerver/network/network.h"
 
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/types.h"
 #include "cerver/http/headers/fields.h"
-#include "cerver/http/requests/request.h"
+#include "cerver/http/requests/internal.h"
 #include "cerver/http/security/proxy.h"
 
 #define HTTP_PROXY_IPV4_SIZE				4
@@ -21,11 +22,11 @@
 #define HTTP_PROXY_BYTE_MASK				0xffu
 #define HTTP_PROXY_DECIMAL_BASE				10
 
-static const char http_proxy_prefix_separator = '/';
-static const char http_proxy_list_separator = ',';
+static const char cerver_http_proxy_prefix_separator = '/';
+static const char cerver_http_proxy_list_separator = ',';
 
 // the loopback and the private networks (RFC 1918, RFC 4193) and the link local ones
-static const char *http_proxy_private_cidrs[] = {
+static const char *cerver_http_proxy_private_cidrs[] = {
 	"127.0.0.0/8",
 	"10.0.0.0/8",
 	"172.16.0.0/12",
@@ -38,11 +39,11 @@ static const char *http_proxy_private_cidrs[] = {
 
 #define HTTP_PROXY_PRIVATE_NETWORKS			8
 
-static HttpProxyNetwork http_proxy_private_networks[HTTP_PROXY_PRIVATE_NETWORKS];
-static pthread_once_t http_proxy_private_networks_once = PTHREAD_ONCE_INIT;
+static HttpProxyNetwork cerver_http_proxy_private_networks[HTTP_PROXY_PRIVATE_NETWORKS];
+static pthread_once_t cerver_http_proxy_private_networks_once = PTHREAD_ONCE_INIT;
 
-const char *http_trusted_proxies_string (
-	const HttpTrustedProxies trusted_proxies
+const char *cerver_http_trusted_proxies_string (
+	const CerverHttpTrustedProxies trusted_proxies
 ) {
 
 	switch (trusted_proxies) {
@@ -51,12 +52,12 @@ const char *http_trusted_proxies_string (
 		#undef XX
 	}
 
-	return http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE);
+	return cerver_http_trusted_proxies_string (HTTP_TRUSTED_PROXIES_NONE);
 
 }
 
-const char *http_trusted_proxies_description (
-	const HttpTrustedProxies trusted_proxies
+const char *cerver_http_trusted_proxies_description (
+	const CerverHttpTrustedProxies trusted_proxies
 ) {
 
 	switch (trusted_proxies) {
@@ -65,14 +66,14 @@ const char *http_trusted_proxies_description (
 		#undef XX
 	}
 
-	return http_trusted_proxies_description (HTTP_TRUSTED_PROXIES_NONE);
+	return cerver_http_trusted_proxies_description (HTTP_TRUSTED_PROXIES_NONE);
 
 }
 
 // an IPv4 inside an IPv6 is kept as an IPv4, like the connections of the core do,
 // so "::ffff:10.0.0.1" is inside "10.0.0.0/8"
 // the bytes are copied to an aligned address before they are checked
-static void http_proxy_address_unmap (int *family, unsigned char *address) {
+static void cerver_http_proxy_address_unmap (int *family, unsigned char *address) {
 
 	if (*family == AF_INET6) {
 		struct in6_addr ipv6;
@@ -90,7 +91,7 @@ static void http_proxy_address_unmap (int *family, unsigned char *address) {
 // parses an IPv4 or an IPv6 address of length bytes (it does not need a '\0')
 // the zone of a link local address (fe80::1%eth0) is not part of a network, it is ignored
 // returns true on success
-static bool http_proxy_address_parse (
+static bool cerver_http_proxy_address_parse (
 	const char *ip, const size_t ip_length,
 	int *family, unsigned char *address
 ) {
@@ -112,7 +113,7 @@ static bool http_proxy_address_parse (
 
 		else if (inet_pton (AF_INET6, value, address) == 1) {
 			*family = AF_INET6;
-			http_proxy_address_unmap (family, address);
+			cerver_http_proxy_address_unmap (family, address);
 			parsed = true;
 		}
 	}
@@ -122,7 +123,7 @@ static bool http_proxy_address_parse (
 }
 
 // returns the prefix of the CIDR, or the bits of the whole address without one, -1 on error
-static int http_proxy_network_parse_prefix (
+static int cerver_http_proxy_network_parse_prefix (
 	const char *prefix, const int family
 ) {
 
@@ -139,18 +140,18 @@ static int http_proxy_network_parse_prefix (
 
 }
 
-bool http_proxy_network_parse (
+bool cerver_http_proxy_network_parse (
 	const char *cidr, HttpProxyNetwork *network
 ) {
 
 	bool parsed = false;
 
 	if (cidr && network && (strlen (cidr) < HTTP_PROXY_CIDR_SIZE)) {
-		const char *separator = strchr (cidr, http_proxy_prefix_separator);
+		const char *separator = strchr (cidr, cerver_http_proxy_prefix_separator);
 		const size_t address_length = separator ? (size_t) (separator - cidr) : strlen (cidr);
 
-		if (http_proxy_address_parse (cidr, address_length, &network->family, network->address)) {
-			const int prefix = http_proxy_network_parse_prefix (
+		if (cerver_http_proxy_address_parse (cidr, address_length, &network->family, network->address)) {
+			const int prefix = cerver_http_proxy_network_parse_prefix (
 				separator ? separator + 1 : NULL, network->family
 			);
 
@@ -165,7 +166,7 @@ bool http_proxy_network_parse (
 
 }
 
-static bool http_proxy_network_contains_address (
+static bool cerver_http_proxy_network_contains_address (
 	const HttpProxyNetwork *network, const int family, const unsigned char *address
 ) {
 
@@ -186,7 +187,7 @@ static bool http_proxy_network_contains_address (
 
 }
 
-bool http_proxy_network_contains (
+bool cerver_http_proxy_network_contains (
 	const HttpProxyNetwork *network, const char *ip, const size_t ip_length
 ) {
 
@@ -194,20 +195,20 @@ bool http_proxy_network_contains (
 	unsigned char address[HTTP_PROXY_ADDRESS_SIZE] = { 0 };
 
 	return network
-		&& http_proxy_address_parse (ip, ip_length, &family, address)
-		&& http_proxy_network_contains_address (network, family, address);
+		&& cerver_http_proxy_address_parse (ip, ip_length, &family, address)
+		&& cerver_http_proxy_network_contains_address (network, family, address);
 
 }
 
-static void http_proxy_private_networks_init (void) {
+static void cerver_http_proxy_private_networks_init (void) {
 
 	for (unsigned int i = 0; i < HTTP_PROXY_PRIVATE_NETWORKS; i++) {
-		(void) http_proxy_network_parse (http_proxy_private_cidrs[i], &http_proxy_private_networks[i]);
+		(void) cerver_http_proxy_network_parse (cerver_http_proxy_private_cidrs[i], &cerver_http_proxy_private_networks[i]);
 	}
 
 }
 
-static bool http_proxy_networks_contain (
+static bool cerver_http_proxy_networks_contain (
 	const HttpProxyNetwork *networks, const unsigned int n_networks,
 	const int family, const unsigned char *address
 ) {
@@ -215,36 +216,40 @@ static bool http_proxy_networks_contain (
 	bool contains = false;
 
 	for (unsigned int i = 0; !contains && (i < n_networks); i++) {
-		contains = http_proxy_network_contains_address (&networks[i], family, address);
+		contains = cerver_http_proxy_network_contains_address (&networks[i], family, address);
 	}
 
 	return contains;
 
 }
 
-bool http_proxy_is_trusted (
+bool cerver_http_proxy_is_trusted (
 	const HttpCerver *http_cerver, const char *ip, const size_t ip_length
 ) {
 
 	bool trusted = false;
 
+	// a cerver that trusts no proxy, the default, does not read the address of the peer of each request
 	int family = 0;
 	unsigned char address[HTTP_PROXY_ADDRESS_SIZE] = { 0 };
-	if (http_cerver && http_proxy_address_parse (ip, ip_length, &family, address)) {
+	if (
+		http_cerver && (http_cerver->trusted_proxies != HTTP_TRUSTED_PROXIES_NONE)
+		&& cerver_http_proxy_address_parse (ip, ip_length, &family, address)
+	) {
 		switch (http_cerver->trusted_proxies) {
 			case HTTP_TRUSTED_PROXIES_NONE: break;
 
 			case HTTP_TRUSTED_PROXIES_LIST:
-				trusted = http_proxy_networks_contain (
+				trusted = cerver_http_proxy_networks_contain (
 					http_cerver->trusted_proxies_networks, http_cerver->n_trusted_proxies,
 					family, address
 				);
 				break;
 
 			case HTTP_TRUSTED_PROXIES_PRIVATE:
-				(void) pthread_once (&http_proxy_private_networks_once, http_proxy_private_networks_init);
-				trusted = http_proxy_networks_contain (
-					http_proxy_private_networks, HTTP_PROXY_PRIVATE_NETWORKS,
+				(void) pthread_once (&cerver_http_proxy_private_networks_once, cerver_http_proxy_private_networks_init);
+				trusted = cerver_http_proxy_networks_contain (
+					cerver_http_proxy_private_networks, HTTP_PROXY_PRIVATE_NETWORKS,
 					family, address
 				);
 				break;
@@ -259,16 +264,16 @@ bool http_proxy_is_trusted (
 
 }
 
-static bool http_proxy_address_is_valid (const char *ip, const size_t ip_length) {
+static bool cerver_http_proxy_address_is_valid (const char *ip, const size_t ip_length) {
 
 	int family = 0;
 	unsigned char address[HTTP_PROXY_ADDRESS_SIZE] = { 0 };
 
-	return http_proxy_address_parse (ip, ip_length, &family, address);
+	return cerver_http_proxy_address_parse (ip, ip_length, &family, address);
 
 }
 
-static void http_proxy_client_ip_set (
+static void cerver_http_proxy_client_ip_set (
 	char *client_ip, const char *ip, const size_t ip_length
 ) {
 
@@ -278,12 +283,12 @@ static void http_proxy_client_ip_set (
 }
 
 // the item of the list that ends at end, without its spaces
-static const char *http_proxy_list_item (
+static const char *cerver_http_proxy_list_item (
 	const char *start, const char *end, size_t *item_length
 ) {
 
 	const char *item_start = end;
-	while ((item_start > start) && (*(item_start - 1) != http_proxy_list_separator)) item_start -= 1;
+	while ((item_start > start) && (*(item_start - 1) != cerver_http_proxy_list_separator)) item_start -= 1;
 
 	const char *first = item_start;
 	const char *last = end;
@@ -298,7 +303,7 @@ static const char *http_proxy_list_item (
 
 // walks the addresses from right to left: each proxy appends the address that it received from,
 // so the client is the first one that is not a trusted proxy
-static void http_proxy_resolve_forwarded_for (
+static void cerver_http_proxy_resolve_forwarded_for (
 	const HttpCerver *http_cerver, const String *forwarded_for, char *client_ip
 ) {
 
@@ -306,39 +311,39 @@ static void http_proxy_resolve_forwarded_for (
 	const char *end = forwarded_for->str + forwarded_for->len;
 	while (end > start) {
 		size_t ip_length = 0;
-		const char *ip = http_proxy_list_item (start, end, &ip_length);
-		if (!http_proxy_address_is_valid (ip, ip_length)) break;
+		const char *ip = cerver_http_proxy_list_item (start, end, &ip_length);
+		if (!cerver_http_proxy_address_is_valid (ip, ip_length)) break;
 
-		http_proxy_client_ip_set (client_ip, ip, ip_length);
-		if (!http_proxy_is_trusted (http_cerver, ip, ip_length)) break;
+		cerver_http_proxy_client_ip_set (client_ip, ip, ip_length);
+		if (!cerver_http_proxy_is_trusted (http_cerver, ip, ip_length)) break;
 
 		// the separator before the item
 		const char *separator = ip;
-		while ((separator > start) && (*separator != http_proxy_list_separator)) separator -= 1;
+		while ((separator > start) && (*separator != cerver_http_proxy_list_separator)) separator -= 1;
 		end = separator;
 	}
 
 }
 
-void http_proxy_resolve_client_ip (
+void cerver_http_proxy_resolve_client_ip (
 	const HttpCerver *http_cerver, const char *peer_ip,
 	const HttpRequest *request, char *client_ip
 ) {
 
 	if (client_ip) {
 		const size_t peer_length = peer_ip ? strnlen (peer_ip, HTTP_CLIENT_IP_SIZE - 1) : 0;
-		http_proxy_client_ip_set (client_ip, peer_ip, peer_length);
+		cerver_http_proxy_client_ip_set (client_ip, peer_ip, peer_length);
 
-		if (http_cerver && request && http_proxy_is_trusted (http_cerver, peer_ip, peer_length)) {
+		if (http_cerver && request && cerver_http_proxy_is_trusted (http_cerver, peer_ip, peer_length)) {
 			const String *forwarded_for = request->headers[HTTP_HEADER_FORWARDED_FOR];
 			const String *real_ip = request->headers[HTTP_HEADER_REAL_IP];
 
 			if (forwarded_for && forwarded_for->len) {
-				http_proxy_resolve_forwarded_for (http_cerver, forwarded_for, client_ip);
+				cerver_http_proxy_resolve_forwarded_for (http_cerver, forwarded_for, client_ip);
 			}
 
-			else if (real_ip && http_proxy_address_is_valid (real_ip->str, real_ip->len)) {
-				http_proxy_client_ip_set (client_ip, real_ip->str, real_ip->len);
+			else if (real_ip && cerver_http_proxy_address_is_valid (real_ip->str, real_ip->len)) {
+				cerver_http_proxy_client_ip_set (client_ip, real_ip->str, real_ip->len);
 			}
 		}
 	}

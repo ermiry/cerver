@@ -1,6 +1,6 @@
 /**
  * @file cerver/http/security/proxy.h
- * @brief The trusted proxies of an HttpCerver and the address of the client of a request.
+ * @brief The trusted proxies of a CerverHttp and the address of the client of a request.
  */
 
 #ifndef _CERVER_HTTP_PROXY_H_
@@ -49,7 +49,7 @@ struct _HttpRequest;
  */
 #define HTTP_TRUSTED_PROXIES_MAP(XX)																	\
 	XX(0,	NONE,		None,		(The forwarded headers are never used))							\
-	XX(1,	LIST,		List,		(Only from the networks added with http_cerver_add_trusted_proxy))	\
+	XX(1,	LIST,		List,		(Only from the networks added with cerver_http_add_trusted_proxy))	\
 	XX(2,	PRIVATE,	Private,	(Only from the loopback and the private networks))				\
 	XX(3,	ALL,		All,		(From any peer))
 
@@ -57,13 +57,13 @@ struct _HttpRequest;
  * @brief Which peers are trusted proxies, one `HTTP_TRUSTED_PROXIES_<name>` for each row of
  * #HTTP_TRUSTED_PROXIES_MAP.
  */
-typedef enum HttpTrustedProxies {
+typedef enum CerverHttpTrustedProxies {
 
 	#define XX(num, name, string, description) HTTP_TRUSTED_PROXIES_##name = num,
 	HTTP_TRUSTED_PROXIES_MAP(XX)
 	#undef XX
 
-} HttpTrustedProxies;
+} CerverHttpTrustedProxies;
 
 /**
  * @brief Returns the string of a trusted proxies setting.
@@ -72,8 +72,8 @@ typedef enum HttpTrustedProxies {
  * @return the string of its row in #HTTP_TRUSTED_PROXIES_MAP, or the one of HTTP_TRUSTED_PROXIES_NONE for a value
  * out of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_trusted_proxies_string (
-	const HttpTrustedProxies trusted_proxies
+CERVER_PUBLIC const char *cerver_http_trusted_proxies_string (
+	const CerverHttpTrustedProxies trusted_proxies
 );
 
 /**
@@ -83,12 +83,12 @@ CERVER_PUBLIC const char *http_trusted_proxies_string (
  * @return the description of its row in #HTTP_TRUSTED_PROXIES_MAP, or the one of HTTP_TRUSTED_PROXIES_NONE for a
  * value out of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_trusted_proxies_description (
-	const HttpTrustedProxies trusted_proxies
+CERVER_PUBLIC const char *cerver_http_trusted_proxies_description (
+	const CerverHttpTrustedProxies trusted_proxies
 );
 
 /** @brief By default the forwarded headers are never used. */
-#define HTTP_CERVER_DEFAULT_TRUSTED_PROXIES		HTTP_TRUSTED_PROXIES_NONE
+#define CERVER_HTTP_DEFAULT_TRUSTED_PROXIES		HTTP_TRUSTED_PROXIES_NONE
 
 /**
  * @brief An IPv4 or IPv6 network, like "172.16.0.0/12" or "fc00::/7".
@@ -111,7 +111,7 @@ typedef struct HttpProxyNetwork {
  * @param[out] network the parsed network
  * @return true when it was parsed, false for a NULL argument, a CIDR that is too long or an invalid one
  */
-CERVER_PUBLIC bool http_proxy_network_parse (
+CERVER_PUBLIC bool cerver_http_proxy_network_parse (
 	const char *cidr, HttpProxyNetwork *network
 );
 
@@ -123,19 +123,19 @@ CERVER_PUBLIC bool http_proxy_network_parse (
  * @param[in] ip_length its length
  * @return true if the address is inside, false for a NULL network or an invalid address
  */
-CERVER_PUBLIC bool http_proxy_network_contains (
+CERVER_PUBLIC bool cerver_http_proxy_network_contains (
 	const HttpProxyNetwork *network, const char *ip, const size_t ip_length
 );
 
 /**
  * @brief Returns whether the cerver trusts the forwarded headers sent by an address.
  *
- * @param[in] http_cerver the HttpCerver, with its trusted proxies setting
+ * @param[in] http_cerver the CerverHttp, with its trusted proxies setting
  * @param[in] ip the IPv4 or IPv6 address of the peer
  * @param[in] ip_length its length
- * @return true for a trusted proxy, false for a NULL HttpCerver or an invalid address
+ * @return true for a trusted proxy, false for a NULL CerverHttp or an invalid address
  */
-CERVER_PUBLIC bool http_proxy_is_trusted (
+CERVER_PUBLIC bool cerver_http_proxy_is_trusted (
 	const struct _HttpCerver *http_cerver, const char *ip, const size_t ip_length
 );
 
@@ -146,13 +146,13 @@ CERVER_PUBLIC bool http_proxy_is_trusted (
  * that is not a trusted proxy (X-Real-IP if there is no X-Forwarded-For); an invalid forwarded address leaves the
  * peer.
  *
- * @param[in] http_cerver the HttpCerver
+ * @param[in] http_cerver the CerverHttp
  * @param[in] peer_ip the address of the peer
  * @param[in] request the request, with its headers
  * @param[out] client_ip the buffer of #HTTP_CLIENT_IP_SIZE bytes, NULL is ignored
  * @note For the internal methods of cerver.
  */
-CERVER_PRIVATE void http_proxy_resolve_client_ip (
+CERVER_PRIVATE void cerver_http_proxy_resolve_client_ip (
 	const struct _HttpCerver *http_cerver, const char *peer_ip,
 	const struct _HttpRequest *request, char *client_ip
 );

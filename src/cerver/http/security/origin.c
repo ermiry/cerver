@@ -4,7 +4,7 @@
 
 #include "cerver/http/security/origin.h"
 
-HttpOrigin *http_origin_new (void) {
+HttpOrigin *cerver_http_origin_new (void) {
 
 	HttpOrigin *origin = (HttpOrigin *) malloc (sizeof (HttpOrigin));
 	if (origin) {
@@ -15,13 +15,13 @@ HttpOrigin *http_origin_new (void) {
 
 }
 
-void http_origin_delete (void *origin_ptr) {
+void cerver_http_origin_delete (void *origin_ptr) {
 
 	if (origin_ptr) free (origin_ptr);
 
 }
 
-const int http_origin_get_len (
+const int cerver_http_origin_get_len (
 	const HttpOrigin *origin
 ) {
 
@@ -29,7 +29,7 @@ const int http_origin_get_len (
 
 }
 
-const char *http_origin_get_value (
+const char *cerver_http_origin_get_value (
 	const HttpOrigin *origin
 ) {
 
@@ -38,7 +38,7 @@ const char *http_origin_get_value (
 }
 
 // a value that does not fit is truncated and always ends inside the origin
-void http_origin_init (
+void cerver_http_origin_init (
 	HttpOrigin *origin, const char *value
 ) {
 
@@ -56,7 +56,7 @@ void http_origin_init (
 
 }
 
-void http_origin_reset (HttpOrigin *origin) {
+void cerver_http_origin_reset (HttpOrigin *origin) {
 
 	if (origin) {
 		(void) memset (origin, 0, sizeof (HttpOrigin));
@@ -64,7 +64,7 @@ void http_origin_reset (HttpOrigin *origin) {
 
 }
 
-void http_origin_print (const HttpOrigin *origin) {
+void cerver_http_origin_print (const HttpOrigin *origin) {
 
 	if (origin) {
 		(void) printf ("(%d) %s\n", origin->len, origin->value);
