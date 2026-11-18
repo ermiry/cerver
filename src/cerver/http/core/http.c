@@ -253,6 +253,8 @@ HttpCerver *http_cerver_new (void) {
 		(void) memset (http_cerver->pools, 0, sizeof (http_cerver->pools));
 		http_cerver->n_pools = 0;
 		http_cerver->pools_started = false;
+		http_cerver->loop_pool = NULL;
+		http_cerver->handlers_pool = NULL;
 
 		http_cerver->health_route = NULL;
 		http_cerver->ready_route = NULL;
@@ -266,12 +268,6 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->uploads_write_microseconds = 0;
 		http_cerver->uploads_write_bytes = 0;
-
-		http_cerver->keep_alive_follow = HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW;
-		http_cerver->n_followed_requests = 0;
-
-		http_cerver->keep_alive_pool_read = HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ;
-		http_cerver->n_pool_read_requests = 0;
 	}
 
 	return http_cerver;

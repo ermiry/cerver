@@ -139,31 +139,6 @@
 #define HTTP_CERVER_POOLS_SIZE						(1 << 4)
 
 /**
- * @brief The default microseconds that the thread of a pool that answered a request looks for the next one of its
- * connection, before it gives the connection back to its event loop: none, a cerver asks for it with
- * http_cerver_set_keep_alive_follow ().
- *
- * @since 3.0b-5
- */
-#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_FOLLOW		0
-
-/**
- * @brief The microseconds that a cerver that asks its threads to follow their connections can start with: the
- * next request of a quick client arrives in less.
- *
- * @since 3.0b-5
- */
-#define HTTP_CERVER_KEEP_ALIVE_FOLLOW_SHORT			(1 << 6)
-
-/**
- * @brief By default the threads of the pools read the next request of a connection that is kept, without its
- * event loop: http_cerver_set_keep_alive_pool_read ().
- *
- * @since 3.0b-10
- */
-#define HTTP_CERVER_DEFAULT_KEEP_ALIVE_POOL_READ	true
-
-/**
  * @brief The exponent of the last bucket with a limit of the requests that a connection handled: 2^10 requests,
  * the default of #HTTP_CERVER_DEFAULT_KEEP_ALIVE_REQUESTS.
  *
@@ -698,6 +673,20 @@ struct _HttpCerver {
 	 * @since 3.0b-5
 	 */
 	bool pools_started;
+	/**
+	 * @brief The pool of the requests that their event loop handles by itself (#HTTP_POOL_LOOP_NAME,
+	 * http/core/pool.h): it has no threads and it is not one of #pools.
+	 *
+	 * @since 3.0b-11
+	 */
+	struct HttpPool *loop_pool;
+	/**
+	 * @brief The pool of the requests whose endpoint and groups did not choose one
+	 * (http_cerver_set_handlers_pool ()); NULL for the default one.
+	 *
+	 * @since 3.0b-11
+	 */
+	struct HttpPool *handlers_pool;
 
 	/**
 	 * @brief The path of the health route (http_cerver_set_health_route ()), NULL without one.
@@ -760,38 +749,6 @@ struct _HttpCerver {
 	 * @since 3.0b-5
 	 */
 	size_t uploads_write_bytes;
-
-	/**
-	 * @brief The microseconds that the thread of a pool that answered a request of a connection that is kept looks
-	 * for its next request, to handle it by itself; 0 disables it (http_cerver_set_keep_alive_follow ()). Only with
-	 * event loops.
-	 *
-	 * @since 3.0b-5
-	 */
-	unsigned int keep_alive_follow;
-	/**
-	 * @brief The requests that the thread that answered the one before them handled by itself, without their event
-	 * loop; updated with atomic operations.
-	 *
-	 * @since 3.0b-5
-	 */
-	size_t n_followed_requests;
-
-	/**
-	 * @brief The threads of the pools read, parse and handle the next request of a connection that is kept, and
-	 * its event loop only reads it when its pool has no place (http_cerver_set_keep_alive_pool_read ()). Only with
-	 * event loops.
-	 *
-	 * @since 3.0b-10
-	 */
-	bool keep_alive_pool_read;
-	/**
-	 * @brief The requests of connections that were kept that a thread of a pool read and handled, without their
-	 * event loop; updated with atomic operations.
-	 *
-	 * @since 3.0b-10
-	 */
-	size_t n_pool_read_requests;
 
 };
 
