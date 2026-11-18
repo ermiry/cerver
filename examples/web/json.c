@@ -11,14 +11,14 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 
 #include <cerver/json/json.h>
 #include <cerver/json/value.h>
@@ -44,7 +44,7 @@ static void finish (void) {
 
 	cerver_stats_print (web_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (web_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (web_cerver);
 
@@ -55,17 +55,12 @@ static void finish (void) {
 #pragma region routes
 
 // GET /json
-void json_fetch_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_fetch_handler (CerverHttpContext *context) {
 
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
-	if (http_response_render_json (http_receive, HTTP_STATUS_OK, json, json_len)) {
+	if (cerver_http_response_send_json (context, json, json_len)) {
 		cerver_log_error ("json_handler () has failed!");
 	}
 
@@ -73,20 +68,20 @@ void json_fetch_handler (
 
 // the body of the request is an array or an object: it is read once, in the arena of the request
 static unsigned int json_load_from_body (
-	const HttpRequest *request
+	const CerverHttpContext *context
 ) {
 
 	unsigned int retval = 1;
 
 	CerverJsonError json_error = CERVER_ZERO_INITIALIZER;
-	const CerverJsonValue *json_body = http_request_json (request, &json_error);
+	const CerverJsonValue *json_body = cerver_http_request_json (context, &json_error);
 	if (cerver_json_is_array (json_body) || cerver_json_is_object (json_body)) {
 		retval = 0;
 	}
 
 	else {
 		cerver_log_error (
-			"http_request_json () - json error at byte %zu: %s\n",
+			"cerver_http_request_json () - json error at byte %zu: %s\n",
 			json_error.offset, cerver_json_error_to_string (json_error.code)
 		);
 	}
@@ -96,182 +91,131 @@ static unsigned int json_load_from_body (
 }
 
 // POST /json
-void json_upload_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void json_upload_handler (CerverHttpContext *context) {
 
-	if (!json_load_from_body (request)) {
+	if (!json_load_from_body (context)) {
 		cerver_log_success ("JSON is valid!");
 
-		http_response_send (oki_doki, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 	}
 
 	else {
-		http_response_send (bad_request_error, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST);
 	}
 
 }
 
 // POST /json/big
-void json_upload_big_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void json_upload_big_handler (CerverHttpContext *context) {
 
-	if (!json_load_from_body (request)) {
+	if (!json_load_from_body (context)) {
 		cerver_log_success ("Big JSON is valid!");
 
-		http_response_send (oki_doki, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 	}
 
 	else {
-		http_response_send (bad_request_error, http_receive);
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST);
 	}
 
 }
 
 // GET /json/int
-void json_int_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_int_handler (CerverHttpContext *context) {
 
 	static const int value = 18;
 
-	(void) http_response_json_int_value_send (
-		http_receive, HTTP_STATUS_OK,
+	(void) cerver_http_response_send_json_integer (
+		context, HTTP_STATUS_OK,
 		"integer", value
 	);
 
 }
 
 // GET /json/large
-void json_large_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_large_handler (CerverHttpContext *context) {
 
 	static const long value = 1800000;
 
-	(void) http_response_json_large_int_value_send (
-		http_receive, HTTP_STATUS_OK,
+	(void) cerver_http_response_send_json_integer (
+		context, HTTP_STATUS_OK,
 		"large", value
 	);
 
 }
 
 // GET /json/real
-void json_real_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_real_handler (CerverHttpContext *context) {
 
 	static const double value = 18.123;
 
-	(void) http_response_json_real_value_send (
-		http_receive, HTTP_STATUS_OK,
+	(void) cerver_http_response_send_json_real (
+		context, HTTP_STATUS_OK,
 		"real", value
 	);
 
 }
 
 // GET /json/bool
-void json_bool_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void json_bool_handler (CerverHttpContext *context) {
 
 	static const bool value = true;
 
-	(void) http_response_json_bool_value_send (
-		http_receive, HTTP_STATUS_OK,
+	(void) cerver_http_response_send_json_boolean (
+		context, HTTP_STATUS_OK,
 		"bool", value
 	);
 
 }
 
 // GET /json/msg
-void msg_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void msg_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_json_msg_send (
-		http_receive, HTTP_STATUS_OK, "oki"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "oki"
 	);
 
 }
 
 // GET /json/error
-void error_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void error_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_json_error_send (
-		http_receive, HTTP_STATUS_BAD_REQUEST, "bad"
+	(void) cerver_http_response_send_json_error (
+		context, HTTP_STATUS_BAD_REQUEST, "bad"
 	);
 
 }
 
 // GET /json/key
-void key_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void key_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_json_key_value_send (
-		http_receive,
+	(void) cerver_http_response_send_json_key_value (
+		context,
 		HTTP_STATUS_OK, "key", "value"
 	);
 
 }
 
 // GET /json/custom
-void custom_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void custom_handler (CerverHttpContext *context) {
 
-	(void) request;
+	const char *json = "{\"oki\": \"doki\"}";
 
-	(void) http_response_json_custom_send (
-		http_receive,
-		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
+	(void) cerver_http_response_send_json (
+		context, json, strlen (json)
 	);
 
 }
 
 // GET /json/reference
-void reference_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) request;
+void reference_handler (CerverHttpContext *context) {
 
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
 		(void) strncpy (json, "{\"oki\": \"doki\"}", 256);
 
-		(void) http_response_json_custom_reference_send (
-			http_receive,
-			HTTP_STATUS_OK, json, strlen (json)
+		(void) cerver_http_response_send_json (
+			context, json, strlen (json)
 		);
 
 		free (json);
@@ -316,58 +260,49 @@ int main (void) {
 
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
-		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
 
 		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (web_cerver);
+
+		CerverHttpGroup *json_group = cerver_http_group_create (http_cerver, "/json");
 
 		// GET /json
-		HttpRoute *json_route = http_route_create (REQUEST_METHOD_GET, "json", json_fetch_handler);
-		http_cerver_route_register (http_cerver, json_route);
+		(void) cerver_http_group_root_add (json_group, REQUEST_METHOD_GET, json_fetch_handler);
 
-		http_route_set_handler (json_route, REQUEST_METHOD_POST, json_upload_handler);
+		// POST /json
+		(void) cerver_http_group_root_add (json_group, REQUEST_METHOD_POST, json_upload_handler);
 
 		// POST /json/big
-		HttpRoute *json_big_route = http_route_create (REQUEST_METHOD_POST, "big", json_upload_big_handler);
-		http_route_child_add (json_route, json_big_route);
+		(void) cerver_http_group_post (json_group, "big", json_upload_big_handler);
 
 		// GET /json/int
-		HttpRoute *int_route = http_route_create (REQUEST_METHOD_GET, "int", json_int_handler);
-		http_route_child_add (json_route, int_route);
+		(void) cerver_http_group_get (json_group, "int", json_int_handler);
 
 		// GET /json/large
-		HttpRoute *large_route = http_route_create (REQUEST_METHOD_GET, "large", json_large_handler);
-		http_route_child_add (json_route, large_route);
+		(void) cerver_http_group_get (json_group, "large", json_large_handler);
 
 		// GET /json/real
-		HttpRoute *real_route = http_route_create (REQUEST_METHOD_GET, "real", json_real_handler);
-		http_route_child_add (json_route, real_route);
+		(void) cerver_http_group_get (json_group, "real", json_real_handler);
 
 		// GET /json/bool
-		HttpRoute *bool_route = http_route_create (REQUEST_METHOD_GET, "bool", json_bool_handler);
-		http_route_child_add (json_route, bool_route);
+		(void) cerver_http_group_get (json_group, "bool", json_bool_handler);
 
 		// GET /json/msg
-		HttpRoute *msg_route = http_route_create (REQUEST_METHOD_GET, "msg", msg_handler);
-		http_route_child_add (json_route, msg_route);
+		(void) cerver_http_group_get (json_group, "msg", msg_handler);
 
 		// GET /json/error
-		HttpRoute *error_route = http_route_create (REQUEST_METHOD_GET, "error", error_handler);
-		http_route_child_add (json_route, error_route);
+		(void) cerver_http_group_get (json_group, "error", error_handler);
 
 		// GET /json/key
-		HttpRoute *key_route = http_route_create (REQUEST_METHOD_GET, "key", key_handler);
-		http_route_child_add (json_route, key_route);
+		(void) cerver_http_group_get (json_group, "key", key_handler);
 
 		// GET /json/custom
-		HttpRoute *custom_route = http_route_create (REQUEST_METHOD_GET, "custom", custom_handler);
-		http_route_child_add (json_route, custom_route);
+		(void) cerver_http_group_get (json_group, "custom", custom_handler);
 
 		// GET /json/reference
-		HttpRoute *reference_route = http_route_create (REQUEST_METHOD_GET, "reference", reference_handler);
-		http_route_child_add (json_route, reference_route);
+		(void) cerver_http_group_get (json_group, "reference", reference_handler);
 
 		if (!cerver_start (web_cerver)) {
 			finish ();

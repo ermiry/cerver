@@ -11,13 +11,13 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/security/auth.h>
 
 #include <cerver/jwt/jwt.h>
@@ -45,7 +45,7 @@ static void finish (void) {
 
 	cerver_stats_print (auth_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) auth_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (auth_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (auth_cerver);
 
@@ -56,65 +56,29 @@ static void finish (void) {
 #pragma region routes
 
 // GET /test
-void test_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void test_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Test route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
 // GET /auth/token
-void auth_token_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void auth_token_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Token auth route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Token auth route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
 // POST /auth/custom
-void auth_custom_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+void auth_custom_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Custom auth route works!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Custom auth route works!"
 	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
@@ -122,19 +86,12 @@ void auth_custom_handler (
 
 #pragma region start
 
-static unsigned int custom_authentication_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) http_receive;
+static unsigned int custom_authentication_handler (CerverHttpContext *context) {
 
 	unsigned int retval = 1;
 
-	http_request_multi_parts_print (request);
-
-	const char *key = http_request_multi_parts_get_value (request, "key");
-	if (!strcmp (key, "okay")) {
+	const CerverHttpView key = cerver_http_request_part_value (context, "key");
+	if (cerver_http_view_equals (key, "okay")) {
 		cerver_log_success ("Success auth!");
 
 		retval = 0;
@@ -179,37 +136,35 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (auth_cerver, 4096);
 		cerver_set_thpool_n_threads (auth_cerver, 4);
-		cerver_set_handler_type (auth_cerver, CERVER_HANDLER_TYPE_THREADS);
 
 		cerver_set_reusable_address_flags (auth_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) auth_cerver->cerver_data;
+		CerverHttp *http_cerver = cerver_http_get (auth_cerver);
 
 		// bearer token auth configuration
-		http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
-		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
-		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+		cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+		cerver_http_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
+		cerver_http_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
 
 		// GET /test
-		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
-		http_cerver_route_register (http_cerver, test_route);
+		CerverHttpGroup *test_group = cerver_http_group_create (http_cerver, "/test");
+		(void) cerver_http_group_root_add (test_group, REQUEST_METHOD_GET, test_handler);
+
+		CerverHttpGroup *auth_group = cerver_http_group_create (http_cerver, "/auth");
 
 		// GET /auth/token
-		HttpRoute *auth_token_route = http_route_create (REQUEST_METHOD_GET, "auth/token", auth_token_handler);
-		http_route_set_auth (auth_token_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-		http_route_set_decode_data (auth_token_route, user_parse_from_json, user_delete);
-		http_cerver_route_register (http_cerver, auth_token_route);
+		CerverHttpEndpoint *auth_token = cerver_http_group_get (auth_group, "token", auth_token_handler);
+		cerver_http_endpoint_set_auth (auth_token, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		cerver_http_endpoint_set_decode_data (auth_token, user_parse_from_json, user_delete);
 
-		// GET /auth/custom
-		HttpRoute *auth_custom_route = http_route_create (REQUEST_METHOD_POST, "auth/custom", auth_custom_handler);
-		http_route_set_auth (auth_custom_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-		http_route_set_authentication_handler (auth_custom_route, custom_authentication_handler);
+		// POST /auth/custom
+		CerverHttpEndpoint *auth_custom = cerver_http_group_post (auth_group, "custom", auth_custom_handler);
+		cerver_http_endpoint_set_auth (auth_custom, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+		cerver_http_endpoint_set_authentication_handler (auth_custom, custom_authentication_handler);
 
 		// the handler authenticates with a value of the multi-part body
-		http_route_set_authentication_with_body (auth_custom_route, true);
-
-		http_cerver_route_register (http_cerver, auth_custom_route);
+		cerver_http_endpoint_set_authentication_with_body (auth_custom, true);
 
 		if (!cerver_start (auth_cerver)) {
 			finish ();
