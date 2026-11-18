@@ -75,7 +75,7 @@ static void http_access_file (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %u - %zu",
 		http_receive->cr->connection->ip,
-		http_request_method_str (http_receive->request->method),
+		cerver_http_method_to_string (http_receive->request->method),
 		http_receive->served_file,
 		http_receive->received,
 		process_time,
@@ -99,7 +99,7 @@ static void http_access_route (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %u - %zu%s%s",
 		client,
-		http_request_method_str (http_receive->request->method),
+		cerver_http_method_to_string (http_receive->request->method),
 		endpoint ? endpoint->path->str : http_receive->request->url->str,
 		http_receive->received,
 		process_time,
@@ -109,7 +109,7 @@ static void http_access_route (
 	);
 
 	if (endpoint) {
-		http_route_stats_update (
+		cerver_http_route_stats_update (
 			endpoint->stats, process_time, http_receive->received, http_receive->sent
 		);
 
@@ -117,7 +117,7 @@ static void http_access_route (
 			(endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
 			&& http_receive->is_multi_part
 		) {
-			http_route_file_stats_update (endpoint->file_stats, http_receive->file_stats);
+			cerver_http_route_file_stats_update (endpoint->file_stats, http_receive->file_stats);
 		}
 	}
 
@@ -148,7 +148,7 @@ static void http_access_unhandled (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> No matching route -> %u - %zu",
 		http_receive->cr->connection->ip,
-		http_request_method_str (http_receive->request->method),
+		cerver_http_method_to_string (http_receive->request->method),
 		http_receive->request->url->str,
 		http_receive->received,
 		process_time,
@@ -179,7 +179,7 @@ static void http_access_rejected (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %s -> %u - %zu%s%s",
 		client,
-		http_request_method_str ((RequestMethod) method),
+		cerver_http_method_to_string ((CerverHttpMethod) method),
 		path,
 		http_receive->received,
 		process_time,
@@ -201,7 +201,7 @@ static void http_access_rejected (
 static void http_access_count_incomplete (const HttpReceive *http_receive) {
 
 	HttpCerver *http_cerver = http_receive->http_cerver;
-	const HttpStage stage = http_receive->stage;
+	const CerverHttpStage stage = http_receive->stage;
 	const bool counted = http_receive->response_failed;
 
 	switch (http_receive->receive_status) {
@@ -231,7 +231,7 @@ static void http_access_incomplete (
 		" - last rc %zd - errno %d - parser %s - running %d - %fs",
 		http_receive->cr->connection->ip, http_receive->sock_fd,
 		http_receive_status_str (http_receive->receive_status),
-		http_stage_string (http_receive->stage),
+		cerver_http_stage_string (http_receive->stage),
 		http_receive->received, http_receive->diagnostics.n_recvs,
 		http_receive->diagnostics.last_rc, http_receive->diagnostics.last_errno,
 		cerver_http_parser_error_string (cerver_http_parser_get_error (&http_receive->parser)),

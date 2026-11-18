@@ -13,6 +13,8 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/responses/prepared.h"
+
 /** @internal @brief The objects that the shared lists keep, 0 in the builds that do not recycle. */
 #define HTTP_RECYCLE_LIMIT						FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 

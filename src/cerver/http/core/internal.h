@@ -25,10 +25,12 @@
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/pool.h"
+#include "cerver/http/core/types.h"
 #include "cerver/http/parser/parser.h"
 #include "cerver/http/requests/multipart.h"
 #include "cerver/http/requests/request.h"
 #include "cerver/http/responses/response.h"
+#include "cerver/http/routes/internal.h"
 #include "cerver/http/routes/tree.h"
 
 #include "cerver/json/json.h"
@@ -46,7 +48,6 @@ extern "C" {
 struct _Cerver;
 struct _HttpCerver;
 struct _HttpGroup;
-struct _HttpRoute;
 
 /**
  * @internal
@@ -196,7 +197,7 @@ struct HttpPool {
  * @param[in,out] http_cerver the HTTP cerver
  * @return 0 on success, 1 on error
  */
-CERVER_HIDDEN unsigned int http_cerver_pools_create (struct _HttpCerver *http_cerver);
+CERVER_HIDDEN unsigned int cerver_http_pools_create (struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -204,7 +205,7 @@ CERVER_HIDDEN unsigned int http_cerver_pools_create (struct _HttpCerver *http_ce
  *
  * @param[in,out] http_cerver the HTTP cerver
  */
-CERVER_HIDDEN void http_cerver_pools_delete (struct _HttpCerver *http_cerver);
+CERVER_HIDDEN void cerver_http_pools_delete (struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -215,7 +216,7 @@ CERVER_HIDDEN void http_cerver_pools_delete (struct _HttpCerver *http_cerver);
  * @param[in,out] http_cerver the HTTP cerver
  * @return 0 on success, 1 when the thpool of a pool could not be started
  */
-CERVER_HIDDEN unsigned int http_cerver_pools_start (struct _HttpCerver *http_cerver);
+CERVER_HIDDEN unsigned int cerver_http_pools_start (struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -227,7 +228,7 @@ CERVER_HIDDEN unsigned int http_cerver_pools_start (struct _HttpCerver *http_cer
  * @param[in] timeout the seconds for all the pools, #THPOOL_DRAIN_TIMEOUT_NONE waits until every job has finished
  * @return the pools that still had threads working when the time ended, 0 when every pool was drained
  */
-CERVER_HIDDEN unsigned int http_cerver_pools_drain (
+CERVER_HIDDEN unsigned int cerver_http_pools_drain (
 	struct _HttpCerver *http_cerver, const bool run_queued, const time_t timeout
 );
 
@@ -237,7 +238,7 @@ CERVER_HIDDEN unsigned int http_cerver_pools_drain (
  *
  * @param[in,out] http_cerver the HTTP cerver
  */
-CERVER_HIDDEN void http_cerver_pools_end (struct _HttpCerver *http_cerver);
+CERVER_HIDDEN void cerver_http_pools_end (struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -246,7 +247,7 @@ CERVER_HIDDEN void http_cerver_pools_end (struct _HttpCerver *http_cerver);
  * @param[in] http_cerver the HTTP cerver
  * @return the threads
  */
-CERVER_HIDDEN unsigned int http_cerver_pools_working (const struct _HttpCerver *http_cerver);
+CERVER_HIDDEN unsigned int cerver_http_pools_working (const struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -255,7 +256,7 @@ CERVER_HIDDEN unsigned int http_cerver_pools_working (const struct _HttpCerver *
  * @param[in] http_cerver the HTTP cerver
  * @return the jobs
  */
-CERVER_HIDDEN unsigned int http_cerver_pools_queued (const struct _HttpCerver *http_cerver);
+CERVER_HIDDEN unsigned int cerver_http_pools_queued (const struct _HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -268,7 +269,7 @@ CERVER_HIDDEN unsigned int http_cerver_pools_queued (const struct _HttpCerver *h
  * @param[in] n_requests the requests that the connection handled, a connection without one is not counted
  * @threadsafety Any thread, the counters are atomic.
  */
-CERVER_HIDDEN void http_cerver_connection_ended (struct _HttpCerver *http_cerver, const size_t n_requests);
+CERVER_HIDDEN void cerver_http_connection_ended (struct _HttpCerver *http_cerver, const size_t n_requests);
 
 /**
  * @internal
@@ -278,7 +279,7 @@ CERVER_HIDDEN void http_cerver_connection_ended (struct _HttpCerver *http_cerver
  * @param[in] pool the pool, NULL for the default one
  * @return the policy
  */
-CERVER_PRIVATE CerverOverloadPolicy http_pool_overload_policy (
+CERVER_PRIVATE CerverOverloadPolicy cerver_http_pool_overload_policy (
 	const struct _Cerver *cerver, const struct HttpPool *pool
 );
 
@@ -290,7 +291,7 @@ CERVER_PRIVATE CerverOverloadPolicy http_pool_overload_policy (
  * @param[in] pool the pool, NULL for the default one
  * @return the seconds
  */
-CERVER_PRIVATE unsigned int http_pool_wait_timeout (
+CERVER_PRIVATE unsigned int cerver_http_pool_wait_timeout (
 	const struct _Cerver *cerver, const struct HttpPool *pool
 );
 
@@ -303,7 +304,7 @@ CERVER_PRIVATE unsigned int http_pool_wait_timeout (
  * @threadsafety Safe from any thread, it only uses atomic operations.
  * @since 3.0b-10
  */
-CERVER_HIDDEN void http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds);
+CERVER_HIDDEN void cerver_http_pool_parked_count (struct HttpPool *pool, const u64 milliseconds);
 
 struct Arena;
 struct KeyValuePair;
@@ -320,7 +321,7 @@ struct KeyValuePair;
  * @return the pairs, NULL without them or without memory
  * @since 3.0b-10
  */
-CERVER_HIDDEN struct KeyValuePair *http_query_pairs_arena (
+CERVER_HIDDEN struct KeyValuePair *cerver_http_query_pairs_arena (
 	struct Arena *arena, const char *first, const char *last, size_t *n_pairs
 );
 
@@ -328,13 +329,13 @@ CERVER_HIDDEN struct KeyValuePair *http_query_pairs_arena (
  * @internal
  * @brief Returns the value of the first pair of an array with a key.
  *
- * @param[in] pairs the pairs, from http_query_pairs_arena ()
+ * @param[in] pairs the pairs, from cerver_http_query_pairs_arena ()
  * @param[in] n_pairs the pairs
  * @param[in] key the key
  * @return the value, that belongs to the pair; NULL for a NULL argument or a missing key
  * @since 3.0b-10
  */
-CERVER_HIDDEN const String *http_query_pairs_find (
+CERVER_HIDDEN const String *cerver_http_query_pairs_find (
 	const struct KeyValuePair *pairs, const size_t n_pairs, const char *key
 );
 
@@ -342,12 +343,12 @@ CERVER_HIDDEN const String *http_query_pairs_find (
  * @internal
  * @brief Creates a list of KeyValuePair with a copy of each pair of an array.
  *
- * @param[in] pairs the pairs, from http_query_pairs_arena ()
+ * @param[in] pairs the pairs, from cerver_http_query_pairs_arena ()
  * @param[in] n_pairs the pairs
  * @return the list, released with dlist_delete (); NULL without pairs or without memory
  * @since 3.0b-10
  */
-CERVER_HIDDEN DoubleList *http_query_pairs_list (const struct KeyValuePair *pairs, const size_t n_pairs);
+CERVER_HIDDEN DoubleList *cerver_http_query_pairs_list (const struct KeyValuePair *pairs, const size_t n_pairs);
 
 /**
  * @internal
@@ -399,18 +400,18 @@ CERVER_PRIVATE HttpAdminFileSystemStats *http_admin_file_system_stats_create (
  * @param[in] http_cerver the HttpCerver
  * @return the json, released with free (); NULL on error
  */
-CERVER_PRIVATE char *http_cerver_admin_generate_info_json (
+CERVER_PRIVATE char *cerver_http_admin_generate_info_json (
 	const struct _HttpCerver *http_cerver
 );
 
 /**
  * @internal
- * @brief Generates the json of the stats of the routes of the first routes API.
+ * @brief Generates the json of the stats of the routes: the ones of each endpoint and the ones of the cerver.
  *
  * @param[in] http_cerver the HttpCerver
  * @return the json, released with free (); NULL on error
  */
-CERVER_PRIVATE char *http_cerver_admin_generate_routes_stats_json (
+CERVER_PRIVATE char *cerver_http_admin_generate_routes_stats_json (
 	const struct _HttpCerver *http_cerver
 );
 
@@ -421,7 +422,7 @@ CERVER_PRIVATE char *http_cerver_admin_generate_routes_stats_json (
  * @param[in] http_cerver the HttpCerver
  * @return the json, released with free (); NULL on error
  */
-CERVER_PRIVATE char *http_cerver_admin_generate_file_systems_stats_json (
+CERVER_PRIVATE char *cerver_http_admin_generate_file_systems_stats_json (
 	const struct _HttpCerver *http_cerver
 );
 
@@ -432,22 +433,8 @@ CERVER_PRIVATE char *http_cerver_admin_generate_file_systems_stats_json (
  * @param[in] http_cerver the HttpCerver
  * @return the json, released with free (); NULL on error
  */
-CERVER_PRIVATE char *http_cerver_admin_generate_workers_json (
+CERVER_PRIVATE char *cerver_http_admin_generate_workers_json (
 	const struct _HttpCerver *http_cerver
-);
-
-/**
- * @internal
- * @brief Adds the admin routes as children of a top level route of the first routes API.
- *
- * @param[in] http_cerver the HttpCerver, with its admin settings
- * @param[in,out] top_level_route the route
- * @retval 0 the routes were added
- * @retval 1 a NULL route
- */
-CERVER_PRIVATE u8 http_cerver_admin_init (
-	const struct _HttpCerver *http_cerver,
-	struct _HttpRoute *top_level_route
 );
 
 /**
@@ -459,7 +446,7 @@ CERVER_PRIVATE u8 http_cerver_admin_init (
  * @retval 0 the routes were added
  * @retval 1 a NULL group
  */
-CERVER_PRIVATE u8 http_cerver_admin_group_init (
+CERVER_PRIVATE u8 cerver_http_admin_group_init (
 	const struct _HttpCerver *http_cerver,
 	struct _HttpGroup *group
 );
@@ -582,7 +569,7 @@ typedef enum HttpReceiveParse {
  *
  * @param[in,out] http_cerver the HttpCerver
  */
-CERVER_HIDDEN void http_cerver_init_admin_routes (HttpCerver *http_cerver);
+CERVER_HIDDEN void cerver_http_init_admin_routes (HttpCerver *http_cerver);
 
 /**
  * @internal
@@ -590,7 +577,7 @@ CERVER_HIDDEN void http_cerver_init_admin_routes (HttpCerver *http_cerver);
  *
  * @param[in] http_static_path_ptr the static path, it can be NULL
  */
-CERVER_HIDDEN void http_static_path_delete (void *http_static_path_ptr);
+CERVER_HIDDEN void cerver_http_static_path_delete (void *http_static_path_ptr);
 
 /**
  * @internal
@@ -600,7 +587,7 @@ CERVER_HIDDEN void http_static_path_delete (void *http_static_path_ptr);
  * @param[in] b the second static path
  * @return the result of strcmp () of their paths
  */
-CERVER_HIDDEN int http_static_path_comparator (const void *a, const void *b);
+CERVER_HIDDEN int cerver_http_static_path_comparator (const void *a, const void *b);
 
 /**
  * @internal
@@ -672,7 +659,7 @@ CERVER_HIDDEN bool is_multipart (const char *content);
 /**
  * @internal
  * @brief Creates the pool of the multi-parts that every HTTP cerver of the process shares, with
- * #HTTP_CERVER_MULTI_PARTS_POOL_INIT multi-parts.
+ * #CERVER_HTTP_MULTI_PARTS_POOL_INIT multi-parts.
  *
  * @retval 0 the pool is ready
  * @retval 1 it could not be created
@@ -796,22 +783,16 @@ CERVER_HIDDEN int http_receive_handle_mpart_body (
  * @brief The default catch all handler.
  *
  * @param[in] http_receive the receive
- * @param[in] request the request
  */
-CERVER_HIDDEN void http_receive_handle_default_route (
-	const HttpReceive *http_receive, const HttpRequest *request
-);
+CERVER_HIDDEN void http_receive_handle_default_route (HttpReceive *http_receive);
 
 /**
  * @internal
  * @brief The default not found handler, that answers with 404.
  *
  * @param[in] http_receive the receive
- * @param[in] request the request
  */
-CERVER_HIDDEN void http_receive_handle_not_found_route (
-	const HttpReceive *http_receive, const HttpRequest *request
-);
+CERVER_HIDDEN void http_receive_handle_not_found_route (HttpReceive *http_receive);
 
 /**
  * @internal

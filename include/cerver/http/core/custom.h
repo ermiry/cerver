@@ -21,7 +21,7 @@
 /**
  * @brief The limit of the name of a custom header, a bigger one is answered with 431.
  *
- * The limit of its value is the one of its cerver (http_cerver_set_max_custom_header_size ()).
+ * The limit of its value is the one of its cerver (cerver_http_set_max_custom_header_size ()).
  */
 #define HTTP_CUSTOM_HEADER_SIZE					256
 
