@@ -5,24 +5,24 @@
 
 #include "cerver/http/routes/validator.h"
 
-static const char http_param_validator_negative = '-';
-static const char http_param_validator_uuid_separator = '-';
+static const char cerver_http_param_validator_negative = '-';
+static const char cerver_http_param_validator_uuid_separator = '-';
 
 // the positions of the separators of a UUID
-static const size_t http_param_validator_uuid_separators[] = { 8, 13, 18, 23 };
-static const size_t http_param_validator_uuid_n_separators = 4;
+static const size_t cerver_http_param_validator_uuid_separators[] = { 8, 13, 18, 23 };
+static const size_t cerver_http_param_validator_uuid_n_separators = 4;
 
-static const HttpParamValidator http_param_validators_builtin[] = {
-	{ "objectid", http_param_validate_objectid },
-	{ "int", http_param_validate_int },
-	{ "uuid", http_param_validate_uuid }
+static const HttpParamValidator cerver_http_param_validators_builtin[] = {
+	{ "objectid", cerver_http_param_validate_objectid },
+	{ "int", cerver_http_param_validate_int },
+	{ "uuid", cerver_http_param_validate_uuid }
 };
 
-static const size_t http_param_validators_builtin_count = (
-	sizeof (http_param_validators_builtin) / sizeof (HttpParamValidator)
+static const size_t cerver_http_param_validators_builtin_count = (
+	sizeof (cerver_http_param_validators_builtin) / sizeof (HttpParamValidator)
 );
 
-HttpParamValidator *http_param_validator_create (
+HttpParamValidator *cerver_http_param_validator_create (
 	const char *name, const HttpParamValidate validate
 ) {
 
@@ -40,21 +40,21 @@ HttpParamValidator *http_param_validator_create (
 
 }
 
-void http_param_validator_delete (void *validator_ptr) {
+void cerver_http_param_validator_delete (void *validator_ptr) {
 
 	if (validator_ptr) free (validator_ptr);
 
 }
 
 // returns the built in validator with the name ("objectid", "int", "uuid"), NULL if none
-const HttpParamValidator *http_param_validator_builtin (
+const HttpParamValidator *cerver_http_param_validator_builtin (
 	const char *name, const size_t length
 ) {
 
 	const HttpParamValidator *found = NULL;
 
-	for (size_t idx = 0; idx < http_param_validators_builtin_count; idx++) {
-		const HttpParamValidator *validator = &http_param_validators_builtin[idx];
+	for (size_t idx = 0; idx < cerver_http_param_validators_builtin_count; idx++) {
+		const HttpParamValidator *validator = &cerver_http_param_validators_builtin[idx];
 		if ((strlen (validator->name) == length) && !strncmp (validator->name, name, length)) {
 			found = validator;
 			break;
@@ -65,7 +65,7 @@ const HttpParamValidator *http_param_validator_builtin (
 
 }
 
-static bool http_param_validate_hexadecimal (
+static bool cerver_http_param_validate_hexadecimal (
 	const char *value, const size_t length
 ) {
 
@@ -83,21 +83,21 @@ static bool http_param_validate_hexadecimal (
 }
 
 // 24 hexadecimal characters, a MongoDB ObjectId
-bool http_param_validate_objectid (
+bool cerver_http_param_validate_objectid (
 	const char *value, const size_t length
 ) {
 
 	return (length == HTTP_PARAM_VALIDATOR_OBJECTID_LENGTH)
-		&& http_param_validate_hexadecimal (value, length);
+		&& cerver_http_param_validate_hexadecimal (value, length);
 
 }
 
 // an optional '-' followed by one or more digits
-bool http_param_validate_int (
+bool cerver_http_param_validate_int (
 	const char *value, const size_t length
 ) {
 
-	const size_t start = (length && (value[0] == http_param_validator_negative)) ? 1 : 0;
+	const size_t start = (length && (value[0] == cerver_http_param_validator_negative)) ? 1 : 0;
 
 	bool valid = length > start;
 	for (size_t idx = start; valid && (idx < length); idx++) {
@@ -108,12 +108,12 @@ bool http_param_validate_int (
 
 }
 
-static bool http_param_validate_uuid_is_separator (const size_t position) {
+static bool cerver_http_param_validate_uuid_is_separator (const size_t position) {
 
 	bool separator = false;
 
-	for (size_t idx = 0; idx < http_param_validator_uuid_n_separators; idx++) {
-		if (http_param_validator_uuid_separators[idx] == position) {
+	for (size_t idx = 0; idx < cerver_http_param_validator_uuid_n_separators; idx++) {
+		if (cerver_http_param_validator_uuid_separators[idx] == position) {
 			separator = true;
 			break;
 		}
@@ -124,15 +124,15 @@ static bool http_param_validate_uuid_is_separator (const size_t position) {
 }
 
 // the 8-4-4-4-12 hexadecimal form of a UUID
-bool http_param_validate_uuid (
+bool cerver_http_param_validate_uuid (
 	const char *value, const size_t length
 ) {
 
 	bool valid = (length == HTTP_PARAM_VALIDATOR_UUID_LENGTH);
 
 	for (size_t idx = 0; valid && (idx < length); idx++) {
-		valid = http_param_validate_uuid_is_separator (idx) ?
-			(value[idx] == http_param_validator_uuid_separator) :
+		valid = cerver_http_param_validate_uuid_is_separator (idx) ?
+			(value[idx] == cerver_http_param_validator_uuid_separator) :
 			(isxdigit ((unsigned char) value[idx]) != 0);
 	}
 

@@ -13,6 +13,7 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/core/context.h"
 #include "cerver/http/requests/request.h"
 
 #ifdef __cplusplus
@@ -41,7 +42,7 @@ struct _HttpReceive;
  * @brief The result of a before middleware, one `HTTP_MIDDLEWARE_RESULT_<name>` for each row of
  * #HTTP_MIDDLEWARE_RESULT_MAP.
  */
-typedef enum HttpMiddlewareResult {
+typedef enum CerverHttpMiddlewareResult {
 
 	#define XX(num, name, string, description) HTTP_MIDDLEWARE_RESULT_##name = num,
 	HTTP_MIDDLEWARE_RESULT_MAP (XX)
@@ -50,7 +51,7 @@ typedef enum HttpMiddlewareResult {
 	/** @brief The number of results, the first value that is not valid. */
 	HTTP_MIDDLEWARE_RESULT_MAX
 
-} HttpMiddlewareResult;
+} CerverHttpMiddlewareResult;
 
 /**
  * @brief Returns the string of a result.
@@ -59,8 +60,8 @@ typedef enum HttpMiddlewareResult {
  * @return the string of its row in #HTTP_MIDDLEWARE_RESULT_MAP, or the one of HTTP_MIDDLEWARE_RESULT_NONE for a
  * value out of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_middleware_result_to_string (
-	const HttpMiddlewareResult result
+CERVER_PUBLIC const char *cerver_http_middleware_result_to_string (
+	const CerverHttpMiddlewareResult result
 );
 
 /**
@@ -70,8 +71,8 @@ CERVER_PUBLIC const char *http_middleware_result_to_string (
  * @return the description of its row in #HTTP_MIDDLEWARE_RESULT_MAP, or the one of HTTP_MIDDLEWARE_RESULT_NONE for
  * a value out of the table; a static string that must not be freed
  */
-CERVER_PUBLIC const char *http_middleware_result_description (
-	const HttpMiddlewareResult result
+CERVER_PUBLIC const char *cerver_http_middleware_result_description (
+	const CerverHttpMiddlewareResult result
 );
 
 /**
@@ -80,17 +81,15 @@ CERVER_PUBLIC const char *http_middleware_result_description (
  * A middleware that returns HTTP_MIDDLEWARE_RESULT_STOP must send the response; any other value lets the request
  * continue.
  */
-typedef HttpMiddlewareResult (*HttpBeforeMiddleware)(
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
+typedef CerverHttpMiddlewareResult (*HttpBeforeMiddleware)(
+	CerverHttpContext *context
 );
 
 /**
  * @brief A middleware that runs after the handler of the route, when the response was already sent.
  */
 typedef void (*HttpAfterMiddleware)(
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
+	CerverHttpContext *context
 );
 
 /**
@@ -175,27 +174,23 @@ CERVER_PRIVATE u8 http_middlewares_append (
  * @brief Runs the before middlewares in order, until one of them returns HTTP_MIDDLEWARE_RESULT_STOP.
  *
  * @param[in] middlewares the middlewares
- * @param[in] http_receive the receive of the request
- * @param[in] request the request
+ * @param[in,out] http_receive the receive of the request
  * @return true if the request continues to the handler of the route
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE bool http_middlewares_run_before (
-	const HttpMiddlewares *middlewares,
-	const struct _HttpReceive *http_receive, const HttpRequest *request
+	const HttpMiddlewares *middlewares, struct _HttpReceive *http_receive
 );
 
 /**
  * @brief Runs the after middlewares in reverse order.
  *
  * @param[in] middlewares the middlewares
- * @param[in] http_receive the receive of the request
- * @param[in] request the request
+ * @param[in,out] http_receive the receive of the request
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE void http_middlewares_run_after (
-	const HttpMiddlewares *middlewares,
-	const struct _HttpReceive *http_receive, const HttpRequest *request
+	const HttpMiddlewares *middlewares, struct _HttpReceive *http_receive
 );
 
 /** @} */

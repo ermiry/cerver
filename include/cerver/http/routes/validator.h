@@ -60,11 +60,11 @@ typedef struct _HttpParamValidator HttpParamValidator;
  *
  * @param[in] name the name, shorter than #HTTP_PARAM_VALIDATOR_NAME_SIZE
  * @param[in] validate the method
- * @return the new validator, released with http_param_validator_delete (); NULL for a NULL argument, a name that is
+ * @return the new validator, released with cerver_http_param_validator_delete (); NULL for a NULL argument, a name that is
  * too long or if it could not be allocated
  * @note For the internal methods of cerver.
  */
-CERVER_PRIVATE HttpParamValidator *http_param_validator_create (
+CERVER_PRIVATE HttpParamValidator *cerver_http_param_validator_create (
 	const char *name, const HttpParamValidate validate
 );
 
@@ -74,7 +74,7 @@ CERVER_PRIVATE HttpParamValidator *http_param_validator_create (
  * @param[in] validator_ptr the validator, it can be NULL
  * @note For the internal methods of cerver.
  */
-CERVER_PRIVATE void http_param_validator_delete (void *validator_ptr);
+CERVER_PRIVATE void cerver_http_param_validator_delete (void *validator_ptr);
 
 /**
  * @brief Returns the built in validator with a name: "objectid", "int" or "uuid".
@@ -83,7 +83,7 @@ CERVER_PRIVATE void http_param_validator_delete (void *validator_ptr);
  * @param[in] length the length of the name
  * @return the validator, NULL if no built in one has the name
  */
-CERVER_PUBLIC const HttpParamValidator *http_param_validator_builtin (
+CERVER_PUBLIC const HttpParamValidator *cerver_http_param_validator_builtin (
 	const char *name, const size_t length
 );
 
@@ -94,7 +94,7 @@ CERVER_PUBLIC const HttpParamValidator *http_param_validator_builtin (
  * @param[in] length the length of the value
  * @return true if it is valid
  */
-CERVER_PUBLIC bool http_param_validate_objectid (
+CERVER_PUBLIC bool cerver_http_param_validate_objectid (
 	const char *value, const size_t length
 );
 
@@ -105,7 +105,7 @@ CERVER_PUBLIC bool http_param_validate_objectid (
  * @param[in] length the length of the value
  * @return true if it is valid
  */
-CERVER_PUBLIC bool http_param_validate_int (
+CERVER_PUBLIC bool cerver_http_param_validate_int (
 	const char *value, const size_t length
 );
 
@@ -116,7 +116,7 @@ CERVER_PUBLIC bool http_param_validate_int (
  * @param[in] length the length of the value
  * @return true if it is valid
  */
-CERVER_PUBLIC bool http_param_validate_uuid (
+CERVER_PUBLIC bool cerver_http_param_validate_uuid (
 	const char *value, const size_t length
 );
 
