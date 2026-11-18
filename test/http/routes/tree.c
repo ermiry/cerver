@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <malloc.h>
+
 #include <cerver/collections/dlist.h>
 
 #include <cerver/http/core/admin.h>
@@ -32,6 +34,9 @@
 #define TEST_TREE_FUZZ_URLS					(1 << 14)
 #define TEST_TREE_FUZZ_SEGMENTS				4
 #define TEST_TREE_FUZZ_SEED					0x5eed
+
+// malloc () fills what it gives with the complement of this byte (M_PERTURB), never with zeros
+#define TEST_TREE_PERTURB_BYTE				0x5a
 
 static const char *test_tree_fuzz_alphabet[] = { "a", "b", "users", "items", "1", "me" };
 static const size_t test_tree_fuzz_alphabet_size = 6;
@@ -566,6 +571,37 @@ static void test_tree_inheritance (void) {
 
 }
 
+// an endpoint and a group start with every setting in its default, also over memory that malloc () did not clear:
+// the client certificate was left out of the init and an endpoint of a WebSocket answered 403 at random
+static void test_tree_settings_defaults (void) {
+
+	(void) mallopt (M_PERTURB, TEST_TREE_PERTURB_BYTE);
+
+	HttpCerver *http_cerver = test_tree_cerver ();
+
+	HttpGroup *open = http_cerver_group_create (http_cerver, "open");
+
+	HttpGroup *secure = http_cerver_group_create (http_cerver, "secure");
+	http_group_set_client_certificate (secure, HTTP_CLIENT_CERTIFICATE_REQUIRED);
+
+	HttpEndpoint *plain = http_group_get (open, "plain", test_tree_handler);
+	HttpEndpoint *inherited = http_group_get (secure, "inherited", test_tree_handler);
+
+	(void) mallopt (M_PERTURB, 0);
+
+	test_check_unsigned_eq (open->settings.client_certificate, HTTP_CLIENT_CERTIFICATE_NONE, NULL);
+	test_check_unsigned_eq (plain->settings.client_certificate, HTTP_CLIENT_CERTIFICATE_NONE, NULL);
+	test_check_unsigned_eq (secure->settings.client_certificate, HTTP_CLIENT_CERTIFICATE_REQUIRED, NULL);
+
+	test_check_unsigned_eq (http_cerver_routes_compile (http_cerver), 0, NULL);
+
+	test_check_unsigned_eq (plain->resolved.client_certificate, HTTP_CLIENT_CERTIFICATE_NONE, NULL);
+	test_check_unsigned_eq (inherited->resolved.client_certificate, HTTP_CLIENT_CERTIFICATE_REQUIRED, NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
 // the cerver's middlewares, then the groups' from the outermost and then the endpoint's,
 // the after middlewares run in the opposite order
 static void test_tree_middlewares (void) {
@@ -1056,6 +1092,7 @@ void http_tests_tree (void) {
 	test_tree_params_names ();
 	test_tree_registration_errors ();
 	test_tree_inheritance ();
+	test_tree_settings_defaults ();
 	test_tree_middlewares ();
 	test_tree_compatibility ();
 	test_tree_group_root ();
