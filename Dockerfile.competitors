@@ -1,6 +1,6 @@
 FROM gcc:16.2
 
-RUN apt-get update && apt-get install -y --no-install-recommends cmake libssl-dev pkg-config zlib1g-dev && apt-get clean
+RUN apt-get update && apt-get install -y --no-install-recommends cmake libpcre2-dev libssl-dev pkg-config zlib1g-dev && apt-get clean
 
 ENV YYJSON_VERSION=0.13.0
 ENV SIMDJSON_VERSION=5.1.1
@@ -13,6 +13,9 @@ ENV MULTIPART_PARSER_COMMIT=772639cf10db6d9f5a655ee9b7eb20b815fab396
 ENV LIBJWT_VERSION=1.17.2
 ENV L8W8JWT_VERSION=2.5.0
 ENV JWT_CPP_VERSION=0.7.2
+ENV NGINX_VERSION=1.31.6
+ENV H2O_COMMIT=d3e43fcf00c3e6b17826b95d2d362d646185918a
+ENV WRK_VERSION=4.2.0
 
 ENV COMPETITORS=/opt/competitors
 
@@ -48,10 +51,22 @@ RUN git clone --depth 1 --branch ${L8W8JWT_VERSION} --recurse-submodules --shall
 	&& cmake --build l8w8jwt-build -j 4
 RUN curl -fsSL https://github.com/Thalhammer/jwt-cpp/archive/refs/tags/v${JWT_CPP_VERSION}.tar.gz | tar xz \
 	&& mv jwt-cpp-${JWT_CPP_VERSION} jwt-cpp
+RUN curl -fsSL https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz | tar xz \
+	&& cd nginx-${NGINX_VERSION} \
+	&& ./configure --prefix=${COMPETITORS}/nginx --with-cc-opt="-O3 -march=native" --without-http_gzip_module \
+	&& make -j 4 && make install
+RUN curl -fsSL https://github.com/h2o/h2o/archive/${H2O_COMMIT}.tar.gz | tar xz \
+	&& cmake -S h2o-${H2O_COMMIT} -B h2o-build -D CMAKE_BUILD_TYPE=Release -D WITH_MRUBY=OFF -D WITHOUT_LIBS=ON \
+		-D CMAKE_C_FLAGS="-O3 -march=native" -D CMAKE_INSTALL_PREFIX=${COMPETITORS}/h2o \
+	&& cmake --build h2o-build -j 4 && cmake --install h2o-build
+RUN curl -fsSL https://github.com/wg/wrk/archive/refs/tags/${WRK_VERSION}.tar.gz | tar xz \
+	&& make -C wrk-${WRK_VERSION} -j 4 WITH_OPENSSL=/usr \
+	&& mkdir -p wrk && cp wrk-${WRK_VERSION}/wrk wrk/wrk
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make clean && make TYPE=production NATIVE=1 -j4 && bash benchmarks/competitors/build.sh
+RUN make clean && make TYPE=production NATIVE=1 -j4 && make TYPE=production NATIVE=1 -j4 load \
+	&& bash benchmarks/competitors/build.sh
 
 CMD ["bash", "benchmarks/competitors/bench.sh"]
