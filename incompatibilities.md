@@ -3,6 +3,30 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-24 (from 2.1b-23)
+
+The remote authentication (F7 of `roadmap.md` §4.7): a custom authentication can ask another service by HTTP with
+`http_auth_request ()` (`cerver/http/security/remote.h`). A cerver whose authentications do not call it behaves as
+before; no public struct changes its size.
+
+**The build**
+
+- `CURL` of the `makefile` is now the switch of libcurl (`CURL=1`, 0 by default) and its flags are `CURLLIB`: a build
+  that passed its own `CURL=-l curl` passes `CURLLIB` instead.
+- With `CURL=1`, `libcerver.so` links libcurl: the images of cerver (every `Dockerfile`) and the CI build with it, so
+  an image that runs them needs the runtime of libcurl (`libcurl4-openssl-dev` in the images of cerver).
+- Without `CURL=1`, `http_auth_request ()` exists and returns 1: an authentication that calls it rejects its
+  requests.
+
+**The authentication handler**
+
+- A handler of `HTTP_ROUTE_AUTH_TYPE_CUSTOM` can return `HTTP_AUTHENTICATION_PENDING` (2), what
+  `http_auth_request ()` returns with an event loop; any other value that is not 0 is still a failure (401). A
+  handler that returned 2 before this version without calling `http_auth_request ()` is still a failure.
+- With an event loop, the request of an authentication before the body or of a request without one waits in the loop
+  without a thread, and its `on_response ()` runs in a thread of the pool of the endpoint, maybe another one than the
+  thread of the authentication.
+
 ## 2.1b-23 (from 2.1b-22)
 
 TLS in the event loop (F8b of `roadmap.md` §4.8.9): a web cerver with `CERVER_HANDLER_TYPE_EVENTS` can use TLS. A
