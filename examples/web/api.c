@@ -15,13 +15,13 @@
 #include <cerver/core/start.h>
 #include <cerver/handler/handler.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include <cerver/http/routes/tree.h>
 #include <cerver/http/security/auth.h>
 
 #include <cerver/jwt/jwt.h>
@@ -50,7 +50,7 @@ static void finish (void) {
 
 	cerver_stats_print (api_cerver, false, false);
 	cerver_log_msg ("\nHTTP Cerver stats:\n");
-	http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (api_cerver));
 	cerver_log_line_break ();
 	(void) cerver_teardown (api_cerver);
 
@@ -63,24 +63,11 @@ static void finish (void) {
 #pragma region routes
 
 // *
-static void catch_all_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void catch_all_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Cerver API implementation!"
+	(void) cerver_http_response_send_json_message (
+		context, HTTP_STATUS_OK, "Cerver API implementation!"
 	);
-
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
 
 }
 
@@ -105,52 +92,42 @@ int main (void) {
 
 	users_init ();
 
-	api_cerver = cerver_create (
-		CERVER_TYPE_WEB,
-		"api-cerver",
-		8080,
-		PROTOCOL_TCP,
-		false,
-		2
-	);
-	
+	// a web cerver handles its connections with event loops, one for each processor
+	api_cerver = cerver_create_web ("api-cerver", 8080, 2);
+
 	if (api_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (api_cerver, 4096);
 		cerver_set_thpool_n_threads (api_cerver, 4);
-		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);
 
 		cerver_set_reusable_address_flags (api_cerver, true);
 
 		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
+		CerverHttp *http = cerver_http_get (api_cerver);
 
-		http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
-		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
-		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+		cerver_http_auth_set_jwt_algorithm (http, CERVER_JWT_ALGORITHM_RS256);
+		cerver_http_auth_set_jwt_priv_key_filename (http, "keys/key.key");
+		cerver_http_auth_set_jwt_pub_key_filename (http, "keys/key.key.pub");
 
-		// register top level routes
+		// the users routes are the endpoints of a group
+		CerverHttpGroup *users = cerver_http_group_create (http, "/api/users");
+
 		// GET /api/users
-		HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
-		http_cerver_route_register (http_cerver, users_route);
+		(void) cerver_http_group_root_add (users, REQUEST_METHOD_GET, main_users_handler);
 
-		// register users child routes
-		// POST api/users/login
-		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
-		http_route_child_add (users_route, users_login_route);
+		// POST /api/users/login
+		(void) cerver_http_group_post (users, "login", users_login_handler);
 
-		// POST api/users/register
-		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_POST, "register", users_register_handler);
-		http_route_child_add (users_route, users_register_route);
+		// POST /api/users/register
+		(void) cerver_http_group_post (users, "register", users_register_handler);
 
-		// GET api/users/profile
-		HttpRoute *users_profile_route = http_route_create (REQUEST_METHOD_GET, "profile", users_profile_handler);
-		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
-		http_route_child_add (users_route, users_profile_route);
+		// GET /api/users/profile
+		CerverHttpEndpoint *profile = cerver_http_group_get (users, "profile", users_profile_handler);
+		cerver_http_endpoint_set_auth (profile, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		cerver_http_endpoint_set_decode_data (profile, user_parse_from_json, user_delete);
 
 		// add a catch all route
-		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
+		cerver_http_set_catch_all_route (http, catch_all_handler);
 
 		if (!cerver_start (api_cerver)) {
 			finish ();
