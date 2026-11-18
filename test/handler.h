@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <cerver/core/types.h>
+#include <cerver/events/events.h>
 
 // the web servers of the tests run once with each way of handling their connections:
 // a thread for each one (the default) or event loops
@@ -31,6 +32,32 @@ static inline unsigned int test_io_threads (void) {
 	const char *threads = getenv (TEST_IO_THREADS_VARIABLE);
 
 	return (threads && threads[0]) ? (unsigned int) strtoul (threads, NULL, TEST_IO_THREADS_BASE) : 0;
+
+}
+
+// the backend of the event loops of the tests: "uring" asks for io_uring, and a test that needs it fails
+// where it is not available; "epoll" asks for epoll; without the variable the cerver chooses
+#define TEST_BACKEND_VARIABLE				"CERVER_TEST_BACKEND"
+#define TEST_BACKEND_URING					"uring"
+#define TEST_BACKEND_EPOLL					"epoll"
+
+static inline bool test_backend_is (const char *name) {
+
+	const char *backend = getenv (TEST_BACKEND_VARIABLE);
+
+	return backend && !strcmp (backend, name);
+
+}
+
+// what a web server of the tests passes to cerver_set_events_backend (), right after its handler type
+static inline CerverEventsBackend test_events_backend (void) {
+
+	CerverEventsBackend backend = CERVER_EVENTS_BACKEND_AUTO;
+
+	if (test_backend_is (TEST_BACKEND_URING)) backend = CERVER_EVENTS_BACKEND_URING;
+	else if (test_backend_is (TEST_BACKEND_EPOLL)) backend = CERVER_EVENTS_BACKEND_EPOLL;
+
+	return backend;
 
 }
 
