@@ -39,6 +39,7 @@
 
 #include <cerver/threads/thpool.h>
 
+#include "../handler.h"
 #include "../test.h"
 #include "http.h"
 
@@ -109,11 +110,6 @@
 #define POOLS_KEPT_BUCKET					2
 // the bucket of a connection that ended with one request
 #define POOLS_SINGLE_BUCKET					0
-// the microseconds that a thread looks for the next request of its connection in the test that needs it to
-// find that request: more than a client takes to send it, in any machine
-#define POOLS_FOLLOW_TIME					(1 << 22)
-// the requests of that test that the thread that answered the one before them handled
-#define POOLS_FOLLOWED_REQUESTS				2
 // the connections of the test of a cerver without event loops, with the one that waits for the cerver: one request each
 #define POOLS_WITHOUT_EVENTS_CONNECTIONS	5
 
@@ -206,7 +202,8 @@ static const char *pools_kept_requests = {
 	"GET /pools/slow/thread HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
 };
 
-// the requests of a connection that a thread follows, each one answered with the name of its thread
+// the requests of a connection that is kept, sent one after the response of the other, each one answered
+// with the name of its thread
 static const char *pools_slow_thread_request = { "GET /pools/slow/thread HTTP/1.1\r\nHost: localhost\r\n\r\n" };
 static const char *pools_thread_request = { "GET /pools/thread HTTP/1.1\r\nHost: localhost\r\n\r\n" };
 
@@ -444,9 +441,6 @@ typedef struct PoolsOptions {
 	// CERVER_DRAIN_POLICY_NONE keeps the default one
 	CerverDrainPolicy drain_policy;
 
-	// the microseconds that a thread looks for the next request of its connection, 0 keeps the default
-	unsigned int follow;
-
 } PoolsOptions;
 
 typedef struct PoolsServer {
@@ -466,8 +460,7 @@ static PoolsOptions pools_options_default (void) {
 		pools_handler_type,
 		0, 0, CERVER_OVERLOAD_POLICY_NONE,
 		0, 0, CERVER_OVERLOAD_POLICY_NONE, POOLS_WAIT_NOT_SET,
-		CERVER_DRAIN_POLICY_NONE,
-		0
+		CERVER_DRAIN_POLICY_NONE
 	};
 
 	return options;
@@ -490,6 +483,7 @@ static Cerver *pools_cerver_create (const PoolsOptions *options) {
 	test_check_ptr (cerver);
 
 	cerver_set_handler_type (cerver, options->handler_type);
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
 	cerver_set_thpool_n_threads (cerver, (u16) (options->threads ? options->threads : POOLS_THREADS));
@@ -499,8 +493,6 @@ static Cerver *pools_cerver_create (const PoolsOptions *options) {
 	if (options->policy != CERVER_OVERLOAD_POLICY_NONE) cerver_set_overload_policy (cerver, options->policy);
 
 	if (options->drain_policy != CERVER_DRAIN_POLICY_NONE) cerver_set_drain_policy (cerver, options->drain_policy);
-
-	if (options->follow) http_cerver_set_keep_alive_follow ((HttpCerver *) cerver->cerver_data, options->follow);
 
 	return cerver;
 
@@ -1192,48 +1184,33 @@ static void pools_exchange (const int fd, const char *request, char *response) {
 
 }
 
-// the thread that answered a request handles the next one of its connection only when it is of its pool:
-// the request of another pool goes back to the loop, that gives it to that pool
-static void test_pools_followed (void) {
+// each request of a kept connection that arrives after the response of the one before it goes to the pool of
+// its route: the same pool twice, another one, and back
+static void test_pools_alternate (void) {
 
 	pools_gate_reset ();
 
-	PoolsOptions options = pools_options_default ();
-	options.follow = POOLS_FOLLOW_TIME * test_time_scale ();
+	const PoolsOptions options = pools_options_default ();
 	PoolsServer *server = pools_server_start (&options);
-
-	const HttpCerver *http_cerver = server->http_cerver;
 
 	const int fd = pools_connect (server->port);
 
 	char response[POOLS_RESPONSE_SIZE];
 
-	// the first request of the connection goes through its loop
 	pools_exchange (fd, pools_slow_thread_request, response);
 	test_check_ptr (strstr (response, pools_slow_thread));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), 0, NULL);
 
-	// the same pool: the thread that looked for it handles it
 	pools_exchange (fd, pools_slow_thread_request, response);
 	test_check_ptr (strstr (response, pools_slow_thread));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), 1, NULL);
 
-	// the default pool: the thread of the slow pool read it, and a thread of the default pool answers it
 	pools_exchange (fd, pools_thread_request, response);
 	test_check_ptr (strstr (response, pools_default_thread));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), 1, NULL);
 
-	// the default pool again: its thread handles it
 	pools_exchange (fd, pools_thread_request, response);
 	test_check_ptr (strstr (response, pools_default_thread));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), POOLS_FOLLOWED_REQUESTS, NULL);
 
-	// and back to the slow pool
 	pools_exchange (fd, pools_slow_thread_request, response);
 	test_check_ptr (strstr (response, pools_slow_thread));
-	test_check_unsigned_eq (CERVER_STATS_GET (http_cerver->n_followed_requests), POOLS_FOLLOWED_REQUESTS, NULL);
-
-	pools_metrics_expect (server, "cerver_http_followed_requests_total 2\n", true);
 
 	(void) close (fd);
 
@@ -1742,7 +1719,7 @@ static void pools_tests_events (void) {
 
 	test_run (test_pools_threads);
 	test_run (test_pools_kept);
-	test_run (test_pools_followed);
+	test_run (test_pools_alternate);
 	test_run (test_pools_isolation);
 	test_run (test_pools_wait);
 	test_run (test_pools_drain);
