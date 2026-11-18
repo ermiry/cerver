@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); sigue L4, el I/O sobre io_uring (§4.4), en la 3.0b-11 |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); L4, el I/O sobre io_uring (§4.4), en dos betas: la primera parte hecha en la 3.0b-11 (el anillo, el respaldo de epoll, los loops por núcleo, la conexión y los handlers en el loop), sigue la segunda en la 3.0b-12 |
 
 **Las citas `archivo:línea`:**
 
@@ -160,13 +160,14 @@ puede ocupar varias.
 | **L2** | 3.0b-8 | El JWT propio | L1 |
 | **L3** | 3.0b-9 | El parser HTTP/1.1 propio | L0.2 |
 | **L0.5** | 3.0b-10 | La sincronía antes de L4: F4b y la 2.1b-20 de `nightly` (con el Release 1.9 y la 2.0b-77), la política de versiones y métodos de HTTP Garden | L3 |
-| **L4** | 3.0b-11 | La arquitectura de I/O: io_uring, epoll de respaldo, thread-per-core | L0.5 |
-| **L5** | 3.0b-12 | La API de aplicación sobre el I/O nuevo | L4 |
-| **L6** | 3.0b-13 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
-| **L7** | 3.0b-14 | HPACK y HTTP/2 | L4, L5 |
-| **L8** | 3.0b-15 | TLS con el proveedor, sobre el ring | L4 |
-| **L9** | 3.0b-16 | WebSocket sobre el I/O nuevo | L4, L5 |
-| **macOS** | con L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
+| **L4** | 3.0b-11 | La arquitectura de I/O, primera parte: io_uring con syscalls propias, epoll de respaldo, un loop por núcleo, la conexión sobre completions, los handlers en el loop | L0.5 |
+| **L4** | 3.0b-12 | La arquitectura de I/O, segunda parte: lo que la primera midió y no adoptó, el reparto por CPU, el `send` zero-copy, kqueue | 3.0b-11 |
+| **L5** | 3.0b-13 | La API de aplicación sobre el I/O nuevo | L4 |
+| **L6** | 3.0b-14 | SHA-1, SHA-256, base64 y deflate propios | L0.2 |
+| **L7** | 3.0b-15 | HPACK y HTTP/2 | L4, L5 |
+| **L8** | 3.0b-16 | TLS con el proveedor, sobre el ring | L4 |
+| **L9** | 3.0b-17 | WebSocket sobre el I/O nuevo | L4, L5 |
+| **macOS** | con la segunda parte de L4 | kqueue, `.dylib`, el CI en `macos-latest` | L4 |
 | **Release** | → 3.0 | §2 | 2.1 en `master` |
 
 **Fuera de la meta:** la implementación mayor de game (los `GameSettings` de la aplicación, un lobby sobre el loop)
@@ -657,6 +658,50 @@ el árbol anterior al borrado:
   es propio. **Riesgo:** el
   perfil seccomp por default de Docker bloquea io_uring; el plan de la fase define el perfil de las imágenes de test y
   el aviso al arrancar.
+
+#### 4.4.1 La primera parte (3.0b-11)
+
+Las decisiones del usuario (2026-11-16): solo el loop escribe en el socket desde esta beta; el default sigue siendo el
+pool y lo rápido se declara «loop» (el default cambia en L5); el kernel mínimo de io_uring es 6.1 LTS.
+
+- **El anillo** (`events/ring.{h,c}`): `io_uring_setup`, `io_uring_enter` e `io_uring_register` con `syscall ()`,
+  `SINGLE_ISSUER | DEFER_TASKRUN | SUBMIT_ALL | CQSIZE | CLAMP | R_DISABLED` (el anillo se crea en el hilo de
+  `cerver_start ()`, que así reporta su error, y lo habilita el hilo de su loop), el fd del anillo registrado, el probe
+  de las operaciones, un buffer ring por loop y la espera con `IORING_ENTER_EXT_ARG`.
+- **La abstracción** (`events/backend.{h,c}`) es de completions: accept, lectura, envío, socket escribible y stop de un
+  `EventHandle`. `uring.c` (accept multishot, lecturas a búferes provistos, cancelación por fd) y `epoll.c` (las mismas
+  completions sobre epoll). `CERVER_EVENTS_BACKEND_MAP`: AUTO toma io_uring donde se puede y epoll con un aviso donde
+  no; pedir io_uring donde no hay detiene el arranque.
+- **El loop:** una cola MPSC sin locks y un despertar agrupado por eventfd; ningún mutex en el camino de una petición.
+  `CERVER_IO_THREADS_PER_CORE` y la afinidad opt-in. Las conexiones de un loop tienen `TCP_NODELAY`.
+- **La conexión:** solo el loop lee, envía y cierra. La respuesta de un handler de un pool llega al loop por la cola,
+  los archivos salen con `sendfile ()` sin bloquear, y una petición termina cuando su respuesta salió. F4b (la lectura
+  de las ociosas por los pools) y el follow se quitaron.
+- **Los handlers en el loop:** el pool reservado `HTTP_POOL_LOOP_NAME` y `http_cerver_set_handlers_pool ()`. Las
+  peticiones de un pipeline que el loop atiende salen en un solo envío (hasta 2^5 seguidas).
+- **Las pruebas:** las unidades del anillo y de los dos backends, el eje del backend en las suites, la inyección de
+  fallos de `syscall ()`, y `benchmarks/flood` (un cliente de carga por eventos con pipelining).
+
+#### 4.4.2 La segunda parte (3.0b-12)
+
+- Lo que la primera dejó para medir contra lo simple: el recv multishot, los descriptores directos, los bundles y las
+  arenas prestadas por loop (la memoria de una conexión ociosa).
+- **El costo por petición que el perfil de la primera parte dejó a la vista** (`perf`, 4 loops, el handler en el
+  loop):
+  - el log de acceso: una línea por petición con su fecha (`strftime`), un `printf ()` con decimales y un `write ()`
+    detrás del candado del log. Es lo primero del perfil y lo que impide escalar con varios loops; el arnés y la
+    carga de `flood` lo apagan (`BENCH_QUIET`). Un log de acceso por loop, con búfer y sin candado;
+  - el reloj: dos `gettimeofday ()` por petición (7 % de las muestras con el log apagado): la hora del paso del loop
+    para el inicio de sus peticiones;
+  - la dirección del cliente, que se interpreta con `inet_pton ()` en cada petición (1.2 %);
+  - los contadores por loop: las stats del cerver y de HTTP por petición son atómicos compartidos entre los loops
+    (1.8 % hoy, con 4 loops).
+- Las peticiones de un pool de hilos en un pipeline: hoy van una a la vez, cada una empieza cuando la respuesta de
+  la anterior se envió.
+- El reparto de las conexiones por CPU (`SO_ATTACH_REUSEPORT_CBPF`).
+- El `send` zero-copy para las respuestas grandes, y los archivos sin bloquear al loop.
+- kqueue y macOS (§4.10).
+- Drogon, actix-web y fasthttp en el caso `server` del arnés de competidores.
 
 ### 4.5 L5 — La API de aplicación
 
