@@ -47,11 +47,10 @@ typedef struct PoolsClientRequest {
 	const char *method;
 	const char *path;
 
-	http_status status;
+	CerverHttpStatus status;
 
-	// what its body has when the cerver has event loops, and when it has a thread for each connection
-	const char *expected_events;
-	const char *expected_threads;
+	// what its body has, NULL when it is not checked
+	const char *expected;
 
 } PoolsClientRequest;
 
@@ -97,11 +96,11 @@ static void pools_client_setup (CURL *curl, const PoolsClientRequest *request) {
 
 }
 
-static unsigned int pools_client_check (const PoolsClientRequest *request, const bool events) {
+static unsigned int pools_client_check (const PoolsClientRequest *request) {
 
 	unsigned int errors = 0;
 
-	const char *expected = events ? request->expected_events : request->expected_threads;
+	const char *expected = request->expected;
 
 	if (expected && !strstr (pools_client_body.data, expected)) {
 		cerver_log_error (
@@ -117,7 +116,7 @@ static unsigned int pools_client_check (const PoolsClientRequest *request, const
 
 // returns 0 on success, 1 on error
 static unsigned int pools_client_request (
-	CURL *curl, const PoolsClientRequest *request, const bool events
+	CURL *curl, const PoolsClientRequest *request
 ) {
 
 	pools_client_setup (curl, request);
@@ -125,35 +124,35 @@ static unsigned int pools_client_request (
 	unsigned int errors = (curl_perform_request (curl, request->status) != CURL_RESULT_NONE);
 	if (errors) cerver_log_error ("%s %s - unexpected status", request->method, request->path);
 
-	errors |= pools_client_check (request, events);
+	errors |= pools_client_check (request);
 
 	return errors;
 
 }
 
 static const PoolsClientRequest pools_client_requests[] = {
-	// a route without a pool runs in the thpool of the cerver
-	{ "GET", "/api/fast", HTTP_STATUS_OK, pools_client_default_thread, pools_client_default_thread },
+	// a route without a pool runs in the one that its cerver set: its thpool
+	{ "GET", "/api/fast", HTTP_STATUS_OK, pools_client_default_thread },
 
 	// the routes of a group run in its pool, the one that chose another one runs there
-	{ "GET", "/api/slow/job", HTTP_STATUS_OK, pools_client_slow_thread, pools_client_default_thread },
-	{ "GET", "/api/slow/fast", HTTP_STATUS_OK, pools_client_default_thread, pools_client_default_thread },
+	{ "GET", "/api/slow/job", HTTP_STATUS_OK, pools_client_slow_thread },
+	{ "GET", "/api/slow/fast", HTTP_STATUS_OK, pools_client_default_thread },
 
-	// a route of the first routes API
-	{ "GET", "/old", HTTP_STATUS_OK, pools_client_slow_thread, pools_client_default_thread },
+	// a group with one endpoint in its root, that chose its pool
+	{ "GET", "/old", HTTP_STATUS_OK, pools_client_slow_thread },
 
 	// the routes that cerver answers: a GET or a HEAD of their path
-	{ "GET", "/health", HTTP_STATUS_OK, "doki", "doki" },
-	{ "HEAD", "/health", HTTP_STATUS_OK, NULL, NULL },
-	{ "GET", "/ready", HTTP_STATUS_OK, "doki", "doki" },
-	{ "POST", "/health", HTTP_STATUS_NOT_FOUND, NULL, NULL },
-	{ "GET", "/health/more", HTTP_STATUS_NOT_FOUND, NULL, NULL },
+	{ "GET", "/health", HTTP_STATUS_OK, "doki" },
+	{ "HEAD", "/health", HTTP_STATUS_OK, NULL },
+	{ "GET", "/ready", HTTP_STATUS_OK, "doki" },
+	{ "POST", "/health", HTTP_STATUS_NOT_FOUND, NULL },
+	{ "GET", "/health/more", HTTP_STATUS_NOT_FOUND, NULL },
 
-	// the metrics have the pools with threads: the named ones only start with event loops
-	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_default_metric, pools_client_default_metric },
-	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_slow_metric, pools_client_default_metric },
-	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_health_metric, pools_client_health_metric },
-	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_ready_metric, pools_client_ready_metric },
+	// the metrics have the pools with threads
+	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_default_metric },
+	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_slow_metric },
+	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_health_metric },
+	{ "GET", "/api/metrics", HTTP_STATUS_OK, pools_client_ready_metric },
 };
 
 static const size_t pools_client_requests_count = (
@@ -167,8 +166,6 @@ int main (int argc, char **argv) {
 
 	unsigned int errors = 0;
 
-	const bool events = (test_handler_type () == CERVER_HANDLER_TYPE_EVENTS);
-
 	web_test_address (pools_client_address, NULL);
 
 	(void) curl_global_init (CURL_GLOBAL_ALL);
@@ -176,7 +173,7 @@ int main (int argc, char **argv) {
 	CURL *curl = curl_easy_init ();
 	if (curl) {
 		for (size_t idx = 0; idx < pools_client_requests_count; idx++) {
-			errors |= pools_client_request (curl, &pools_client_requests[idx], events);
+			errors |= pools_client_request (curl, &pools_client_requests[idx]);
 		}
 
 		curl_easy_cleanup (curl);

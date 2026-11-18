@@ -70,12 +70,12 @@ static unsigned int admin_stats_check (const char *data, const size_t len) {
 
 	const CerverJsonValue *json = cerver_json_document_root (document);
 
-	errors |= !admin_stats_is_integer (json, "main_routes");
+	errors |= !admin_stats_is_integer (json, "groups");
+	errors |= !admin_stats_is_integer (json, "total_handlers");
 
-	// the routes of the first API are listed in routes, the endpoints of the groups in endpoints
-	const CerverJsonValue *routes = cerver_json_object_get (json, "routes");
-	errors |= !cerver_json_is_array (routes) || !cerver_json_array_size (routes);
-	errors |= !cerver_json_is_array (cerver_json_object_get (json, "endpoints"));
+	// the endpoints of the groups are listed in endpoints
+	const CerverJsonValue *endpoints = cerver_json_object_get (json, "endpoints");
+	errors |= !cerver_json_is_array (endpoints) || !cerver_json_array_size (endpoints);
 
 	for (size_t i = 0; i < STATS_COUNTERS; i++) {
 		errors |= !admin_stats_is_integer (json, stats_counters[i]);
