@@ -38,6 +38,7 @@
 
 // how long a plain socket waits for the close of the cerver, after its deadline
 #define CLIENT_MILLISECONDS_PER_SECOND	1000
+#define CLIENT_NANOSECONDS_PER_MILLISECOND	1000000
 #define CLIENT_PLAIN_MARGIN_SECONDS		4
 
 static u16 client_port = CLIENT_PORT_BASE;
@@ -71,10 +72,8 @@ static void client_wait_listen (const u16 port) {
 
 }
 
-// a plain TCP socket that never sends its hello: the cerver sends nothing and closes it at the deadline of its
-// handshake (a client of cerver can not be used here: client_connect_to_cerver () returns 0 when its first read
-// fails, after the receive already released the connection)
-static void client_check_plain (const u16 port) {
+// a plain TCP socket that sends nothing
+static int client_connect_silent (const u16 port) {
 
 	const int fd = socket (AF_INET, SOCK_STREAM, 0);
 	test_check_int_gt (fd, -1);
@@ -85,6 +84,27 @@ static void client_check_plain (const u16 port) {
 	address.sin_port = htons (port);
 	address.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
 	test_check_int_eq (connect (fd, (struct sockaddr *) &address, sizeof (address)), 0, NULL);
+
+	return fd;
+
+}
+
+// the monotonic clock in milliseconds
+static u64 client_milliseconds (void) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return ((u64) now.tv_sec * CLIENT_MILLISECONDS_PER_SECOND) + ((u64) now.tv_nsec / CLIENT_NANOSECONDS_PER_MILLISECOND);
+
+}
+
+// a plain TCP socket that never sends its hello: the cerver sends nothing and closes it at the deadline of its
+// handshake (a client of cerver can not be used here: client_connect_to_cerver () returns 0 when its first read
+// fails, after the receive already released the connection)
+static void client_check_plain (const u16 port) {
+
+	const int fd = client_connect_silent (port);
 
 	const time_t seconds = (time_t) (
 		(test_milliseconds (CLIENT_HANDSHAKE_TIMEOUT) / CLIENT_MILLISECONDS_PER_SECOND) + CLIENT_PLAIN_MARGIN_SECONDS
@@ -197,6 +217,16 @@ static void client_check_model (const TestCertificates *certificates, const Cerv
 	client = client_with_tls (certificates, "other.test");
 	test_check_false (client_check_connect (client, port));
 	client_delete (client);
+
+	// a client that never sends its hello holds a thread of the pool of the TLS, never the accept of the cerver:
+	// the next client gets its info long before the deadline of the first handshake
+	const int silent = client_connect_silent (port);
+	client = client_with_tls (certificates, NULL);
+	const u64 started = client_milliseconds ();
+	test_check_true (client_check_connect (client, port));
+	test_check_true ((client_milliseconds () - started) < (u64) (test_milliseconds (CLIENT_HANDSHAKE_TIMEOUT) / 2));
+	client_delete (client);
+	(void) close (silent);
 
 	// a client without TLS gets nothing from a cerver with it: the handshake of the cerver ends with its deadline
 	client_check_plain (port);
