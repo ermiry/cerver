@@ -8,12 +8,11 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/parser/head.h>
-#include <cerver/http/parser/parser.h>
 #include <cerver/http/requests/method.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
@@ -42,6 +41,8 @@
 #define GARDEN_JSON_SLACK				(1 << 8)
 #define GARDEN_FIELD_SLACK				8
 #define GARDEN_VERSION_SIZE				8
+
+#define GARDEN_QUERY_SEPARATOR			'?'
 
 static const char garden_base64[] = { "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" };
 
@@ -99,9 +100,9 @@ static char *garden_value (char *out, const char *bytes, const size_t length) {
 }
 
 // the bytes that the JSON of a request takes
-static size_t garden_size (const CerverHttpHead *head, const String *body) {
+static size_t garden_size (const CerverHttpHead *head, const CerverHttpView body) {
 
-	size_t size = GARDEN_JSON_SLACK + GARDEN_BASE64_SIZE (head->length) + GARDEN_BASE64_SIZE (body ? body->len : 0);
+	size_t size = GARDEN_JSON_SLACK + GARDEN_BASE64_SIZE (head->length) + GARDEN_BASE64_SIZE (body.length);
 
 	for (unsigned int i = 0; i < head->fields_count; i++) {
 		size += GARDEN_FIELD_SLACK + GARDEN_BASE64_SIZE (head->fields[i].name.length)
@@ -121,7 +122,7 @@ static char *garden_target (char *out, const CerverHttpHead *head) {
 	char *bytes = (char *) malloc (head->target.length + 1);
 	if (!bytes) return out;
 
-	for (size_t i = 0; i < head->target.length; i++) bytes[i] = target[i] ? target[i] : '?';
+	for (size_t i = 0; i < head->target.length; i++) bytes[i] = target[i] ? target[i] : GARDEN_QUERY_SEPARATOR;
 
 	out = garden_value (out, bytes, head->target.length);
 	free (bytes);
@@ -130,11 +131,9 @@ static char *garden_target (char *out, const CerverHttpHead *head) {
 
 }
 
-static size_t garden_json (char *json, const CerverHttpHead *head, const HttpRequest *request) {
+static size_t garden_json (char *json, const CerverHttpHead *head, const CerverHttpView body) {
 
-	const String *body = http_request_get_body (request);
-
-	const char *method = http_request_method_str ((RequestMethod) head->method);
+	const char *method = cerver_http_method_to_string ((CerverHttpMethod) head->method);
 
 	char version[GARDEN_VERSION_SIZE];
 	(void) snprintf (version, GARDEN_VERSION_SIZE, "%u.%u", head->major, head->minor);
@@ -159,7 +158,7 @@ static size_t garden_json (char *json, const CerverHttpHead *head, const HttpReq
 	}
 
 	out = garden_text (out, "],\"body\":");
-	out = garden_value (out, body ? body->str : "", body ? body->len : 0);
+	out = garden_value (out, cerver_http_view_is_missing (body) ? "" : body.data, body.length);
 	out = garden_text (out, "}");
 
 	return (size_t) (out - json);
@@ -167,22 +166,18 @@ static size_t garden_json (char *json, const CerverHttpHead *head, const HttpReq
 }
 
 // the head is the one that the parser read, rebased to the copy in the arena of the request
-static void garden_handler (const HttpReceive *http_receive, const HttpRequest *request) {
+static void garden_handler (CerverHttpContext *context) {
 
-	const CerverHttpHead *head = &http_receive->parser.head;
+	const CerverHttpHead *head = cerver_http_request_head (context);
+	const CerverHttpView body = cerver_http_request_body (context);
 
-	char *json = (char *) malloc (garden_size (head, http_request_get_body (request)));
+	char *json = (char *) malloc (garden_size (head, body));
 	if (!json) return;
 
-	const size_t length = garden_json (json, head, request);
+	const size_t length = garden_json (json, head, body);
 
 	// with its length, so the connection is kept for the next request of a pipeline
-	HttpResponse *response = http_response_create (HTTP_STATUS_OK, json, length);
-	if (response) {
-		(void) http_response_add_content_length_header (response, length);
-		(void) http_response_send (response, http_receive);
-		http_response_delete (response);
-	}
+	(void) cerver_http_response_send (context, json, length);
 
 	free (json);
 
@@ -200,23 +195,22 @@ int main (void) {
 	if (!garden_cerver) return 1;
 
 	cerver_set_thpool_n_threads (garden_cerver, GARDEN_THREADS);
-	cerver_set_handler_type (garden_cerver, CERVER_HANDLER_TYPE_EVENTS);
 	cerver_set_events_backend (garden_cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (garden_cerver, true);
 
-	HttpCerver *http_cerver = (HttpCerver *) garden_cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (garden_cerver);
 
 	// every path with every method, so the body of each request is saved; the catch all takes the rest (the
 	// asterisk of an OPTIONS)
-	HttpGroup *group = http_cerver_group_create (http_cerver, "/");
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "/");
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
-		if (!http_request_method_is_valid ((RequestMethod) method)) continue;
+		if (!cerver_http_method_is_valid ((CerverHttpMethod) method)) continue;
 
-		(void) http_group_root_add (group, (RequestMethod) method, garden_handler);
-		(void) http_group_route_add (group, (RequestMethod) method, "*path", garden_handler);
+		(void) cerver_http_group_root_add (group, (CerverHttpMethod) method, garden_handler);
+		(void) cerver_http_group_route_add (group, (CerverHttpMethod) method, "*path", garden_handler);
 	}
 
-	http_cerver_set_catch_all_route (http_cerver, garden_handler);
+	cerver_http_set_catch_all_route (http_cerver, garden_handler);
 
 	const int failed = cerver_start (garden_cerver);
 

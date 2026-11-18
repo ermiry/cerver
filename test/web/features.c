@@ -13,16 +13,17 @@
 #include <cerver/handler/handler.h>
 
 #include <cerver/http/core/admin.h>
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/limits.h>
+#include <cerver/http/core/pool.h>
 #include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/core/stats.h>
+#include <cerver/http/requests/content.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/responses/stream.h>
 #include <cerver/http/routes/tree.h>
 
 #include <cerver/utils/log.h>
@@ -63,112 +64,87 @@ static void end (int dummy) {
 
 static void features_finish (void) {
 
-	http_cerver_all_stats_print ((HttpCerver *) features_cerver->cerver_data);
+	cerver_http_all_stats_print (cerver_http_get (features_cerver));
 	(void) cerver_teardown (features_cerver);
 
 }
 
 // GET /features/small, a compiled response
-static void features_small_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_small_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /features/items, a body that is compressed
-static void features_items_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_items_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_render_json (
-		http_receive, HTTP_STATUS_OK, features_items, features_items_length
+	(void) cerver_http_response_send_json (
+		context, features_items, features_items_length
 	);
 
 }
 
 // GET /features/stream
-static void features_stream_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_stream_handler (CerverHttpContext *context) {
 
-	(void) request;
+	(void) cerver_http_response_set_header (
+		context, HTTP_HEADER_CONTENT_TYPE, cerver_http_content_type_mime (HTTP_CONTENT_TYPE_TXT)
+	);
 
-	HttpResponse *response = http_response_get ();
-	if (response) {
-		http_response_set_status (response, HTTP_STATUS_OK);
-		(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_TXT);
-
-		if (!http_response_stream_begin (http_receive, response)) {
-			for (size_t i = 0; i < features_stream_n_pieces; i++) {
-				(void) http_response_stream_write (
-					http_receive, features_stream_pieces[i], strlen (features_stream_pieces[i])
-				);
-			}
-
-			(void) http_response_stream_end (http_receive);
+	if (!cerver_http_response_stream_begin (context)) {
+		for (size_t i = 0; i < features_stream_n_pieces; i++) {
+			(void) cerver_http_response_stream_write (
+				context, features_stream_pieces[i], strlen (features_stream_pieces[i])
+			);
 		}
 
-		http_response_return (response);
+		(void) cerver_http_response_stream_end (context);
 	}
 
 }
 
 // POST /features/echo, the body that was received
-static void features_echo_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_echo_handler (CerverHttpContext *context) {
 
-	const String *body = http_request_get_body (request);
+	const CerverHttpView body = cerver_http_request_body (context);
 
-	(void) http_response_render_text (
-		http_receive, HTTP_STATUS_OK, body ? body->str : "", body ? body->len : 0
+	(void) cerver_http_response_send_text (
+		context, cerver_http_view_is_missing (body) ? "" : body.data, body.length
 	);
 
 }
 
 // GET /features/client, the client's address, the peer and the request's id
-static void features_client_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_client_handler (CerverHttpContext *context) {
 
-	const CerverReceive *cerver_receive = http_receive_get_cerver_receive (http_receive);
+	const CerverHttpView ip = cerver_http_request_client_ip (context);
+	const CerverHttpView peer = cerver_http_request_peer_ip (context);
+	const CerverHttpView id = cerver_http_request_id (context);
 
 	char json[FEATURES_JSON_SIZE] = { 0 };
 	const int length = snprintf (
 		json, FEATURES_JSON_SIZE, "{\"ip\": \"%s\", \"peer\": \"%s\", \"id\": \"%s\"}",
-		http_request_get_client_ip (request),
-		cerver_receive->connection->ip,
-		http_request_get_id (request)
+		cerver_http_view_is_missing (ip) ? "" : ip.data,
+		cerver_http_view_is_missing (peer) ? "" : peer.data,
+		cerver_http_view_is_missing (id) ? "" : id.data
 	);
 
-	(void) http_response_render_json (http_receive, HTTP_STATUS_OK, json, (size_t) length);
+	(void) cerver_http_response_send_json (context, json, (size_t) length);
 
 }
 
 // GET /plain/small, without the settings of the features group
-static void features_plain_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_plain_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // GET /features/unanswered returns without a response, cerver answers it with 500
-static void features_unanswered_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void features_unanswered_handler (CerverHttpContext *context) {
 
-	(void) http_receive;
-	(void) request;
+	(void) context;
 
 }
 
@@ -188,41 +164,46 @@ static void features_items_create (void) {
 
 }
 
-static void features_routes (HttpCerver *http_cerver) {
+static void features_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *features = http_cerver_group_create (http_cerver, "features");
-	http_group_set_cors (features, true);
-	http_group_set_etag (features, true);
-	http_group_set_compression (features, true);
+	CerverHttpGroup *features = cerver_http_group_create (http_cerver, "features");
+	cerver_http_group_set_cors (features, true);
+	cerver_http_group_set_etag (features, true);
+	cerver_http_group_set_compression (features, true);
 
-	(void) http_group_get (features, "small", features_small_handler);
-	(void) http_group_get (features, "items", features_items_handler);
-	(void) http_group_get (features, "stream", features_stream_handler);
-	(void) http_group_post (features, "echo", features_echo_handler);
-	(void) http_group_get (features, "client", features_client_handler);
-	(void) http_group_get (features, "unanswered", features_unanswered_handler);
+	(void) cerver_http_group_get (features, "small", features_small_handler);
+	(void) cerver_http_group_get (features, "items", features_items_handler);
+	(void) cerver_http_group_get (features, "stream", features_stream_handler);
+	(void) cerver_http_group_post (features, "echo", features_echo_handler);
+	(void) cerver_http_group_get (features, "client", features_client_handler);
+	(void) cerver_http_group_get (features, "unanswered", features_unanswered_handler);
 
-	HttpGroup *plain = http_cerver_group_create (http_cerver, "plain");
-	(void) http_group_get (plain, "small", features_plain_handler);
+	CerverHttpGroup *plain = cerver_http_group_create (http_cerver, "plain");
+	(void) cerver_http_group_get (plain, "small", features_plain_handler);
 
 }
 
-static void features_configure (HttpCerver *http_cerver) {
+static void features_configure (CerverHttp *http_cerver) {
 
-	if (test_keep_alive_is_set ()) http_cerver_set_keep_alive (http_cerver, test_keep_alive ());
+	// the static paths read files: the handlers run in threads
+	(void) cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
-	http_cerver_set_not_found_handler (http_cerver);
+	if (test_keep_alive_is_set ()) cerver_http_set_keep_alive (http_cerver, test_keep_alive ());
 
-	http_cerver_set_request_id (http_cerver, true);
+	cerver_http_set_not_found_handler (http_cerver);
+
+	cerver_http_set_request_id (http_cerver, true);
 
 	// the client runs in the same host, or behind nginx in a private network
-	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	cerver_http_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 
-	(void) http_cerver_add_origin_to_whitelist (http_cerver, features_origin);
+	(void) cerver_http_add_origin_to_whitelist (http_cerver, features_origin);
 
-	(void) http_cerver_static_path_add (http_cerver, "./public");
+	(void) cerver_http_static_path_add (http_cerver, "./public");
 
-	http_cerver_enable_admin_routes (http_cerver, true);
+	// GET /features/cerver/metrics
+	cerver_http_enable_admin_routes (http_cerver, true);
+	cerver_http_admin_set_path (http_cerver, "/features");
 
 	features_routes (http_cerver);
 
@@ -248,12 +229,11 @@ int main (int argc, char **argv) {
 		(void) cerver_set_bind_address (features_cerver, test_address ());
 		cerver_set_receive_buffer_size (features_cerver, FEATURES_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (features_cerver, FEATURES_THREADS);
-		cerver_set_handler_type (features_cerver, test_handler_type ());
 		cerver_set_events_backend (features_cerver, test_events_backend ());
 		cerver_set_io_threads (features_cerver, test_io_threads ());
 		cerver_set_reusable_address_flags (features_cerver, true);
 
-		features_configure ((HttpCerver *) features_cerver->cerver_data);
+		features_configure (cerver_http_get (features_cerver));
 
 		if (!cerver_start (features_cerver)) {
 			features_finish ();
