@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "cerver/version.h"
 
@@ -70,7 +71,7 @@ HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 
 #pragma region json
 
-static void http_cerver_admin_write_version (CerverJsonWriter *writer) {
+static void cerver_http_admin_write_version (CerverJsonWriter *writer) {
 
 	cerver_json_writer_key (writer, "version");
 	cerver_json_writer_object_begin (writer);
@@ -85,11 +86,11 @@ static void http_cerver_admin_write_version (CerverJsonWriter *writer) {
 }
 
 // the info of the cerver: its name, its alias, when it started, its uptime and its version
-static void http_cerver_admin_write_info (
-	CerverJsonWriter *writer, const void *http_cerver_ptr
+static void cerver_http_admin_write_info (
+	CerverJsonWriter *writer, const void *cerver_http_ptr
 ) {
 
-	const Cerver *cerver = ((const HttpCerver *) http_cerver_ptr)->cerver;
+	const Cerver *cerver = ((const HttpCerver *) cerver_http_ptr)->cerver;
 
 	cerver_json_writer_object_begin (writer);
 
@@ -97,53 +98,46 @@ static void http_cerver_admin_write_info (
 	http_json_member_string (writer, "alias", cerver->info->alias);
 	http_json_member_integer (writer, "time_started", (i64) cerver->info->time_started);
 
-	cerver_update_uptime ((Cerver *) cerver);
+	// the uptime is computed for each response: the event loops answer at the same time, and the one that the
+	// cerver keeps (cerver_update_uptime ()) is written without a lock
+	http_json_member_integer (writer, "uptime", (i64) (time (NULL) - cerver->info->time_started));
 
-	http_json_member_integer (writer, "uptime", (i64) cerver->info->uptime);
-
-	http_cerver_admin_write_version (writer);
+	cerver_http_admin_write_version (writer);
 
 	cerver_json_writer_object_end (writer);
 
 }
 
-char *http_cerver_admin_generate_info_json (
+char *cerver_http_admin_generate_info_json (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_json_generate (http_cerver_admin_write_info, http_cerver);
+	return http_json_generate (cerver_http_admin_write_info, http_cerver);
 
 }
 
-static void http_cerver_admin_handler_general_stats (
+static void cerver_http_admin_handler_general_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
-	http_json_member_integer (writer, "main_routes", (i64) http_cerver->routes->size);
-
-	size_t total_handlers = 0;
-	size_t children_routes = http_cerver_stats_get_children_routes (
-		http_cerver, &total_handlers
-	);
-
-	http_json_member_integer (writer, "children_routes", (i64) children_routes);
-	http_json_member_integer (writer, "total_handlers", (i64) total_handlers);
+	http_json_member_integer (writer, "groups", (i64) dlist_size (http_cerver->tree->groups));
+	http_json_member_integer (writer, "total_handlers", (i64) http_tree_get_n_endpoints (http_cerver->tree));
 
 }
 
 // the stats of a handler, the members of the object of its route or of its endpoint
-static void http_cerver_admin_handler_single_route_handler_stats (
+static void cerver_http_admin_handler_single_route_handler_stats (
 	CerverJsonWriter *writer,
-	const RequestMethod method, const HttpRouteStats *route_stats
+	const CerverHttpMethod method, const HttpRouteStats *route_stats
 ) {
 
 	// the stats are updated with atomic operations while the requests are handled
 	HttpRouteStats snapshot;
 	(void) memset (&snapshot, 0, sizeof (HttpRouteStats));
-	http_route_stats_snapshot (route_stats, &snapshot);
+	cerver_http_route_stats_snapshot (route_stats, &snapshot);
 	const HttpRouteStats *stats = &snapshot;
 
-	http_json_member_string (writer, "method", http_request_method_str (method));
+	http_json_member_string (writer, "method", cerver_http_method_to_string (method));
 	http_json_member_integer (writer, "requests", (i64) stats->n_requests);
 
 	http_json_member_real (writer, "min_process_time", stats->first ? 0 : stats->min_process_time);
@@ -160,13 +154,13 @@ static void http_cerver_admin_handler_single_route_handler_stats (
 
 }
 
-static void http_cerver_admin_handler_single_route_handler_files_stats (
+static void cerver_http_admin_handler_single_route_handler_files_stats (
 	CerverJsonWriter *writer, const HttpRouteFileStats *route_file_stats
 ) {
 
 	HttpRouteFileStats snapshot;
 	(void) memset (&snapshot, 0, sizeof (HttpRouteFileStats));
-	http_route_file_stats_snapshot (route_file_stats, &snapshot);
+	cerver_http_route_file_stats_snapshot (route_file_stats, &snapshot);
 	const HttpRouteFileStats *file_stats = &snapshot;
 
 	cerver_json_writer_key (writer, "files");
@@ -185,127 +179,20 @@ static void http_cerver_admin_handler_single_route_handler_files_stats (
 
 }
 
-// a handler of a route with its stats, and the ones of its files when it takes uploads
-static void http_cerver_admin_handler_single_route_handler (
-	CerverJsonWriter *writer,
-	const HttpRoute *route, const RequestMethod method
-) {
-
-	cerver_json_writer_object_begin (writer);
-
-	http_cerver_admin_handler_single_route_handler_stats (
-		writer, method, route->stats[method]
-	);
-
-	if (
-		(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
-		&& (method == REQUEST_METHOD_POST)
-	) {
-		http_cerver_admin_handler_single_route_handler_files_stats (writer, route->file_stats);
-	}
-
-	cerver_json_writer_object_end (writer);
-
-}
-
-static void http_cerver_admin_handler_single_route_handlers_stats (
-	CerverJsonWriter *writer, const HttpRoute *route
-) {
-
-	cerver_json_writer_key (writer, "handlers");
-	cerver_json_writer_array_begin (writer);
-
-	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-		if (route->handlers[i] && route->stats[i]) {
-			http_cerver_admin_handler_single_route_handler (writer, route, (RequestMethod) i);
-		}
-	}
-
-	cerver_json_writer_array_end (writer);
-
-}
-
-static void http_cerver_admin_handler_single_child_stats (
-	CerverJsonWriter *writer, const HttpRoute *child
-) {
-
-	cerver_json_writer_object_begin (writer);
-
-	http_json_member_string (writer, "route", child->route->str);
-
-	if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		http_json_member_string (writer, "modifier", http_route_modifier_to_string (child->modifier));
-	}
-
-	http_cerver_admin_handler_single_route_handlers_stats (writer, child);
-
-	cerver_json_writer_object_end (writer);
-
-}
-
-static void http_cerver_admin_handler_single_route_children_stats (
-	CerverJsonWriter *writer, const HttpRoute *route
-) {
-
-	cerver_json_writer_key (writer, "children");
-	cerver_json_writer_array_begin (writer);
-
-	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-		http_cerver_admin_handler_single_child_stats (writer, (const HttpRoute *) le->data);
-	}
-
-	cerver_json_writer_array_end (writer);
-
-}
-
-static void http_cerver_admin_handler_single_route_stats (
-	CerverJsonWriter *writer, const HttpRoute *route
-) {
-
-	cerver_json_writer_object_begin (writer);
-
-	http_json_member_string (writer, "route", route->route->str);
-
-	if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		http_json_member_string (writer, "modifier", http_route_modifier_to_string (route->modifier));
-	}
-
-	http_cerver_admin_handler_single_route_handlers_stats (writer, route);
-	http_cerver_admin_handler_single_route_children_stats (writer, route);
-
-	cerver_json_writer_object_end (writer);
-
-}
-
-static void http_cerver_admin_handler_routes_stats (
-	CerverJsonWriter *writer, const HttpCerver *http_cerver
-) {
-
-	cerver_json_writer_key (writer, "routes");
-	cerver_json_writer_array_begin (writer);
-
-	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
-		http_cerver_admin_handler_single_route_stats (writer, (const HttpRoute *) le->data);
-	}
-
-	cerver_json_writer_array_end (writer);
-
-}
-
-static void http_cerver_admin_handler_endpoint_stats (
+static void cerver_http_admin_handler_endpoint_stats (
 	CerverJsonWriter *writer, const HttpEndpoint *endpoint
 ) {
 
 	cerver_json_writer_object_begin (writer);
 
-	http_cerver_admin_handler_single_route_handler_stats (
+	cerver_http_admin_handler_single_route_handler_stats (
 		writer, endpoint->method, endpoint->stats
 	);
 
 	http_json_member_string (writer, "route", endpoint->path->str);
 
 	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-		http_cerver_admin_handler_single_route_handler_files_stats (writer, endpoint->file_stats);
+		cerver_http_admin_handler_single_route_handler_files_stats (writer, endpoint->file_stats);
 	}
 
 	cerver_json_writer_object_end (writer);
@@ -313,22 +200,22 @@ static void http_cerver_admin_handler_endpoint_stats (
 }
 
 // the endpoints of a group and of its subgroups
-static void http_cerver_admin_handler_group_stats (
+static void cerver_http_admin_handler_group_stats (
 	CerverJsonWriter *writer, const HttpGroup *group
 ) {
 
 	for (ListElement *le = dlist_start (group->endpoints); le; le = le->next) {
-		http_cerver_admin_handler_endpoint_stats (writer, (const HttpEndpoint *) le->data);
+		cerver_http_admin_handler_endpoint_stats (writer, (const HttpEndpoint *) le->data);
 	}
 
 	for (ListElement *le = dlist_start (group->groups); le; le = le->next) {
-		http_cerver_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
+		cerver_http_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
 	}
 
 }
 
 // the endpoints that were registered with groups
-static void http_cerver_admin_handler_endpoints_stats (
+static void cerver_http_admin_handler_endpoints_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -336,14 +223,14 @@ static void http_cerver_admin_handler_endpoints_stats (
 	cerver_json_writer_array_begin (writer);
 
 	for (ListElement *le = dlist_start (http_cerver->tree->groups); le; le = le->next) {
-		http_cerver_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
+		cerver_http_admin_handler_group_stats (writer, (const HttpGroup *) le->data);
 	}
 
 	cerver_json_writer_array_end (writer);
 
 }
 
-static void http_cerver_admin_handler_requests_stats (
+static void cerver_http_admin_handler_requests_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -382,7 +269,7 @@ static void http_cerver_admin_handler_requests_stats (
 }
 
 // the responses sent by their status code, only the codes that were sent
-static void http_cerver_admin_handler_responses_stats (
+static void cerver_http_admin_handler_responses_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -390,7 +277,7 @@ static void http_cerver_admin_handler_responses_stats (
 	cerver_json_writer_object_begin (writer);
 
 	char code[HTTP_ADMIN_STATUS_CODE_SIZE] = { 0 };
-	for (size_t status = 0; status < HTTP_CERVER_RESPONSES_STATUS_SIZE; status++) {
+	for (size_t status = 0; status < CERVER_HTTP_RESPONSES_STATUS_SIZE; status++) {
 		const size_t count = CERVER_STATS_GET (http_cerver->n_responses_by_status[status]);
 		if (count) {
 			(void) snprintf (code, HTTP_ADMIN_STATUS_CODE_SIZE, "%zu", status);
@@ -403,16 +290,16 @@ static void http_cerver_admin_handler_responses_stats (
 }
 
 // the requests whose client left in a stage, by the reason
-static void http_cerver_admin_handler_aborted_stats (
+static void cerver_http_admin_handler_aborted_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver, const unsigned int stage
 ) {
 
-	cerver_json_writer_key (writer, http_stage_label ((HttpStage) stage));
+	cerver_json_writer_key (writer, cerver_http_stage_label ((CerverHttpStage) stage));
 	cerver_json_writer_object_begin (writer);
 
 	for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
 		http_json_member_integer (
-			writer, http_abort_reason_label ((HttpAbortReason) reason),
+			writer, cerver_http_abort_reason_label ((CerverHttpAbortReason) reason),
 			(i64) CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason])
 		);
 	}
@@ -422,7 +309,7 @@ static void http_cerver_admin_handler_aborted_stats (
 }
 
 // the requests whose client left, by stage and reason, and the ones that vanished, by stage
-static void http_cerver_admin_handler_gone_stats (
+static void cerver_http_admin_handler_gone_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -430,7 +317,7 @@ static void http_cerver_admin_handler_gone_stats (
 	cerver_json_writer_object_begin (writer);
 
 	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
-		http_cerver_admin_handler_aborted_stats (writer, http_cerver, stage);
+		cerver_http_admin_handler_aborted_stats (writer, http_cerver, stage);
 	}
 
 	cerver_json_writer_object_end (writer);
@@ -440,7 +327,7 @@ static void http_cerver_admin_handler_gone_stats (
 
 	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
 		http_json_member_integer (
-			writer, http_stage_label ((HttpStage) stage),
+			writer, cerver_http_stage_label ((CerverHttpStage) stage),
 			(i64) CERVER_STATS_GET (http_cerver->n_vanished_requests[stage])
 		);
 	}
@@ -450,7 +337,7 @@ static void http_cerver_admin_handler_gone_stats (
 }
 
 // the WebSocket connections that are open, what they did and how they ended
-static void http_cerver_admin_handler_web_socket_values (
+static void cerver_http_admin_handler_web_socket_values (
 	CerverJsonWriter *writer, const HttpWebSocketStats *stats
 ) {
 
@@ -484,19 +371,19 @@ static void http_cerver_admin_handler_web_socket_values (
 }
 
 // a cerver without a registry of WebSocket connections has no stats of them
-static void http_cerver_admin_handler_web_socket_stats (
+static void cerver_http_admin_handler_web_socket_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
 	HttpWebSocketStats stats;
 	if (!http_cerver_web_socket_get_stats (http_cerver, &stats)) {
-		http_cerver_admin_handler_web_socket_values (writer, &stats);
+		cerver_http_admin_handler_web_socket_values (writer, &stats);
 	}
 
 }
 
 // a pool that has threads: what it has now and what it did
-static void http_cerver_admin_handler_pool_stats (
+static void cerver_http_admin_handler_pool_stats (
 	CerverJsonWriter *writer, const HttpPool *pool
 ) {
 
@@ -530,7 +417,7 @@ static void http_cerver_admin_handler_pool_stats (
 
 // the pools of the cerver that have threads, the first one is the thpool of the cerver;
 // a cerver that has not started has none
-static void http_cerver_admin_handler_pools_stats (
+static void cerver_http_admin_handler_pools_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -540,7 +427,7 @@ static void http_cerver_admin_handler_pools_stats (
 	for (unsigned int idx = 0; idx < http_cerver->n_pools; idx++) {
 		const HttpPool *pool = http_cerver->pools[idx];
 
-		if (pool->thpool) http_cerver_admin_handler_pool_stats (writer, pool);
+		if (pool->thpool) cerver_http_admin_handler_pool_stats (writer, pool);
 	}
 
 	cerver_json_writer_array_end (writer);
@@ -549,7 +436,7 @@ static void http_cerver_admin_handler_pools_stats (
 
 // the connections of the event loops: the ones that are open, the ones that wait for their next request
 // and every one that was accepted
-static void http_cerver_admin_handler_loops_stats (
+static void cerver_http_admin_handler_loops_stats (
 	CerverJsonWriter *writer, const Cerver *cerver
 ) {
 
@@ -560,12 +447,12 @@ static void http_cerver_admin_handler_loops_stats (
 }
 
 // the connections that were reused, and the ones that ended with their requests
-static void http_cerver_admin_handler_connections_stats (
+static void cerver_http_admin_handler_connections_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
 	size_t ended = 0;
-	for (unsigned int i = 0; i < HTTP_CERVER_CONNECTION_REQUESTS_BUCKETS; i++) {
+	for (unsigned int i = 0; i < CERVER_HTTP_CONNECTION_REQUESTS_BUCKETS; i++) {
 		ended += CERVER_STATS_GET (http_cerver->connection_requests[i]);
 	}
 
@@ -577,7 +464,7 @@ static void http_cerver_admin_handler_connections_stats (
 	http_json_member_integer (writer, "n_requests", (i64) CERVER_STATS_GET (http_cerver->n_connection_requests));
 
 	if (http_cerver->cerver && http_cerver->cerver->event_loops) {
-		http_cerver_admin_handler_loops_stats (writer, http_cerver->cerver);
+		cerver_http_admin_handler_loops_stats (writer, http_cerver->cerver);
 	}
 
 	cerver_json_writer_object_end (writer);
@@ -585,7 +472,7 @@ static void http_cerver_admin_handler_connections_stats (
 }
 
 // the requests of the health and the ready routes, and what the uploads wrote
-static void http_cerver_admin_handler_health_stats (
+static void cerver_http_admin_handler_health_stats (
 	CerverJsonWriter *writer, const HttpCerver *http_cerver
 ) {
 
@@ -605,48 +492,46 @@ static void http_cerver_admin_handler_health_stats (
 
 }
 
-// the stats of the routes of the first API, of the endpoints of the groups and of the cerver
-static void http_cerver_admin_write_routes_stats (
-	CerverJsonWriter *writer, const void *http_cerver_ptr
+// the stats of the endpoints of the groups and of the cerver
+static void cerver_http_admin_write_routes_stats (
+	CerverJsonWriter *writer, const void *cerver_http_ptr
 ) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+	const HttpCerver *http_cerver = (const HttpCerver *) cerver_http_ptr;
 
 	cerver_json_writer_object_begin (writer);
 
-	http_cerver_admin_handler_general_stats (writer, http_cerver);
+	cerver_http_admin_handler_general_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_routes_stats (writer, http_cerver);
+	cerver_http_admin_handler_endpoints_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_endpoints_stats (writer, http_cerver);
+	cerver_http_admin_handler_requests_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_requests_stats (writer, http_cerver);
+	cerver_http_admin_handler_responses_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_responses_stats (writer, http_cerver);
+	cerver_http_admin_handler_gone_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_gone_stats (writer, http_cerver);
+	cerver_http_admin_handler_web_socket_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_web_socket_stats (writer, http_cerver);
+	cerver_http_admin_handler_pools_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_pools_stats (writer, http_cerver);
+	cerver_http_admin_handler_connections_stats (writer, http_cerver);
 
-	http_cerver_admin_handler_connections_stats (writer, http_cerver);
-
-	http_cerver_admin_handler_health_stats (writer, http_cerver);
+	cerver_http_admin_handler_health_stats (writer, http_cerver);
 
 	cerver_json_writer_object_end (writer);
 
 }
 
-char *http_cerver_admin_generate_routes_stats_json (
+char *cerver_http_admin_generate_routes_stats_json (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_json_generate (http_cerver_admin_write_routes_stats, http_cerver);
+	return http_json_generate (cerver_http_admin_write_routes_stats, http_cerver);
 
 }
 
-static void http_cerver_admin_handler_single_file_systems_stats (
+static void cerver_http_admin_handler_single_file_systems_stats (
 	CerverJsonWriter *writer, const HttpAdminFileSystemStats *admin_file_system
 ) {
 
@@ -673,11 +558,11 @@ static void http_cerver_admin_handler_single_file_systems_stats (
 }
 
 // the stats of the registered file systems, read when they are written
-static void http_cerver_admin_write_file_systems_stats (
-	CerverJsonWriter *writer, const void *http_cerver_ptr
+static void cerver_http_admin_write_file_systems_stats (
+	CerverJsonWriter *writer, const void *cerver_http_ptr
 ) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+	const HttpCerver *http_cerver = (const HttpCerver *) cerver_http_ptr;
 
 	(void) pthread_mutex_lock ((pthread_mutex_t *) http_cerver->admin_mutex);
 
@@ -687,7 +572,7 @@ static void http_cerver_admin_write_file_systems_stats (
 	cerver_json_writer_array_begin (writer);
 
 	for (ListElement *le = dlist_start (http_cerver->admin_file_systems_stats); le; le = le->next) {
-		http_cerver_admin_handler_single_file_systems_stats (
+		cerver_http_admin_handler_single_file_systems_stats (
 			writer, (const HttpAdminFileSystemStats *) le->data
 		);
 	}
@@ -700,15 +585,15 @@ static void http_cerver_admin_write_file_systems_stats (
 
 }
 
-char *http_cerver_admin_generate_file_systems_stats_json (
+char *cerver_http_admin_generate_file_systems_stats_json (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_json_generate (http_cerver_admin_write_file_systems_stats, http_cerver);
+	return http_json_generate (cerver_http_admin_write_file_systems_stats, http_cerver);
 
 }
 
-static void http_cerver_admin_handler_worker_state (
+static void cerver_http_admin_handler_worker_state (
 	CerverJsonWriter *writer, Worker *worker
 ) {
 
@@ -723,11 +608,11 @@ static void http_cerver_admin_handler_worker_state (
 }
 
 // the states of the registered workers, in the order that they were registered
-static void http_cerver_admin_write_workers (
-	CerverJsonWriter *writer, const void *http_cerver_ptr
+static void cerver_http_admin_write_workers (
+	CerverJsonWriter *writer, const void *cerver_http_ptr
 ) {
 
-	const HttpCerver *http_cerver = (const HttpCerver *) http_cerver_ptr;
+	const HttpCerver *http_cerver = (const HttpCerver *) cerver_http_ptr;
 
 	cerver_json_writer_object_begin (writer);
 
@@ -735,7 +620,7 @@ static void http_cerver_admin_write_workers (
 	cerver_json_writer_array_begin (writer);
 
 	for (ListElement *le = dlist_start (http_cerver->admin_workers); le; le = le->next) {
-		http_cerver_admin_handler_worker_state (writer, (Worker *) le->data);
+		cerver_http_admin_handler_worker_state (writer, (Worker *) le->data);
 	}
 
 	cerver_json_writer_array_end (writer);
@@ -744,11 +629,11 @@ static void http_cerver_admin_write_workers (
 
 }
 
-char *http_cerver_admin_generate_workers_json (
+char *cerver_http_admin_generate_workers_json (
 	const HttpCerver *http_cerver
 ) {
 
-	return http_json_generate (http_cerver_admin_write_workers, http_cerver);
+	return http_json_generate (cerver_http_admin_write_workers, http_cerver);
 
 }
 
@@ -758,7 +643,7 @@ char *http_cerver_admin_generate_workers_json (
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // sets "Access-Control-Allow-Origin" header
-static inline void http_cerver_admin_response_set_allow_origin_header (
+static inline void cerver_http_admin_response_set_allow_origin_header (
 	const HttpReceive *http_receive, HttpResponse *response
 ) {
 
@@ -778,7 +663,7 @@ static inline void http_cerver_admin_response_set_allow_origin_header (
 }
 
 // sets "Access-Control-Allow-Methods" header based on config
-static inline void http_cerver_admin_response_set_allow_methods_header (
+static inline void cerver_http_admin_response_set_allow_methods_header (
 	const HttpReceive *http_receive, HttpResponse *response
 ) {
 
@@ -801,7 +686,7 @@ static inline void http_cerver_admin_response_set_allow_methods_header (
 }
 
 // sets "Access-Control-Allow-Credentials" header
-static inline void http_cerver_admin_response_set_allow_credentials (
+static inline void cerver_http_admin_response_set_allow_credentials (
 	const HttpReceive *http_receive, HttpResponse *response
 ) {
 
@@ -816,23 +701,23 @@ static inline void http_cerver_admin_response_set_allow_credentials (
 }
 
 // set CORS related headers based on HTTP config
-static inline void http_cerver_admin_response_set_cors_headers (
+static inline void cerver_http_admin_response_set_cors_headers (
 	const HttpReceive *http_receive, HttpResponse *response
 ) {
 
 	if (http_receive->http_cerver->enable_admin_cors_headers) {
 		// set "Access-Control-Allow-Origin" header
-		http_cerver_admin_response_set_allow_origin_header (
+		cerver_http_admin_response_set_allow_origin_header (
 			http_receive, response
 		);
 
 		// set "Access-Control-Allow-Methods" header based on config
-		http_cerver_admin_response_set_allow_methods_header (
+		cerver_http_admin_response_set_allow_methods_header (
 			http_receive, response
 		);
 
 		// set "Access-Control-Allow-Credentials" header
-		http_cerver_admin_response_set_allow_credentials (
+		cerver_http_admin_response_set_allow_credentials (
 			http_receive, response
 		);
 	}
@@ -841,7 +726,7 @@ static inline void http_cerver_admin_response_set_cors_headers (
 
 // sends back a matching response to an OPTIONS preflight request
 // that is generally sent to fetch CORS information
-static inline void http_cerver_admin_send_options (
+static inline void cerver_http_admin_send_options (
 	const HttpReceive *http_receive
 ) {
 
@@ -851,7 +736,7 @@ static inline void http_cerver_admin_send_options (
 		http_response_set_status (response, HTTP_STATUS_NO_CONTENT);
 
 		// set CORS related headers based on HTTP config
-		http_cerver_admin_response_set_cors_headers (
+		cerver_http_admin_response_set_cors_headers (
 			http_receive, response
 		);
 
@@ -867,7 +752,7 @@ static inline void http_cerver_admin_send_options (
 // sends back a response to a HEAD request
 // that only includes the headers that would be returned
 // if the HEAD request's URL was instead requested with GET
-static inline void http_cerver_admin_send_head (
+static inline void cerver_http_admin_send_head (
 	const HttpReceive *http_receive,
 	const size_t json_len
 ) {
@@ -878,7 +763,7 @@ static inline void http_cerver_admin_send_head (
 		http_response_add_json_headers (response, json_len);
 
 		// set CORS related headers based on HTTP config
-		http_cerver_admin_response_set_cors_headers (
+		cerver_http_admin_response_set_cors_headers (
 			http_receive, response
 		);
 
@@ -891,9 +776,8 @@ static inline void http_cerver_admin_send_head (
 
 }
 
-static inline void http_cerver_admin_send_response (
+static inline void cerver_http_admin_send_response (
 	const HttpReceive *http_receive,
-	const HttpRequest *request,
 	const char *json, const size_t json_len
 ) {
 
@@ -903,7 +787,7 @@ static inline void http_cerver_admin_send_response (
 		http_response_add_json_headers (response, json_len);
 
 		// set CORS related headers based on HTTP config
-		http_cerver_admin_response_set_cors_headers (
+		cerver_http_admin_response_set_cors_headers (
 			http_receive, response
 		);
 
@@ -922,9 +806,8 @@ static inline void http_cerver_admin_send_response (
 
 // answers a GET with the json that a method writes in the arena of the request:
 // nothing is allocated for its values, and the text lives until the request ends
-static void http_cerver_admin_send_json (
+static void cerver_http_admin_send_json (
 	const HttpReceive *http_receive,
-	const HttpRequest *request,
 	const HttpJsonWrite write
 ) {
 
@@ -932,14 +815,14 @@ static void http_cerver_admin_send_json (
 
 	// a writer without an arena has an error from its start
 	cerver_json_writer_init_arena (
-		&writer, http_request_get_arena ((HttpRequest *) request), CERVER_JSON_FLAGS_NONE
+		&writer, http_request_get_arena (http_receive->request), CERVER_JSON_FLAGS_NONE
 	);
 
 	write (&writer, http_receive->http_cerver);
 
 	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_NONE) {
-		http_cerver_admin_send_response (
-			http_receive, request,
+		cerver_http_admin_send_response (
+			http_receive,
 			cerver_json_writer_text (&writer), cerver_json_writer_length (&writer)
 		);
 	}
@@ -951,7 +834,7 @@ static void http_cerver_admin_send_json (
 }
 
 // answers a HEAD with the length of the json that a method writes: its bytes are only counted
-static void http_cerver_admin_send_json_head (
+static void cerver_http_admin_send_json_head (
 	const HttpReceive *http_receive,
 	const HttpJsonWrite write
 ) {
@@ -963,7 +846,7 @@ static void http_cerver_admin_send_json_head (
 
 	// a writer without a buffer ends as a text that did not fit
 	if (cerver_json_writer_end (&writer) == CERVER_JSON_ERROR_TRUNCATED) {
-		http_cerver_admin_send_head (
+		cerver_http_admin_send_head (
 			http_receive, cerver_json_writer_length (&writer)
 		);
 	}
@@ -978,96 +861,69 @@ static void http_cerver_admin_send_json_head (
 // OPTIONS [top level]/cerver/stats
 // OPTIONS [top level]/cerver/stats/filesystems
 // OPTIONS [top level]/cerver/stats/workers
-static void http_cerver_admin_options_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_options_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_options (http_receive);
+	cerver_http_admin_send_options (http_receive);
 
 }
 
 // HEAD [top level]/cerver/info
-static void http_cerver_admin_info_head_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_info_head_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_info);
+	cerver_http_admin_send_json_head (http_receive, cerver_http_admin_write_info);
 
 }
 
 // GET [top level]/cerver/info
-static void http_cerver_admin_info_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_info_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_info);
+	cerver_http_admin_send_json (http_receive,cerver_http_admin_write_info);
 
 }
 
 // HEAD [top level]/cerver/stats
-static void http_cerver_admin_stats_head_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_stats_head_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_routes_stats);
+	cerver_http_admin_send_json_head (http_receive, cerver_http_admin_write_routes_stats);
 
 }
 
 // GET [top level]/cerver/stats
-static void http_cerver_admin_stats_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_stats_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_routes_stats);
+	cerver_http_admin_send_json (http_receive,cerver_http_admin_write_routes_stats);
 
 }
 
 // HEAD [top level]/cerver/stats/filesystems
-static void http_cerver_admin_file_systems_head_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_file_systems_head_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_file_systems_stats);
+	cerver_http_admin_send_json_head (http_receive, cerver_http_admin_write_file_systems_stats);
 
 }
 
 // GET [top level]/cerver/stats/filesystems
-static void http_cerver_admin_file_systems_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_file_systems_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_file_systems_stats);
+	cerver_http_admin_send_json (http_receive,cerver_http_admin_write_file_systems_stats);
 
 }
 
 // HEAD [top level]/cerver/stats/workers
-static void http_cerver_admin_workers_head_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_workers_head_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json_head (http_receive, http_cerver_admin_write_workers);
+	cerver_http_admin_send_json_head (http_receive, cerver_http_admin_write_workers);
 
 }
 
 // GET [top level]/cerver/stats/workers
-static void http_cerver_admin_workers_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_workers_handler (HttpReceive *http_receive) {
 
-	http_cerver_admin_send_json (http_receive, request, http_cerver_admin_write_workers);
+	cerver_http_admin_send_json (http_receive,cerver_http_admin_write_workers);
 
 }
 
-static void http_cerver_admin_send_metrics (
+static void cerver_http_admin_send_metrics (
 	const HttpReceive *http_receive, const String *metrics
 ) {
 
@@ -1077,7 +933,7 @@ static void http_cerver_admin_send_metrics (
 		(void) http_response_add_header (response, HTTP_HEADER_CONTENT_TYPE, HTTP_METRICS_CONTENT_TYPE);
 		(void) http_response_add_content_length_header (response, metrics->len);
 
-		http_cerver_admin_response_set_cors_headers (http_receive, response);
+		cerver_http_admin_response_set_cors_headers (http_receive, response);
 
 		(void) http_response_set_data_ref (response, metrics->str, metrics->len);
 
@@ -1090,14 +946,11 @@ static void http_cerver_admin_send_metrics (
 
 // GET [top level]/cerver/metrics
 // HEAD [top level]/cerver/metrics
-static void http_cerver_admin_metrics_handler (
-	const HttpReceive *http_receive,
-	const HttpRequest *request
-) {
+static void cerver_http_admin_metrics_handler (HttpReceive *http_receive) {
 
-	String *metrics = http_cerver_metrics_generate (http_receive->http_cerver);
+	String *metrics = cerver_http_metrics_generate (http_receive->http_cerver);
 	if (metrics) {
-		http_cerver_admin_send_metrics (http_receive, metrics);
+		cerver_http_admin_send_metrics (http_receive, metrics);
 
 		str_delete (metrics);
 	}
@@ -1110,259 +963,16 @@ static void http_cerver_admin_metrics_handler (
 
 #pragma GCC diagnostic pop
 
-static void http_cerver_admin_route_set_auth (
-	const HttpCerver *http_cerver,
-	HttpRoute *admin_route
-) {
-
-	if (http_cerver->enable_admin_routes_auth) {
-		switch (http_cerver->admin_auth_type) {
-			case HTTP_ROUTE_AUTH_TYPE_NONE: break;
-
-			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
-				http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-				http_route_set_decode_data (
-					admin_route,
-					http_cerver->admin_decode_data,
-					http_cerver->admin_delete_decoded_data
-				);
-			} break;
-
-			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
-				http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-				http_route_set_authentication_handler (
-					admin_route, http_cerver->admin_auth_handler
-				);
-			} break;
-
-			default: break;
-		}
-	}
-
-}
-
-static void http_cerver_admin_set_info_route (
-	const HttpCerver *http_cerver, HttpRoute *top_level_route
-) {
-
-	// GET [top level]/cerver/info
-	HttpRoute *info_route = http_route_create (
-		REQUEST_METHOD_GET,  "cerver/info", http_cerver_admin_info_handler
-	);
-
-	if (http_cerver->enable_admin_head_handlers) {
-		http_route_set_handler (
-			info_route,
-			REQUEST_METHOD_HEAD,
-			http_cerver_admin_info_head_handler
-		);
-	}
-
-	if (http_cerver->enable_admin_options_handlers) {
-		http_route_set_handler (
-			info_route,
-			REQUEST_METHOD_OPTIONS,
-			http_cerver_admin_options_handler
-		);
-	}
-
-	http_cerver_admin_route_set_auth (http_cerver, info_route);
-
-	http_route_set_custom_data (info_route, http_cerver->admin_routes_custom_data);
-
-	http_route_child_add (top_level_route, info_route);
-
-}
-
-static void http_cerver_admin_set_stats_route (
-	const HttpCerver *http_cerver, HttpRoute *top_level_route
-) {
-
-	// GET [top level]/cerver/stats
-	HttpRoute *stats_route = http_route_create (
-		REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_stats_handler
-	);
-
-	if (http_cerver->enable_admin_head_handlers) {
-		http_route_set_handler (
-			stats_route,
-			REQUEST_METHOD_HEAD,
-			http_cerver_admin_stats_head_handler
-		);
-	}
-
-	if (http_cerver->enable_admin_options_handlers) {
-		http_route_set_handler (
-			stats_route,
-			REQUEST_METHOD_OPTIONS,
-			http_cerver_admin_options_handler
-		);
-	}
-
-	http_cerver_admin_route_set_auth (http_cerver, stats_route);
-
-	http_route_set_custom_data (stats_route, http_cerver->admin_routes_custom_data);
-
-	http_route_child_add (top_level_route, stats_route);
-
-}
-
-static void http_cerver_admin_set_file_systems_route (
-	const HttpCerver *http_cerver, HttpRoute *top_level_route
-) {
-
-	// GET [top level]/cerver/stats/filesystems
-	HttpRoute *file_systems_route = http_route_create (
-		REQUEST_METHOD_GET,
-		"cerver/stats/filesystems",
-		http_cerver_admin_file_systems_handler
-	);
-
-	if (http_cerver->enable_admin_head_handlers) {
-		http_route_set_handler (
-			file_systems_route,
-			REQUEST_METHOD_HEAD,
-			http_cerver_admin_file_systems_head_handler
-		);
-	}
-
-	if (http_cerver->enable_admin_options_handlers) {
-		http_route_set_handler (
-			file_systems_route,
-			REQUEST_METHOD_OPTIONS,
-			http_cerver_admin_options_handler
-		);
-	}
-
-	http_cerver_admin_route_set_auth (http_cerver, file_systems_route);
-
-	http_route_set_custom_data (file_systems_route, http_cerver->admin_routes_custom_data);
-
-	http_route_child_add (top_level_route, file_systems_route);
-
-}
-
-static void http_cerver_admin_set_workers_route (
-	const HttpCerver *http_cerver, HttpRoute *top_level_route
-) {
-
-	// GET [top level]/cerver/stats/workers
-	HttpRoute *workers_route = http_route_create (
-		REQUEST_METHOD_GET,
-		"cerver/stats/workers",
-		http_cerver_admin_workers_handler
-	);
-
-	if (http_cerver->enable_admin_head_handlers) {
-		http_route_set_handler (
-			workers_route,
-			REQUEST_METHOD_HEAD,
-			http_cerver_admin_workers_head_handler
-		);
-	}
-
-	if (http_cerver->enable_admin_options_handlers) {
-		http_route_set_handler (
-			workers_route,
-			REQUEST_METHOD_OPTIONS,
-			http_cerver_admin_options_handler
-		);
-	}
-
-	http_cerver_admin_route_set_auth (http_cerver, workers_route);
-
-	http_route_set_custom_data (workers_route, http_cerver->admin_routes_custom_data);
-
-	http_route_child_add (top_level_route, workers_route);
-
-}
-
-static void http_cerver_admin_set_metrics_route (
-	const HttpCerver *http_cerver, HttpRoute *top_level_route
-) {
-
-	// GET [top level]/cerver/metrics
-	HttpRoute *metrics_route = http_route_create (
-		REQUEST_METHOD_GET, "cerver/metrics", http_cerver_admin_metrics_handler
-	);
-
-	if (http_cerver->enable_admin_head_handlers) {
-		http_route_set_handler (
-			metrics_route,
-			REQUEST_METHOD_HEAD,
-			http_cerver_admin_metrics_handler
-		);
-	}
-
-	if (http_cerver->enable_admin_options_handlers) {
-		http_route_set_handler (
-			metrics_route,
-			REQUEST_METHOD_OPTIONS,
-			http_cerver_admin_options_handler
-		);
-	}
-
-	http_cerver_admin_route_set_auth (http_cerver, metrics_route);
-
-	http_route_set_custom_data (metrics_route, http_cerver->admin_routes_custom_data);
-
-	http_route_child_add (top_level_route, metrics_route);
-
-}
-
-u8 http_cerver_admin_init (
-	const HttpCerver *http_cerver,
-	HttpRoute *top_level_route
-) {
-
-	u8 retval = 1;
-
-	if (top_level_route) {
-		// GET [top level]/cerver/info
-		if (http_cerver->enable_admin_info_route) {
-			http_cerver_admin_set_info_route (
-				http_cerver, top_level_route
-			);
-		}
-
-		// GET [top level]/cerver/stats
-		http_cerver_admin_set_stats_route (
-			http_cerver, top_level_route
-		);
-
-		// GET [top level]/cerver/stats/filesystems
-		http_cerver_admin_set_file_systems_route (
-			http_cerver, top_level_route
-		);
-
-		// GET [top level]/cerver/stats/workers
-		http_cerver_admin_set_workers_route (
-			http_cerver, top_level_route
-		);
-
-		// GET [top level]/cerver/metrics
-		http_cerver_admin_set_metrics_route (
-			http_cerver, top_level_route
-		);
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-// the same auth of the admin routes of the first routes API,
 // without its own auth an admin endpoint would inherit the one of its group
-static void http_cerver_admin_endpoint_set_auth (
+static void cerver_http_admin_endpoint_set_auth (
 	const HttpCerver *http_cerver, HttpEndpoint *endpoint
 ) {
 
 	if (http_cerver->enable_admin_routes_auth) {
 		switch (http_cerver->admin_auth_type) {
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
-				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
-				http_endpoint_set_decode_data (
+				cerver_http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
+				cerver_http_endpoint_set_decode_data (
 					endpoint,
 					http_cerver->admin_decode_data,
 					http_cerver->admin_delete_decoded_data
@@ -1370,66 +980,66 @@ static void http_cerver_admin_endpoint_set_auth (
 			} break;
 
 			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
-				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-				http_endpoint_set_authentication_handler (
+				cerver_http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+				cerver_http_endpoint_set_authentication_handler (
 					endpoint, http_cerver->admin_auth_handler
 				);
 			} break;
 
 			default: {
-				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
+				cerver_http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
 			} break;
 		}
 	}
 
 	else {
-		http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
+		cerver_http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
 	}
 
 	// the cerver owns the admin custom data
-	http_endpoint_set_custom_data (
+	cerver_http_endpoint_set_custom_data (
 		endpoint, http_cerver->admin_routes_custom_data, NULL
 	);
 
 }
 
-static void http_cerver_admin_group_endpoint (
+static void cerver_http_admin_group_endpoint (
 	const HttpCerver *http_cerver, HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const CerverHttpMethod method, const char *path, const HttpHandler handler
 ) {
 
-	HttpEndpoint *endpoint = http_group_route_add (group, method, path, handler);
+	HttpEndpoint *endpoint = cerver_http_group_route_add (group, method, path, handler);
 	if (endpoint) {
-		http_cerver_admin_endpoint_set_auth (http_cerver, endpoint);
+		cerver_http_admin_endpoint_set_auth (http_cerver, endpoint);
 	}
 
 }
 
 // the GET endpoint of the path, with its HEAD and OPTIONS if they are enabled
-static void http_cerver_admin_group_route (
+static void cerver_http_admin_group_route (
 	const HttpCerver *http_cerver, HttpGroup *group, const char *path,
 	const HttpHandler handler, const HttpHandler head_handler
 ) {
 
-	http_cerver_admin_group_endpoint (
+	cerver_http_admin_group_endpoint (
 		http_cerver, group, REQUEST_METHOD_GET, path, handler
 	);
 
 	if (http_cerver->enable_admin_head_handlers) {
-		http_cerver_admin_group_endpoint (
+		cerver_http_admin_group_endpoint (
 			http_cerver, group, REQUEST_METHOD_HEAD, path, head_handler
 		);
 	}
 
 	if (http_cerver->enable_admin_options_handlers) {
-		http_cerver_admin_group_endpoint (
-			http_cerver, group, REQUEST_METHOD_OPTIONS, path, http_cerver_admin_options_handler
+		cerver_http_admin_group_endpoint (
+			http_cerver, group, REQUEST_METHOD_OPTIONS, path, cerver_http_admin_options_handler
 		);
 	}
 
 }
 
-u8 http_cerver_admin_group_init (
+u8 cerver_http_admin_group_init (
 	const HttpCerver *http_cerver,
 	HttpGroup *group
 ) {
@@ -1439,34 +1049,34 @@ u8 http_cerver_admin_group_init (
 	if (group) {
 		// GET [group]/cerver/info
 		if (http_cerver->enable_admin_info_route) {
-			http_cerver_admin_group_route (
+			cerver_http_admin_group_route (
 				http_cerver, group, "cerver/info",
-				http_cerver_admin_info_handler, http_cerver_admin_info_head_handler
+				cerver_http_admin_info_handler, cerver_http_admin_info_head_handler
 			);
 		}
 
 		// GET [group]/cerver/stats
-		http_cerver_admin_group_route (
+		cerver_http_admin_group_route (
 			http_cerver, group, "cerver/stats",
-			http_cerver_admin_stats_handler, http_cerver_admin_stats_head_handler
+			cerver_http_admin_stats_handler, cerver_http_admin_stats_head_handler
 		);
 
 		// GET [group]/cerver/stats/filesystems
-		http_cerver_admin_group_route (
+		cerver_http_admin_group_route (
 			http_cerver, group, "cerver/stats/filesystems",
-			http_cerver_admin_file_systems_handler, http_cerver_admin_file_systems_head_handler
+			cerver_http_admin_file_systems_handler, cerver_http_admin_file_systems_head_handler
 		);
 
 		// GET [group]/cerver/stats/workers
-		http_cerver_admin_group_route (
+		cerver_http_admin_group_route (
 			http_cerver, group, "cerver/stats/workers",
-			http_cerver_admin_workers_handler, http_cerver_admin_workers_head_handler
+			cerver_http_admin_workers_handler, cerver_http_admin_workers_head_handler
 		);
 
 		// GET [group]/cerver/metrics, a HEAD is answered without the body by the same handler
-		http_cerver_admin_group_route (
+		cerver_http_admin_group_route (
 			http_cerver, group, "cerver/metrics",
-			http_cerver_admin_metrics_handler, http_cerver_admin_metrics_handler
+			cerver_http_admin_metrics_handler, cerver_http_admin_metrics_handler
 		);
 
 		retval = 0;
@@ -1480,8 +1090,8 @@ u8 http_cerver_admin_group_init (
 
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN
-void http_cerver_enable_admin_routes (
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN
+void cerver_http_enable_admin_routes (
 	HttpCerver *http_cerver, const bool enable
 ) {
 
@@ -1491,10 +1101,23 @@ void http_cerver_enable_admin_routes (
 
 }
 
+// sets the path of the group of the admin routes, NULL for the default one
+void cerver_http_admin_set_path (
+	HttpCerver *http_cerver, const char *path
+) {
+
+	if (http_cerver) {
+		str_delete (http_cerver->admin_path);
+
+		http_cerver->admin_path = path ? str_new (path) : NULL;
+	}
+
+}
+
 // enables the ability to have an admin info route
 // to fetch cerver's information
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO
-void http_cerver_enable_admin_info_route (
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN_INFO
+void cerver_http_enable_admin_info_route (
 	HttpCerver *http_cerver, const bool enable
 ) {
 
@@ -1505,8 +1128,8 @@ void http_cerver_enable_admin_info_route (
 }
 
 // enables HTTP admin routes to handle HEAD requests
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS
-void http_cerver_enable_admin_head_handlers (
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN_HEADS
+void cerver_http_enable_admin_head_handlers (
 	HttpCerver *http_cerver, const bool enable
 ) {
 
@@ -1517,8 +1140,8 @@ void http_cerver_enable_admin_head_handlers (
 }
 
 // enables HTTP admin routes to handle OPTIONS requests
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS
-void http_cerver_enable_admin_options_handlers (
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN_OPTIONS
+void cerver_http_enable_admin_options_handlers (
 	HttpCerver *http_cerver, const bool enable
 ) {
 
@@ -1529,9 +1152,9 @@ void http_cerver_enable_admin_options_handlers (
 }
 
 // enables authentication in admin routes
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH
-void http_cerver_enable_admin_routes_authentication (
-	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN_AUTH
+void cerver_http_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const CerverHttpRouteAuthType auth_type
 ) {
 
 	if (http_cerver) {
@@ -1544,7 +1167,7 @@ void http_cerver_enable_admin_routes_authentication (
 // sets the method to be used to decode incoming data from JWT
 // and sets a method to delete it after use
 // if no delete method is set, data won't be freed
-void http_cerver_admin_routes_auth_set_decode_data (
+void cerver_http_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
 	HttpDecodeData decode_data, void (*delete_decoded_data)(void *)
 ) {
@@ -1556,9 +1179,9 @@ void http_cerver_admin_routes_auth_set_decode_data (
 
 }
 
-// works like http_cerver_enable_admin_routes_authentication ()
+// works like cerver_http_enable_admin_routes_authentication ()
 // but sets a method to decode data from a JWT into a json string
-void http_cerver_admin_routes_auth_decode_to_json (
+void cerver_http_admin_routes_auth_decode_to_json (
 	HttpCerver *http_cerver
 ) {
 
@@ -1572,12 +1195,9 @@ void http_cerver_admin_routes_auth_decode_to_json (
 // sets a method to be used to handle auth in admin routes
 // HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
 // method must return 0 on success and 1 on error
-void http_cerver_admin_routes_set_authentication_handler (
+void cerver_http_admin_routes_set_authentication_handler (
 	HttpCerver *http_cerver,
-	unsigned int (*authentication_handler)(
-		const HttpReceive *http_receive,
-		const HttpRequest *request
-	)
+	CerverHttpAuthenticationHandler authentication_handler
 ) {
 
 	if (http_cerver) {
@@ -1587,7 +1207,7 @@ void http_cerver_admin_routes_set_authentication_handler (
 }
 
 // sets a custom data reference to be set in all admin routes
-void http_cerver_admin_routes_set_custom_data (
+void cerver_http_admin_routes_set_custom_data (
 	HttpCerver *http_cerver, void *custom_data
 ) {
 
@@ -1598,7 +1218,7 @@ void http_cerver_admin_routes_set_custom_data (
 }
 
 // sets how the custom data will be disposed when the service gets destroyed
-void http_cerver_admin_routes_set_delete_custom_data (
+void cerver_http_admin_routes_set_delete_custom_data (
 	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
 ) {
 
@@ -1612,8 +1232,8 @@ void http_cerver_admin_routes_set_delete_custom_data (
 // always uses admin origin's value
 // if there is no dedicated origin, it will dynamically
 // set the header based on the origins whitelist
-// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS
-void http_cerver_enable_admin_cors_headers (
+// the initial value is CERVER_HTTP_DEFAULT_ENABLE_ADMIN_CORS
+void cerver_http_enable_admin_cors_headers (
 	HttpCerver *http_cerver, const bool enable
 ) {
 
@@ -1625,12 +1245,12 @@ void http_cerver_enable_admin_cors_headers (
 
 // sets the dedicated domain that will be walways set
 // in the admin responses CORS headers
-void http_cerver_admin_set_origin (
+void cerver_http_admin_set_origin (
 	HttpCerver *http_cerver, const char *domain
 ) {
 
 	if (http_cerver) {
-		http_origin_init (
+		cerver_http_origin_init (
 			&http_cerver->admin_origin,
 			domain
 		);
@@ -1640,7 +1260,7 @@ void http_cerver_admin_set_origin (
 
 // registers a new file system to be handled
 // when requesting for fs stats, a NULL path is not registered
-void http_cerver_register_admin_file_system (
+void cerver_http_register_admin_file_system (
 	HttpCerver *http_cerver, const char *path
 ) {
 
@@ -1655,7 +1275,7 @@ void http_cerver_register_admin_file_system (
 
 // registers an existing worker to be handled
 // when requisting for workers states
-void http_cerver_register_admin_worker (
+void cerver_http_register_admin_worker (
 	HttpCerver *http_cerver, const Worker *worker
 ) {
 
