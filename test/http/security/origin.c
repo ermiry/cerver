@@ -9,9 +9,9 @@
 static const char *domain_1 = { "https://ermiry.com" };
 static const char *domain_2 = { "https://cerver.ermiry.com" };
 
-static HttpOrigin *test_http_origin_new (void) {
+static HttpOrigin *test_cerver_http_origin_new (void) {
 
-	HttpOrigin *origin = http_origin_new ();
+	HttpOrigin *origin = cerver_http_origin_new ();
 
 	test_check_ptr (origin);
 
@@ -22,51 +22,51 @@ static HttpOrigin *test_http_origin_new (void) {
 
 }
 
-static void test_http_origin_init (void) {
+static void test_cerver_http_origin_init (void) {
 
-	HttpOrigin *origin_1 = test_http_origin_new ();
+	HttpOrigin *origin_1 = test_cerver_http_origin_new ();
 
-	http_origin_init (origin_1, domain_1);
+	cerver_http_origin_init (origin_1, domain_1);
 
 	test_check_ptr (origin_1);
-	test_check_str_eq (http_origin_get_value (origin_1), domain_1, NULL);
-	test_check_str_len (http_origin_get_value (origin_1), strlen (domain_1), NULL);
-	test_check_int_eq (http_origin_get_len (origin_1), (int) strlen (domain_1), NULL);
+	test_check_str_eq (cerver_http_origin_get_value (origin_1), domain_1, NULL);
+	test_check_str_len (cerver_http_origin_get_value (origin_1), strlen (domain_1), NULL);
+	test_check_int_eq (cerver_http_origin_get_len (origin_1), (int) strlen (domain_1), NULL);
 
-	http_origin_delete (origin_1);
+	cerver_http_origin_delete (origin_1);
 
-	HttpOrigin *origin_2 = test_http_origin_new ();
+	HttpOrigin *origin_2 = test_cerver_http_origin_new ();
 
-	http_origin_init (origin_2, domain_2);
+	cerver_http_origin_init (origin_2, domain_2);
 
 	test_check_ptr (origin_2);
-	test_check_str_eq (http_origin_get_value (origin_2), domain_2, NULL);
-	test_check_str_len (http_origin_get_value (origin_2), strlen (domain_2), NULL);
-	test_check_int_eq (http_origin_get_len (origin_2), (int) strlen (domain_2), NULL);
+	test_check_str_eq (cerver_http_origin_get_value (origin_2), domain_2, NULL);
+	test_check_str_len (cerver_http_origin_get_value (origin_2), strlen (domain_2), NULL);
+	test_check_int_eq (cerver_http_origin_get_len (origin_2), (int) strlen (domain_2), NULL);
 
-	http_origin_delete (origin_2);
+	cerver_http_origin_delete (origin_2);
 
 }
 
-static void test_http_origin_reset (void) {
+static void test_cerver_http_origin_reset (void) {
 
-	HttpOrigin *origin_1 = test_http_origin_new ();
+	HttpOrigin *origin_1 = test_cerver_http_origin_new ();
 
-	http_origin_init (origin_1, domain_1);
+	cerver_http_origin_init (origin_1, domain_1);
 
 	test_check_ptr (origin_1);
-	test_check_str_eq (http_origin_get_value (origin_1), domain_1, NULL);
-	test_check_str_len (http_origin_get_value (origin_1), strlen (domain_1), NULL);
-	test_check_int_eq (http_origin_get_len (origin_1), (int) strlen (domain_1), NULL);
+	test_check_str_eq (cerver_http_origin_get_value (origin_1), domain_1, NULL);
+	test_check_str_len (cerver_http_origin_get_value (origin_1), strlen (domain_1), NULL);
+	test_check_int_eq (cerver_http_origin_get_len (origin_1), (int) strlen (domain_1), NULL);
 
-	http_origin_reset (origin_1);
+	cerver_http_origin_reset (origin_1);
 
 	test_check_ptr (origin_1);
 
 	test_check_int_eq (origin_1->len, 0, NULL);
 	test_check_str_len (origin_1->value, 0, NULL);
 
-	http_origin_delete (origin_1);
+	cerver_http_origin_delete (origin_1);
 
 }
 
@@ -79,7 +79,7 @@ typedef struct TestOriginGuard {
 } TestOriginGuard;
 
 // a value that does not fit is truncated and ends inside the origin
-static void test_http_origin_init_truncated (void) {
+static void test_cerver_http_origin_init_truncated (void) {
 
 	char long_value[HTTP_ORIGIN_VALUE_SIZE * 2] = { 0 };
 	(void) memset (long_value, 'a', sizeof (long_value) - 1);
@@ -88,10 +88,10 @@ static void test_http_origin_init_truncated (void) {
 	(void) memset (&guard, 'x', sizeof (TestOriginGuard));
 	guard.after[HTTP_ORIGIN_VALUE_SIZE - 1] = '\0';
 
-	http_origin_init (&guard.origin, long_value);
+	cerver_http_origin_init (&guard.origin, long_value);
 
 	test_check_int_eq (
-		http_origin_get_len (&guard.origin), HTTP_ORIGIN_VALUE_SIZE - 1,
+		cerver_http_origin_get_len (&guard.origin), HTTP_ORIGIN_VALUE_SIZE - 1,
 		"a truncated origin does not end inside its value"
 	);
 
@@ -101,9 +101,9 @@ void http_tests_origins (void) {
 
 	(void) printf ("Testing HTTP origins...\n");
 
-	test_http_origin_init ();
-	test_http_origin_init_truncated ();
-	test_http_origin_reset ();
+	test_cerver_http_origin_init ();
+	test_cerver_http_origin_init_truncated ();
+	test_cerver_http_origin_reset ();
 
 	(void) printf ("Done!\n");
 

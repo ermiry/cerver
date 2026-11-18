@@ -7,6 +7,7 @@
 #include <cerver/core/end.h>
 
 #include <cerver/http/core/http.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/security/auth.h>
 
 #include <cerver/jwt/jwt.h>
@@ -36,23 +37,23 @@ void http_tests_jwt_decode (void) {
 	test_check_ptr (test_cerver->cerver_data);
 	HttpCerver *http_cerver = (HttpCerver *) test_cerver->cerver_data;
 
-	http_cerver_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
+	cerver_http_auth_set_jwt_algorithm (http_cerver, CERVER_JWT_ALGORITHM_RS256);
 	test_check_int_eq (http_cerver->jwt_alg, CERVER_JWT_ALGORITHM_RS256, NULL);
 
-	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	cerver_http_auth_set_jwt_priv_key_filename (http_cerver, private_key);
 	test_check_ptr (http_cerver->jwt_opt_key_name);
 	test_check_str_eq (http_cerver->jwt_opt_key_name->str, private_key, NULL);
 
-	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+	cerver_http_auth_set_jwt_pub_key_filename (http_cerver, public_key);
 	test_check_ptr (http_cerver->jwt_opt_pub_key_name);
 	test_check_str_eq (http_cerver->jwt_opt_pub_key_name->str, public_key, NULL);
 
-	http_cerver_init (http_cerver);
+	cerver_http_init (http_cerver);
 
 	/*** test ***/
 	User *decoded_user = NULL;
 
-	bool result = http_cerver_auth_validate_jwt (
+	bool result = cerver_http_auth_validate_jwt (
 		http_cerver,
 		bearer_token,
 		user_parse_from_json,
