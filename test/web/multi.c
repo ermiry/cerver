@@ -190,6 +190,7 @@ int main (void) {
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
 		cerver_set_handler_type (web_cerver, test_handler_type ());
+		cerver_set_events_backend (web_cerver, test_events_backend ());
 		cerver_set_io_threads (web_cerver, test_io_threads ());
 
 		cerver_set_reusable_address_flags (web_cerver, true);

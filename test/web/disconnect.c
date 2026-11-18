@@ -302,6 +302,7 @@ static void disconnect_configure (Cerver *cerver) {
 	(void) cerver_set_bind_address (cerver, test_address ());
 	cerver_set_thpool_n_threads (cerver, DISCONNECT_THREADS);
 	cerver_set_handler_type (cerver, test_handler_type ());
+	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	cerver_set_send_timeout (cerver, DISCONNECT_SEND_TIMEOUT);
