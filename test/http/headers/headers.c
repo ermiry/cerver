@@ -50,135 +50,135 @@ static const char *content_length_header = { "Content-Length: 128\r\n" };
 
 static void test_http_headers_get_string (void) {
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT), HEADER_ACCEPT, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_CHARSET), HEADER_ACCEPT_CHARSET, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_ENCODING), HEADER_ACCEPT_ENCODING, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT_LANGUAGE), HEADER_ACCEPT_LANGUAGE, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ACCEPT), HEADER_ACCEPT, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_CHARSET), HEADER_ACCEPT_CHARSET, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_ENCODING), HEADER_ACCEPT_ENCODING, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_LANGUAGE), HEADER_ACCEPT_LANGUAGE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_AUTHORIZATION), HEADER_AUTHORIZATION, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_AUTHORIZATION), HEADER_AUTHORIZATION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CACHE_CONTROL), HEADER_CACHE_CONTROL, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_CACHE_CONTROL), HEADER_CACHE_CONTROL, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONNECTION), HEADER_CONNECTION, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_CONNECTION), HEADER_CONNECTION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONTENT_LENGTH), HEADER_CONTENT_LENGTH, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_CONTENT_TYPE), HEADER_CONTENT_TYPE, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_CONTENT_LENGTH), HEADER_CONTENT_LENGTH, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_CONTENT_TYPE), HEADER_CONTENT_TYPE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_COOKIE), HEADER_COOKIE, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_COOKIE), HEADER_COOKIE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_DATE), HEADER_DATE, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_DATE), HEADER_DATE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_EXPECT), HEADER_EXPECT, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_EXPECT), HEADER_EXPECT, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_HOST), HEADER_HOST, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_HOST), HEADER_HOST, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_ORIGIN), HEADER_ORIGIN, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_ORIGIN), HEADER_ORIGIN, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_PROXY_AUTHORIZATION), HEADER_PROXY_AUTHORIZATION, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_PROXY_AUTHORIZATION), HEADER_PROXY_AUTHORIZATION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UPGRADE), HEADER_UPGRADE, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_UPGRADE), HEADER_UPGRADE, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_USER_AGENT), HEADER_USER_AGENT, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_USER_AGENT), HEADER_USER_AGENT, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY), HEADER_WEB_SOCKET_KEY, NULL);
-	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_KEY), HEADER_WEB_SOCKET_KEY, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 1024), HEADER_OTHER, NULL);
 
 }
 
 static void test_http_headers_get_type_by_string (void) {
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT), HTTP_HEADER_ACCEPT, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_CHARSET), HTTP_HEADER_ACCEPT_CHARSET, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_ENCODING), HTTP_HEADER_ACCEPT_ENCODING, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCEPT_LANGUAGE), HTTP_HEADER_ACCEPT_LANGUAGE, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ACCEPT), HTTP_HEADER_ACCEPT, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ACCEPT_CHARSET), HTTP_HEADER_ACCEPT_CHARSET, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ACCEPT_ENCODING), HTTP_HEADER_ACCEPT_ENCODING, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ACCEPT_LANGUAGE), HTTP_HEADER_ACCEPT_LANGUAGE, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ACCESS_CONTROL_REQUEST_HEADERS), HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_AUTHORIZATION), HTTP_HEADER_AUTHORIZATION, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_AUTHORIZATION), HTTP_HEADER_AUTHORIZATION, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_CACHE_CONTROL), HTTP_HEADER_CACHE_CONTROL, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_CACHE_CONTROL), HTTP_HEADER_CACHE_CONTROL, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONNECTION), HTTP_HEADER_CONNECTION, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_CONNECTION), HTTP_HEADER_CONNECTION, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONTENT_LENGTH), HTTP_HEADER_CONTENT_LENGTH, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_CONTENT_TYPE), HTTP_HEADER_CONTENT_TYPE, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_CONTENT_LENGTH), HTTP_HEADER_CONTENT_LENGTH, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_CONTENT_TYPE), HTTP_HEADER_CONTENT_TYPE, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_COOKIE), HTTP_HEADER_COOKIE, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_COOKIE), HTTP_HEADER_COOKIE, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_DATE), HTTP_HEADER_DATE, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_DATE), HTTP_HEADER_DATE, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_EXPECT), HTTP_HEADER_EXPECT, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_EXPECT), HTTP_HEADER_EXPECT, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_HOST), HTTP_HEADER_HOST, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_HOST), HTTP_HEADER_HOST, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_ORIGIN), HTTP_HEADER_ORIGIN, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_ORIGIN), HTTP_HEADER_ORIGIN, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_PROXY_AUTHORIZATION), HTTP_HEADER_PROXY_AUTHORIZATION, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_PROXY_AUTHORIZATION), HTTP_HEADER_PROXY_AUTHORIZATION, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_UPGRADE), HTTP_HEADER_UPGRADE, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_UPGRADE), HTTP_HEADER_UPGRADE, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_USER_AGENT), HTTP_HEADER_USER_AGENT, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_USER_AGENT), HTTP_HEADER_USER_AGENT, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_WEB_SOCKET_KEY), HTTP_HEADER_SEC_WEBSOCKET_KEY, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_WEB_SOCKET_VERSION), HTTP_HEADER_SEC_WEBSOCKET_VERSION, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_WEB_SOCKET_KEY), HTTP_HEADER_SEC_WEBSOCKET_KEY, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_WEB_SOCKET_VERSION), HTTP_HEADER_SEC_WEBSOCKET_VERSION, NULL);
 
-	test_check_unsigned_eq (http_header_type_with_string (HEADER_OTHER), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("hola"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("adios"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("erick"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (HEADER_OTHER), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("hola"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("adios"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("erick"), HTTP_HEADER_UNDEFINED, NULL);
 
 }
 
 static void test_http_header_type_by_string (void) {
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_CHARSET));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_ENCODING));
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_LANGUAGE));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ACCEPT));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_CHARSET));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_ENCODING));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ACCEPT_LANGUAGE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_AUTHORIZATION));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_AUTHORIZATION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CACHE_CONTROL));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_CACHE_CONTROL));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CONNECTION));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_CONNECTION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_LENGTH));
-	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_TYPE));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_CONTENT_LENGTH));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_CONTENT_TYPE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_COOKIE));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_COOKIE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_DATE));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_DATE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_EXPECT));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_EXPECT));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_HOST));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_HOST));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_ORIGIN));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_ORIGIN));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_PROXY_AUTHORIZATION));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_PROXY_AUTHORIZATION));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_UPGRADE));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_UPGRADE));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_USER_AGENT));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_USER_AGENT));
 
-	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
-	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
+	test_check_ptr (cerver_http_header_to_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (cerver_http_header_to_string ((const CerverHttpHeader) 1024), HEADER_OTHER, NULL);
 
 }
 
@@ -241,24 +241,24 @@ static void test_http_header_type_by_string_hash (void) {
 			char swapped[TEST_HEADERS_NAME_SIZE] = { 0 };										\
 			(void) snprintf (swapped, TEST_HEADERS_NAME_SIZE, "%s", #string);					\
 			test_http_headers_swap_case (swapped);												\
-			test_check_unsigned_eq (http_header_type_with_string (#string), HTTP_HEADER_##name, NULL);	\
-			test_check_unsigned_eq (http_header_type_with_string (swapped), HTTP_HEADER_##name, NULL);	\
+			test_check_unsigned_eq (cerver_http_header_with_string (#string), HTTP_HEADER_##name, NULL);	\
+			test_check_unsigned_eq (cerver_http_header_with_string (swapped), HTTP_HEADER_##name, NULL);	\
 		}
 	HTTP_HEADERS_MAP(XX)
 	#undef XX
 
 	// the new headers of the map
-	test_check_unsigned_eq (http_header_type_with_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("etag"), HTTP_HEADER_ETAG, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("x-real-ip"), HTTP_HEADER_REAL_IP, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("etag"), HTTP_HEADER_ETAG, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("x-real-ip"), HTTP_HEADER_REAL_IP, NULL);
 
 	// a prefix, a longer name or an unknown one is not a header of the map
-	test_check_unsigned_eq (http_header_type_with_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("Content-Types"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string ("X-Custom"), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (""), HTTP_HEADER_UNDEFINED, NULL);
-	test_check_unsigned_eq (http_header_type_with_string (NULL), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("Content-Types"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string ("X-Custom"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (""), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (cerver_http_header_with_string (NULL), HTTP_HEADER_UNDEFINED, NULL);
 
 }
 
@@ -296,7 +296,7 @@ static void list_check_lines (const HttpHeaders *headers, const char *expected) 
 
 static void list_check_field (
 	const HttpHeaders *headers, const HttpHeaderField *field,
-	const http_header type, const char *name, const char *value
+	const CerverHttpHeader type, const char *name, const char *value
 ) {
 
 	test_check_ptr (field);
@@ -576,7 +576,7 @@ static void test_http_headers_list_invalid (void) {
 	// the undefined header and the types out of the map are not headers
 	test_check_unsigned_eq (http_headers_add (&headers, HTTP_HEADER_UNDEFINED, "value", strlen ("value")), 1, NULL);
 	test_check_unsigned_eq (http_headers_set (&headers, HTTP_HEADER_UNDEFINED, "value", strlen ("value")), 1, NULL);
-	test_check_unsigned_eq (http_headers_add (&headers, (http_header) HTTP_HEADERS_SIZE, "value", strlen ("value")), 1, NULL);
+	test_check_unsigned_eq (http_headers_add (&headers, (CerverHttpHeader) HTTP_HEADERS_SIZE, "value", strlen ("value")), 1, NULL);
 	test_check_unsigned_eq (http_headers_count (&headers, HTTP_HEADER_UNDEFINED), 0, NULL);
 	test_check_null_ptr (http_headers_find (&headers, HTTP_HEADER_UNDEFINED, 0));
 
