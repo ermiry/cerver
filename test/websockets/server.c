@@ -14,13 +14,14 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/metrics.h>
 #include <cerver/http/core/settings.h>
+#include "cerver/http/core/types.h"
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
+#include "cerver/http/routes/internal.h"
 #include <cerver/http/routes/tree.h>
 #include <cerver/http/websockets/deflate.h>
 #include <cerver/http/websockets/frame.h>
@@ -106,8 +107,8 @@ static const char *server_test_pong_data = { "pong-data" };
 #define SERVER_TEST_DRAIN_TIMEOUT			1
 
 // the endpoints of the settings test, of the cerver that was started last
-static const HttpEndpoint *server_test_inherited = NULL;
-static const HttpEndpoint *server_test_own = NULL;
+static const CerverHttpEndpoint *server_test_inherited = NULL;
+static const CerverHttpEndpoint *server_test_own = NULL;
 
 static const char *server_test_protocols[] = { "chat.v2", "chat" };
 #define SERVER_TEST_N_PROTOCOLS				2
@@ -142,7 +143,7 @@ static ServerTestCounters counters;
 typedef struct ServerTest {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 	pthread_t thread;
 	u16 port;
 
@@ -370,12 +371,10 @@ static const HttpWebSocketHandlers server_test_stream_handlers = {
 };
 
 static bool server_test_header_is (
-	const HttpRequest *request, const char *name, const char *value
+	const CerverHttpContext *context, const char *name, const char *value
 ) {
 
-	const char *header = http_request_get_custom_header (request, name);
-
-	return header && !strcmp (header, value);
+	return cerver_http_view_equals (cerver_http_request_header_with_name (context, name), value);
 
 }
 
@@ -391,19 +390,18 @@ static void server_test_delete_data (void *data) {
 // the ways of rejecting an upgrade: with a status (409), with the default one (403),
 // with a response of its own (404) and after setting the data of the connection (403, the data is deleted)
 static void server_test_upgrade_reject (
-	const HttpReceive *http_receive, const HttpRequest *request,
-	HttpWebSocketUpgrade *upgrade
+	CerverHttpContext *context, HttpWebSocketUpgrade *upgrade
 ) {
 
-	if (server_test_header_is (request, "X-Reject", "yes")) {
+	if (server_test_header_is (context, "X-Reject", "yes")) {
 		upgrade->status = HTTP_STATUS_CONFLICT;
 	}
 
-	else if (server_test_header_is (request, "X-Reject", "answer")) {
-		(void) http_response_send (not_found_error, http_receive);
+	else if (server_test_header_is (context, "X-Reject", "answer")) {
+		(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_NOT_FOUND);
 	}
 
-	else if (server_test_header_is (request, "X-Reject", "data")) {
+	else if (server_test_header_is (context, "X-Reject", "data")) {
 		upgrade->data = strdup (server_test_upgrade_data);
 		upgrade->delete_data = server_test_delete_data;
 	}
@@ -412,12 +410,12 @@ static void server_test_upgrade_reject (
 
 // the protocol of an upgrade that is accepted: the last one of the server, none,
 // or one that the client did not offer, that is none too
-static const char *server_test_upgrade_protocol (const HttpRequest *request) {
+static const char *server_test_upgrade_protocol (const CerverHttpContext *context) {
 
 	const char *protocol = server_test_protocols[1];
 
-	if (server_test_header_is (request, "X-Protocol", "none")) protocol = NULL;
-	else if (server_test_header_is (request, "X-Protocol", "other")) protocol = server_test_other_protocol;
+	if (server_test_header_is (context, "X-Protocol", "none")) protocol = NULL;
+	else if (server_test_header_is (context, "X-Protocol", "other")) protocol = server_test_other_protocol;
 
 	return protocol;
 
@@ -425,18 +423,17 @@ static const char *server_test_upgrade_protocol (const HttpRequest *request) {
 
 // rejects the upgrades with X-Reject, the others get their data and the last protocol they offered
 static bool server_test_on_upgrade (
-	const HttpReceive *http_receive, const HttpRequest *request,
-	HttpWebSocketUpgrade *upgrade
+	CerverHttpContext *context, HttpWebSocketUpgrade *upgrade
 ) {
 
 	// the default status of a rejection
 	test_check_int_eq (upgrade->status, HTTP_STATUS_FORBIDDEN, NULL);
 
-	bool accepted = !http_request_get_custom_header (request, "X-Reject");
+	bool accepted = cerver_http_view_is_missing (cerver_http_request_header_with_name (context, "X-Reject"));
 	if (accepted) {
 		upgrade->data = strdup (server_test_upgrade_data);
 		upgrade->delete_data = free;
-		upgrade->protocol = server_test_upgrade_protocol (request);
+		upgrade->protocol = server_test_upgrade_protocol (context);
 
 		// the headers of the 101: a name can be repeated, the ones of the handshake are of cerver
 		test_check_unsigned_eq (http_web_socket_upgrade_add_header (upgrade, "Set-Cookie", "first=1; Path=/"), 0, NULL);
@@ -458,7 +455,7 @@ static bool server_test_on_upgrade (
 	}
 
 	else {
-		server_test_upgrade_reject (http_receive, request, upgrade);
+		server_test_upgrade_reject (context, upgrade);
 	}
 
 	return accepted;
@@ -467,13 +464,12 @@ static bool server_test_on_upgrade (
 
 // the connection takes the grants of its request when its upgrade asks for them
 static bool server_test_adopt_upgrade (
-	const HttpReceive *http_receive, const HttpRequest *request,
-	HttpWebSocketUpgrade *upgrade
+	CerverHttpContext *context, HttpWebSocketUpgrade *upgrade
 ) {
 
-	(void) http_receive;
-
-	upgrade->adopt_decoded_data = (http_request_get_custom_header (request, "X-Adopt") != NULL);
+	upgrade->adopt_decoded_data = !cerver_http_view_is_missing (
+		cerver_http_request_header_with_name (context, "X-Adopt")
+	);
 
 	return true;
 
@@ -525,15 +521,13 @@ static const HttpWebSocketHandlers server_test_control_handlers = {
 };
 
 // a before middleware that answers the upgrades with X-Stop, the connection never starts
-static HttpMiddlewareResult server_test_guard (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static CerverHttpMiddlewareResult server_test_guard (CerverHttpContext *context) {
 
-	HttpMiddlewareResult result = HTTP_MIDDLEWARE_RESULT_CONTINUE;
+	CerverHttpMiddlewareResult result = HTTP_MIDDLEWARE_RESULT_CONTINUE;
 
-	if (http_request_get_custom_header (request, "X-Stop")) {
-		(void) http_response_json_key_value_send (
-			http_receive, HTTP_STATUS_TOO_MANY_REQUESTS, "error", "stopped"
+	if (!cerver_http_view_is_missing (cerver_http_request_header_with_name (context, "X-Stop"))) {
+		(void) cerver_http_response_send_json_key_value (
+			context, HTTP_STATUS_TOO_MANY_REQUESTS, "error", "stopped"
 		);
 
 		result = HTTP_MIDDLEWARE_RESULT_STOP;
@@ -580,33 +574,24 @@ static const HttpWebSocketHandlers server_test_closer_handlers = {
 	NULL, NULL, server_test_on_close, server_test_on_error
 };
 
-static unsigned int server_test_authenticate (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int server_test_authenticate (CerverHttpContext *context) {
 
-	(void) http_receive;
-
-	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
-
-	const bool authorized = authorization && !strcmp (authorization->str, server_test_secret);
+	const bool authorized = cerver_http_view_equals (
+		cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION), server_test_secret
+	);
 
 	// the grants of the request, a connection can adopt them in its upgrade
 	if (authorized) {
-		http_request_set_decoded_data ((HttpRequest *) request, strdup (server_test_grants));
-		http_request_set_default_delete_decoded_data ((HttpRequest *) request);
+		cerver_http_request_set_decoded_data (context, strdup (server_test_grants), free);
 	}
 
 	return authorized ? 0 : 1;
 
 }
 
-static void server_test_plain_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void server_test_plain_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
@@ -616,9 +601,9 @@ static void server_test_plain_handler (
 
 // a group that sets every setting that a group has, a subgroup that changes three of them
 // and an endpoint of the subgroup that changes two more
-static void server_test_settings_routes (HttpGroup *ws) {
+static void server_test_settings_routes (CerverHttpGroup *ws) {
 
-	HttpGroup *settings = http_group_create (ws, "settings");
+	CerverHttpGroup *settings = cerver_http_group_subgroup_add (ws, "settings");
 	test_check_ptr (settings);
 
 	HttpWebSocketDeflateOptions options;
@@ -627,75 +612,75 @@ static void server_test_settings_routes (HttpGroup *ws) {
 	options.level = SERVER_TEST_SETTINGS_LEVEL;
 	options.min_size = SERVER_TEST_SETTINGS_MIN_SIZE;
 
-	http_group_set_web_socket_max_message (settings, SERVER_TEST_SMALL_MESSAGE);
-	test_check_unsigned_eq (http_group_set_web_socket_protocols (settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
-	http_group_set_web_socket_compression_options (settings, &options);
-	http_group_set_web_socket_origin_check (settings, true);
-	http_group_set_web_socket_ping_milliseconds (settings, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
-	http_group_set_web_socket_send_timeout_milliseconds (settings, SERVER_TEST_SEND_TIMEOUT);
+	cerver_http_group_set_web_socket_max_message (settings, SERVER_TEST_SMALL_MESSAGE);
+	test_check_unsigned_eq (cerver_http_group_set_web_socket_protocols (settings, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	cerver_http_group_set_web_socket_compression_options (settings, &options);
+	cerver_http_group_set_web_socket_origin_check (settings, true);
+	cerver_http_group_set_web_socket_ping_milliseconds (settings, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
+	cerver_http_group_set_web_socket_send_timeout_milliseconds (settings, SERVER_TEST_SEND_TIMEOUT);
 
-	server_test_inherited = http_group_web_socket_add (settings, "inherited", NULL);
+	server_test_inherited = cerver_http_group_web_socket_add (settings, "inherited", NULL);
 	test_check_ptr (server_test_inherited);
 
-	HttpGroup *inner = http_group_create (settings, "inner");
+	CerverHttpGroup *inner = cerver_http_group_subgroup_add (settings, "inner");
 	test_check_ptr (inner);
 
-	http_group_set_web_socket_max_message (inner, SERVER_TEST_SETTINGS_MESSAGE);
-	http_group_set_web_socket_origin_check (inner, false);
-	http_group_set_web_socket_compression (inner, false);
+	cerver_http_group_set_web_socket_max_message (inner, SERVER_TEST_SETTINGS_MESSAGE);
+	cerver_http_group_set_web_socket_origin_check (inner, false);
+	cerver_http_group_set_web_socket_compression (inner, false);
 
-	HttpEndpoint *own = http_group_web_socket_add (inner, "own", NULL);
+	CerverHttpEndpoint *own = cerver_http_group_web_socket_add (inner, "own", NULL);
 	test_check_ptr (own);
 
 	options.level = SERVER_TEST_SETTINGS_OWN_LEVEL;
-	http_endpoint_set_web_socket_compression_options (own, &options);
-	http_endpoint_set_web_socket_close_timeout_milliseconds (own, SERVER_TEST_SETTINGS_CLOSE_TIMEOUT);
+	cerver_http_endpoint_set_web_socket_compression_options (own, &options);
+	cerver_http_endpoint_set_web_socket_close_timeout_milliseconds (own, SERVER_TEST_SETTINGS_CLOSE_TIMEOUT);
 
 	server_test_own = own;
 
 	// the endpoint of the subgroup that sets nothing has the compression of its subgroup
-	test_check_ptr (http_group_web_socket_add (inner, "plain", NULL));
+	test_check_ptr (cerver_http_group_web_socket_add (inner, "plain", NULL));
 
 }
 
-static void server_test_routes (HttpCerver *http_cerver) {
+static void server_test_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
+	CerverHttpGroup *ws = cerver_http_group_create (http_cerver, "ws");
 	test_check_ptr (ws);
 
 	// the endpoints without their own handlers take the ones of the group
-	http_group_set_web_socket (ws, &server_test_echo_handlers);
+	cerver_http_group_set_web_socket (ws, &server_test_echo_handlers);
 
-	test_check_ptr (http_group_web_socket_add (ws, "echo", NULL));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "echo", NULL));
 
-	HttpEndpoint *plain = http_group_get (ws, "plain", server_test_plain_handler);
-	http_endpoint_set_web_socket (plain, &server_test_echo_handlers);
+	CerverHttpEndpoint *plain = cerver_http_group_get (ws, "plain", server_test_plain_handler);
+	cerver_http_endpoint_set_web_socket (plain, &server_test_echo_handlers);
 
-	HttpEndpoint *auth = http_group_web_socket_add (ws, "auth", NULL);
-	http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (auth, server_test_authenticate);
+	CerverHttpEndpoint *auth = cerver_http_group_web_socket_add (ws, "auth", NULL);
+	cerver_http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (auth, server_test_authenticate);
 
-	HttpEndpoint *origin = http_group_web_socket_add (ws, "origin", NULL);
-	http_endpoint_set_web_socket_origin_check (origin, true);
+	CerverHttpEndpoint *origin = cerver_http_group_web_socket_add (ws, "origin", NULL);
+	cerver_http_endpoint_set_web_socket_origin_check (origin, true);
 
-	HttpEndpoint *protocols = http_group_web_socket_add (ws, "protocols", NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (protocols, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	CerverHttpEndpoint *protocols = cerver_http_group_web_socket_add (ws, "protocols", NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (protocols, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
-	HttpEndpoint *upgrade = http_group_web_socket_add (ws, "upgrade", &server_test_upgrade_handlers);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	CerverHttpEndpoint *upgrade = cerver_http_group_web_socket_add (ws, "upgrade", &server_test_upgrade_handlers);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
-	HttpEndpoint *adopt = http_group_web_socket_add (ws, "adopt", &server_test_adopt_handlers);
-	http_endpoint_set_auth (adopt, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (adopt, server_test_authenticate);
+	CerverHttpEndpoint *adopt = cerver_http_group_web_socket_add (ws, "adopt", &server_test_adopt_handlers);
+	cerver_http_endpoint_set_auth (adopt, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (adopt, server_test_authenticate);
 
-	HttpEndpoint *guarded = http_group_web_socket_add (ws, "guarded", NULL);
-	test_check_unsigned_eq (http_endpoint_add_before (guarded, server_test_guard), 0, NULL);
+	CerverHttpEndpoint *guarded = cerver_http_group_web_socket_add (ws, "guarded", NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_add_before (guarded, server_test_guard), 0, NULL);
 
-	test_check_ptr (http_group_web_socket_add (ws, "control", &server_test_control_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "control", &server_test_control_handlers));
 
 	// its connections wait for the close of their peers longer than the drain of the cerver of its test
-	HttpEndpoint *patient = http_group_web_socket_add (ws, "patient", NULL);
-	http_endpoint_set_web_socket_close_timeout_milliseconds (patient, SERVER_TEST_PATIENT_CLOSE_TIMEOUT);
+	CerverHttpEndpoint *patient = cerver_http_group_web_socket_add (ws, "patient", NULL);
+	cerver_http_endpoint_set_web_socket_close_timeout_milliseconds (patient, SERVER_TEST_PATIENT_CLOSE_TIMEOUT);
 
 	server_test_settings_routes (ws);
 
@@ -706,30 +691,30 @@ static void server_test_routes (HttpCerver *http_cerver) {
 
 	static const char *spaced[] = { "chat", "not a token" };
 
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS + 1), 1, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, spaced, 2), 1, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS), 0, NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS + 1), 1, NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (upgrade, spaced, 2), 1, NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (upgrade, many, HTTP_WEB_SOCKET_MAX_PROTOCOLS), 0, NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (upgrade, server_test_protocols, SERVER_TEST_N_PROTOCOLS), 0, NULL);
 
-	HttpEndpoint *compressed = http_group_web_socket_add (ws, "compressed", NULL);
-	http_endpoint_set_web_socket_compression (compressed, true);
+	CerverHttpEndpoint *compressed = cerver_http_group_web_socket_add (ws, "compressed", NULL);
+	cerver_http_endpoint_set_web_socket_compression (compressed, true);
 
-	HttpEndpoint *small = http_group_web_socket_add (ws, "small", NULL);
-	http_endpoint_set_web_socket_max_message (small, SERVER_TEST_SMALL_MESSAGE);
+	CerverHttpEndpoint *small = cerver_http_group_web_socket_add (ws, "small", NULL);
+	cerver_http_endpoint_set_web_socket_max_message (small, SERVER_TEST_SMALL_MESSAGE);
 
-	HttpEndpoint *ping = http_group_web_socket_add (ws, "ping", NULL);
-	http_endpoint_set_web_socket_ping_milliseconds (ping, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
+	CerverHttpEndpoint *ping = cerver_http_group_web_socket_add (ws, "ping", NULL);
+	cerver_http_endpoint_set_web_socket_ping_milliseconds (ping, SERVER_TEST_PING_INTERVAL, SERVER_TEST_PONG_TIMEOUT);
 
-	HttpEndpoint *slow = http_group_web_socket_add (ws, "slow", NULL);
-	http_endpoint_set_web_socket_send_timeout_milliseconds (slow, SERVER_TEST_SEND_TIMEOUT);
+	CerverHttpEndpoint *slow = cerver_http_group_web_socket_add (ws, "slow", NULL);
+	cerver_http_endpoint_set_web_socket_send_timeout_milliseconds (slow, SERVER_TEST_SEND_TIMEOUT);
 
-	test_check_ptr (http_group_web_socket_add (ws, "stream", &server_test_stream_handlers));
-	test_check_ptr (http_group_web_socket_add (ws, "closer", &server_test_closer_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "stream", &server_test_stream_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "closer", &server_test_closer_handlers));
 
 	// every connection of the cerver waits this for the close frame of its peer
-	http_group_set_web_socket_close_timeout_milliseconds (ws, SERVER_TEST_CLOSE_TIMEOUT);
+	cerver_http_group_set_web_socket_close_timeout_milliseconds (ws, SERVER_TEST_CLOSE_TIMEOUT);
 
-	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, server_test_origin), 0, NULL);
+	test_check_unsigned_eq (cerver_http_add_origin_to_whitelist (http_cerver, server_test_origin), 0, NULL);
 
 }
 
@@ -756,14 +741,13 @@ static ServerTest *server_test_start (const unsigned int max_connections) {
 	Cerver *cerver = cerver_create_web ("websocket-test", server->port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, test_handler_type ());
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 	cerver_set_thpool_n_threads (cerver, SERVER_TEST_THREADS);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 	if (max_connections) http_cerver_set_web_socket_max_connections (http_cerver, max_connections);
 
 	server_test_routes (http_cerver);
@@ -1303,7 +1287,7 @@ static void test_server_concurrent_sends (void) {
 // the rooms and the broadcasts
 // the limits of the rooms of a connection that is in blue, and the closes that it can not send:
 // none of these branches had a test
-static void server_test_rooms_limits (HttpCerver *http_cerver, HttpWebSocket *web_socket) {
+static void server_test_rooms_limits (CerverHttp *http_cerver, HttpWebSocket *web_socket) {
 
 	// joining a room again changes nothing
 	test_check_true (http_web_socket_in_room (web_socket, "blue"));
@@ -1360,7 +1344,7 @@ static void server_test_rooms_limits (HttpCerver *http_cerver, HttpWebSocket *we
 static void test_server_rooms (void) {
 
 	ServerTest *server = server_test_start (0);
-	HttpCerver *http_cerver = server->http_cerver;
+	CerverHttp *http_cerver = server->http_cerver;
 
 	int fds[SERVER_TEST_ROOM_CLIENTS];
 	RawReader readers[SERVER_TEST_ROOM_CLIENTS];
@@ -1397,7 +1381,7 @@ static void test_server_rooms (void) {
 	HttpWebSocket *any = NULL;
 	http_cerver_web_socket_for_each (http_cerver, "blue", server_test_take, &any);
 	test_check_ptr (any);
-	const HttpEndpoint *endpoint = http_web_socket_get_endpoint (any);
+	const CerverHttpEndpoint *endpoint = http_web_socket_get_endpoint (any);
 
 	server_test_rooms_limits (http_cerver, any);
 
@@ -2243,7 +2227,7 @@ static void test_server_metrics (void) {
 	// the echo alone does not because with io_uring the cerver sends without a syscall that TSan sees
 	test_check_unsigned_eq (test_wait_counter (&counters.messages, 1, TEST_WAIT_SECONDS), 1, NULL);
 
-	String *metrics = http_cerver_metrics_generate (server->http_cerver);
+	String *metrics = cerver_http_metrics_generate (server->http_cerver);
 	test_check_ptr (metrics);
 	test_check (strstr (metrics->str, "cerver_websocket_connections 1\n") != NULL, "the connections are wrong");
 	test_check (strstr (metrics->str, "cerver_websocket_opened_total 1\n") != NULL, "the opened connections are wrong");
@@ -2263,7 +2247,7 @@ static void test_server_metrics (void) {
 
 	server_test_wait_sent_bytes (server, 32);
 
-	metrics = http_cerver_metrics_generate (server->http_cerver);
+	metrics = cerver_http_metrics_generate (server->http_cerver);
 	test_check (strstr (metrics->str, "cerver_websocket_messages_sent_total 2\n") != NULL, "the sent messages are wrong");
 	test_check (strstr (metrics->str, "cerver_websocket_sent_bytes_total 32\n") != NULL, "the sent bytes are wrong");
 	test_check (strstr (metrics->str, "cerver_websocket_received_bytes_total 13\n") != NULL, "the received bytes are wrong");
@@ -2298,7 +2282,7 @@ static void test_server_metrics (void) {
 	server_test_expect_close (&reader, 1000);
 	server_test_wait_closed (1);
 
-	metrics = http_cerver_metrics_generate (server->http_cerver);
+	metrics = cerver_http_metrics_generate (server->http_cerver);
 	test_check (strstr (metrics->str, "cerver_websocket_closes_total{code=\"1000\"} 1\n") != NULL, "the close was not counted");
 	test_check (strstr (metrics->str, "cerver_websocket_connections 0\n") != NULL, "the connection was not removed");
 	str_delete (metrics);
@@ -2318,7 +2302,7 @@ static void test_server_metrics (void) {
 
 	server_test_wait_sent_bytes (server, 35);
 
-	metrics = http_cerver_metrics_generate (server->http_cerver);
+	metrics = cerver_http_metrics_generate (server->http_cerver);
 	test_check (strstr (metrics->str, "cerver_websocket_messages_received_total 3\n") != NULL, "the fragmented message was not counted");
 	test_check (strstr (metrics->str, "cerver_websocket_received_bytes_total 21\n") != NULL, "the bytes of the fragments are wrong");
 	test_check (strstr (metrics->str, "cerver_websocket_sent_bytes_total 35\n") != NULL, "the bytes of the answer are wrong");

@@ -17,7 +17,7 @@
 #include <cerver/core/end.h>
 #include <cerver/core/start.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/routes/tree.h>
@@ -199,15 +199,11 @@ static const HttpWebSocketHandlers client_test_leaving_handlers = {
 	NULL, client_test_server_leave, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
-static unsigned int client_test_authenticate (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static unsigned int client_test_authenticate (CerverHttpContext *context) {
 
-	(void) http_receive;
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
-
-	return (authorization && !strcmp (authorization->str, client_test_secret)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, client_test_secret) ? 0 : 1;
 
 }
 
@@ -240,32 +236,31 @@ static ClientTestServer *client_test_server_start (const u16 port) {
 	Cerver *cerver = cerver_create_web ("websocket-client-test", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, test_handler_type ());
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_io_threads (cerver, test_io_threads ());
 	cerver_set_reusable_address_flags (cerver, true);
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 	cerver_set_thpool_n_threads (cerver, CLIENT_TEST_THREADS);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	HttpGroup *ws = http_cerver_group_create (http_cerver, "ws");
-	http_group_set_web_socket (ws, &client_test_server_handlers);
+	CerverHttpGroup *ws = cerver_http_group_create (http_cerver, "ws");
+	cerver_http_group_set_web_socket (ws, &client_test_server_handlers);
 
-	test_check_ptr (http_group_web_socket_add (ws, "echo", NULL));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "echo", NULL));
 
 	const char *protocols[] = { "chat.v2", "chat" };
-	HttpEndpoint *with_protocols = http_group_web_socket_add (ws, "protocols", NULL);
-	test_check_unsigned_eq (http_endpoint_set_web_socket_protocols (with_protocols, protocols, 2), 0, NULL);
+	CerverHttpEndpoint *with_protocols = cerver_http_group_web_socket_add (ws, "protocols", NULL);
+	test_check_unsigned_eq (cerver_http_endpoint_set_web_socket_protocols (with_protocols, protocols, 2), 0, NULL);
 
-	HttpEndpoint *auth = http_group_web_socket_add (ws, "auth", NULL);
-	http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (auth, client_test_authenticate);
+	CerverHttpEndpoint *auth = cerver_http_group_web_socket_add (ws, "auth", NULL);
+	cerver_http_endpoint_set_auth (auth, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (auth, client_test_authenticate);
 
-	HttpEndpoint *compressed = http_group_web_socket_add (ws, "compressed", NULL);
-	http_endpoint_set_web_socket_compression (compressed, true);
+	CerverHttpEndpoint *compressed = cerver_http_group_web_socket_add (ws, "compressed", NULL);
+	cerver_http_endpoint_set_web_socket_compression (compressed, true);
 
-	test_check_ptr (http_group_web_socket_add (ws, "leaving", &client_test_leaving_handlers));
+	test_check_ptr (cerver_http_group_web_socket_add (ws, "leaving", &client_test_leaving_handlers));
 
 	server->cerver = cerver;
 	test_check_int_eq (pthread_create (&server->thread, NULL, client_test_server_thread, server), 0, NULL);
@@ -788,7 +783,7 @@ static void test_client_concurrent (void) {
 // a stop in that moment does not know it, and it does not send it its 1001
 static void client_test_server_wait_connections (const ClientTestServer *server, const unsigned int expected) {
 
-	HttpCerver *http_cerver = (HttpCerver *) server->cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (server->cerver);
 
 	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
 	while ((http_cerver_web_socket_count (http_cerver, NULL) != expected) && (test_wait_now () < deadline)) {
