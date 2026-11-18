@@ -2,10 +2,13 @@ services:
   cerver:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
+    security_opt:
+      - seccomp=unconfined
     command: ["../bin/web/features"]
     environment:
       CERVER_TEST_ADDRESS: "::"
       CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
+      CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
@@ -13,11 +16,14 @@ services:
   cerver-2:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
+    security_opt:
+      - seccomp=unconfined
     command: ["../bin/web/features"]
     profiles: ["restart"]
     environment:
       CERVER_TEST_ADDRESS: "::"
       CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
+      CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
@@ -25,11 +31,14 @@ services:
   cerver-disconnect:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
+    security_opt:
+      - seccomp=unconfined
     command: ["../bin/web/disconnect"]
     restart: always
     environment:
       CERVER_TEST_ADDRESS: "::"
       CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
+      CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
@@ -37,12 +46,15 @@ services:
   cerver-disconnect-2:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
+    security_opt:
+      - seccomp=unconfined
     command: ["../bin/web/disconnect"]
     restart: always
     profiles: ["pair"]
     environment:
       CERVER_TEST_ADDRESS: "::"
       CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
+      CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
       CERVER_TEST_KEEP_ALIVE: ${CERVER_TEST_KEEP_ALIVE:-}
       DISCONNECT_CRASH: "1"
     sysctls:
@@ -51,10 +63,13 @@ services:
   cerver-websocket:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
+    security_opt:
+      - seccomp=unconfined
     command: ["../bin/web/websocket"]
     environment:
       CERVER_TEST_ADDRESS: "::"
       CERVER_TEST_HANDLER: ${CERVER_TEST_HANDLER:-threads}
+      CERVER_TEST_BACKEND: ${CERVER_TEST_BACKEND:-}
     sysctls:
       net.ipv6.conf.all.disable_ipv6: 0
 

@@ -6,7 +6,7 @@ BUILD=${BUILD:-1}
 
 NGINX_IMAGES=(${NGINX_IMAGES:-nginx:1.31.6-alpine nginx:1.30.6-alpine})
 CONFIGS=(${CONFIGS:-direct services pair restart})
-HANDLERS=(${HANDLERS:-threads events keep})
+HANDLERS=(${HANDLERS:-threads uring epoll keep})
 
 PROJECT=${PROJECT:-cerver-nginx}
 COMPOSE="$DOCKER compose -p $PROJECT -f test/nginx/docker-compose.yml"
@@ -192,7 +192,15 @@ nginx_config_profiles () {
 nginx_handler_type () {
 	case "$1" in
 		keep) echo "threads" ;;
+		uring|epoll) echo "events" ;;
 		*) echo "$1" ;;
+	esac
+}
+
+nginx_handler_backend () {
+	case "$1" in
+		uring|epoll) echo "$1" ;;
+		*) echo "" ;;
 	esac
 }
 
@@ -259,6 +267,7 @@ nginx_run () {
 
 	export IMAGE NGINX_IMAGE
 	export CERVER_TEST_HANDLER="$(nginx_handler_type "$HANDLER")"
+	export CERVER_TEST_BACKEND="$(nginx_handler_backend "$HANDLER")"
 	export CERVER_TEST_KEEP_ALIVE="$(nginx_handler_keep_alive "$HANDLER")"
 	export NGINX_CONF="$(nginx_config_file "$CONFIG")"
 	export COMPOSE_PROFILES="$(nginx_config_profiles "$CONFIG")"
