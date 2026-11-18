@@ -24,7 +24,7 @@
 #include <cerver/handler/events.h>
 #include <cerver/network/network.h>
 
-#include <cerver/http/core/handler.h>
+#include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
 #include <cerver/http/core/pool.h>
@@ -33,7 +33,6 @@
 #include <cerver/http/headers/types.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
-#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
 #include "../handler.h"
@@ -219,7 +218,7 @@ static bool loop_per_core = false;
 static unsigned int loop_handled = 0;
 
 // the endpoint GET /loop/count of the last cerver: its stats count the requests that ended
-static HttpEndpoint *loop_count_endpoint = NULL;
+static CerverHttpEndpoint *loop_count_endpoint = NULL;
 
 // the requests of the last cerver that its loops ended, added by their observer
 static unsigned int loop_observed = 0;
@@ -309,16 +308,12 @@ static void loop_authentication_thread_expect (const char *prefix) {
 }
 
 // answers with the name of the thread that handles the request
-static void loop_thread_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void loop_thread_handler (CerverHttpContext *context) {
 
 	char name[LOOP_THREAD_NAME_SIZE] = { 0 };
 	(void) pthread_getname_np (pthread_self (), name, LOOP_THREAD_NAME_SIZE);
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, name, strlen (name));
+	(void) cerver_http_response_send_text (context, name, strlen (name));
 
 }
 
@@ -333,11 +328,7 @@ static unsigned int loop_processors (void) {
 }
 
 // answers with the name of the thread that handles the request and the processors that it can run in
-static void loop_processors_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void loop_processors_handler (CerverHttpContext *context) {
 
 	char name[LOOP_THREAD_NAME_SIZE] = { 0 };
 	(void) pthread_getname_np (pthread_self (), name, LOOP_THREAD_NAME_SIZE);
@@ -345,28 +336,20 @@ static void loop_processors_handler (
 	char text[LOOP_BODY_SIZE] = { 0 };
 	const int length = snprintf (text, LOOP_BODY_SIZE, "%s %u", name, loop_processors ());
 
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, text, (size_t) length);
+	(void) cerver_http_response_send_text (context, text, (size_t) length);
 
 }
 
-static void loop_count_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void loop_count_handler (CerverHttpContext *context) {
 
 	test_counter_add (&loop_handled);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
 // answers when the gate is opened: only a test keeps a loop waiting
-static void loop_gate_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) request;
+static void loop_gate_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&loop_gate_mutex);
 	loop_gate_waiting += 1;
@@ -375,45 +358,33 @@ static void loop_gate_handler (
 
 	test_counter_add (&loop_handled);
 
-	(void) http_response_send (oki_doki, http_receive);
+	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
 
 }
 
-static void loop_big_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void loop_big_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_render_text (http_receive, HTTP_STATUS_OK, loop_big_body, LOOP_BIG_SIZE);
+	(void) cerver_http_response_send_text (context, loop_big_body, LOOP_BIG_SIZE);
 
 }
 
 // its headers are written as bytes and its body as a file, that the loop sends after them
-static void loop_file_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+static void loop_file_handler (CerverHttpContext *context) {
 
-	(void) request;
-
-	(void) http_response_send_file (http_receive, HTTP_STATUS_OK, loop_file_path);
+	(void) cerver_http_response_send_file (context, loop_file_path);
 
 }
 
 // only with the valid authorization, and tells which thread checked it
-static unsigned int loop_authentication_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
-
-	(void) http_receive;
+static unsigned int loop_authentication_handler (CerverHttpContext *context) {
 
 	(void) pthread_mutex_lock (&loop_threads_mutex);
 	(void) pthread_getname_np (pthread_self (), loop_authentication_thread, LOOP_THREAD_NAME_SIZE);
 	(void) pthread_mutex_unlock (&loop_threads_mutex);
 
-	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
 
-	return (authorization && !strcmp (authorization->str, loop_valid_authorization)) ? 0 : 1;
+	return cerver_http_view_equals (authorization, loop_valid_authorization) ? 0 : 1;
 
 }
 
@@ -421,58 +392,60 @@ static unsigned int loop_authentication_handler (
 // POST /loop/upload have a custom authentication); its group /loop/pool goes to the thpool of the cerver;
 // the group /explicit chooses the pool of the event loops;
 // the group /plain chooses no pool, and its endpoint /plain/chosen the one of the event loops;
-// GET /old, a route of the first routes API in the pool of the event loops
-static void loop_routes (HttpCerver *http_cerver) {
+// GET /old, the root endpoint of a top level group, in the pool of the event loops
+static void loop_routes (CerverHttp *http_cerver) {
 
-	HttpGroup *group = http_cerver_group_create (http_cerver, "loop");
+	CerverHttpGroup *group = cerver_http_group_create (http_cerver, "loop");
 	test_check_ptr (group);
 
-	test_check_ptr (http_group_get (group, "thread", loop_thread_handler));
+	test_check_ptr (cerver_http_group_get (group, "thread", loop_thread_handler));
 
-	loop_count_endpoint = http_group_get (group, "count", loop_count_handler);
+	loop_count_endpoint = cerver_http_group_get (group, "count", loop_count_handler);
 	test_check_ptr (loop_count_endpoint);
 
-	test_check_ptr (http_group_get (group, "gate", loop_gate_handler));
-	test_check_ptr (http_group_get (group, "big", loop_big_handler));
-	test_check_ptr (http_group_get (group, "file", loop_file_handler));
-	test_check_ptr (http_group_get (group, "processors", loop_processors_handler));
+	test_check_ptr (cerver_http_group_get (group, "gate", loop_gate_handler));
+	test_check_ptr (cerver_http_group_get (group, "big", loop_big_handler));
+	test_check_ptr (cerver_http_group_get (group, "file", loop_file_handler));
+	test_check_ptr (cerver_http_group_get (group, "processors", loop_processors_handler));
 
-	HttpEndpoint *private_endpoint = http_group_get (group, "private", loop_thread_handler);
+	CerverHttpEndpoint *private_endpoint = cerver_http_group_get (group, "private", loop_thread_handler);
 	test_check_ptr (private_endpoint);
-	http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (private_endpoint, loop_authentication_handler);
+	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (private_endpoint, loop_authentication_handler);
 
-	HttpEndpoint *upload_endpoint = http_group_post (group, "upload", loop_thread_handler);
+	CerverHttpEndpoint *upload_endpoint = cerver_http_group_post (group, "upload", loop_thread_handler);
 	test_check_ptr (upload_endpoint);
-	http_endpoint_set_auth (upload_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
-	http_endpoint_set_authentication_handler (upload_endpoint, loop_authentication_handler);
+	cerver_http_endpoint_set_auth (upload_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (upload_endpoint, loop_authentication_handler);
 
-	HttpGroup *pool = http_group_create (group, "pool");
+	CerverHttpGroup *pool = cerver_http_group_subgroup_add (group, "pool");
 	test_check_ptr (pool);
-	http_group_set_pool (pool, HTTP_POOL_DEFAULT_NAME);
+	cerver_http_group_set_pool (pool, HTTP_POOL_DEFAULT_NAME);
 
-	test_check_ptr (http_group_get (pool, "thread", loop_thread_handler));
-	test_check_ptr (http_group_get (pool, "gate", loop_gate_handler));
+	test_check_ptr (cerver_http_group_get (pool, "thread", loop_thread_handler));
+	test_check_ptr (cerver_http_group_get (pool, "gate", loop_gate_handler));
 
-	HttpGroup *explicit_group = http_cerver_group_create (http_cerver, "explicit");
+	CerverHttpGroup *explicit_group = cerver_http_group_create (http_cerver, "explicit");
 	test_check_ptr (explicit_group);
-	http_group_set_pool (explicit_group, HTTP_POOL_LOOP_NAME);
+	cerver_http_group_set_pool (explicit_group, HTTP_POOL_LOOP_NAME);
 
-	test_check_ptr (http_group_get (explicit_group, "thread", loop_thread_handler));
+	test_check_ptr (cerver_http_group_get (explicit_group, "thread", loop_thread_handler));
 
-	HttpGroup *plain = http_cerver_group_create (http_cerver, "plain");
+	CerverHttpGroup *plain = cerver_http_group_create (http_cerver, "plain");
 	test_check_ptr (plain);
 
-	test_check_ptr (http_group_get (plain, "thread", loop_thread_handler));
+	test_check_ptr (cerver_http_group_get (plain, "thread", loop_thread_handler));
 
-	HttpEndpoint *chosen = http_group_get (plain, "chosen", loop_thread_handler);
+	CerverHttpEndpoint *chosen = cerver_http_group_get (plain, "chosen", loop_thread_handler);
 	test_check_ptr (chosen);
-	http_endpoint_set_pool (chosen, HTTP_POOL_LOOP_NAME);
+	cerver_http_endpoint_set_pool (chosen, HTTP_POOL_LOOP_NAME);
 
-	HttpRoute *old_route = http_route_create (REQUEST_METHOD_GET, "old", loop_thread_handler);
-	test_check_ptr (old_route);
-	http_route_set_pool (old_route, HTTP_POOL_LOOP_NAME);
-	http_cerver_route_register (http_cerver, old_route);
+	CerverHttpGroup *old = cerver_http_group_create (http_cerver, "/old");
+	test_check_ptr (old);
+
+	CerverHttpEndpoint *old_endpoint = cerver_http_group_root_add (old, REQUEST_METHOD_GET, loop_thread_handler);
+	test_check_ptr (old_endpoint);
+	cerver_http_endpoint_set_pool (old_endpoint, HTTP_POOL_LOOP_NAME);
 
 }
 
@@ -483,7 +456,7 @@ static void loop_routes (HttpCerver *http_cerver) {
 typedef struct LoopServer {
 
 	Cerver *cerver;
-	HttpCerver *http_cerver;
+	CerverHttp *http_cerver;
 	u16 port;
 
 	pthread_t thread;
@@ -500,12 +473,11 @@ static void *loop_server_thread (void *server_ptr) {
 
 }
 
-static Cerver *loop_cerver_create (const CerverHandlerType handler_type) {
+static Cerver *loop_cerver_create (void) {
 
 	Cerver *cerver = cerver_create_web (loop_cerver_name, (u16) loop_port++, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, handler_type);
 	cerver_set_events_backend (cerver, test_events_backend ());
 	cerver_set_reusable_address_flags (cerver, true);
 
@@ -548,14 +520,15 @@ static void *loop_observer_set (void *event_data_ptr) {
 
 }
 
-// a cerver whose handlers run in its event loops when in_loop is true, in its thpool otherwise;
+// a cerver whose handlers run in its event loops when in_loop is true (it sets no pool: they are the default),
+// in its thpool otherwise;
 // the clients connect when it listens: no request is sent to wait for it, the tests count its sends
-static LoopServer *loop_server_start_with (const CerverHandlerType handler_type, const bool in_loop) {
+static LoopServer *loop_server_start (const bool in_loop) {
 
 	LoopServer *server = (LoopServer *) calloc (1, sizeof (LoopServer));
 	test_check_ptr (server);
 
-	Cerver *cerver = loop_cerver_create (handler_type);
+	Cerver *cerver = loop_cerver_create ();
 
 	__atomic_store_n (&loop_observed, 0, __ATOMIC_SEQ_CST);
 
@@ -563,12 +536,12 @@ static LoopServer *loop_server_start_with (const CerverHandlerType handler_type,
 		cerver_event_register (cerver, CERVER_EVENT_STARTED, loop_observer_set, NULL, NULL, false, false), 0, NULL
 	);
 
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	http_cerver_set_not_found_handler (http_cerver);
+	cerver_http_set_not_found_handler (http_cerver);
 
-	if (in_loop) {
-		test_check_unsigned_eq (http_cerver_set_handlers_pool (http_cerver, HTTP_POOL_LOOP_NAME), 0, NULL);
+	if (!in_loop) {
+		test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
 	}
 
 	server->cerver = cerver;
@@ -580,12 +553,6 @@ static LoopServer *loop_server_start_with (const CerverHandlerType handler_type,
 	test_check_int_eq (pthread_create (&server->thread, NULL, loop_server_thread, server), 0, NULL);
 
 	return server;
-
-}
-
-static LoopServer *loop_server_start (const bool in_loop) {
-
-	return loop_server_start_with (CERVER_HANDLER_TYPE_EVENTS, in_loop);
 
 }
 
@@ -704,7 +671,7 @@ static unsigned int loop_counted_requests (const LoopServer *server) {
 	(void) server;
 
 	HttpRouteStats snapshot;
-	http_route_stats_snapshot (loop_count_endpoint->stats, &snapshot);
+	cerver_http_route_stats_snapshot (loop_count_endpoint->stats, &snapshot);
 
 	return (unsigned int) snapshot.n_requests;
 
@@ -962,53 +929,56 @@ static size_t loop_pipeline_write (
 // and no pool can be created with its name
 static void test_loop_pool (void) {
 
-	Cerver *cerver = loop_cerver_create (CERVER_HANDLER_TYPE_EVENTS);
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	Cerver *cerver = loop_cerver_create ();
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	const HttpPool *pool = http_cerver_pool_get_with_name (http_cerver, HTTP_POOL_LOOP_NAME);
+	const HttpPool *pool = cerver_http_pool_get_with_name (http_cerver, HTTP_POOL_LOOP_NAME);
 	test_check_ptr (pool);
-	test_check_str_eq (http_pool_get_name (pool), HTTP_POOL_LOOP_NAME, NULL);
+	test_check_str_eq (cerver_http_pool_get_name (pool), HTTP_POOL_LOOP_NAME, NULL);
 	test_check_true (pool->in_loop);
 	test_check_null_ptr (pool->thpool);
 	test_check_unsigned_eq (pool->n_threads, 0, NULL);
 	test_check_ptr_eq (http_cerver->loop_pool, pool);
 
-	const HttpPool *default_pool = http_cerver_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
+	const HttpPool *default_pool = cerver_http_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
 	test_check_ptr (default_pool);
 	test_check_false (default_pool->in_loop);
 	test_check_unsigned_eq (http_cerver->n_pools, 1, NULL);
 
-	test_check_null_ptr (http_cerver_pool_create (http_cerver, HTTP_POOL_LOOP_NAME, LOOP_THREADS));
+	test_check_null_ptr (cerver_http_pool_create (http_cerver, HTTP_POOL_LOOP_NAME, LOOP_THREADS));
 	test_check_unsigned_eq (http_cerver->n_pools, 1, NULL);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
 }
 
-// the pool of the requests that chose none: any pool of the cerver, and none again
+// the pool of the requests that chose none: the event loops until the cerver sets any of its pools,
+// and the event loops again without a name
 static void test_loop_handlers_pool (void) {
 
-	Cerver *cerver = loop_cerver_create (CERVER_HANDLER_TYPE_EVENTS);
-	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+	Cerver *cerver = loop_cerver_create ();
+	CerverHttp *http_cerver = cerver_http_get (cerver);
 
-	test_check_null_ptr (http_cerver->handlers_pool);
+	HttpPool *default_pool = cerver_http_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME);
 
-	test_check_unsigned_eq (http_cerver_set_handlers_pool (http_cerver, HTTP_POOL_LOOP_NAME), 0, NULL);
+	test_check_ptr (http_cerver->loop_pool);
 	test_check_ptr_eq (http_cerver->handlers_pool, http_cerver->loop_pool);
+
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
+	test_check_ptr_eq (http_cerver->handlers_pool, default_pool);
 
 	// a pool that the cerver does not have keeps the one that was set
-	test_check_unsigned_eq (http_cerver_set_handlers_pool (http_cerver, loop_missing_name), 1, NULL);
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, loop_missing_name), 1, NULL);
+	test_check_ptr_eq (http_cerver->handlers_pool, default_pool);
+
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_LOOP_NAME), 0, NULL);
 	test_check_ptr_eq (http_cerver->handlers_pool, http_cerver->loop_pool);
 
-	test_check_unsigned_eq (http_cerver_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
-	test_check_ptr_eq (
-		http_cerver->handlers_pool, http_cerver_pool_get_with_name (http_cerver, HTTP_POOL_DEFAULT_NAME)
-	);
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, NULL), 0, NULL);
+	test_check_ptr_eq (http_cerver->handlers_pool, http_cerver->loop_pool);
 
-	test_check_unsigned_eq (http_cerver_set_handlers_pool (http_cerver, NULL), 0, NULL);
-	test_check_null_ptr (http_cerver->handlers_pool);
-
-	test_check_unsigned_eq (http_cerver_set_handlers_pool (NULL, HTTP_POOL_LOOP_NAME), 1, NULL);
+	test_check_unsigned_eq (cerver_http_set_handlers_pool (NULL, HTTP_POOL_LOOP_NAME), 1, NULL);
 
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
@@ -1018,7 +988,7 @@ static void test_loop_handlers_pool (void) {
 
 #pragma region handlers
 
-// the cerver sets the pool of the event loops for its handlers: they run in the loop that read the request,
+// a cerver that sets nothing runs its handlers in its event loops: in the loop that read the request,
 // and the ones of a group that chose the thpool of the cerver in one of its threads
 static void test_loop_cerver (void) {
 
@@ -1039,7 +1009,7 @@ static void test_loop_cerver (void) {
 
 }
 
-// a cerver that sets nothing runs its handlers in its thpool, and in its event loops only the ones of the
+// a cerver that sets its thpool for its handlers runs them there, and in its event loops only the ones of the
 // group, the endpoint and the route that chose their pool
 static void test_loop_chosen (void) {
 
@@ -1105,26 +1075,6 @@ static void test_loop_authentication_body (void) {
 	loop_client_send (client, loop_upload_bad_request);
 	loop_client_expect_status (client, HTTP_STATUS_UNAUTHORIZED);
 	loop_authentication_thread_expect (loop_events_thread);
-
-	loop_client_close (client);
-
-	loop_server_stop (server);
-
-}
-
-// a cerver with a thread for each connection has no event loops: the pool of its handlers changes nothing
-static void test_loop_without_events (void) {
-
-	LoopServer *server = loop_server_start_with (CERVER_HANDLER_TYPE_THREADS, true);
-
-	LoopClient *client = loop_client_connect (server);
-
-	loop_client_send (client, loop_thread_close_request);
-
-	LoopAnswer answer;
-	test_check_true (loop_client_answer (client, &answer));
-	test_check_unsigned_eq (answer.status, HTTP_STATUS_OK, NULL);
-	test_check_int_ne (strncmp (answer.body, loop_events_thread, strlen (loop_events_thread)), 0);
 
 	loop_client_close (client);
 
@@ -1623,7 +1573,6 @@ void http_tests_loop (void) {
 	test_run (test_loop_chosen);
 	test_run (test_loop_authentication);
 	test_run (test_loop_authentication_body);
-	test_run (test_loop_without_events);
 	test_run (test_loop_per_core);
 	test_run (test_loop_big);
 
