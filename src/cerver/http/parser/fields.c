@@ -31,7 +31,7 @@ static const char http_parser_list_separator = ',';
 void http_parser_fields_init (void) {
 
 	for (unsigned int type = 0; type < HTTP_HEADER_UNDEFINED; type++) {
-		const char *name = http_header_string ((http_header) type);
+		const char *name = cerver_http_header_to_string ((CerverHttpHeader) type);
 		const size_t length = strlen (name);
 
 		http_parser_fields_lengths[type] = (uint8_t) length;
@@ -48,11 +48,11 @@ void http_parser_fields_init (void) {
 
 }
 
-http_header cerver_http_parser_field_type (const char *name, const size_t length) {
+CerverHttpHeader cerver_http_parser_field_type (const char *name, const size_t length) {
 
 	http_parser_tables_init ();
 
-	http_header found = HTTP_HEADER_UNDEFINED;
+	CerverHttpHeader found = HTTP_HEADER_UNDEFINED;
 
 	// the bytes of a known name are a token
 	bool token = (name != NULL);
@@ -65,7 +65,7 @@ http_header cerver_http_parser_field_type (const char *name, const size_t length
 }
 
 HttpParserSpecial http_parser_special (
-	const char *name, const size_t length, const http_header type
+	const char *name, const size_t length, const CerverHttpHeader type
 ) {
 
 	HttpParserSpecial special = HTTP_PARSER_SPECIAL_NONE;
@@ -320,7 +320,7 @@ const char *cerver_http_head_at (
 }
 
 const CerverHttpField *cerver_http_head_field_with_type (
-	const CerverHttpHead *head, const http_header type
+	const CerverHttpHead *head, const CerverHttpHeader type
 ) {
 
 	const CerverHttpField *found = NULL;
