@@ -717,9 +717,17 @@ static void http_tests_main (void) {
 #define SERVER_ONLY_VARIABLE				"SERVER_ONLY"
 #define FEATURES_ONLY_VARIABLE				"FEATURES_ONLY"
 
+// the HTTP client runs alone to be repeated, for each backend of its event loop
+#define CLIENT_ONLY_VARIABLE				"CLIENT_ONLY"
+
 int main (void) {
 
 	test_output_init ();
+
+	if (getenv (CLIENT_ONLY_VARIABLE)) {
+		http_tests_client ();
+		return 0;
+	}
 
 	if (getenv (PARSER_ONLY_VARIABLE)) {
 		http_tests_parser ();
@@ -816,6 +824,9 @@ int main (void) {
 
 	// clients that leave in every part of the HTTP process
 	http_tests_disconnect ();
+
+	// the HTTP client, against a server of the test
+	http_tests_client ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 
