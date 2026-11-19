@@ -231,6 +231,21 @@ struct _HttpCerver {
 	/** @brief The WebSocket connections, their limit and their stats. */
 	struct _HttpWebSocketRegistry *web_sockets;
 
+	/**
+	 * @brief The event loops of the cerver exist: its HTTP clients (cerver/http/clients/client.h) can give them
+	 * their requests; atomic.
+	 *
+	 * @since 3.0b-13
+	 */
+	bool clients_open;
+	/**
+	 * @brief The threads that are giving a request of a client to an event loop: the loops are not released
+	 * while one does; atomic.
+	 *
+	 * @since 3.0b-13
+	 */
+	unsigned int clients_sending;
+
 	/** @brief The requests answered with 408. */
 	size_t n_timeout_requests;
 

@@ -8,6 +8,7 @@
 
 #include "cerver/cerver.h"
 
+#include "cerver/http/clients/client.h"
 #include "cerver/http/core/admin.h"
 #include "cerver/http/core/context.h"
 #include "cerver/http/core/custom.h"
