@@ -9,7 +9,7 @@
 > | **Fecha** | 2026-11-13 (L0, el plan de la línea) |
 > | **Rama base** | `nightly` en la 2.1b-13 (`b8217b7b`); `labs-beta` desde `nightly-beta` en el tag `2.1b-13` (`a6f32f14`) |
 > | **Ramas** | `labs` (desarrollo) y `labs-beta` (las betas 3.0b-N) |
-> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); L4, el I/O sobre io_uring (§4.4), hecha en la 3.0b-11 (el anillo, el respaldo de epoll, los loops por núcleo, la conexión y los handlers en el loop); L5, la API de aplicación (§4.5), en dos betas: la primera parte en la 3.0b-12 (un contexto por petición, las vistas, el escritor de la respuesta, solo grupos y endpoints, un web cerver siempre sobre los event loops) y la segunda en la 3.0b-13; lo que L4 dejó para medir pasa a la beta de optimización, la 3.0b-14 (§4.5.3) |
+> | **Estado** | L0 a L0.4 hechas (de la 3.0b-1 a la 3.0b-5); L1, el JSON propio, hecha en dos betas: la 3.0b-6 (el módulo, §4.1) y la 3.0b-7 (HTTP sobre él, Jansson fuera de la API); L2, el JWT propio, hecha en la 3.0b-8 (§4.2, libjwt y Jansson borrados); L3, el parser HTTP/1.1 propio, hecha en la 3.0b-9 (§4.3, llhttp y multipart-parser-c fuera); L0.5, la sincronía con las otras líneas, en la 3.0b-10 (§4.0.5); L4, el I/O sobre io_uring (§4.4), hecha en la 3.0b-11 (el anillo, el respaldo de epoll, los loops por núcleo, la conexión y los handlers en el loop); L5, la API de aplicación (§4.5), en dos betas: la primera parte en la 3.0b-12 (un contexto por petición, las vistas, el escritor de la respuesta, solo grupos y endpoints, un web cerver siempre sobre los event loops) y la segunda en la 3.0b-13 (las respuestas y la autenticación diferidas, el cliente HTTP propio sobre el loop, multipart en streaming y sus bodies fuera del loop); lo que L4 dejó para medir pasa a la beta de optimización, la 3.0b-14 (§4.5.3) |
 
 **Las citas `archivo:línea`:**
 
@@ -754,15 +754,29 @@ por núcleo; el pool de hilos implícito es solo para lo que toca disco; curl se
 
 #### 4.5.2 La segunda parte (3.0b-13)
 
-- **Los handlers asíncronos:** un handler difiere su respuesta y la completa después, desde su loop o desde otro
-  hilo, sin tener un hilo mientras espera; un stream escrito desde el loop, con su aviso de «vaciado».
-- **El cliente HTTP/1.1 propio** sobre el loop, dentro de un cerver y fuera de uno (con su propio loop y una forma
-  bloqueante), con un pool de conexiones conservadas por destino. Sin TLS hasta L8.
-- **La auth asíncrona:** la auth custom de un endpoint pide a otro servicio con el cliente propio y la conexión
-  espera su veredicto sin un hilo.
-- **Multipart en streaming:** un callback por parte (el inicio, los datos, el fin); guardar en uploads es un
-  consumidor encima, y sus escrituras salen del loop.
-- Los settings por grupo y por endpoint que la primera parte dejó.
+Hecha (2026-11-18):
+
+- **Los handlers asíncronos:** un handler difiere su respuesta (`cerver_http_context_defer ()`) y la completa
+  después (`cerver_http_context_complete ()`), desde su loop o desde otro hilo, sin tener un hilo mientras espera;
+  un stream escrito desde el loop pieza por pieza, con su aviso de «vaciado»
+  (`cerver_http_response_stream_on_drained ()`). El request timeout acota la espera.
+- **El cliente HTTP/1.1 propio** (`cerver/http/clients/client.h`) sobre el loop, dentro de un cerver y fuera de uno
+  (con su propio loop y una forma bloqueante), con las conexiones conservadas por destino y por loop. El loop
+  tiene «fuentes» (`EventSource`: un socket, un timer y lo que otros hilos le entregan) para lo que no es una
+  conexión de su cerver, y puede existir sin cerver. Sin TLS hasta L8.
+- **La auth asíncrona:** el handler de autenticación de un endpoint difiere su veredicto
+  (`cerver_http_context_authentication_defer ()`) y la conexión lo espera sin un hilo;
+  `cerver_http_context_authentication_request ()` lo pide a otro servicio con el cliente propio.
+- **Multipart en streaming:** los handlers de partes de un endpoint o de un grupo (`CerverHttpPartHandlers`: el
+  inicio, los datos, el fin) toman las partes mientras llegan; sin ellos cerver guarda los archivos. **El body de
+  una petición multipart lo parsea un hilo de un pool**, un job por cada lectura de su loop: un event loop ya no
+  escribe el disco.
+- **De los settings por grupo y por endpoint** que la primera parte dejó: el tamaño máximo de archivo, las partes
+  de multipart, y el mínimo y el nivel de la compresión. **Quedan pendientes** (para una beta posterior): el
+  request timeout y el send timeout, los orígenes de CORS, las llaves y la validación del JWT, y los uploads.
+- **Queda pendiente también:** quitar el receive suelto sin conexión de las pruebas de caja blanca y de los
+  fuzzers, la segunda pasada de los headers instalados (los que solo usa la librería y las 8 funciones públicas
+  con nombre viejo), y el `mkdir` del directorio de los uploads de una petición, que todavía corre en su loop.
 - **pycerver `labs`** se rehace en su sesión, con la lista de lo que cambia para los bindings.
 
 #### 4.5.3 LO — La optimización (3.0b-14)
