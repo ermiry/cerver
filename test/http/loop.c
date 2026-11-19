@@ -6,10 +6,12 @@
 #include <time.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cerver/types/string.h>
@@ -24,15 +26,21 @@
 #include <cerver/handler/events.h>
 #include <cerver/network/network.h>
 
+#include <cerver/http/clients/client.h>
 #include <cerver/http/core/context.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/pool.h>
+#include <cerver/http/core/public.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
+#include <cerver/http/core/uploads.h>
 #include <cerver/http/headers/types.h>
 #include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
+#include "cerver/http/routes/internal.h"
+#include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
 
 #include "../handler.h"
@@ -68,12 +76,47 @@
 // secs that the test waits for a state of its cerver
 #define LOOP_WAIT_TIMEOUT					(1 << 4)
 
+// secs of the request timeout of the cerver whose deferred responses are not completed in time
+#define LOOP_DEFERRED_REQUEST_TIMEOUT		1
+
+// the pauses of the thread that completes a deferred request after its cerver was asked to stop
+#define LOOP_DEFERRED_LATE_PAUSES			(1 << 6)
+
 #define LOOP_ALARM							256
 
 #define LOOP_THREADS						2
 #define LOOP_QUEUE_SIZE						(1 << 4)
 
 #define LOOP_THREAD_NAME_SIZE				(1 << 4)
+
+// where the files of the requests of the test are saved, and where the body of the request with one is cut:
+// it arrives in more than one read
+#define LOOP_UPLOADS_PATH					"/tmp/cerver-loop-uploads"
+#define LOOP_UPLOADS_MODE					0755
+
+// the requests with a file that the test of the files sends to the endpoint of the event loops
+#define LOOP_FILES_REQUESTS					3
+
+// the static path of the test with a custom authentication, and its file
+#define LOOP_STATIC_PATH					"/tmp/cerver-loop-static"
+#define LOOP_STATIC_FILE					LOOP_STATIC_PATH "/secret.txt"
+#define LOOP_STATIC_FILE_MODE				0644
+
+// the bytes that the handlers of the parts of the test keep of all the parts of a request, the parts of its
+// request and the bytes of its body (its Content-Length)
+#define LOOP_PARTS_DATA_SIZE				256
+#define LOOP_PARTS_COUNT					2
+
+// the pieces of the stream that is written when the piece before each one was sent
+#define LOOP_DRAINED_PIECES					4
+#define LOOP_PARTS_BODY_LENGTH				221
+#define LOOP_FILES_BODY_SPLIT				64
+
+// the bytes of the url that the handlers of the test ask with the HTTP client of their cerver
+#define LOOP_CLIENT_URL_SIZE				(1 << 6)
+
+// the requests of the test of that client after the first one: their connections were kept
+#define LOOP_CLIENT_REQUESTS				8
 
 // what a client keeps of the responses that it has not read
 #define LOOP_BUFFER_SIZE					(1 << 15)
@@ -162,6 +205,178 @@ static const char *loop_pool_close_request = {
 };
 static const char *loop_pool_gate_request = { "GET /loop/pool/gate HTTP/1.1\r\nHost: localhost\r\n\r\n" };
 
+static const char *loop_deferred_request = { "GET /loop/deferred HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_deferred_early_request = { "GET /loop/early HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_deferred_request = { "GET /loop/pool/deferred HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_deferred_early_request = { "GET /loop/pool/early HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+// a request with a file: its head, for the event loops and for the pool, and its body
+static const char *loop_files_head = {
+	"POST /loop/files HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 151\r\n"
+	"\r\n"
+};
+
+static const char *loop_pool_files_head = {
+	"POST /loop/pool/files HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 151\r\n"
+	"\r\n"
+};
+
+static const char *loop_files_body = {
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"file\"; filename=\"events.txt\"\r\n"
+	"Content-Type: text/plain\r\n"
+	"\r\n"
+	"the file of a request\r\n"
+	"--server-test--\r\n"
+};
+
+// the content of the file of every request of the tests with one
+static const char *loop_files_content = { "the file of a request" };
+
+// the head of a request with a value and a file for the endpoint whose files cerver saves
+static const char *loop_files_form_head = {
+	"POST /loop/files HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 221\r\n"
+	"\r\n"
+};
+
+// a request with a value and a file, for the endpoints whose parts are taken by handlers: its head, for the
+// event loops and for the pool, and its body; and what the handlers get of it
+static const char *loop_parts_head = {
+	"POST /loop/parts HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 221\r\n"
+	"\r\n"
+};
+
+static const char *loop_pool_parts_head = {
+	"POST /loop/pool/parts HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 221\r\n"
+	"\r\n"
+};
+
+static const char *loop_parts_body = {
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"field\"\r\n"
+	"\r\n"
+	"hello\r\n"
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"file\"; filename=\"events.txt\"\r\n"
+	"Content-Type: text/plain\r\n"
+	"\r\n"
+	"the file of a request\r\n"
+	"--server-test--\r\n"
+};
+
+static const char *loop_parts_expected = { "hellothe file of a request" };
+
+// a request whose first part the handlers of the test reject
+static const char *loop_parts_forbidden_request = {
+	"POST /loop/parts HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Type: multipart/form-data; boundary=server-test\r\n"
+	"Content-Length: 221\r\n"
+	"\r\n"
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"forbidden\"\r\n"
+	"\r\n"
+	"h\r\n"
+	"--server-test\r\n"
+	"Content-Disposition: form-data; name=\"file\"; filename=\"events.txt\"\r\n"
+	"Content-Type: text/plain\r\n"
+	"\r\n"
+	"the file of a request\r\n"
+	"--server-test--\r\n"
+};
+
+// the requests of the endpoints whose authentication defers its verdict, in the event loops and in the pool
+static const char *loop_verdict_request = { "GET /loop/verdict HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_verdict_request = { "GET /loop/pool/verdict HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+static const char *loop_verdict_body_request = {
+	"POST /loop/verdict HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\n\r\nbody"
+};
+static const char *loop_pool_verdict_body_request = {
+	"POST /loop/pool/verdict HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\n\r\nbody"
+};
+
+static const char *loop_late_request = {
+	"POST /loop/late HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\n\r\nbody"
+};
+static const char *loop_pool_late_request = {
+	"POST /loop/pool/late HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\n\r\nbody"
+};
+
+static const char *loop_decided_request = {
+	"GET /loop/decided HTTP/1.1\r\nHost: localhost\r\nAuthorization: valid\r\n\r\n"
+};
+static const char *loop_decided_bad_request = {
+	"GET /loop/decided HTTP/1.1\r\nHost: localhost\r\nAuthorization: other\r\n\r\n"
+};
+static const char *loop_pool_decided_request = {
+	"GET /loop/pool/decided HTTP/1.1\r\nHost: localhost\r\nAuthorization: valid\r\n\r\n"
+};
+static const char *loop_pool_decided_bad_request = {
+	"GET /loop/pool/decided HTTP/1.1\r\nHost: localhost\r\nAuthorization: other\r\n\r\n"
+};
+
+static const char *loop_checked_request = {
+	"GET /loop/checked HTTP/1.1\r\nHost: localhost\r\nAuthorization: valid\r\n\r\n"
+};
+static const char *loop_checked_bad_request = {
+	"GET /loop/checked HTTP/1.1\r\nHost: localhost\r\nAuthorization: other\r\n\r\n"
+};
+static const char *loop_pool_checked_request = {
+	"GET /loop/pool/checked HTTP/1.1\r\nHost: localhost\r\nAuthorization: valid\r\n\r\n"
+};
+static const char *loop_pool_checked_bad_request = {
+	"GET /loop/pool/checked HTTP/1.1\r\nHost: localhost\r\nAuthorization: other\r\n\r\n"
+};
+
+// the file of the static path with a custom authentication: its request and its content
+static const char *loop_static_request = { "GET /secret.txt HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_static_content = { "the file of a private static path" };
+
+static const char *loop_client_request = { "GET /loop/client HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_client_request = { "GET /loop/pool/client HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+static const char *loop_deferred_after_request = { "GET /loop/after HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_held_request = { "GET /loop/held HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_held_request = { "GET /loop/pool/held HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+// what the thread that completes a deferred request answers it with
+static const char *loop_deferred_body = { "deferred" };
+
+static const char *loop_stream_request = { "GET /loop/stream HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_stream_request = { "GET /loop/pool/stream HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+// the pieces of a deferred stream, and how each one arrives in a chunked body
+static const char *loop_stream_first = { "first" };
+static const char *loop_stream_second = { "second" };
+static const char *loop_stream_chunked = { "Transfer-Encoding: chunked\r\n" };
+static const char *loop_stream_first_chunk = { "\r\n5\r\nfirst\r\n" };
+static const char *loop_stream_second_chunk = { "\r\n6\r\nsecond\r\n" };
+static const char *loop_stream_last_chunk = { "\r\n0\r\n\r\n" };
+
+// the stream whose pieces are written when the one before each one was sent: its requests and its whole body
+static const char *loop_drained_request = { "GET /loop/drained HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+static const char *loop_pool_drained_request = { "GET /loop/pool/drained HTTP/1.1\r\nHost: localhost\r\n\r\n" };
+
+static const char *loop_drained_body = {
+	"\r\n\r\n5\r\nfirst\r\n5\r\nfirst\r\n5\r\nfirst\r\n5\r\nfirst\r\n0\r\n\r\n"
+};
+
 static const char *loop_explicit_request = { "GET /explicit/thread HTTP/1.1\r\nHost: localhost\r\n\r\n" };
 static const char *loop_endpoint_request = { "GET /plain/chosen HTTP/1.1\r\nHost: localhost\r\n\r\n" };
 static const char *loop_plain_request = { "GET /plain/thread HTTP/1.1\r\nHost: localhost\r\n\r\n" };
@@ -211,6 +426,9 @@ static unsigned int loop_port = LOOP_PORT_BASE;
 
 // the cervers of the test that runs now have an event loop for each processor, each one in its own
 static bool loop_per_core = false;
+
+// the request timeout of the cervers of the test that runs now, in seconds; 0 keeps the default one
+static unsigned int loop_request_timeout = 0;
 
 #pragma region routes
 
@@ -317,6 +535,232 @@ static void loop_thread_handler (CerverHttpContext *context) {
 
 }
 
+// the HTTP client of the cerver of the test, and the url that its handlers ask with it: another endpoint of
+// the same cerver, that answers with the name of its thread
+static CerverHttpClient *loop_http_client = NULL;
+static char loop_client_url[LOOP_CLIENT_URL_SIZE] = { 0 };
+
+// the url of the endpoint that an authentication asks
+static char loop_check_url[LOOP_CLIENT_URL_SIZE] = { 0 };
+
+// what the request that a handler of an event loop tried to wait for returned
+static unsigned int loop_client_refused = 0;
+
+// the response of the request that a handler sent with the client of its cerver, in the loop that sent it: its
+// body answers the request that waited for it
+static void loop_client_response_handler (const CerverHttpClientResponse *response, void *context_ptr) {
+
+	CerverHttpContext *context = (CerverHttpContext *) context_ptr;
+
+	const CerverHttpView body = cerver_http_client_response_body (response);
+
+	if (!cerver_http_client_response_error (response) && body.data) {
+		(void) cerver_http_response_send_text (context, body.data, body.length);
+	}
+
+	(void) cerver_http_context_complete (context);
+
+}
+
+// an event loop does not wait for a request of the client of its cerver
+static void loop_client_probe (void) {
+
+	CerverHttpClientRequest *probe = cerver_http_client_request_create (
+		loop_http_client, REQUEST_METHOD_GET, loop_client_url
+	);
+
+	__atomic_store_n (
+		&loop_client_refused, (unsigned int) cerver_http_client_request_perform (probe), __ATOMIC_SEQ_CST
+	);
+
+	cerver_http_client_request_delete (probe);
+
+}
+
+// defers its response and asks another endpoint of its cerver for it: its event loop sends that request and
+// goes on, and the handler of the response completes this one
+static void loop_client_handler (CerverHttpContext *context) {
+
+	loop_client_probe ();
+
+	CerverHttpClientRequest *request = cerver_http_client_request_create (
+		loop_http_client, REQUEST_METHOD_GET, loop_client_url
+	);
+
+	if (request && !cerver_http_context_defer (context)) {
+		if (cerver_http_client_request_send (request, loop_client_response_handler, context)) {
+			(void) cerver_http_context_complete (context);
+		}
+	}
+
+}
+
+// a handler of a pool of threads waits for the response of the request that it sends
+static void loop_client_waiting_handler (CerverHttpContext *context) {
+
+	CerverHttpClientRequest *request = cerver_http_client_request_create (
+		loop_http_client, REQUEST_METHOD_GET, loop_client_url
+	);
+
+	if (request && !cerver_http_client_request_perform (request)) {
+		const CerverHttpView body = cerver_http_client_response_body (cerver_http_client_request_response (request));
+
+		if (body.data) (void) cerver_http_response_send_text (context, body.data, body.length);
+	}
+
+	cerver_http_client_request_delete (request);
+
+}
+
+// the context of the request whose response was deferred, that a test completes from its own thread
+static CerverHttpContext *loop_deferred_context = NULL;
+
+// the handlers that deferred their response and returned
+static unsigned int loop_deferred_count = 0;
+
+// what a second deferral of the same response returned, and what the calls of the handler that completes its
+// request before it returns did
+static unsigned int loop_deferred_again = 0;
+static unsigned int loop_deferred_early_completed = 0;
+static unsigned int loop_deferred_early_again = 0;
+
+// the handlers that completed their request before they returned: a thread of a pool sends the response while
+// its handler still runs, so its client can read it before the handler counted what it did
+static unsigned int loop_deferred_early_count = 0;
+
+// what the deferral of an after middleware returned, and the after middlewares that ran
+static unsigned int loop_deferred_after = 0;
+static unsigned int loop_deferred_after_count = 0;
+
+// defers its response and returns: the test writes it and completes the request
+static void loop_deferred_handler (CerverHttpContext *context) {
+
+	test_check_unsigned_eq (cerver_http_context_defer (context), 0, NULL);
+
+	// a response is deferred once
+	__atomic_store_n (&loop_deferred_again, (unsigned int) cerver_http_context_defer (context), __ATOMIC_SEQ_CST);
+
+	__atomic_store_n (&loop_deferred_context, context, __ATOMIC_SEQ_CST);
+
+	test_counter_add (&loop_deferred_count);
+
+}
+
+// begins a stream, defers its response and returns: the test writes the pieces of the stream over time
+static void loop_deferred_stream_handler (CerverHttpContext *context) {
+
+	test_check_unsigned_eq (cerver_http_response_stream_begin (context), 0, NULL);
+
+	test_check_unsigned_eq (cerver_http_context_defer (context), 0, NULL);
+
+	__atomic_store_n (&loop_deferred_context, context, __ATOMIC_SEQ_CST);
+
+	test_counter_add (&loop_deferred_count);
+
+}
+
+// the pieces that the stream of the test has, the ones that its handler wrote, the times that its loop told
+// it that what it wrote was sent, and what a handler of a pool of threads got when it asked to be told
+static unsigned int loop_drained_written = 0;
+static unsigned int loop_drained_calls = 0;
+static unsigned int loop_drained_refused = 0;
+
+static void loop_drained_piece (CerverHttpContext *context) {
+
+	(void) cerver_http_response_stream_write (context, loop_stream_first, strlen (loop_stream_first));
+
+	loop_drained_written += 1;
+
+}
+
+// what was written of the stream was sent: the next piece is written, and after the last one the stream ends
+// and its request is completed
+static void loop_stream_drained (CerverHttpContext *context, void *data) {
+
+	(void) data;
+
+	test_counter_add (&loop_drained_calls);
+
+	if (loop_drained_written < LOOP_DRAINED_PIECES) {
+		loop_drained_piece (context);
+	}
+
+	else {
+		(void) cerver_http_response_stream_end (context);
+
+		(void) cerver_http_context_complete (context);
+	}
+
+}
+
+// starts a stream and writes its first piece. In an event loop it asks to be told when it was sent, defers its
+// response and returns: its loop asks it for each piece. In a pool of threads it is not told: it writes them all
+static void loop_drained_handler (CerverHttpContext *context) {
+
+	loop_drained_written = 0;
+
+	test_check_unsigned_eq (cerver_http_response_stream_begin (context), 0, NULL);
+
+	loop_drained_piece (context);
+
+	const u8 refused = cerver_http_response_stream_on_drained (context, loop_stream_drained, NULL);
+
+	__atomic_store_n (&loop_drained_refused, (unsigned int) refused, __ATOMIC_SEQ_CST);
+
+	if (refused) {
+		while (loop_drained_written < LOOP_DRAINED_PIECES) loop_drained_piece (context);
+	}
+
+	else {
+		test_check_unsigned_eq (cerver_http_context_defer (context), 0, NULL);
+	}
+
+}
+
+// defers its response, writes it and completes its request before it returns: the request ends when it does
+static void loop_deferred_early_handler (CerverHttpContext *context) {
+
+	test_check_unsigned_eq (cerver_http_context_defer (context), 0, NULL);
+
+	(void) cerver_http_response_send_text (context, loop_deferred_body, strlen (loop_deferred_body));
+
+	__atomic_store_n (
+		&loop_deferred_early_completed, (unsigned int) cerver_http_context_complete (context), __ATOMIC_SEQ_CST
+	);
+
+	// a request is completed once
+	__atomic_store_n (
+		&loop_deferred_early_again, (unsigned int) cerver_http_context_complete (context), __ATOMIC_SEQ_CST
+	);
+
+	test_counter_add (&loop_deferred_early_count);
+
+}
+
+// only the handler of a request defers its response: an after middleware runs when the request was answered
+static void loop_deferred_after_middleware (CerverHttpContext *context) {
+
+	__atomic_store_n (&loop_deferred_after, (unsigned int) cerver_http_context_defer (context), __ATOMIC_SEQ_CST);
+
+	test_counter_add (&loop_deferred_after_count);
+
+}
+
+// keeps its thread until the gate is opened, with the context of its request in sight of the test
+static void loop_held_handler (CerverHttpContext *context) {
+
+	__atomic_store_n (&loop_deferred_context, context, __ATOMIC_SEQ_CST);
+
+	test_counter_add (&loop_deferred_count);
+
+	(void) pthread_mutex_lock (&loop_gate_mutex);
+	while (!loop_gate_is_open) (void) pthread_cond_wait (&loop_gate_cond, &loop_gate_mutex);
+	(void) pthread_mutex_unlock (&loop_gate_mutex);
+
+	(void) cerver_http_response_send_text (context, loop_deferred_body, strlen (loop_deferred_body));
+
+}
+
 // the processors that the thread of the caller can run in, 0 when they can not be read
 static unsigned int loop_processors (void) {
 
@@ -388,6 +832,282 @@ static unsigned int loop_authentication_handler (CerverHttpContext *context) {
 
 }
 
+// the thread that named the last file that was uploaded: the one that parses the body of its request and
+// writes its files
+static char loop_upload_thread[LOOP_THREAD_NAME_SIZE] = { 0 };
+
+static void loop_uploads_filename_generator (CerverHttpContext *context) {
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+	(void) pthread_getname_np (pthread_self (), loop_upload_thread, LOOP_THREAD_NAME_SIZE);
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+	cerver_http_default_uploads_filename_generator (context);
+
+}
+
+static void loop_upload_thread_reset (void) {
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+	(void) memset (loop_upload_thread, 0, LOOP_THREAD_NAME_SIZE);
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+}
+
+static void loop_upload_thread_expect (const char *prefix) {
+
+	char saved[LOOP_THREAD_NAME_SIZE] = { 0 };
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+	(void) memcpy (saved, loop_upload_thread, LOOP_THREAD_NAME_SIZE);
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+	if (strncmp (saved, prefix, strlen (prefix))) {
+		(void) fprintf (stderr, "the thread \"%s\" is not one of \"%s\"\n", saved, prefix);
+	}
+
+	test_check_int_eq (strncmp (saved, prefix, strlen (prefix)), 0, NULL);
+
+}
+
+// what the handlers of the parts of a request saw: the parts that started and the ones that ended, the bytes
+// of all of them one after the other, and the thread that took them
+static unsigned int loop_parts_started = 0;
+static unsigned int loop_parts_ended = 0;
+static char loop_parts_data[LOOP_PARTS_DATA_SIZE] = { 0 };
+static size_t loop_parts_length = 0;
+static char loop_parts_thread[LOOP_THREAD_NAME_SIZE] = { 0 };
+
+// the name of the part that the handlers of the test do not take
+static const char *loop_parts_forbidden = { "forbidden" };
+
+// a part starts: one with the forbidden name rejects its request
+static CerverHttpStatus loop_part_started (CerverHttpContext *context, const CerverHttpPart *part) {
+
+	(void) context;
+
+	test_counter_add (&loop_parts_started);
+
+	return cerver_http_view_equals (cerver_http_part_name (part), loop_parts_forbidden) ?
+		HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE : HTTP_STATUS_NONE;
+
+}
+
+static CerverHttpStatus loop_part_data (
+	CerverHttpContext *context, const CerverHttpPart *part, const char *data, const size_t length
+) {
+
+	(void) context;
+	(void) part;
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+
+	(void) pthread_getname_np (pthread_self (), loop_parts_thread, LOOP_THREAD_NAME_SIZE);
+
+	if ((loop_parts_length + length) < LOOP_PARTS_DATA_SIZE) {
+		(void) memcpy (loop_parts_data + loop_parts_length, data, length);
+		loop_parts_length += length;
+	}
+
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+	return HTTP_STATUS_NONE;
+
+}
+
+static CerverHttpStatus loop_part_ended (CerverHttpContext *context, const CerverHttpPart *part) {
+
+	(void) context;
+	(void) part;
+
+	test_counter_add (&loop_parts_ended);
+
+	return HTTP_STATUS_NONE;
+
+}
+
+static const CerverHttpPartHandlers loop_part_handlers = {
+	.on_part = loop_part_started,
+	.on_data = loop_part_data,
+	.on_end = loop_part_ended
+};
+
+static void loop_parts_reset (void) {
+
+	__atomic_store_n (&loop_parts_started, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&loop_parts_ended, 0, __ATOMIC_SEQ_CST);
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+	(void) memset (loop_parts_data, 0, LOOP_PARTS_DATA_SIZE);
+	loop_parts_length = 0;
+	(void) memset (loop_parts_thread, 0, LOOP_THREAD_NAME_SIZE);
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+}
+
+// the handlers of the parts took the expected bytes, in a thread of the pool
+static void loop_parts_expect (const unsigned int parts, const char *data) {
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_parts_started, __ATOMIC_SEQ_CST), parts, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&loop_parts_ended, __ATOMIC_SEQ_CST), parts, NULL);
+
+	char saved[LOOP_PARTS_DATA_SIZE] = { 0 };
+	char thread[LOOP_THREAD_NAME_SIZE] = { 0 };
+
+	(void) pthread_mutex_lock (&loop_threads_mutex);
+	(void) memcpy (saved, loop_parts_data, LOOP_PARTS_DATA_SIZE);
+	(void) memcpy (thread, loop_parts_thread, LOOP_THREAD_NAME_SIZE);
+	(void) pthread_mutex_unlock (&loop_threads_mutex);
+
+	test_check_str_eq (saved, data, NULL);
+
+	test_check_int_eq (strncmp (thread, loop_pool_thread, strlen (loop_pool_thread)), 0, NULL);
+
+}
+
+// the cerver of the test has a static path with a custom authentication
+static bool loop_static_private = false;
+
+// the endpoints of the event loops that take files: the one whose files cerver saves, and the one whose parts
+// are taken by handlers of the test; of the cerver that runs
+static const CerverHttpEndpoint *loop_files_endpoint = NULL;
+static const CerverHttpEndpoint *loop_parts_endpoint = NULL;
+
+// the context of the request whose authentication deferred its verdict, that a test gives from its own thread,
+// and the authentication handlers that deferred theirs
+static CerverHttpContext *loop_verdict_context = NULL;
+static unsigned int loop_verdict_count = 0;
+
+// what an authentication handler that deferred its verdict returns: it is not read, and it would reject
+#define LOOP_VERDICT_IGNORED				1
+
+// defers its verdict and returns: the test gives it
+static unsigned int loop_verdict_authentication_handler (CerverHttpContext *context) {
+
+	// an authentication handler does not defer the response of its request, and it defers its verdict once
+	test_check_unsigned_eq (cerver_http_context_defer (context), 1, NULL);
+	test_check_unsigned_eq (cerver_http_context_authentication_defer (context), 0, NULL);
+	test_check_unsigned_eq (cerver_http_context_authentication_defer (context), 1, NULL);
+
+	__atomic_store_n (&loop_verdict_context, context, __ATOMIC_SEQ_CST);
+
+	test_counter_add (&loop_verdict_count);
+
+	return LOOP_VERDICT_IGNORED;
+
+}
+
+// defers its verdict and gives it before it returns: its request goes on when it does
+static unsigned int loop_decided_authentication_handler (CerverHttpContext *context) {
+
+	const bool valid = cerver_http_view_equals (
+		cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION), loop_valid_authorization
+	);
+
+	test_check_unsigned_eq (cerver_http_context_authentication_defer (context), 0, NULL);
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, valid), 0, NULL);
+
+	// a verdict is given once
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, valid), 1, NULL);
+
+	return LOOP_VERDICT_IGNORED;
+
+}
+
+// the service that an authentication asks: only the valid authorization gets a 200
+static void loop_check_handler (CerverHttpContext *context) {
+
+	const bool valid = cerver_http_view_equals (
+		cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION), loop_valid_authorization
+	);
+
+	(void) cerver_http_response_send_common (
+		context, valid ? CERVER_HTTP_COMMON_RESPONSE_OK : CERVER_HTTP_COMMON_RESPONSE_BAD_AUTH
+	);
+
+}
+
+// the response of the service decides: its event loop gives the verdict
+static bool loop_checked_response (CerverHttpContext *context, const CerverHttpClientResponse *response) {
+
+	(void) context;
+
+	return !cerver_http_client_response_error (response)
+		&& (cerver_http_client_response_status (response) == HTTP_STATUS_OK);
+
+}
+
+// asks another endpoint of its cerver with the authorization of its request, without waiting for it
+static unsigned int loop_checked_authentication_handler (CerverHttpContext *context) {
+
+	const CerverHttpView authorization = cerver_http_request_header (context, HTTP_HEADER_AUTHORIZATION);
+
+	CerverHttpClientRequest *request = cerver_http_client_request_create (
+		loop_http_client, REQUEST_METHOD_GET, loop_check_url
+	);
+
+	if (request && authorization.data) {
+		(void) cerver_http_client_request_add_header (request, "Authorization", authorization.data);
+	}
+
+	return cerver_http_context_authentication_request (context, request, loop_checked_response);
+
+}
+
+// what the endpoint handler of a request does with the verdict of its authentication: nothing
+static unsigned int loop_verdict_refused = 0;
+
+// the handler of an endpoint is not its authentication handler: it defers no verdict
+static void loop_verdict_handler (CerverHttpContext *context) {
+
+	__atomic_store_n (
+		&loop_verdict_refused, (unsigned int) cerver_http_context_authentication_defer (context), __ATOMIC_SEQ_CST
+	);
+
+	loop_thread_handler (context);
+
+}
+
+// an endpoint with a custom authentication, that asks for it before its body or after it
+static void loop_route_authenticated (
+	CerverHttpEndpoint *endpoint, const CerverHttpAuthenticationHandler handler, const bool with_body
+) {
+
+	test_check_ptr (endpoint);
+
+	cerver_http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+	cerver_http_endpoint_set_authentication_handler (endpoint, handler);
+	cerver_http_endpoint_set_authentication_with_body (endpoint, with_body);
+
+}
+
+// the endpoints whose authentication defers its verdict, in a group: a GET and a POST that the test decides,
+// a POST that is authenticated after its body, a GET that decides before its handler returns, and a GET that
+// asks another endpoint
+static void loop_routes_verdict (CerverHttpGroup *group) {
+
+	loop_route_authenticated (
+		cerver_http_group_get (group, "verdict", loop_verdict_handler), loop_verdict_authentication_handler, false
+	);
+
+	loop_route_authenticated (
+		cerver_http_group_post (group, "verdict", loop_thread_handler), loop_verdict_authentication_handler, false
+	);
+
+	loop_route_authenticated (
+		cerver_http_group_post (group, "late", loop_thread_handler), loop_verdict_authentication_handler, true
+	);
+
+	loop_route_authenticated (
+		cerver_http_group_get (group, "decided", loop_thread_handler), loop_decided_authentication_handler, false
+	);
+
+	loop_route_authenticated (
+		cerver_http_group_get (group, "checked", loop_thread_handler), loop_checked_authentication_handler, false
+	);
+
+}
+
 // the group /loop chooses no pool, its requests run where the cerver says (GET /loop/private and
 // POST /loop/upload have a custom authentication); its group /loop/pool goes to the thpool of the cerver;
 // the group /explicit chooses the pool of the event loops;
@@ -424,6 +1144,74 @@ static void loop_routes (CerverHttp *http_cerver) {
 
 	test_check_ptr (cerver_http_group_get (pool, "thread", loop_thread_handler));
 	test_check_ptr (cerver_http_group_get (pool, "gate", loop_gate_handler));
+
+	// the handlers that defer their response, in the event loops and in the pool of threads
+	test_check_ptr (cerver_http_group_get (group, "deferred", loop_deferred_handler));
+	test_check_ptr (cerver_http_group_get (group, "early", loop_deferred_early_handler));
+	test_check_ptr (cerver_http_group_get (pool, "deferred", loop_deferred_handler));
+	test_check_ptr (cerver_http_group_get (pool, "early", loop_deferred_early_handler));
+	test_check_ptr (cerver_http_group_get (group, "stream", loop_deferred_stream_handler));
+	test_check_ptr (cerver_http_group_get (pool, "stream", loop_deferred_stream_handler));
+
+	// the stream that is written piece by piece, each one when the one before it was sent
+	test_check_ptr (cerver_http_group_get (group, "drained", loop_drained_handler));
+	test_check_ptr (cerver_http_group_get (pool, "drained", loop_drained_handler));
+
+	// who can not defer a response: an after middleware, and a thread that is not the one of the handler
+	CerverHttpEndpoint *after_endpoint = cerver_http_group_get (group, "after", loop_thread_handler);
+	test_check_ptr (after_endpoint);
+	test_check_unsigned_eq (
+		cerver_http_endpoint_add_after (after_endpoint, loop_deferred_after_middleware), 0, NULL
+	);
+
+	test_check_ptr (cerver_http_group_get (group, "held", loop_held_handler));
+	test_check_ptr (cerver_http_group_get (pool, "held", loop_held_handler));
+
+	// the handlers that ask another endpoint for their response, with the HTTP client of the cerver
+	test_check_ptr (cerver_http_group_get (group, "client", loop_client_handler));
+	test_check_ptr (cerver_http_group_get (pool, "client", loop_client_waiting_handler));
+
+	// the authentications that defer their verdict, in the event loops and in the pool of threads, and the
+	// service that one of them asks
+	loop_routes_verdict (group);
+	loop_routes_verdict (pool);
+
+	test_check_ptr (cerver_http_group_get (group, "check", loop_check_handler));
+
+	// the endpoints that take files, in the event loops and in the pool of threads
+	CerverHttpEndpoint *files_endpoint = cerver_http_group_post (group, "files", loop_thread_handler);
+	test_check_ptr (files_endpoint);
+	cerver_http_endpoint_set_modifier (files_endpoint, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	loop_files_endpoint = files_endpoint;
+
+	CerverHttpEndpoint *pool_files_endpoint = cerver_http_group_post (pool, "files", loop_thread_handler);
+	test_check_ptr (pool_files_endpoint);
+	cerver_http_endpoint_set_modifier (pool_files_endpoint, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+	// the endpoints whose parts are taken by handlers of the test: cerver saves nothing of them
+	CerverHttpEndpoint *parts_endpoint = cerver_http_group_post (group, "parts", loop_thread_handler);
+	test_check_ptr (parts_endpoint);
+	cerver_http_endpoint_set_modifier (parts_endpoint, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_part_handlers (parts_endpoint, &loop_part_handlers);
+	loop_parts_endpoint = parts_endpoint;
+
+	CerverHttpEndpoint *pool_parts_endpoint = cerver_http_group_post (pool, "parts", loop_thread_handler);
+	test_check_ptr (pool_parts_endpoint);
+	cerver_http_endpoint_set_modifier (pool_parts_endpoint, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_part_handlers (pool_parts_endpoint, &loop_part_handlers);
+
+	// a static path whose files need a custom authentication, that defers its verdict
+	if (loop_static_private) {
+		HttpStaticPath *static_path = cerver_http_static_path_add (http_cerver, LOOP_STATIC_PATH);
+		test_check_ptr (static_path);
+
+		cerver_http_static_path_set_auth (static_path, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+		cerver_http_static_path_set_authentication_handler (static_path, loop_verdict_authentication_handler);
+	}
+
+	cerver_http_set_uploads_path (http_cerver, LOOP_UPLOADS_PATH);
+	cerver_http_set_uploads_filename_generator (http_cerver, loop_uploads_filename_generator);
+	cerver_http_set_uploads_delete_when_done (http_cerver, true);
 
 	CerverHttpGroup *explicit_group = cerver_http_group_create (http_cerver, "explicit");
 	test_check_ptr (explicit_group);
@@ -540,6 +1328,13 @@ static LoopServer *loop_server_start (const bool in_loop) {
 
 	cerver_http_set_not_found_handler (http_cerver);
 
+	// the cerver of the deferred responses that expire does not take a half close as a client that is gone:
+	// the client of a response that expired is gone because of what cerver did, not because of what a probe finds
+	if (loop_request_timeout) {
+		cerver_http_set_request_timeout (http_cerver, loop_request_timeout);
+		cerver_http_set_half_close_is_gone (http_cerver, false);
+	}
+
 	if (!in_loop) {
 		test_check_unsigned_eq (cerver_http_set_handlers_pool (http_cerver, HTTP_POOL_DEFAULT_NAME), 0, NULL);
 	}
@@ -547,6 +1342,17 @@ static LoopServer *loop_server_start (const bool in_loop) {
 	server->cerver = cerver;
 	server->http_cerver = http_cerver;
 	server->port = (u16) (loop_port - 1);
+
+	loop_http_client = cerver_http_client_create (http_cerver);
+	test_check_ptr (loop_http_client);
+
+	(void) snprintf (
+		loop_client_url, LOOP_CLIENT_URL_SIZE, "http://127.0.0.1:%u/loop/thread", (unsigned int) server->port
+	);
+
+	(void) snprintf (
+		loop_check_url, LOOP_CLIENT_URL_SIZE, "http://127.0.0.1:%u/loop/check", (unsigned int) server->port
+	);
 
 	loop_routes (http_cerver);
 
@@ -572,7 +1378,11 @@ static void loop_server_shutdown (LoopServer *server) {
 
 }
 
+// the HTTP client of the cerver is deleted before the cerver: its loops close the connections that they kept
 static void loop_server_end (LoopServer *server) {
+
+	cerver_http_client_delete (loop_http_client);
+	loop_http_client = NULL;
 
 	test_check_unsigned_eq (cerver_teardown (server->cerver), 0, NULL);
 
@@ -1546,6 +2356,910 @@ static void test_loop_pipeline_stopping (void) {
 
 #pragma endregion
 
+#pragma region deferred
+
+static void loop_client_expect_text (LoopClient *client, const char *text) {
+
+	LoopAnswer answer;
+	test_check_true (loop_client_answer (client, &answer));
+
+	test_check_unsigned_eq (answer.status, HTTP_STATUS_OK, NULL);
+	test_check_str_eq (answer.body, text, NULL);
+
+}
+
+// waits for the handler that deferred its response, and takes the context of its request
+static CerverHttpContext *loop_deferred_take (const unsigned int count) {
+
+	test_check_unsigned_eq (
+		test_wait_counter (&loop_deferred_count, count, LOOP_WAIT_TIMEOUT * test_time_scale ()), count, NULL
+	);
+
+	// the handler counted itself right before it returned: a request is completed both before and after that
+	loop_pause ();
+
+	return __atomic_load_n (&loop_deferred_context, __ATOMIC_SEQ_CST);
+
+}
+
+static unsigned int loop_deferred_handlers (void) {
+
+	return __atomic_load_n (&loop_deferred_count, __ATOMIC_SEQ_CST);
+
+}
+
+// writes the response of a deferred request and completes it, in the thread of the caller
+static void loop_deferred_complete (CerverHttpContext *context) {
+
+	test_check_unsigned_eq (
+		cerver_http_response_send_text (context, loop_deferred_body, strlen (loop_deferred_body)), 0, NULL
+	);
+
+	test_check_unsigned_eq (cerver_http_context_complete (context), 0, NULL);
+
+}
+
+// a request whose handler defers its response, completed by the thread of the test
+static void loop_deferred_exchange (LoopClient *client, const char *request) {
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	loop_deferred_complete (loop_deferred_take (handlers + 1));
+
+	loop_client_expect_text (client, loop_deferred_body);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_deferred_again, __ATOMIC_SEQ_CST), 1, NULL);
+
+}
+
+// a handler defers its response and returns, in its event loop and in a thread of a pool: neither waits.
+// The thread of the test writes the response and completes the request: its client gets it, and its
+// connection is kept for the requests that follow
+static void test_loop_deferred (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_deferred_exchange (client, loop_deferred_request);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_deferred_exchange (client, loop_pool_deferred_request);
+	loop_client_thread (client, loop_pool_request, loop_pool_thread);
+
+	loop_deferred_exchange (client, loop_deferred_request);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// a request that its handler completes before it returns ends when the handler does, like any other
+static void loop_deferred_early_exchange (LoopClient *client, const char *request) {
+
+	__atomic_store_n (&loop_deferred_early_completed, 1, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&loop_deferred_early_again, 0, __ATOMIC_SEQ_CST);
+
+	const unsigned int handlers = __atomic_load_n (&loop_deferred_early_count, __ATOMIC_SEQ_CST);
+
+	loop_client_send (client, request);
+
+	loop_client_expect_text (client, loop_deferred_body);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&loop_deferred_early_count, handlers + 1, LOOP_WAIT_TIMEOUT * test_time_scale ()),
+		handlers + 1, NULL
+	);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_deferred_early_completed, __ATOMIC_SEQ_CST), 0, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&loop_deferred_early_again, __ATOMIC_SEQ_CST), 1, NULL);
+
+}
+
+static void test_loop_deferred_early (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_deferred_early_exchange (client, loop_deferred_early_request);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_deferred_early_exchange (client, loop_pool_deferred_early_request);
+	loop_client_thread (client, loop_pool_request, loop_pool_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// the requests of a pipeline behind one whose response is deferred wait for it: their responses arrive in the
+// order of their requests
+static void loop_deferred_pipeline_exchange (
+	LoopClient *client, const char *deferred_request, const char *request, const char *prefix
+) {
+
+	char pipeline[LOOP_PIPELINE_SIZE] = { 0 };
+	const size_t length = loop_pipeline_write (pipeline, deferred_request, 1, request);
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send_bytes (client, pipeline, length);
+
+	loop_deferred_complete (loop_deferred_take (handlers + 1));
+
+	loop_client_expect_text (client, loop_deferred_body);
+	loop_client_expect_thread (client, prefix);
+
+}
+
+static void test_loop_deferred_pipeline (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_deferred_pipeline_exchange (client, loop_deferred_request, loop_thread_request, loop_events_thread);
+	loop_deferred_pipeline_exchange (client, loop_pool_deferred_request, loop_thread_request, loop_events_thread);
+	loop_deferred_pipeline_exchange (client, loop_deferred_request, loop_pool_request, loop_pool_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// a deferred request that is completed without a response is answered with 500, like the one of a handler
+// that returns without one
+static void loop_deferred_unanswered_exchange (LoopClient *client, const char *request) {
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	test_check_unsigned_eq (cerver_http_context_complete (loop_deferred_take (handlers + 1)), 0, NULL);
+
+	loop_client_expect_status (client, HTTP_STATUS_INTERNAL_SERVER_ERROR);
+
+}
+
+static void test_loop_deferred_unanswered (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_deferred_unanswered_exchange (client, loop_deferred_request);
+	loop_deferred_unanswered_exchange (client, loop_pool_deferred_request);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// a thread that does not run the handler of a request can not defer its response: the handler still answers it
+static void loop_deferred_foreign_exchange (LoopClient *client, const char *request) {
+
+	loop_gate_reset ();
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	test_check_unsigned_eq (cerver_http_context_defer (loop_deferred_take (handlers + 1)), 1, NULL);
+
+	loop_gate_open ();
+
+	loop_client_expect_text (client, loop_deferred_body);
+
+}
+
+// only the handler of a request defers its response, in the thread that runs it: an after middleware and any
+// other thread are refused, their request ends like any other and its connection takes the next one
+static void test_loop_deferred_refused (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	__atomic_store_n (&loop_deferred_after, 0, __ATOMIC_SEQ_CST);
+
+	const unsigned int middlewares = __atomic_load_n (&loop_deferred_after_count, __ATOMIC_SEQ_CST);
+
+	loop_client_thread (client, loop_deferred_after_request, loop_events_thread);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&loop_deferred_after_count, middlewares + 1, LOOP_WAIT_TIMEOUT * test_time_scale ()),
+		middlewares + 1, NULL
+	);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_deferred_after, __ATOMIC_SEQ_CST), 1, NULL);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_deferred_foreign_exchange (client, loop_held_request);
+	loop_deferred_foreign_exchange (client, loop_pool_held_request);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// a handler asks another endpoint of its own cerver for its response, with the HTTP client of the cerver: the
+// one of an event loop defers its response and its loop sends the request (it can not wait for it), the one of a
+// pool of threads waits. The loops keep the connections of the client for the requests that follow
+static void test_loop_client (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	__atomic_store_n (&loop_client_refused, 0, __ATOMIC_SEQ_CST);
+
+	loop_client_thread (client, loop_client_request, loop_events_thread);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_client_refused, __ATOMIC_SEQ_CST), 1, NULL);
+
+	loop_client_thread (client, loop_pool_client_request, loop_events_thread);
+
+	for (unsigned int idx = 0; idx < LOOP_CLIENT_REQUESTS; idx++) {
+		loop_client_thread (client, loop_client_request, loop_events_thread);
+	}
+
+	test_check_true (cerver_http_client_get_reused (loop_http_client) > 0);
+	test_check_true (cerver_http_client_get_connections (loop_http_client) <= LOOP_CLIENT_REQUESTS);
+
+	// the connection of the test still takes its own requests
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+// a request with a file whose body arrives after its head, in two pieces: a thread of the pool parses each read
+// and writes the file, and the request is handled where its endpoint runs
+static void loop_files_exchange (LoopClient *client, const char *head, const char *prefix) {
+
+	loop_upload_thread_reset ();
+
+	loop_client_send (client, head);
+	loop_pause ();
+
+	loop_client_send_bytes (client, loop_files_body, LOOP_FILES_BODY_SPLIT);
+	loop_pause ();
+
+	loop_client_send (client, loop_files_body + LOOP_FILES_BODY_SPLIT);
+
+	loop_client_expect_thread (client, prefix);
+
+	loop_upload_thread_expect (loop_pool_thread);
+
+}
+
+// the same request in one write, with another request behind it: the bytes that follow its body are of the
+// next request, that its loop handles after it
+static void loop_files_pipeline (LoopClient *client, const char *head, const char *prefix) {
+
+	char pipeline[LOOP_PIPELINE_SIZE] = { 0 };
+	const int length = snprintf (pipeline, LOOP_PIPELINE_SIZE, "%s%s%s", head, loop_files_body, loop_thread_request);
+	test_check_true ((length > 0) && (length < LOOP_PIPELINE_SIZE));
+
+	loop_upload_thread_reset ();
+
+	loop_client_send_bytes (client, pipeline, (size_t) length);
+
+	loop_client_expect_thread (client, prefix);
+	loop_client_expect_thread (client, loop_events_thread);
+
+	loop_upload_thread_expect (loop_pool_thread);
+
+}
+
+// the files that an endpoint counted and their sizes: only the parts that are files count, the bytes of a value
+// are not the ones of a file
+static void loop_file_stats_expect (const CerverHttpEndpoint *endpoint, const size_t files) {
+
+	const size_t size = strlen (loop_files_content);
+
+	HttpRouteFileStats snapshot;
+	cerver_http_route_file_stats_snapshot (endpoint->file_stats, &snapshot);
+
+	test_check_unsigned_eq (snapshot.n_uploaded_files, files, NULL);
+	test_check_unsigned_eq (snapshot.min_file_size, size, NULL);
+	test_check_unsigned_eq (snapshot.max_file_size, size, NULL);
+	test_check_true (test_double_equal (snapshot.mean_file_size, (double) size));
+
+}
+
+// an event loop does not write the disk: the body of a request that is saved there (a multipart one) is parsed
+// by the threads of the pool, one job for each read of its loop, also when its endpoint runs in the loop
+static void test_loop_files (void) {
+
+	(void) mkdir (LOOP_UPLOADS_PATH, LOOP_UPLOADS_MODE);
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_files_exchange (client, loop_files_head, loop_events_thread);
+	loop_files_exchange (client, loop_pool_files_head, loop_pool_thread);
+
+	loop_files_pipeline (client, loop_files_head, loop_events_thread);
+	loop_files_pipeline (client, loop_pool_files_head, loop_pool_thread);
+
+	// a form with a value and a file: only its file is one
+	loop_client_send (client, loop_files_form_head);
+	loop_client_send (client, loop_parts_body);
+	loop_client_expect_thread (client, loop_events_thread);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	// the requests before the last one ended: the endpoint of the loops counted a file for each of its three
+	loop_file_stats_expect (loop_files_endpoint, LOOP_FILES_REQUESTS);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+	// the files of each request were deleted when it ended: the directory is empty
+	test_check_int_eq (rmdir (LOOP_UPLOADS_PATH), 0, NULL);
+
+}
+
+// a request whose parts are taken by handlers of its endpoint: they get each part, in order and in a thread of
+// the pool, and the request is handled where its endpoint runs
+static void loop_parts_exchange (LoopClient *client, const char *head, const char *prefix) {
+
+	test_check_unsigned_eq (strlen (loop_parts_body), LOOP_PARTS_BODY_LENGTH, NULL);
+
+	loop_parts_reset ();
+
+	loop_client_send (client, head);
+	loop_pause ();
+
+	loop_client_send_bytes (client, loop_parts_body, LOOP_FILES_BODY_SPLIT);
+	loop_pause ();
+
+	loop_client_send (client, loop_parts_body + LOOP_FILES_BODY_SPLIT);
+
+	loop_client_expect_thread (client, prefix);
+
+	loop_parts_expect (LOOP_PARTS_COUNT, loop_parts_expected);
+
+}
+
+// the parts of a multipart request can be taken by methods of the application while its body arrives, instead of
+// cerver: it saves no file. A handler that rejects a part ends the request with the status that it returns
+static void test_loop_parts (void) {
+
+	(void) mkdir (LOOP_UPLOADS_PATH, LOOP_UPLOADS_MODE);
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_parts_exchange (client, loop_parts_head, loop_events_thread);
+	loop_parts_exchange (client, loop_pool_parts_head, loop_pool_thread);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	// the bytes of the value that the handlers took are not the ones of a file
+	loop_file_stats_expect (loop_parts_endpoint, 1);
+
+	// the rejected request: its status, and its connection is closed
+	loop_parts_reset ();
+
+	loop_client_send (client, loop_parts_forbidden_request);
+	loop_client_expect_status (client, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE);
+	loop_client_expect_end (client);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_parts_started, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&loop_parts_ended, __ATOMIC_SEQ_CST), 0, NULL);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+	// no file was saved
+	test_check_int_eq (rmdir (LOOP_UPLOADS_PATH), 0, NULL);
+
+}
+
+// waits for the authentication handler that deferred its verdict, and takes the context of its request
+static CerverHttpContext *loop_verdict_take (const unsigned int count) {
+
+	test_check_unsigned_eq (
+		test_wait_counter (&loop_verdict_count, count, LOOP_WAIT_TIMEOUT * test_time_scale ()), count, NULL
+	);
+
+	return __atomic_load_n (&loop_verdict_context, __ATOMIC_SEQ_CST);
+
+}
+
+// a request whose authentication deferred its verdict waits, without a thread, until the test gives it: one that
+// is accepted is handled where its endpoint runs, one that is rejected is answered with a 401
+static void loop_verdict_exchange (
+	LoopClient *client, const char *request, const bool authenticated, const char *prefix
+) {
+
+	const unsigned int handlers = __atomic_load_n (&loop_verdict_count, __ATOMIC_SEQ_CST);
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_verdict_take (handlers + 1);
+
+	// a request that waits for its verdict was not handled: it is not completed like a deferred response
+	test_check_unsigned_eq (cerver_http_context_complete (context), 1, NULL);
+
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, authenticated), 0, NULL);
+
+	if (authenticated) loop_client_expect_thread (client, prefix);
+	else loop_client_expect_status (client, HTTP_STATUS_UNAUTHORIZED);
+
+}
+
+// a request that is rejected is answered with the response that was written for it before its verdict
+static void loop_verdict_answered_exchange (LoopClient *client, const char *request) {
+
+	const unsigned int handlers = __atomic_load_n (&loop_verdict_count, __ATOMIC_SEQ_CST);
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_verdict_take (handlers + 1);
+
+	test_check_unsigned_eq (
+		cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_BAD_REQUEST), 0, NULL
+	);
+
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, false), 0, NULL);
+
+	loop_client_expect_status (client, HTTP_STATUS_BAD_REQUEST);
+
+}
+
+// a rejected request, in its own connection
+static void loop_verdict_rejected (const LoopServer *server, const char *request) {
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_verdict_exchange (client, request, false, NULL);
+
+	loop_client_close (client);
+
+}
+
+// an authentication handler defers its verdict and returns, in its event loop and in a thread of a pool: the
+// request waits without a thread and the test gives the verdict from its own. Before its body, without one and
+// after it: the request that is accepted goes on where its endpoint runs, and its connection is kept
+static void test_loop_verdict (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	__atomic_store_n (&loop_verdict_refused, 0, __ATOMIC_SEQ_CST);
+
+	loop_verdict_exchange (client, loop_verdict_request, true, loop_events_thread);
+
+	// the handler of the endpoint could not defer the verdict of its request
+	test_check_unsigned_eq (__atomic_load_n (&loop_verdict_refused, __ATOMIC_SEQ_CST), 1, NULL);
+
+	loop_verdict_exchange (client, loop_pool_verdict_request, true, loop_pool_thread);
+
+	loop_verdict_exchange (client, loop_verdict_body_request, true, loop_events_thread);
+	loop_verdict_exchange (client, loop_pool_verdict_body_request, true, loop_pool_thread);
+
+	loop_verdict_exchange (client, loop_late_request, true, loop_events_thread);
+	loop_verdict_exchange (client, loop_pool_late_request, true, loop_pool_thread);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_verdict_rejected (server, loop_verdict_request);
+	loop_verdict_rejected (server, loop_pool_verdict_request);
+	loop_verdict_rejected (server, loop_verdict_body_request);
+	loop_verdict_rejected (server, loop_pool_verdict_body_request);
+	loop_verdict_rejected (server, loop_late_request);
+	loop_verdict_rejected (server, loop_pool_late_request);
+
+	client = loop_client_connect (server);
+	loop_verdict_answered_exchange (client, loop_verdict_request);
+	loop_client_close (client);
+
+	client = loop_client_connect (server);
+	loop_verdict_answered_exchange (client, loop_pool_verdict_request);
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+static void loop_static_file_create (void) {
+
+	(void) mkdir (LOOP_STATIC_PATH, LOOP_UPLOADS_MODE);
+
+	const int fd = open (LOOP_STATIC_FILE, O_WRONLY | O_CREAT | O_TRUNC, LOOP_STATIC_FILE_MODE);
+	test_check_true (fd > -1);
+
+	const size_t length = strlen (loop_static_content);
+	test_check (write (fd, loop_static_content, length) == (ssize_t) length, "write () failed");
+
+	(void) close (fd);
+
+}
+
+// the authentication of a file of a static path defers its verdict too: the file is served, by the pool of
+// threads, only when the verdict accepts its request
+static void test_loop_verdict_static (void) {
+
+	loop_static_file_create ();
+
+	loop_static_private = true;
+
+	LoopServer *server = loop_server_start (true);
+
+	loop_static_private = false;
+
+	LoopClient *client = loop_client_connect (server);
+
+	const unsigned int handlers = __atomic_load_n (&loop_verdict_count, __ATOMIC_SEQ_CST);
+
+	loop_client_send (client, loop_static_request);
+
+	CerverHttpContext *context = loop_verdict_take (handlers + 1);
+
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, true), 0, NULL);
+
+	loop_client_expect_text (client, loop_static_content);
+
+	// its connection takes the next request
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_verdict_rejected (server, loop_static_request);
+
+	loop_server_stop (server);
+
+	test_check_int_eq (unlink (LOOP_STATIC_FILE), 0, NULL);
+	test_check_int_eq (rmdir (LOOP_STATIC_PATH), 0, NULL);
+
+}
+
+// a request with a status, in its own connection
+static void loop_status_exchange (const LoopServer *server, const char *request, const unsigned int status) {
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_client_send (client, request);
+	loop_client_expect_status (client, status);
+
+	loop_client_close (client);
+
+}
+
+// an authentication handler that gives its verdict before it returns: its request goes on like any other
+static void test_loop_verdict_early (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_client_thread (client, loop_decided_request, loop_events_thread);
+	loop_client_thread (client, loop_pool_decided_request, loop_pool_thread);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_status_exchange (server, loop_decided_bad_request, HTTP_STATUS_UNAUTHORIZED);
+	loop_status_exchange (server, loop_pool_decided_bad_request, HTTP_STATUS_UNAUTHORIZED);
+
+	loop_server_stop (server);
+
+}
+
+// an authentication handler that asks another service with the HTTP client of its cerver: no thread waits for
+// that response, that decides. The request that it accepts is handled where its endpoint runs
+static void test_loop_verdict_request (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	for (unsigned int idx = 0; idx < LOOP_CLIENT_REQUESTS; idx++) {
+		loop_client_thread (client, loop_checked_request, loop_events_thread);
+		loop_client_thread (client, loop_pool_checked_request, loop_pool_thread);
+	}
+
+	loop_client_close (client);
+
+	loop_status_exchange (server, loop_checked_bad_request, HTTP_STATUS_UNAUTHORIZED);
+	loop_status_exchange (server, loop_pool_checked_bad_request, HTTP_STATUS_UNAUTHORIZED);
+
+	loop_server_stop (server);
+
+}
+
+// a verdict that is not given before the request timeout loses its client: its connection is shut down, and the
+// request is rejected when its verdict arrives, whatever it is: its handler never runs
+static void loop_verdict_timeout_exchange (const LoopServer *server, const char *request) {
+
+	LoopClient *client = loop_client_connect (server);
+
+	const unsigned int handlers = __atomic_load_n (&loop_verdict_count, __ATOMIC_SEQ_CST);
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_verdict_take (handlers + 1);
+
+	loop_client_expect_end (client);
+
+	test_check_true (cerver_http_context_client_is_gone (context));
+
+	test_check_unsigned_eq (cerver_http_context_authentication_complete (context, true), 0, NULL);
+
+	loop_client_close (client);
+
+	// the request ended: its connection left its loop
+	loop_server_wait (server, loop_server_connections, 0);
+
+}
+
+static void test_loop_verdict_timeout (void) {
+
+	loop_request_timeout = LOOP_DEFERRED_REQUEST_TIMEOUT;
+
+	LoopServer *server = loop_server_start (true);
+
+	__atomic_store_n (&loop_verdict_refused, 0, __ATOMIC_SEQ_CST);
+
+	loop_verdict_timeout_exchange (server, loop_verdict_request);
+	loop_verdict_timeout_exchange (server, loop_pool_verdict_request);
+	loop_verdict_timeout_exchange (server, loop_verdict_body_request);
+	loop_verdict_timeout_exchange (server, loop_pool_verdict_body_request);
+
+	// the handler of the endpoint of the GET, that writes this, never ran
+	test_check_unsigned_eq (__atomic_load_n (&loop_verdict_refused, __ATOMIC_SEQ_CST), 0, NULL);
+
+	// the cerver still serves
+	LoopClient *client = loop_client_connect (server);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+	loop_request_timeout = 0;
+
+}
+
+// a deferred response that is not completed before the request timeout loses its client: its connection is
+// shut down, what is written of the response fails, and the request is still completed
+static void loop_deferred_timeout_exchange (const LoopServer *server, const char *request) {
+
+	LoopClient *client = loop_client_connect (server);
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_deferred_take (handlers + 1);
+
+	loop_client_expect_end (client);
+
+	test_check_true (cerver_http_context_client_is_gone (context));
+
+	test_check_unsigned_eq (
+		cerver_http_response_send_text (context, loop_deferred_body, strlen (loop_deferred_body)), 1, NULL
+	);
+
+	test_check_unsigned_eq (cerver_http_context_complete (context), 0, NULL);
+
+	loop_client_close (client);
+
+}
+
+static void test_loop_deferred_timeout (void) {
+
+	loop_request_timeout = LOOP_DEFERRED_REQUEST_TIMEOUT;
+
+	LoopServer *server = loop_server_start (true);
+
+	loop_deferred_timeout_exchange (server, loop_deferred_request);
+	loop_deferred_timeout_exchange (server, loop_pool_deferred_request);
+
+	// the cerver still serves
+	LoopClient *client = loop_client_connect (server);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+	loop_request_timeout = 0;
+
+}
+
+// completes a deferred request a while after the cerver was asked to stop
+static void *loop_deferred_late_thread (void *context_ptr) {
+
+	for (unsigned int idx = 0; idx < LOOP_DEFERRED_LATE_PAUSES; idx++) loop_pause ();
+
+	loop_deferred_complete ((CerverHttpContext *) context_ptr);
+
+	return NULL;
+
+}
+
+// a cerver that stops waits for the requests whose response is deferred, that no thread of its pools has:
+// the one that is completed after the cerver was asked to stop still reaches its client
+static void loop_deferred_stop_exchange (const char *request) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_deferred_take (handlers + 1);
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, loop_deferred_late_thread, context), 0, NULL);
+
+	loop_server_stop (server);
+
+	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
+
+	loop_client_expect_text (client, loop_deferred_body);
+
+	loop_client_close (client);
+
+}
+
+static void test_loop_deferred_stop (void) {
+
+	loop_deferred_stop_exchange (loop_deferred_request);
+	loop_deferred_stop_exchange (loop_pool_deferred_request);
+
+}
+
+static bool loop_client_has_text (const LoopClient *client, const char *text) {
+
+	return memmem (client->buffer, client->length, text, strlen (text)) != NULL;
+
+}
+
+// reads until what the client received has the text
+// returns false when its connection ended, or its receive timeout, before the text arrived
+static bool loop_client_wait_text (LoopClient *client, const char *text) {
+
+	ssize_t received = 1;
+	while (!loop_client_has_text (client, text) && (received > 0) && (client->length < LOOP_BUFFER_SIZE)) {
+		received = recv (client->fd, client->buffer + client->length, LOOP_BUFFER_SIZE - client->length, 0);
+
+		if (received > 0) client->length += (size_t) received;
+	}
+
+	return loop_client_has_text (client, text);
+
+}
+
+static void loop_deferred_stream_piece (
+	LoopClient *client, CerverHttpContext *context, const char *piece, const char *chunk
+) {
+
+	test_check_unsigned_eq (cerver_http_response_stream_write (context, piece, strlen (piece)), 0, NULL);
+
+	test_check_true (loop_client_wait_text (client, chunk));
+
+}
+
+// a handler begins a stream, defers its response and returns: the start of the stream reaches its client before
+// any piece is written, each piece when another thread writes it, and its end when the request is completed
+// (cerver ends the stream that was left open). Its connection is kept
+static void loop_deferred_stream_exchange (LoopClient *client, const char *request) {
+
+	const unsigned int handlers = loop_deferred_handlers ();
+
+	loop_client_send (client, request);
+
+	CerverHttpContext *context = loop_deferred_take (handlers + 1);
+
+	test_check_true (loop_client_wait_text (client, loop_header_end));
+	test_check_true (loop_client_has_text (client, loop_stream_chunked));
+	test_check_false (loop_client_has_text (client, loop_stream_first));
+
+	loop_deferred_stream_piece (client, context, loop_stream_first, loop_stream_first_chunk);
+	test_check_false (loop_client_has_text (client, loop_stream_second));
+
+	loop_deferred_stream_piece (client, context, loop_stream_second, loop_stream_second_chunk);
+	test_check_false (loop_client_has_text (client, loop_stream_last_chunk));
+
+	test_check_unsigned_eq (cerver_http_context_complete (context), 0, NULL);
+
+	test_check_true (loop_client_wait_text (client, loop_stream_last_chunk));
+
+	// the whole response was read
+	client->length = 0;
+
+}
+
+// the whole stream of the test arrives, with its pieces in order
+static void loop_drained_exchange (LoopClient *client, const char *request) {
+
+	loop_client_send (client, request);
+
+	test_check_true (loop_client_wait_text (client, loop_stream_last_chunk));
+	test_check_true (loop_client_has_text (client, loop_stream_chunked));
+	test_check_true (loop_client_has_text (client, loop_drained_body));
+
+	// the whole response was read
+	client->length = 0;
+
+}
+
+// a handler of an event loop writes a stream piece by piece: its loop tells it when what it wrote was sent,
+// once for each piece that follows the first one and once more for its end. A handler of a pool of threads is
+// not told: it writes its pieces by itself. Their connection is kept
+static void test_loop_stream_drained (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	__atomic_store_n (&loop_drained_calls, 0, __ATOMIC_SEQ_CST);
+
+	loop_drained_exchange (client, loop_drained_request);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_drained_refused, __ATOMIC_SEQ_CST), 0, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&loop_drained_calls, __ATOMIC_SEQ_CST), LOOP_DRAINED_PIECES, NULL);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_drained_exchange (client, loop_pool_drained_request);
+
+	test_check_unsigned_eq (__atomic_load_n (&loop_drained_refused, __ATOMIC_SEQ_CST), 1, NULL);
+	test_check_unsigned_eq (__atomic_load_n (&loop_drained_calls, __ATOMIC_SEQ_CST), LOOP_DRAINED_PIECES, NULL);
+
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+static void test_loop_deferred_stream (void) {
+
+	LoopServer *server = loop_server_start (true);
+
+	LoopClient *client = loop_client_connect (server);
+
+	loop_deferred_stream_exchange (client, loop_stream_request);
+	loop_client_thread (client, loop_thread_request, loop_events_thread);
+
+	loop_deferred_stream_exchange (client, loop_pool_stream_request);
+	loop_client_thread (client, loop_pool_request, loop_pool_thread);
+
+	loop_client_close (client);
+
+	loop_server_stop (server);
+
+}
+
+#pragma endregion
+
 static void loop_big_body_create (void) {
 
 	loop_big_body = (char *) malloc (LOOP_BIG_SIZE);
@@ -1587,6 +3301,24 @@ void http_tests_loop (void) {
 	test_run (test_loop_pipeline_partial);
 	test_run (test_loop_pipeline_reset);
 	test_run (test_loop_pipeline_stopping);
+
+	test_run (test_loop_deferred);
+	test_run (test_loop_deferred_early);
+	test_run (test_loop_deferred_pipeline);
+	test_run (test_loop_deferred_unanswered);
+	test_run (test_loop_deferred_refused);
+	test_run (test_loop_client);
+	test_run (test_loop_verdict);
+	test_run (test_loop_verdict_early);
+	test_run (test_loop_verdict_request);
+	test_run (test_loop_verdict_timeout);
+	test_run (test_loop_verdict_static);
+	test_run (test_loop_files);
+	test_run (test_loop_parts);
+	test_run (test_loop_stream_drained);
+	test_run (test_loop_deferred_timeout);
+	test_run (test_loop_deferred_stop);
+	test_run (test_loop_deferred_stream);
 
 	(void) alarm (0);
 
