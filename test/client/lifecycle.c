@@ -25,6 +25,8 @@
 // - the cerver closes the connection (the update thread ends it, removes it and stops the client)
 // - the cerver sends CLOSE_CONNECTION (a packet handler ends it from the update thread)
 // - client_disconnect () and client_teardown () with active connections
+// - client_connect_to_cerver () against a cerver that closes the connection instead of sending its info
+// - a request whose cerver closes the connection instead of answering it
 
 #define LIFECYCLE_ADDRESS					"127.0.0.1"
 
@@ -57,8 +59,9 @@ typedef enum LifecycleBehavior {
 	LIFECYCLE_BEHAVIOR_ECHO			= 4,	// sends back what it receives until the client closes it
 	LIFECYCLE_BEHAVIOR_BAD			= 5,	// sends packets of an unknown type and waits for the client
 	LIFECYCLE_BEHAVIOR_SPLIT		= 6,	// sends a big and a small packet in pieces and waits for the client
+	LIFECYCLE_BEHAVIOR_RECEIVE		= 7,	// receives a request and closes the connection without a response
 
-	LIFECYCLE_BEHAVIOR_MAX			= 7
+	LIFECYCLE_BEHAVIOR_MAX			= 8
 
 } LifecycleBehavior;
 
@@ -191,6 +194,14 @@ static void lifecycle_server_send_split (const int sock_fd) {
 
 }
 
+// receives the header of a request, then the connection is closed without a response
+static void lifecycle_server_receive (const int sock_fd) {
+
+	char buffer[PACKET_HEADER_SIZE];
+	(void) recv (sock_fd, buffer, PACKET_HEADER_SIZE, MSG_WAITALL);
+
+}
+
 static void lifecycle_server_echo (const int sock_fd) {
 
 	char buffer[LIFECYCLE_BUFFER_SIZE];
@@ -228,6 +239,10 @@ static void *lifecycle_server_connection (void *connection_ptr) {
 		case LIFECYCLE_BEHAVIOR_SPLIT:
 			lifecycle_server_send_split (connection->sock_fd);
 			lifecycle_server_wait_close (connection->sock_fd);
+			break;
+
+		case LIFECYCLE_BEHAVIOR_RECEIVE:
+			lifecycle_server_receive (connection->sock_fd);
 			break;
 
 		default: break;
@@ -653,6 +668,51 @@ static void test_lifecycle_connect_async_teardown (void) {
 
 }
 
+// client_connect_to_cerver () against a cerver that does not send its info: the connect fails,
+// and the connection stays registered and closed until the app ends it
+// (it used to be reported as connected after its read had already ended and freed it)
+static void lifecycle_connect_to_cerver_failed (const LifecycleBehavior behavior) {
+
+	LifecycleServer *server = lifecycle_server_start (behavior);
+	Client *client = lifecycle_client_create ();
+
+	lifecycle_events_reset ();
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (
+		client_connect_to_cerver (client, connection), 1,
+		"the connect succeeded without the info of the cerver"
+	);
+
+	test_check_false (connection->active);
+	test_check_unsigned_eq (lifecycle_connections_count (client), 1, "the failed connection was removed");
+	test_check_unsigned_eq (
+		test_wait_counter (&lifecycle_events[CLIENT_EVENT_CONNECTION_FAILED], 1, TEST_WAIT_SECONDS),
+		1, "the failed connect was not reported"
+	);
+
+	test_check_int_eq (client_connection_end (client, connection), 0, NULL);
+	test_check_unsigned_eq (lifecycle_connections_count (client), 0, NULL);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	lifecycle_server_stop (server);
+
+}
+
+// the cerver closes the connection before sending its info
+static void test_lifecycle_connect_to_cerver_closed (void) {
+
+	lifecycle_connect_to_cerver_failed (LIFECYCLE_BEHAVIOR_CLOSE);
+
+}
+
+// the first packet of the cerver is CLOSE_CONNECTION
+static void test_lifecycle_connect_to_cerver_close_packet (void) {
+
+	lifecycle_connect_to_cerver_failed (LIFECYCLE_BEHAVIOR_PACKET);
+
+}
+
 static void lifecycle_queued_handler (void *handler_data_ptr) {
 
 	(void) handler_data_ptr;
@@ -790,6 +850,29 @@ static void test_lifecycle_next_packet_too_big (void) {
 
 }
 
+// client_connect_to_cerver () succeeds once it read the first packet of the cerver
+static void test_lifecycle_connect_to_cerver_info (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_SPLIT);
+
+	Client *client = lifecycle_split_client_create (LIFECYCLE_SPLIT_MAX_PACKET_SIZE);
+
+	lifecycle_events_reset ();
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (client_connect_to_cerver (client, connection), 0, NULL);
+	test_check_unsigned_eq (lifecycle_split_packets, 1, NULL);
+
+	test_check_true (connection->active);
+	test_check_unsigned_eq (lifecycle_events[CLIENT_EVENT_CONNECTION_FAILED], 0, NULL);
+
+	test_check_int_eq (client_connection_end (client, connection), 0, NULL);
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
+	lifecycle_server_stop (server);
+
+}
+
 // the same client connects again after its connections ended,
 // from the app (the client keeps running) and from the cerver (the client stopped)
 static void test_lifecycle_reconnect (void) {
@@ -914,6 +997,73 @@ static void test_lifecycle_request_async (void) {
 
 }
 
+// a request whose cerver closes the connection fails and only closes it,
+// the connection stays registered until the app ends it (it used to be ended and freed by the read)
+static void test_lifecycle_request_closed (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_RECEIVE);
+	Client *client = lifecycle_client_create ();
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (client_connect (client, connection), 0, NULL);
+
+	Packet *request = packet_create_request (PACKET_TYPE_APP, LIFECYCLE_REQUEST_TYPE);
+	test_check_ptr (request);
+	test_check_unsigned_eq (client_request_to_cerver (client, connection, request), 1, NULL);
+
+	test_check_false (connection->active);
+	test_check_unsigned_eq (lifecycle_connections_count (client), 1, "the closed connection was removed");
+
+	packet_delete (request);
+
+	test_check_int_eq (client_connection_end (client, connection), 0, NULL);
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	lifecycle_server_stop (server);
+
+}
+
+// an async request whose cerver closes the connection triggers CONNECTION_DATA
+// with the connection closed and still registered
+static void test_lifecycle_request_async_closed (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_RECEIVE);
+	Client *client = lifecycle_client_create ();
+
+	lifecycle_events_reset ();
+
+	test_check_unsigned_eq (
+		client_event_register (
+			client, CLIENT_EVENT_CONNECTION_DATA,
+			lifecycle_event, &lifecycle_events[CLIENT_EVENT_CONNECTION_DATA], NULL,
+			false, false
+		), 0, NULL
+	);
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (client_connect (client, connection), 0, NULL);
+
+	Packet *request = packet_create_request (PACKET_TYPE_APP, LIFECYCLE_REQUEST_TYPE);
+	test_check_ptr (request);
+	test_check_unsigned_eq (client_request_to_cerver_async (client, connection, request), 0, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&lifecycle_events[CLIENT_EVENT_CONNECTION_DATA], 1, TEST_WAIT_SECONDS),
+		1, "the async request did not end"
+	);
+
+	client_requests_wait (client);
+
+	test_check_false (connection->active);
+	test_check_unsigned_eq (lifecycle_connections_count (client), 1, "the closed connection was removed");
+
+	packet_delete (request);
+
+	test_check_int_eq (client_connection_end (client, connection), 0, NULL);
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	lifecycle_server_stop (server);
+
+}
+
 // the client ends a connection that receives its limit of bad packets, and keeps one below it
 static void test_lifecycle_bad_packets (void) {
 
@@ -986,12 +1136,17 @@ int main (int argc, char **argv) {
 	test_lifecycle_connect_async ();
 	test_lifecycle_connect_async_failed ();
 	test_lifecycle_connect_async_teardown ();
+	test_lifecycle_connect_to_cerver_closed ();
+	test_lifecycle_connect_to_cerver_close_packet ();
 	test_lifecycle_handlers_teardown ();
 	test_lifecycle_next_packet ();
 	test_lifecycle_next_packet_too_big ();
+	test_lifecycle_connect_to_cerver_info ();
 	test_lifecycle_connect_and_start_async ();
 	test_lifecycle_reconnect ();
 	test_lifecycle_request_async ();
+	test_lifecycle_request_closed ();
+	test_lifecycle_request_async_closed ();
 	test_lifecycle_bad_packets ();
 	test_lifecycle_many_clients ();
 
