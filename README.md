@@ -38,7 +38,7 @@ Cerver started in 2018 as the multiplayer server of a game. Linux exposes a sock
 
 | Line | Branch | What it is |
 |---|---|---|
-| **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver: everything above, without HTTP. The 1.9 is its last line, its fixes are 1.9.N releases (macOS in the 1.9.1) |
+| **1.x** | `master` (releases), `core` (development), `beta` | The core of cerver: everything above, without HTTP. The 1.9 is its last line, its fixes are 1.9.N releases (the reads of the client in the 1.9.1, macOS in a later 1.9.N) |
 | **2.0** | `http` (development), `http-beta` | Everything in the core, plus an HTTP server: routes, JWT authentication, uploads, JSON. It reaches `master` with the release 2.0 |
 | **2.1** | `nightly` (development), `nightly-beta` | Experimental: an event loop, real keep alive, pools and WebSocket |
 | **3.0** | `labs` (development), `labs-beta` | Experimental: cerver with its own code only (its own JSON, JWT and HTTP parser), and an I/O over io_uring as its goal |
