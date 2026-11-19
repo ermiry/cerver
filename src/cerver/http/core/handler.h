@@ -8,12 +8,16 @@
 #ifndef _CERVER_HTTP_CORE_HANDLER_H_
 #define _CERVER_HTTP_CORE_HANDLER_H_
 
+#include <pthread.h>
+
 #include "cerver/config.h"
 
+#include "cerver/http/clients/client.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/types.h"
 #include "cerver/http/requests/internal.h"
 #include "cerver/http/responses/prepared.h"
+#include "cerver/http/responses/response.h"
 #include "cerver/http/responses/stream.h"
 #include "cerver/http/routes/internal.h"
 
@@ -179,9 +183,32 @@ typedef enum HttpReceivePause {
 	/** @brief The headers are complete: the request is authorized before its body is received. */
 	HTTP_RECEIVE_PAUSE_HEADERS			= 1,
 	/** @brief The request is complete: it is handled. */
-	HTTP_RECEIVE_PAUSE_MESSAGE			= 2
+	HTTP_RECEIVE_PAUSE_MESSAGE			= 2,
+	/**
+	 * @brief The headers are complete and the request was authorized: its body is saved to the disk, so the
+	 * threads of a pool parse it (HttpReceive::body_off_loop).
+	 *
+	 * @since 3.0b-13
+	 */
+	HTTP_RECEIVE_PAUSE_BODY				= 3
 
 } HttpReceivePause;
+
+/**
+ * @brief The verdict that was given for a request whose authentication handler deferred it.
+ *
+ * @since 3.0b-13
+ */
+typedef enum HttpReceiveVerdict {
+
+	/** @brief No verdict was given: the authentication handler of the request decides. */
+	HTTP_RECEIVE_VERDICT_NONE			= 0,
+	/** @brief The request is authenticated. */
+	HTTP_RECEIVE_VERDICT_ACCEPTED		= 1,
+	/** @brief The request is rejected. */
+	HTTP_RECEIVE_VERDICT_REJECTED		= 2
+
+} HttpReceiveVerdict;
 
 /**
  * @brief The state of an HTTP connection and of the request that it is receiving.
@@ -335,6 +362,19 @@ struct _HttpReceive {
 
 	/** @brief The response that the handler sends in pieces. */
 	HttpStream stream;
+	/**
+	 * @brief Called by the event loop of the request each time that what was written of its stream was sent, while
+	 * its response is deferred (cerver_http_response_stream_on_drained ()); NULL without one.
+	 *
+	 * @since 3.0b-13
+	 */
+	CerverHttpStreamDrained stream_drained;
+	/**
+	 * @brief Passed to #stream_drained.
+	 *
+	 * @since 3.0b-13
+	 */
+	void *stream_drained_data;
 
 	/**
 	 * @brief The response that the handler of the request is writing (its status and its headers), taken from the
@@ -403,6 +443,57 @@ struct _HttpReceive {
 	 * @since 3.0b-5
 	 */
 	struct HttpConnection *connection;
+
+	/**
+	 * @brief The handler of the endpoint of the request is running, in #handler_thread: only there the response
+	 * of the request can be deferred.
+	 *
+	 * @since 3.0b-13
+	 */
+	bool handling;
+	/**
+	 * @brief The thread that runs the handler of the endpoint of the request, valid while #handling.
+	 *
+	 * @since 3.0b-13
+	 */
+	pthread_t handler_thread;
+
+	/**
+	 * @brief The authentication handler of the request is running, in #handler_thread: only there its verdict can
+	 * be deferred.
+	 *
+	 * @since 3.0b-13
+	 */
+	bool authenticating;
+	/**
+	 * @brief The authentication handler of the request deferred its verdict, and the request has not gone on with
+	 * the one that was given (cerver_http_context_authentication_complete ()).
+	 *
+	 * @since 3.0b-13
+	 */
+	bool authentication_deferred;
+	/**
+	 * @brief The verdict that was given for the request, a value of HttpReceiveVerdict: its authentication takes
+	 * it instead of calling its handler again.
+	 *
+	 * @since 3.0b-13
+	 */
+	unsigned int authentication_verdict;
+	/**
+	 * @brief Decides the authentication of the request with the response of the request that its authentication
+	 * handler sent (cerver_http_context_authentication_request ()).
+	 *
+	 * @since 3.0b-13
+	 */
+	CerverHttpAuthenticationResponse authentication_response;
+
+	/**
+	 * @brief The body of the request of an event loop is saved to the disk (a multipart one): the loop reads its
+	 * bytes and a thread of a pool parses each read and writes its files, an event loop does not write the disk.
+	 *
+	 * @since 3.0b-13
+	 */
+	bool body_off_loop;
 
 	/**
 	 * @brief Where the parser was paused for the pool, a value of a request.

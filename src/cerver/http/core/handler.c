@@ -227,8 +227,15 @@ static void http_receive_request_init (HttpReceive *http_receive) {
 	http_receive->responded = false;
 	http_receive->framed = false;
 
+	http_receive->authentication_deferred = false;
+	http_receive->authentication_verdict = HTTP_RECEIVE_VERDICT_NONE;
+
+	http_receive->body_off_loop = false;
+
 	http_receive->stream.state = HTTP_STREAM_STATE_NONE;
 	http_receive->stream.chunked = false;
+	http_receive->stream_drained = NULL;
+	http_receive->stream_drained_data = NULL;
 
 	http_receive->writer = NULL;
 
@@ -915,9 +922,11 @@ bool http_receive_is_client_gone (const HttpReceive *http_receive) {
 	if (http_receive) {
 		const CerverHttpClientState state = http_receive_get_client_state (http_receive);
 
+		// a client whose response can not be written anymore is gone too, whatever its socket says
 		gone = (state == HTTP_CLIENT_STATE_RESET)
 			|| ((state == HTTP_CLIENT_STATE_CLOSED) && http_receive->http_cerver->half_close_is_gone)
-			|| http_receive->response_failed;
+			|| http_receive->response_failed
+			|| (http_receive->connection && http_connection_output_is_failed (http_receive->connection));
 	}
 
 	return gone;
@@ -1022,6 +1031,42 @@ static void http_receive_parse_body_values (HttpRequest *request) {
 
 }
 
+// the handler of the request deferred its response and nobody ended its request: what follows the handler
+// runs when the request is completed
+static bool http_receive_is_deferred (const HttpReceive *http_receive) {
+
+	return http_receive->connection && http_connection_is_deferred (http_receive->connection);
+
+}
+
+// what follows the handler of an endpoint: its after middlewares, and the end of the stream that it left open
+static void http_receive_handle_endpoint_end (
+	HttpReceive *http_receive, const HttpEndpoint *endpoint
+) {
+
+	http_middlewares_run_after (&endpoint->resolved.middlewares, http_receive);
+
+	// a stream that the handler did not end is ended by cerver
+	if (http_response_stream_is_active (http_receive)) {
+		(void) http_response_stream_end (http_receive);
+	}
+
+}
+
+// the handler of the endpoint: only while it runs, and only its thread, can defer the response of the request
+static void http_receive_handler_run (
+	HttpReceive *http_receive, const HttpEndpoint *endpoint
+) {
+
+	http_receive->handler_thread = pthread_self ();
+	http_receive->handling = true;
+
+	endpoint->handler (http_receive);
+
+	http_receive->handling = false;
+
+}
+
 // runs the before middlewares, the handler and the after middlewares
 
 static void http_receive_handle_endpoint (
@@ -1031,15 +1076,10 @@ static void http_receive_handle_endpoint (
 	const HttpMiddlewares *middlewares = &endpoint->resolved.middlewares;
 
 	if (http_middlewares_run_before (middlewares, http_receive)) {
-		endpoint->handler (http_receive);
+		http_receive_handler_run (http_receive, endpoint);
 	}
 
-	http_middlewares_run_after (middlewares, http_receive);
-
-	// a stream that the handler did not end is ended by cerver
-	if (http_response_stream_is_active (http_receive)) {
-		(void) http_response_stream_end (http_receive);
-	}
+	if (!http_receive_is_deferred (http_receive)) http_receive_handle_endpoint_end (http_receive, endpoint);
 
 }
 
@@ -1141,6 +1181,46 @@ static bool http_receive_handle_select_auth_bearer (
 
 }
 
+// the authentication handler of a request: only while it runs, and only its thread, can defer its verdict
+static unsigned int http_receive_authentication_run (
+	HttpReceive *http_receive, const HttpRouteSettings *found
+) {
+
+	http_receive->handler_thread = pthread_self ();
+	http_receive->authenticating = true;
+
+	const unsigned int result = found->authentication_handler (http_receive);
+
+	http_receive->authenticating = false;
+
+	return result;
+
+}
+
+// the verdict of the custom authentication of a request: the one that was given for a request whose handler
+// deferred it (the handler is not called again), or what its handler returns
+// returns false also for a handler that deferred its verdict: the request stops there, without a response
+static bool http_receive_authentication_verdict (
+	HttpReceive *http_receive, const HttpRouteSettings *found
+) {
+
+	bool authenticated = false;
+
+	if (http_receive->authentication_verdict != HTTP_RECEIVE_VERDICT_NONE) {
+		authenticated = (http_receive->authentication_verdict == HTTP_RECEIVE_VERDICT_ACCEPTED);
+
+		http_receive->authentication_verdict = HTTP_RECEIVE_VERDICT_NONE;
+	}
+
+	else {
+		authenticated = !http_receive_authentication_run (http_receive, found)
+			&& !http_receive->authentication_deferred;
+	}
+
+	return authenticated;
+
+}
+
 // returns true if the route's custom authentication handler accepts the request
 static bool http_receive_handle_select_auth_custom (
 	HttpReceive *http_receive, const HttpRouteSettings *found
@@ -1149,7 +1229,7 @@ static bool http_receive_handle_select_auth_custom (
 	bool authenticated = false;
 
 	if (found->authentication_handler) {
-		if (!found->authentication_handler (http_receive)) {
+		if (http_receive_authentication_verdict (http_receive, found)) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_success ("Success authentication with custom method!");
 			#endif
@@ -1157,7 +1237,8 @@ static bool http_receive_handle_select_auth_custom (
 			authenticated = true;
 		}
 
-		else {
+		// the verdict of the request was deferred: it is not rejected, it waits for who gives it
+		else if (!http_receive->authentication_deferred) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_error ("Failed authentication with custom method!");
 			#endif
@@ -1537,6 +1618,9 @@ static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 	if (content_type && is_multipart (content_type->str)) {
 		http_receive->is_multi_part = true;
 
+		// its files are written while its body is parsed: by a thread of a pool, never by an event loop
+		http_receive->body_off_loop = (http_receive->connection != NULL);
+
 		char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
 		if (!http_mpart_get_boundary (
 			boundary, content_type->str, (unsigned int) content_type->len
@@ -1676,6 +1760,17 @@ static int http_receive_headers_select (HttpReceive *http_receive, const CerverH
 
 }
 
+// the authentication of a request stopped it: it was rejected and answered, or its handler deferred its
+// verdict. The request of a deferred verdict is authorized again when the verdict is given: its authentication
+// takes it then, without calling its handler
+static int http_receive_authorize_stopped (HttpReceive *http_receive) {
+
+	if (http_receive->authentication_deferred) http_receive->authorize_pending = true;
+
+	return HTTP_RECEIVE_PARSER_STOP;
+
+}
+
 // the second part of the complete headers, the one that can wait or run methods of the application:
 // the authentication, the upgrade, the directory of the uploads, the static path and "100 Continue"
 // it runs in the parser, or in a thread of the pool when the request is of an event loop
@@ -1696,7 +1791,7 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 			!endpoint->resolved.authentication_with_body
 			&& !http_receive_handle_authenticate (http_cerver, http_receive, &endpoint->resolved, request)
 		) {
-			return HTTP_RECEIVE_PARSER_STOP;
+			return http_receive_authorize_stopped (http_receive);
 		}
 
 		if (http_receive_handle_headers_web_socket (http_receive, parser)) {
@@ -1714,7 +1809,9 @@ int http_receive_headers_authorize (HttpReceive *http_receive) {
 			http_receive->type = HTTP_RECEIVE_TYPE_FILE;
 			http_receive->head = (request->method == REQUEST_METHOD_HEAD);
 
-			if (!http_receive_handle_static_authenticate (http_receive, request)) return HTTP_RECEIVE_PARSER_STOP;
+			if (!http_receive_handle_static_authenticate (http_receive, request)) {
+				return http_receive_authorize_stopped (http_receive);
+			}
 		}
 
 		http_receive->body_handler = http_receive_handle_body_discard;
@@ -1780,7 +1877,17 @@ static int http_receive_handle_headers_completed (HttpReceive *http_receive) {
 		return HTTP_RECEIVE_HEADERS_PAUSE;
 	}
 
-	return http_receive_headers_authorize (http_receive);
+	const int authorized = http_receive_headers_authorize (http_receive);
+
+	// the body of a request that is saved to the disk is not parsed by its event loop: the parser stops, and
+	// the loop gives the bytes of the body to the threads of a pool
+	if (!authorized && http_receive->body_off_loop && http_receive_has_body (parser)) {
+		http_receive->pause = HTTP_RECEIVE_PAUSE_BODY;
+
+		return HTTP_RECEIVE_HEADERS_PAUSE;
+	}
+
+	return authorized;
 
 }
 
@@ -2164,6 +2271,19 @@ bool http_receive_dispatch_is_inline (const HttpReceive *http_receive) {
 
 }
 
+// what follows the methods of the application for a request: one that they did not answer is answered,
+// and one whose client left while its response was sent says so
+static void http_receive_dispatch_answered (HttpReceive *http_receive) {
+
+	http_receive_handle_unanswered (http_receive);
+
+	// the client left while its response was sent
+	if (http_receive->response_failed) {
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_RESPONSE_FAILED;
+	}
+
+}
+
 // handles a complete request: a file of the static paths, its endpoint or the catch all handler,
 // and the request that its handler did not answer
 // the request of an event loop that was not authorized with its headers is authorized first
@@ -2181,12 +2301,19 @@ void http_receive_dispatch (HttpReceive *http_receive) {
 			break;
 	}
 
-	http_receive_handle_unanswered (http_receive);
+	// a handler that deferred its response: its request is not answered yet, and it is not of this thread
+	if (!http_receive_is_deferred (http_receive)) http_receive_dispatch_answered (http_receive);
 
-	// the client left while its response was sent
-	if (http_receive->response_failed) {
-		http_receive->receive_status = HTTP_RECEIVE_STATUS_RESPONSE_FAILED;
-	}
+}
+
+void http_receive_dispatch_end (HttpReceive *http_receive) {
+
+	const bool endpoint = (http_receive->type != HTTP_RECEIVE_TYPE_FILE)
+		&& (http_receive->dispatch == HTTP_RECEIVE_DISPATCH_ENDPOINT) && http_receive->endpoint;
+
+	if (endpoint) http_receive_handle_endpoint_end (http_receive, http_receive->endpoint);
+
+	http_receive_dispatch_answered (http_receive);
 
 }
 
