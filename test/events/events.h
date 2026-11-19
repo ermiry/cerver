@@ -7,6 +7,8 @@ extern void events_tests_backend (void);
 
 extern void events_tests_settings (void);
 
+extern void events_tests_source (void);
+
 extern void events_tests_wheel (void);
 
 #endif
