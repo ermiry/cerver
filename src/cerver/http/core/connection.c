@@ -161,6 +161,7 @@ HttpConnection *http_connection_new (void) {
 		event_handle_init (&connection->handle, EVENT_HANDLE_TYPE_CONNECTION, -1, connection);
 		connection->timer.owner = connection;
 		connection->node.type = EVENT_NODE_TYPE_CONNECTION;
+		connection->deferred_node.type = EVENT_NODE_TYPE_DEFERRED;
 
 		connection->arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
 		connection->head_buffer = str_new (NULL);
@@ -248,22 +249,30 @@ static bool http_connection_loop_is_stopping (const HttpConnection *connection) 
 #pragma region deadlines
 
 // the timer is only moved when the new deadline is earlier: one that expires before its deadline
-// is armed again, so a deadline that changes with every read does not touch the wheel
+// is armed again, so a deadline that changes with every read does not touch the wheel.
+// The wait of a deferred response ends with the deadline of its request, whatever the one of its output
 static void http_connection_deadline_set (HttpConnection *connection, const u64 deadline) {
 
-	connection->deadline = deadline;
+	const u64 deferred = connection->deferred_deadline;
 
-	if (!connection->timer.armed || (deadline < connection->timer.deadline)) {
-		event_wheel_add (&connection->loop->wheel, &connection->timer, deadline);
+	connection->deadline = (deferred && (deferred < deadline)) ? deferred : deadline;
+
+	if (!connection->timer.armed || (connection->deadline < connection->timer.deadline)) {
+		event_wheel_add (&connection->loop->wheel, &connection->timer, connection->deadline);
 	}
 
 }
 
+// a deferred response keeps the deadline of its request when the one of its output is not needed anymore
 static void http_connection_deadline_clear (HttpConnection *connection) {
 
 	connection->deadline = 0;
 
 	event_wheel_remove (&connection->loop->wheel, &connection->timer);
+
+	if (connection->deferred_deadline) {
+		http_connection_deadline_set (connection, connection->deferred_deadline);
+	}
 
 }
 
@@ -655,7 +664,7 @@ static HttpConnectionOutput *http_connection_output_new (
 
 }
 
-static bool http_connection_output_is_failed (const HttpConnection *connection) {
+bool http_connection_output_is_failed (const HttpConnection *connection) {
 
 	return __atomic_load_n (&connection->output_failed, __ATOMIC_SEQ_CST);
 
@@ -727,12 +736,13 @@ static void http_connection_output_refuse (HttpConnection *connection, const int
 }
 
 // a thread of a pool waits for its loop to send what it wrote; a job that its dispatcher runs in the thread
-// of the loop (a test, the fuzzer) would wait for itself
+// of the loop (a test, the fuzzer) would wait for itself, and so would the loop when it writes the response
+// that its own handler deferred
 static bool http_connection_output_can_wait (const HttpConnection *connection) {
 
 	const EventDispatcher *dispatcher = connection->loop->lanes[connection->lane].dispatcher;
 
-	return !dispatcher || !dispatcher->in_loop;
+	return (!dispatcher || !dispatcher->in_loop) && !event_loop_is_current (connection->loop);
 
 }
 
@@ -985,8 +995,24 @@ static void http_connection_settle (
 
 }
 
+bool http_connection_is_in_loop (const HttpConnection *connection) {
+
+	return event_loop_is_current (connection->loop);
+
+}
+
+// the stream of a deferred response that waits for its next piece: its handler returned, nobody completed its
+// request, and it asked to be told when what it wrote was sent
+static bool http_connection_stream_waits (const HttpConnection *connection) {
+
+	return connection->receive.stream_drained
+		&& (__atomic_load_n (&connection->deferred, __ATOMIC_SEQ_CST) == HTTP_CONNECTION_DEFERRED_WAITING)
+		&& !connection->receive.authentication_deferred;
+
+}
+
 // the output was sent: a connection whose request ended does what follows, one whose handler still runs
-// waits for it
+// waits for it; the stream of a deferred response is told, so it writes its next piece
 static void http_connection_output_flushed (HttpConnection *connection) {
 
 	http_connection_output_rested (connection);
@@ -995,6 +1021,10 @@ static void http_connection_output_flushed (HttpConnection *connection) {
 
 	if (connection->state == HTTP_CONNECTION_STATE_WRITE) {
 		http_connection_proceed (connection, connection->next);
+	}
+
+	else if (http_connection_stream_waits (connection)) {
+		connection->receive.stream_drained (&connection->receive, connection->receive.stream_drained_data);
 	}
 
 }
@@ -1027,6 +1057,9 @@ static void http_connection_output_fail (HttpConnection *connection, const int e
 	http_connection_output_drop (connection);
 
 	event_loop_output_sent (connection->loop);
+
+	// nothing is left to wait for: a response that is deferred ends when it is completed
+	connection->deferred_deadline = 0;
 
 	http_connection_deadline_clear (connection);
 
@@ -1333,10 +1366,12 @@ static bool http_connection_pool_is_loop (const struct HttpPool *pool) {
 
 }
 
-// what reads the disk never runs in an event loop: a file of a static path is served by the default pool of threads
+// what uses the disk never runs in an event loop: a file of a static path is served by the default pool of
+// threads, and the body of a request that is saved to the disk is parsed and written there
 static bool http_connection_reads_disk (const HttpConnection *connection) {
 
-	return connection->receive.type == HTTP_RECEIVE_TYPE_FILE;
+	return (connection->receive.type == HTTP_RECEIVE_TYPE_FILE)
+		|| (connection->job == HTTP_CONNECTION_JOB_BODY);
 
 }
 
@@ -1515,6 +1550,309 @@ static void http_connection_parked_count (const HttpConnection *connection) {
 
 #pragma endregion
 
+#pragma region deferred
+
+// a handler defers the response of its request, returns, and the request waits without a thread until any
+// thread completes it. The handler and who completes it race: the state of the deferred response changes
+// with one atomic exchange each time, and only who wins an exchange touches the request after it
+
+// one exchange of the state of a deferred response, false when it was not the expected one
+static bool http_connection_deferred_exchange (
+	HttpConnection *connection, const HttpConnectionDeferred from, const HttpConnectionDeferred to
+) {
+
+	unsigned int expected = (unsigned int) from;
+
+	return __atomic_compare_exchange_n (
+		&connection->deferred, &expected, (unsigned int) to, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST
+	);
+
+}
+
+bool http_connection_is_deferred (const HttpConnection *connection) {
+
+	return __atomic_load_n (&connection->deferred, __ATOMIC_SEQ_CST) != HTTP_CONNECTION_DEFERRED_NONE;
+
+}
+
+// a handler that its loop runs: from here its request is of who completes it, like the one of a pool,
+// and what is written of its response goes through the queue of the loop, in the order that it is written
+static void http_connection_defer_in_loop (HttpConnection *connection) {
+
+	// the step that the loop was running: the authorization of a request before its body, or its dispatch
+	const bool authorizing = (connection->receive.pause == HTTP_RECEIVE_PAUSE_HEADERS);
+
+	connection->job = authorizing ? HTTP_CONNECTION_JOB_AUTHORIZE : HTTP_CONNECTION_JOB_DISPATCH;
+	connection->outcome = HTTP_CONNECTION_OUTCOME_NONE;
+
+	http_connection_deadline_clear (connection);
+
+	http_connection_set_state (
+		connection, authorizing ? HTTP_CONNECTION_STATE_AUTH : HTTP_CONNECTION_STATE_DISPATCHED
+	);
+
+}
+
+u8 http_connection_defer (HttpConnection *connection) {
+
+	u8 retval = 1;
+
+	if (http_connection_deferred_exchange (
+		connection, HTTP_CONNECTION_DEFERRED_NONE, HTTP_CONNECTION_DEFERRED_ASKED
+	)) {
+		event_loop_connection_deferred (connection->loop, true);
+		__atomic_store_n (&connection->deferred_counted, true, __ATOMIC_SEQ_CST);
+
+		if (http_connection_is_loop_owned (connection)) http_connection_defer_in_loop (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// the verdict of the authentication of a request is deferred like a response: its handler returns, the request
+// waits without a thread, and who gives the verdict races with that return in the same way. The request says
+// what it waits for before the exchange: who gives the verdict can do it as soon as the exchange is made
+u8 http_connection_defer_authentication (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+
+	const bool was_deferred = receive->authentication_deferred;
+
+	receive->authentication_deferred = true;
+
+	const u8 retval = http_connection_defer (connection);
+
+	if (retval) receive->authentication_deferred = was_deferred;
+
+	return retval;
+
+}
+
+// the wait of a deferred response ends with the deadline of its request; the one of its output, when it has
+// one, stays if it is earlier
+static void http_connection_deferred_bound (HttpConnection *connection) {
+
+	connection->deferred_deadline = connection->request_deadline;
+
+	if (connection->deferred_deadline) {
+		http_connection_deadline_set (
+			connection, connection->deadline ? connection->deadline : connection->deferred_deadline
+		);
+	}
+
+}
+
+// a thread of a pool left a request with its response deferred; the request can have been completed,
+// and ended, before the loop took the node
+void http_connection_deferred (HttpConnection *connection) {
+
+	const bool is_of_thread = (connection->state == HTTP_CONNECTION_STATE_DISPATCHED)
+		|| (connection->state == HTTP_CONNECTION_STATE_AUTH);
+
+	if (is_of_thread && http_connection_is_deferred (connection)) http_connection_deferred_bound (connection);
+
+}
+
+// how the job of a request that was deferred ended, once it was completed: a response was answered, and the
+// verdict of an authentication makes its loop run again the step that waited for it
+static HttpConnectionOutcome http_connection_deferred_outcome (const HttpConnection *connection) {
+
+	return connection->receive.authentication_deferred ?
+		HTTP_CONNECTION_OUTCOME_AUTHENTICATED : HTTP_CONNECTION_OUTCOME_ANSWERED;
+
+}
+
+// the handler returned: its request waits for who completes it. One that was completed before its handler
+// returned ends now, and what follows its handler runs here; the request of a verdict has not been handled
+static bool http_connection_deferred_waits (HttpConnection *connection) {
+
+	const bool waits = http_connection_deferred_exchange (
+		connection, HTTP_CONNECTION_DEFERRED_ASKED, HTTP_CONNECTION_DEFERRED_WAITING
+	);
+
+	if (!waits) {
+		__atomic_store_n (&connection->deferred, HTTP_CONNECTION_DEFERRED_NONE, __ATOMIC_SEQ_CST);
+
+		if (!connection->receive.authentication_deferred) http_receive_dispatch_end (&connection->receive);
+	}
+
+	return waits;
+
+}
+
+// the handler of a request returned in a thread of a pool: a request whose response it deferred is left to who
+// completes it. The loop is told first, so it bounds the wait: the node is given before the request can be
+// completed and its connection given back, so it is never given twice
+static bool http_connection_deferred_leaves (HttpConnection *connection) {
+
+	bool leaves = false;
+
+	if (http_connection_is_deferred (connection)) {
+		event_loop_give (connection->loop, &connection->deferred_node);
+
+		leaves = http_connection_deferred_waits (connection);
+	}
+
+	return leaves;
+
+}
+
+// what a handler of the loop wrote before it deferred its response (the start of a stream) does not wait for
+// who completes its request: the loop sends it now, like what a thread of a pool writes while its handler runs
+static void http_connection_deferred_flush (HttpConnection *connection) {
+
+	if (http_connection_output_is_pending (connection)) {
+		http_connection_output_deadline (connection);
+
+		(void) http_connection_output_send (connection);
+	}
+
+}
+
+// the handler of a request returned in its loop: a request whose response it deferred waits there. What was
+// written of a response that was completed before that is in the queue of the loop, in the order it was written,
+// and its connection follows it there
+static bool http_connection_deferred_parks (HttpConnection *connection) {
+
+	const bool parks = http_connection_is_deferred (connection);
+
+	if (parks) {
+		if (http_connection_deferred_waits (connection)) {
+			http_connection_deferred_bound (connection);
+
+			http_connection_deferred_flush (connection);
+		}
+
+		else {
+			connection->outcome = http_connection_deferred_outcome (connection);
+
+			event_loop_give (connection->loop, &connection->node);
+		}
+	}
+
+	return parks;
+
+}
+
+// the request waited for this: what follows its handler runs in the thread that completes it, and its
+// connection goes back to its loop behind what was written of its response. Once the node is given the loop can
+// end the request, and a cerver that stops can release the loop: this thread is not one of a pool, that a drain
+// waits for, so the request stops counting as deferred here, after the last time that this thread uses the loop
+static void http_connection_complete_waiting (HttpConnection *connection) {
+
+	EventLoop *loop = connection->loop;
+
+	// the request of a verdict has not been handled: its loop goes on with it
+	if (!connection->receive.authentication_deferred) http_receive_dispatch_end (&connection->receive);
+
+	connection->outcome = http_connection_deferred_outcome (connection);
+
+	const bool counted = __atomic_exchange_n (&connection->deferred_counted, false, __ATOMIC_SEQ_CST);
+
+	event_loop_give (loop, &connection->node);
+
+	if (counted) event_loop_connection_deferred (loop, false);
+
+}
+
+u8 http_connection_complete (HttpConnection *connection) {
+
+	u8 retval = 1;
+
+	// the handler can return between the two exchanges: they are tried again while the response is deferred
+	bool done = false;
+	while (!done) {
+		if (http_connection_deferred_exchange (
+			connection, HTTP_CONNECTION_DEFERRED_WAITING, HTTP_CONNECTION_DEFERRED_NONE
+		)) {
+			http_connection_complete_waiting (connection);
+
+			retval = 0;
+			done = true;
+		}
+
+		// its handler has not returned: the request ends when it does
+		else if (http_connection_deferred_exchange (
+			connection, HTTP_CONNECTION_DEFERRED_ASKED, HTTP_CONNECTION_DEFERRED_COMPLETED
+		)) {
+			retval = 0;
+			done = true;
+		}
+
+		else {
+			const unsigned int deferred = __atomic_load_n (&connection->deferred, __ATOMIC_SEQ_CST);
+
+			done = (deferred == HTTP_CONNECTION_DEFERRED_NONE) || (deferred == HTTP_CONNECTION_DEFERRED_COMPLETED);
+		}
+	}
+
+	return retval;
+
+}
+
+// the verdict is written before the exchange that gives it: the thread that wins the request reads it
+u8 http_connection_authenticate (HttpConnection *connection, const bool authenticated) {
+
+	u8 retval = 1;
+
+	HttpReceive *receive = &connection->receive;
+
+	if (receive->authentication_deferred) {
+		receive->authentication_verdict = authenticated ?
+			HTTP_RECEIVE_VERDICT_ACCEPTED : HTTP_RECEIVE_VERDICT_REJECTED;
+
+		retval = http_connection_complete (connection);
+	}
+
+	return retval;
+
+}
+
+// the request of a deferred response ended in its loop
+static void http_connection_deferred_ended (HttpConnection *connection) {
+
+	connection->deferred_deadline = 0;
+
+	if (__atomic_exchange_n (&connection->deferred_counted, false, __ATOMIC_SEQ_CST)) {
+		event_loop_connection_deferred (connection->loop, false);
+	}
+
+}
+
+// a deferred response that was not completed before the deadline of its request: its client is not kept
+// waiting, what is written of the response from now on fails, and the connection ends when it is completed
+static void http_connection_deferred_expired (HttpConnection *connection) {
+
+	cerver_log_with_date (
+		LOG_TYPE_WARNING, LOG_TYPE_HTTP,
+		"http_connection_timeout () - the deferred response of a request was not completed in time - fd %d",
+		http_connection_fd (connection)
+	);
+
+	CERVER_STATS_ADD (connection->receive.http_cerver->n_timeout_requests, 1);
+
+	http_connection_output_fail (connection, ETIMEDOUT);
+
+	(void) shutdown (http_connection_fd (connection), SHUT_RDWR);
+
+}
+
+// the deadline of a connection whose request is of a thread of a pool, or of who completes it: the one of a
+// deferred response that nobody completed, or the one of a client that does not read what was written
+static void http_connection_dispatched_expired (HttpConnection *connection) {
+
+	const u64 deferred = connection->deferred_deadline;
+
+	if (deferred && (connection->loop->now >= deferred)) http_connection_deferred_expired (connection);
+	else http_connection_output_fail (connection, EAGAIN);
+
+}
+
+#pragma endregion
+
 #pragma region parse
 
 // keeps what followed a paused request, the buffer where it is belongs to the backend of the loop
@@ -1528,8 +1866,11 @@ static unsigned int http_connection_pending_keep (
 
 	HttpConnectionBuffer *pending = &connection->pending;
 
-	if (http_connection_buffer_contains (pending, tail)) {
-		if (length) (void) memmove (pending->data, tail, length);
+	// a buffer without memory contains nothing: the bytes are moved only inside the memory that it has
+	char *kept = pending->data;
+
+	if (kept && http_connection_buffer_contains (pending, tail)) {
+		if (length) (void) memmove (kept, tail, length);
 
 		pending->length = length;
 		pending->offset = 0;
@@ -1623,7 +1964,8 @@ static void http_connection_message (HttpConnection *connection) {
 	if (is_short || in_loop) {
 		http_receive_dispatch (receive);
 
-		http_connection_handled (connection, in_loop);
+		// a handler of the loop that deferred its response: its request waits there for who completes it
+		if (!http_connection_deferred_parks (connection)) http_connection_handled (connection, in_loop);
 	}
 
 	else {
@@ -1640,8 +1982,9 @@ static void http_connection_authorize (HttpConnection *connection) {
 		http_connection_hand (connection, HTTP_CONNECTION_JOB_AUTHORIZE);
 	}
 
+	// an authentication that deferred its verdict was not rejected: its request waits there for it
 	else if (http_receive_headers_authorize (&connection->receive)) {
-		http_connection_rejected (connection);
+		if (!http_connection_deferred_parks (connection)) http_connection_rejected (connection);
 	}
 
 	else {
@@ -1660,6 +2003,12 @@ static void http_connection_pause (HttpConnection *connection) {
 
 		case HTTP_RECEIVE_PAUSE_MESSAGE:
 			http_connection_message (connection);
+			break;
+
+		// the request was authorized, and its body is not parsed by the loop: the bytes that arrived with its
+		// headers go to a thread of a pool
+		case HTTP_RECEIVE_PAUSE_BODY:
+			http_connection_resume (connection);
 			break;
 
 		default:
@@ -1704,14 +2053,13 @@ static void http_connection_rejected (HttpConnection *connection) {
 
 }
 
-static void http_connection_parse (
-	HttpConnection *connection, const char *buffer, const size_t length
+// what the parser said of the bytes of a connection, in its loop
+static void http_connection_parse_result (
+	HttpConnection *connection, const char *buffer, const size_t length,
+	const HttpReceiveParse result, const size_t n_parsed
 ) {
 
 	HttpReceive *receive = &connection->receive;
-
-	size_t n_parsed = 0;
-	const HttpReceiveParse result = http_receive_execute (receive, buffer, length, &n_parsed);
 
 	switch (result) {
 		// the request is not complete; a "100 Continue" can be waiting to be sent
@@ -1734,6 +2082,45 @@ static void http_connection_parse (
 
 			http_connection_rejected (connection);
 			break;
+	}
+
+}
+
+// the bytes of the body of a request that is saved to the disk: the loop keeps them, and a thread of a pool
+// parses them and writes the files of the request. One job for each read: the loop asks for the next bytes of
+// the connection when the thread gave it back, so a client never sends faster than the disk takes
+static void http_connection_body (
+	HttpConnection *connection, const char *buffer, const size_t length
+) {
+
+	if (http_connection_pending_keep (connection, buffer, length)) {
+		connection->job = HTTP_CONNECTION_JOB_AUTHORIZE;
+
+		http_connection_unavailable (connection);
+	}
+
+	else {
+		http_connection_hand (connection, HTTP_CONNECTION_JOB_BODY);
+	}
+
+}
+
+// the bytes of a request are parsed by the loop that read them, except the body of one that is saved to the disk
+static void http_connection_parse (
+	HttpConnection *connection, const char *buffer, const size_t length
+) {
+
+	HttpReceive *receive = &connection->receive;
+
+	if (receive->body_off_loop) {
+		http_connection_body (connection, buffer, length);
+	}
+
+	else {
+		size_t n_parsed = 0;
+		const HttpReceiveParse result = http_receive_execute (receive, buffer, length, &n_parsed);
+
+		http_connection_parse_result (connection, buffer, length, result, n_parsed);
 	}
 
 }
@@ -2053,6 +2440,39 @@ unsigned int http_connection_accepted (EventLoop *loop, Connection *peer) {
 
 // the job of a connection, in a thread of its pool: what its handler writes goes to its loop as it is written,
 // and the connection goes back when the handler ends. The thread does not use the socket
+// how the authorization of a request before its body ended in a thread of a pool: the verdict of one whose
+// authentication deferred it was given before its handler returned, and its loop authorizes it again with it
+static HttpConnectionOutcome http_connection_work_authorized (const HttpConnection *connection, const int stopped) {
+
+	HttpConnectionOutcome outcome = stopped ? HTTP_CONNECTION_OUTCOME_REJECTED : HTTP_CONNECTION_OUTCOME_RESUME;
+
+	if (connection->receive.authentication_deferred) outcome = HTTP_CONNECTION_OUTCOME_AUTHENTICATED;
+
+	return outcome;
+
+}
+
+// the bytes of the body of a request that its loop kept: this thread parses them, and the files of the request
+// are written here. The loop goes on with what the parser said
+static void http_connection_work_body (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+
+	const HttpConnectionBuffer *pending = &connection->pending;
+
+	http_receive_resume (receive);
+
+	size_t n_parsed = 0;
+	connection->parse_result = (unsigned int) http_receive_execute (
+		receive, pending->data ? pending->data : http_connection_no_bytes, pending->length, &n_parsed
+	);
+
+	connection->parsed = n_parsed;
+
+	connection->outcome = HTTP_CONNECTION_OUTCOME_PARSED;
+
+}
+
 void http_connection_work (void *connection_ptr) {
 
 	HttpConnection *connection = (HttpConnection *) connection_ptr;
@@ -2063,12 +2483,23 @@ void http_connection_work (void *connection_ptr) {
 	if (connection->job == HTTP_CONNECTION_JOB_DISPATCH) {
 		http_receive_dispatch (&connection->receive);
 
-		connection->outcome = HTTP_CONNECTION_OUTCOME_ANSWERED;
+		// a request whose response, or the verdict of its authentication, was deferred is not of this thread
+		// anymore: who completes it gives it back
+		if (http_connection_deferred_leaves (connection)) return;
+
+		connection->outcome = http_connection_deferred_outcome (connection);
+	}
+
+	else if (connection->job == HTTP_CONNECTION_JOB_BODY) {
+		http_connection_work_body (connection);
 	}
 
 	else {
-		connection->outcome = http_receive_headers_authorize (&connection->receive) ?
-			HTTP_CONNECTION_OUTCOME_REJECTED : HTTP_CONNECTION_OUTCOME_RESUME;
+		const int stopped = http_receive_headers_authorize (&connection->receive);
+
+		if (http_connection_deferred_leaves (connection)) return;
+
+		connection->outcome = http_connection_work_authorized (connection, stopped);
 	}
 
 	event_loop_give (connection->loop, &connection->node);
@@ -2111,6 +2542,8 @@ static void http_connection_answered (HttpConnection *connection) {
 
 	HttpReceive *receive = &connection->receive;
 
+	http_connection_deferred_ended (connection);
+
 	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
 
 	if (http_connection_output_is_failed (connection)) http_connection_response_failed (connection);
@@ -2122,11 +2555,60 @@ static void http_connection_answered (HttpConnection *connection) {
 
 }
 
+// the verdict of the authentication of a request arrived: the step that waited for it runs again where it ran
+// (its loop, or a thread of its pool), and its authentication takes the verdict instead of calling its handler.
+// A request that lost its client while it waited is rejected, whatever its verdict
+static void http_connection_authenticated (HttpConnection *connection) {
+
+	HttpReceive *receive = &connection->receive;
+
+	http_connection_deferred_ended (connection);
+
+	receive->authentication_deferred = false;
+
+	if (http_connection_output_is_failed (connection)) {
+		receive->authentication_verdict = HTTP_RECEIVE_VERDICT_REJECTED;
+	}
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	if (connection->job == HTTP_CONNECTION_JOB_AUTHORIZE) http_connection_authorize (connection);
+	else http_connection_message (connection);
+
+}
+
+// a thread of a pool parsed the bytes of the body that the loop kept: the loop goes on like after it parses
+// by itself, with the bytes that it kept
+static void http_connection_parsed (HttpConnection *connection) {
+
+	const HttpConnectionBuffer *pending = &connection->pending;
+
+	// the job of the body ended: what follows it (the request, when it is complete) runs where its endpoint does
+	connection->job = HTTP_CONNECTION_JOB_NONE;
+
+	http_connection_set_state (connection, HTTP_CONNECTION_STATE_READ);
+
+	http_connection_parse_result (
+		connection,
+		pending->data ? pending->data : http_connection_no_bytes, pending->length,
+		(HttpReceiveParse) connection->parse_result, connection->parsed
+	);
+
+}
+
 void http_connection_completed (HttpConnection *connection) {
 
 	switch (connection->outcome) {
 		case HTTP_CONNECTION_OUTCOME_RESUME:
 			http_connection_resume (connection);
+			break;
+
+		case HTTP_CONNECTION_OUTCOME_AUTHENTICATED:
+			http_connection_authenticated (connection);
+			break;
+
+		case HTTP_CONNECTION_OUTCOME_PARSED:
+			http_connection_parsed (connection);
 			break;
 
 		// the thread that ran the job answered it, the body can still be arriving
@@ -2215,11 +2697,16 @@ static void http_connection_expired (HttpConnection *connection) {
 			http_connection_unavailable (connection);
 			break;
 
-		// a client that does not read its response: also while its handler still runs
+		// a client that does not read its response
 		case HTTP_CONNECTION_STATE_WRITE:
-		case HTTP_CONNECTION_STATE_DISPATCHED:
-		case HTTP_CONNECTION_STATE_AUTH:
 			http_connection_output_fail (connection, EAGAIN);
+			break;
+
+		// also while its handler still runs; or a response, or the verdict of an authentication, that was
+		// deferred and that nobody completed in time
+		case HTTP_CONNECTION_STATE_AUTH:
+		case HTTP_CONNECTION_STATE_DISPATCHED:
+			http_connection_dispatched_expired (connection);
 			break;
 
 		case HTTP_CONNECTION_STATE_CLOSING:

@@ -106,7 +106,13 @@ typedef enum HttpConnectionJob {
 	/** @internal @brief The second part of its headers, before its body is read. */
 	HTTP_CONNECTION_JOB_AUTHORIZE			= 1,
 	/** @internal @brief Its complete request. */
-	HTTP_CONNECTION_JOB_DISPATCH			= 2
+	HTTP_CONNECTION_JOB_DISPATCH			= 2,
+	/**
+	 * @internal
+	 * @brief The bytes of the body of a request that is saved to the disk (a multipart one), that its loop read:
+	 * the thread parses them and writes its files, one job for each read.
+	 */
+	HTTP_CONNECTION_JOB_BODY				= 3
 
 } HttpConnectionJob;
 
@@ -132,7 +138,19 @@ typedef enum HttpConnectionOutcome {
 	 * @brief The loop ended its request and gave the connection to itself: its next request is the bytes that
 	 * followed, in the next step of the loop.
 	 */
-	HTTP_CONNECTION_OUTCOME_KEPT			= 5
+	HTTP_CONNECTION_OUTCOME_KEPT			= 5,
+	/**
+	 * @internal
+	 * @brief The verdict of its authentication, that its handler had deferred, was given: the loop runs again the
+	 * step that waited for it (its authorization before its body, or its dispatch), where it ran.
+	 */
+	HTTP_CONNECTION_OUTCOME_AUTHENTICATED	= 6,
+	/**
+	 * @internal
+	 * @brief A thread of a pool parsed the bytes of the body that the loop gave it: the loop goes on with what
+	 * the parser said (HttpConnection::parse_result), like after it parses by itself.
+	 */
+	HTTP_CONNECTION_OUTCOME_PARSED			= 7
 
 } HttpConnectionOutcome;
 
@@ -157,6 +175,24 @@ typedef enum HttpConnectionNext {
 	HTTP_CONNECTION_NEXT_JOB				= 5
 
 } HttpConnectionNext;
+
+/**
+ * @internal
+ * @brief Where the deferred response of a request is. The handler defers it in the thread that runs it, and any
+ * thread completes it, before or after the handler returned: each change is one atomic exchange.
+ */
+typedef enum HttpConnectionDeferred {
+
+	/** @internal @brief The response is not deferred: its request ends when its handler returns. */
+	HTTP_CONNECTION_DEFERRED_NONE			= 0,
+	/** @internal @brief The handler deferred its response and it has not returned. */
+	HTTP_CONNECTION_DEFERRED_ASKED			= 1,
+	/** @internal @brief The handler returned: the request waits, without a thread, for who completes it. */
+	HTTP_CONNECTION_DEFERRED_WAITING		= 2,
+	/** @internal @brief The request was completed before its handler returned: it ends when it returns. */
+	HTTP_CONNECTION_DEFERRED_COMPLETED		= 3
+
+} HttpConnectionDeferred;
 
 /**
  * @internal
@@ -309,6 +345,14 @@ struct HttpConnection {
 	HttpConnectionJob job;
 	/** @internal @brief How the job ended. */
 	HttpConnectionOutcome outcome;
+	/**
+	 * @internal
+	 * @brief What the parser said of the bytes that a thread of a pool parsed (#HTTP_CONNECTION_JOB_BODY), a value
+	 * of HttpReceiveParse.
+	 */
+	unsigned int parse_result;
+	/** @internal @brief The bytes that the parser read in that job. */
+	size_t parsed;
 
 	/**
 	 * @internal
@@ -326,6 +370,27 @@ struct HttpConnection {
 
 	/** @internal @brief Its node in the queue of its loop, when the thread that ran its job gives it back. */
 	EventNode node;
+
+	/**
+	 * @internal
+	 * @brief Whether the handler of its request deferred its response, a HttpConnectionDeferred. Atomic: the
+	 * thread that runs the handler and the one that completes the request change it.
+	 */
+	unsigned int deferred;
+	/**
+	 * @internal
+	 * @brief Its node in the queue of its loop when a thread of a pool tells that its handler deferred its
+	 * response: #node gives the connection back when it is completed.
+	 */
+	EventNode deferred_node;
+	/**
+	 * @internal
+	 * @brief The deadline of a request whose response is deferred, the one of its request, in the milliseconds of
+	 * the loop; 0 without one. Of its loop.
+	 */
+	u64 deferred_deadline;
+	/** @internal @brief Its loop counted it as a connection with a deferred response. Atomic, like #deferred. */
+	bool deferred_counted;
 
 	/** @internal @brief The next connection of the list where it is: the parked ones or the recycled ones. */
 	struct HttpConnection *list_next;
@@ -359,6 +424,19 @@ typedef struct HttpConnection HttpConnection;
 static inline HttpConnection *http_connection_of_node (EventNode *node) {
 
 	return (HttpConnection *) (void *) ((char *) node - offsetof (HttpConnection, node));
+
+}
+
+/**
+ * @internal
+ * @brief The connection of the node that tells that its handler deferred its response.
+ *
+ * @param[in] node a node of type #EVENT_NODE_TYPE_DEFERRED
+ * @return its connection
+ */
+static inline HttpConnection *http_connection_of_deferred_node (EventNode *node) {
+
+	return (HttpConnection *) (void *) ((char *) node - offsetof (HttpConnection, deferred_node));
 
 }
 
@@ -413,6 +491,93 @@ CERVER_HIDDEN void http_connection_timeout (HttpConnection *connection);
  * @param[in,out] connection the connection
  */
 CERVER_HIDDEN void http_connection_completed (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Defers the response of the request of a connection: its handler returns and the request waits, without
+ * a thread, until it is completed (http_connection_complete ()).
+ *
+ * @param[in,out] connection the connection, in the thread that runs the handler of its request
+ * @retval 0 the response is deferred
+ * @retval 1 it was already deferred
+ */
+CERVER_HIDDEN u8 http_connection_defer (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Returns whether the handler of the request of a connection deferred its response and nobody completed it.
+ *
+ * @param[in] connection the connection
+ * @return true while the request waits for who completes it
+ */
+CERVER_HIDDEN bool http_connection_is_deferred (const HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Defers the verdict of the authentication of the request of a connection: its authentication handler
+ * returns, and the request waits without a thread until http_connection_authenticate ().
+ *
+ * @param[in,out] connection the connection, in its authentication handler
+ * @retval 0 the verdict is deferred
+ * @retval 1 it was already deferred
+ * @threadsafety The thread that runs the authentication handler of the request.
+ */
+CERVER_HIDDEN u8 http_connection_defer_authentication (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Gives the verdict of the authentication of the request of a connection: its loop runs again the step that
+ * waited for it, where it ran.
+ *
+ * @param[in,out] connection the connection, with the verdict of its request deferred
+ * @param[in] authenticated the verdict
+ * @retval 0 the verdict was given
+ * @retval 1 the verdict of the request was not deferred, or it was already given
+ * @threadsafety Any thread, once for each request.
+ */
+CERVER_HIDDEN u8 http_connection_authenticate (HttpConnection *connection, const bool authenticated);
+
+/**
+ * @internal
+ * @brief Returns whether the output of a connection failed: a send failed, its client did not read in time, or
+ * its deferred response was not completed in time. What is written of its response from then on fails.
+ *
+ * @param[in] connection the connection
+ * @return true once its output failed, until its next request
+ * @threadsafety Any thread.
+ */
+CERVER_HIDDEN bool http_connection_output_is_failed (const HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Returns whether the calling thread is the one of the event loop of a connection.
+ *
+ * @param[in] connection the connection
+ * @return true in the thread that runs its loop
+ */
+CERVER_HIDDEN bool http_connection_is_in_loop (const HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Completes a request whose response was deferred: what follows its handler runs in the calling thread
+ * (http_receive_dispatch_end ()) and the connection goes back to its loop, that sends what is left of its
+ * response and ends the request.
+ *
+ * @param[in,out] connection the connection
+ * @retval 0 the request was completed, or it will be when its handler returns
+ * @retval 1 its response was not deferred, or it was already completed
+ * @threadsafety Any thread, once for each deferred response.
+ */
+CERVER_HIDDEN u8 http_connection_complete (HttpConnection *connection);
+
+/**
+ * @internal
+ * @brief Handles the node that tells the loop that a thread of a pool left a request with its response deferred:
+ * the wait of the request gets its deadline.
+ *
+ * @param[in,out] connection the connection
+ */
+CERVER_HIDDEN void http_connection_deferred (HttpConnection *connection);
 
 /**
  * @internal
