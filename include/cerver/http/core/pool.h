@@ -56,9 +56,11 @@ extern "C" {
  *
  * @warning A handler of this pool runs in an I/O thread: while it runs, that thread handles no other connection.
  * It must never wait (a database, another service, a lock that another request holds, a sleep): the handlers that
- * do belong to a pool of threads. What it writes is sent when it returns: the parts of a stream stay in memory
- * until then, so a response that is long or that is written over time also belongs to a pool of threads.
- * @since 3.0b-11
+ * do belong to a pool of threads, or they defer their response (cerver_http_context_defer ()) and return. What it
+ * writes is sent when it returns: the parts of a stream stay in memory until then, so a response that is long or
+ * that is written over time is written after its handler deferred it and returned (the start of its stream leaves
+ * then, and each part when it is written), or by a handler of a pool of threads.
+ * @since 3.0b-11; since the 3.0b-13 a handler can defer its response
  */
 #define HTTP_POOL_LOOP_NAME						"loop"
 
