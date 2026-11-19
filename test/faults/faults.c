@@ -17,6 +17,7 @@ extern "C" {
 extern void *__libc_malloc (size_t size);
 extern void *__libc_calloc (size_t count, size_t size);
 extern void *__libc_realloc (void *pointer, size_t size);
+extern void __libc_free (void *pointer);
 
 #ifdef __cplusplus
 }
@@ -101,12 +102,99 @@ static bool faults_fails (const FaultsFunction function, const size_t size) {
 
 }
 
+// the most allocations that a watch keeps, the next ones are not watched
+#define FAULTS_WATCH_MAX				(1 << 6)
+
+typedef struct FaultsWatch {
+
+	// read and written atomically: free () reads the pointers in any thread
+	bool watching;
+	unsigned int allocated;
+	void *pointers[FAULTS_WATCH_MAX];
+
+	pthread_t thread;
+	size_t size;
+
+} FaultsWatch;
+
+static FaultsWatch faults_watch;
+
+void faults_watch_start (const size_t size) {
+
+	for (unsigned int i = 0; i < FAULTS_WATCH_MAX; i++) {
+		__atomic_store_n (&faults_watch.pointers[i], NULL, __ATOMIC_RELEASE);
+	}
+
+	__atomic_store_n (&faults_watch.allocated, 0, __ATOMIC_RELEASE);
+
+	faults_watch.thread = pthread_self ();
+	faults_watch.size = size;
+
+	__atomic_store_n (&faults_watch.watching, true, __ATOMIC_RELEASE);
+
+}
+
+void faults_watch_stop (void) {
+
+	__atomic_store_n (&faults_watch.watching, false, __ATOMIC_RELEASE);
+
+}
+
+unsigned int faults_watch_allocated (void) {
+
+	return __atomic_load_n (&faults_watch.allocated, __ATOMIC_ACQUIRE);
+
+}
+
+unsigned int faults_watch_alive (void) {
+
+	unsigned int alive = 0;
+	for (unsigned int i = 0; i < FAULTS_WATCH_MAX; i++) {
+		if (__atomic_load_n (&faults_watch.pointers[i], __ATOMIC_ACQUIRE)) alive += 1;
+	}
+
+	return alive;
+
+}
+
+// an allocation of the watched size in the watched thread is kept
+static void faults_watch_add (void *pointer, const size_t size) {
+
+	const bool watched = pointer && __atomic_load_n (&faults_watch.watching, __ATOMIC_ACQUIRE)
+		&& (size == faults_watch.size) && pthread_equal (faults_watch.thread, pthread_self ());
+
+	if (!watched) return;
+
+	const unsigned int index = __atomic_fetch_add (&faults_watch.allocated, 1, __ATOMIC_ACQ_REL);
+	if (index < FAULTS_WATCH_MAX) __atomic_store_n (&faults_watch.pointers[index], pointer, __ATOMIC_RELEASE);
+
+}
+
+// a watched pointer that is freed is forgotten
+static void faults_watch_remove (const void *pointer) {
+
+	if (!pointer) return;
+
+	const unsigned int allocated = __atomic_load_n (&faults_watch.allocated, __ATOMIC_ACQUIRE);
+	const unsigned int count = (allocated < FAULTS_WATCH_MAX) ? allocated : FAULTS_WATCH_MAX;
+
+	for (unsigned int i = 0; i < count; i++) {
+		void *expected = (void *) pointer;
+		if (__atomic_compare_exchange_n (
+			&faults_watch.pointers[i], &expected, NULL, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE
+		)) break;
+	}
+
+}
+
 FAULTS_LINKAGE void *malloc (size_t size) FAULTS_NO_THROW {
 
 	void *pointer = NULL;
 
 	if (faults_fails (FAULTS_FUNCTION_MALLOC, size)) errno = ENOMEM;
 	else pointer = __libc_malloc (size);
+
+	faults_watch_add (pointer, size);
 
 	return pointer;
 
@@ -119,6 +207,8 @@ FAULTS_LINKAGE void *calloc (size_t count, size_t size) FAULTS_NO_THROW {
 	if (faults_fails (FAULTS_FUNCTION_CALLOC, count * size)) errno = ENOMEM;
 	else pointer = __libc_calloc (count, size);
 
+	faults_watch_add (pointer, count * size);
+
 	return pointer;
 
 }
@@ -127,10 +217,24 @@ FAULTS_LINKAGE void *realloc (void *pointer, size_t size) FAULTS_NO_THROW {
 
 	void *resized = NULL;
 
-	if (faults_fails (FAULTS_FUNCTION_REALLOC, size)) errno = ENOMEM;
+	const bool failed = faults_fails (FAULTS_FUNCTION_REALLOC, size);
+	if (failed) errno = ENOMEM;
 	else resized = __libc_realloc (pointer, size);
 
+	// the old pointer is released when the resize succeeded, or by a resize to 0 bytes in glibc
+	if (!failed && (resized || !size)) faults_watch_remove (pointer);
+
+	faults_watch_add (resized, size);
+
 	return resized;
+
+}
+
+FAULTS_LINKAGE void free (void *pointer) FAULTS_NO_THROW {
+
+	faults_watch_remove (pointer);
+
+	__libc_free (pointer);
 
 }
 
