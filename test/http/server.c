@@ -82,6 +82,12 @@
 
 #define SERVER_TEST_RESPONSE_SIZE			(1 << 12)
 
+// the event loops of the cervers of these tests, that have up to three of them at once: with the default of
+// a web cerver, one for each processor, what they use depends on the machine that runs them
+#define SERVER_TEST_IO_THREADS				1
+// keeps the event loops that a cerver was created with
+#define SERVER_TEST_IO_THREADS_DEFAULT		0
+
 #define SERVER_TEST_CONNECT_RETRIES			(1 << 8)
 // 2^22 ns
 #define SERVER_TEST_CONNECT_INTERVAL		4194304L
@@ -790,6 +796,10 @@ typedef struct ServerTest {
 	u8 start_result;
 	bool started;
 
+	// cerver_start () returned, and the last error of its thread: read to say why a cerver never listened
+	bool ended;
+	int start_error;
+
 } ServerTest;
 
 static ServerTestOptions server_test_options_default (void) {
@@ -801,7 +811,7 @@ static ServerTestOptions server_test_options_default (void) {
 		CERVER_DEFAULT_SEND_TIMEOUT,
 		CERVER_HTTP_DEFAULT_HEADERS_TIMEOUT, CERVER_HTTP_DEFAULT_REQUEST_TIMEOUT,
 		0,
-		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, 0, 0,
+		SERVER_TEST_DEFAULT_WAIT_TIMEOUT, SERVER_TEST_IO_THREADS, 0,
 		0,
 		false,
 		NULL
@@ -816,6 +826,9 @@ static void *server_test_thread (void *server_ptr) {
 	ServerTest *server = (ServerTest *) server_ptr;
 
 	server->start_result = cerver_start (server->cerver);
+	server->start_error = errno;
+
+	__atomic_store_n (&server->ended, true, __ATOMIC_SEQ_CST);
 
 	return NULL;
 
@@ -1102,6 +1115,45 @@ static void server_test_ok_wait (const unsigned int answered) {
 
 }
 
+// a cerver that never listened: cerver_start () ended, with its result and the last error of its thread
+// (the log of the cerver is not started in these tests), or it is still running
+static void server_test_start_report (ServerTest *server) {
+
+	if (__atomic_load_n (&server->ended, __ATOMIC_SEQ_CST)) {
+		(void) fprintf (
+			stderr, "cerver_start () of the cerver in port %u ended with %u - errno %d (%s)\n",
+			(unsigned int) server->port, (unsigned int) server->start_result,
+			server->start_error, strerror (server->start_error)
+		);
+	}
+
+	else {
+		(void) fprintf (
+			stderr, "cerver_start () of the cerver in port %u did not end\n", (unsigned int) server->port
+		);
+	}
+
+}
+
+// connects to a cerver that is starting, and says what its start did when it never listened
+static int server_test_start_connect (ServerTest *server) {
+
+	int fd = -1;
+	for (unsigned int i = 0; (i < SERVER_TEST_CONNECT_RETRIES) && (fd < 0); i++) {
+		fd = server_test_connect_once (server->port);
+		if (fd < 0) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	if (fd < 0) server_test_start_report (server);
+
+	test_check (fd > -1, "failed to connect to the test cerver that started");
+
+	(void) sock_set_timeout (fd, SERVER_TEST_RECEIVE_TIMEOUT);
+
+	return fd;
+
+}
+
 static ServerTest *server_test_start (const ServerTestOptions *options) {
 
 	ServerTest *server = (ServerTest *) calloc (1, sizeof (ServerTest));
@@ -1116,7 +1168,7 @@ static ServerTest *server_test_start (const ServerTestOptions *options) {
 	server->started = true;
 
 	// waits until the cerver is listening and has handled a complete request
-	int fd = server_test_connect (server->port);
+	int fd = server_test_start_connect (server);
 	server_test_send (fd, ok_request);
 	char response[SERVER_TEST_RESPONSE_SIZE];
 	(void) server_test_read (fd, response);
@@ -2721,8 +2773,12 @@ static void test_server_handler_type (void) {
 
 	ServerTestOptions options = server_test_options_default ();
 
+	// the cerver keeps the event loops that it was created with
+	ServerTestOptions created = options;
+	created.io_threads = SERVER_TEST_IO_THREADS_DEFAULT;
+
 	const u16 port = (u16) server_test_port++;
-	Cerver *cerver = server_test_cerver_create (port, &options);
+	Cerver *cerver = server_test_cerver_create (port, &created);
 
 	test_check_int_eq ((int) cerver->handler_type, (int) CERVER_HANDLER_TYPE_EVENTS, NULL);
 	test_check_unsigned_eq (cerver->n_io_threads, CERVER_IO_THREADS_PER_CORE, NULL);
@@ -3199,9 +3255,9 @@ static void test_server_events_reject_before_body (void) {
 // the connections that server_test_fill () leaves in a cerver: one in its thread and one in its queue
 #define SERVER_TEST_FILL_CONNECTIONS		2
 
-// the files of a request that was complete but never got a place in the thpool are not kept:
-// its handler never saw them; the cerver keeps the files of the requests that it handles,
-// with a cerver that deletes them when they are done nothing tells the two apart
+// the body of a request with a file is parsed, and its file written, by a thread of the thpool: one that finds
+// no place there waits before any of its file is written, and it is answered with 503 when its wait ends.
+// Nothing of it is left: the cerver keeps the files of the requests that it handles
 static void test_server_events_rejected_uploads (void) {
 
 	server_test_gate_reset ();
@@ -3225,11 +3281,11 @@ static void test_server_events_rejected_uploads (void) {
 	server_test_fill (server->cerver, server->port, &working, &queued);
 	while (thpool_get_queued (server->cerver->thpool) < 1) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
 
-	// the whole request is read and its file is written while it waits for its place
+	// the request waits for a place for its body: its loop does not write its file
 	int waiting = server_test_connect (server->port);
 	server_test_send (waiting, upload_request);
 	server_test_wait_parked (server->cerver, 1);
-	test_check_unsigned_eq (server_test_uploads_count (), 2, NULL);
+	test_check_unsigned_eq (server_test_uploads_count (), 1, NULL);
 
 	char response[SERVER_TEST_RESPONSE_SIZE];
 	(void) server_test_read (waiting, response);
