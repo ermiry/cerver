@@ -9,7 +9,7 @@ ARTIFACTS=${ARTIFACTS:-fuzz-artifacts}
 BACKENDS=${BACKENDS:-uring epoll}
 BACKEND_TARGETS=(loop)
 
-TARGETS=(request lenient pipeline loop multipart llhttp parts url json number writer scan jwt jwk differential tree receive packet client file datagram address serializer game frame handshake)
+TARGETS=(request lenient pipeline loop multipart llhttp parts url json number writer scan jwt jwk differential tree receive packet client file datagram address serializer game frame handshake response)
 
 if [ $# -gt 0 ]; then
 	TARGETS=("$@")
