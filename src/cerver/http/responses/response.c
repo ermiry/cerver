@@ -1704,6 +1704,27 @@ static bool http_response_is_compressible (
 
 }
 
+// the smallest body that is compressed for a request: the one of its endpoint or of one of its groups,
+// or the one of its cerver
+static size_t http_response_compression_min_size (const HttpReceive *http_receive) {
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	return (endpoint && endpoint->resolved.compression_min_size) ?
+		endpoint->resolved.compression_min_size : http_receive->http_cerver->compression_min_size;
+
+}
+
+// the level of the compression of the responses of a request, chosen like the smallest body
+static int http_response_compression_level (const HttpReceive *http_receive) {
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	return (endpoint && endpoint->resolved.compression_level) ?
+		endpoint->resolved.compression_level : http_receive->http_cerver->compression_level;
+
+}
+
 static bool http_response_should_compress (
 	const HttpReceive *http_receive, const HttpResponseMessage *message
 ) {
@@ -1712,7 +1733,7 @@ static bool http_response_should_compress (
 
 	return cerver_http_compression_available ()
 		&& message->body && message->body_length
-		&& (message->body_length >= http_receive->http_cerver->compression_min_size)
+		&& (message->body_length >= http_response_compression_min_size (http_receive))
 		&& (status >= HTTP_STATUS_OK)
 		&& (status != HTTP_STATUS_NO_CONTENT)
 		&& (status != HTTP_STATUS_PARTIAL_CONTENT)
@@ -1770,7 +1791,7 @@ static void http_response_message_compress (
 	if (
 		cerver_http_compression_gzip (
 			arena, message->body, message->body_length,
-			http_receive->http_cerver->compression_level,
+			http_response_compression_level (http_receive),
 			&compressed, &compressed_length
 		)
 		&& (compressed_length < message->body_length)
@@ -4185,6 +4206,28 @@ u8 cerver_http_response_stream_end (CerverHttpContext *context) {
 bool cerver_http_response_stream_is_active (const CerverHttpContext *context) {
 
 	return context ? http_response_stream_is_active (context) : false;
+
+}
+
+// only the stream of a handler that its event loop runs: the loop calls the method, and the handler of a pool
+// of threads waits for its client by itself
+u8 cerver_http_response_stream_on_drained (
+	CerverHttpContext *context, CerverHttpStreamDrained drained, void *data
+) {
+
+	u8 retval = 1;
+
+	if (
+		context && context->connection && context->handling
+		&& http_response_stream_is_active (context) && http_connection_is_in_loop (context->connection)
+	) {
+		context->stream_drained = drained;
+		context->stream_drained_data = data;
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
