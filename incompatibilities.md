@@ -3,6 +3,51 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 3.0b-13 (from 3.0b-12)
+
+The second part of L5 of `roadmap.md`, the asynchronous half: deferred responses, an authentication that asks
+someone else without a thread, the HTTP client of cerver over the event loops, and the bodies that are saved to
+the disk out of the loops. Almost everything is new API; what changes for code of the 3.0b-12:
+
+- **The body of a multipart request is parsed by a thread of a pool**, one job for each read of its event loop
+  (before: by the loop, that wrote its files): an event loop does not write the disk. The method of
+  `cerver_http_set_uploads_filename_generator ()` runs in that thread (before: in an I/O thread), and the request
+  is handled where its endpoint runs, like before. A multipart request needs a place in the pool of its endpoint
+  for each read of its body (the thpool of the cerver for the endpoints of the event loops): one that finds none
+  waits or is answered with 503, like any other job (`cerver_http_pool_set_overload_policy ()`)
+- **`cerver_http_context_client_is_gone ()` is true once the response of a request can not be written anymore** (a
+  send failed, its client did not read in time, or a deferred response was not completed before its request
+  timeout), also in a cerver with `cerver_http_set_half_close_is_gone (http, false)`. Before only what the socket
+  said counted
+- **The sizes of the uploaded files in the stats count only files:** `min_file_size`, `max_file_size` and
+  `mean_file_size` of an endpoint (the admin stats and `cerver_http_route_file_stats_snapshot ()`) took every part of
+  a multipart body, so the smallest file of a form with a value was 0. Now a value and a file input without a file
+  are not counted
+- **The admin info does not update `CerverInfo::uptime`:** `/cerver/info` computes the uptime of each response
+  (`cerver_http_admin_generate_info_json ()` too). The event loops answered at the same time and wrote it without a
+  lock. `cerver_update_uptime ()` still does
+- **`struct _CerverHttp` (internal) has `clients_open` and `clients_sending`; `HttpReceive` (internal) has
+  `handling`, `handler_thread`, `authenticating`, `authentication_deferred`, `authentication_verdict`,
+  `authentication_response` and `body_off_loop`:** the code that reads the internal headers of `src/` is built
+  again
+
+**New** (nothing to migrate):
+
+- **Deferred responses:** `cerver_http_context_defer ()` and `cerver_http_context_complete ()`
+  (`cerver/http/core/context.h`). Only the handler of a request, in the thread that runs it, defers its response.
+  `cerver_http_response_stream_on_drained ()` tells a handler of an event loop when what it wrote of a stream was
+  sent, so it writes the next piece
+- **Deferred authentication:** `cerver_http_context_authentication_defer ()`,
+  `cerver_http_context_authentication_complete ()` and `cerver_http_context_authentication_request ()`. A custom
+  authentication handler (`CerverHttpAuthenticationHandler`) that calls none of them works like before
+- **The HTTP client:** `cerver/http/clients/client.h` (`CerverHttpClient`, `CerverHttpClientRequest`,
+  `CerverHttpClientResponse`, `cerver_http_client_*`), in the umbrella `cerver/http/http.h`
+- **Settings of a group and of an endpoint:** `cerver_http_{group,endpoint}_set_max_file_size ()`,
+  `_set_max_multipart_parts ()`, `_set_compression_min_size ()` and `_set_compression_level ()`
+- **Multipart in streaming:** `cerver_http_{group,endpoint}_set_part_handlers ()` with a `CerverHttpPartHandlers`
+  (`on_part`, `on_data`, `on_end`): the application takes the parts of a multipart body while it arrives, and
+  cerver saves no file and keeps no value of those requests
+
 ## 3.0b-12 (from 3.0b-11)
 
 The first part of L5 of `roadmap.md`: **the application API of HTTP is new, and every application is migrated.** A
