@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "../test.h"
+#include "clients.h"
 #include "core.h"
 #include "crypto.h"
 #include "events.h"
@@ -24,6 +25,7 @@ int main (void) {
 	faults_tests_crypto ();
 	faults_tests_events ();
 	faults_tests_http ();
+	faults_tests_clients ();
 	faults_tests_json ();
 	faults_tests_jwt ();
 	faults_tests_websockets ();

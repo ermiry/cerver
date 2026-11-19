@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "cerver/types/types.h"
+
 #include "cerver/config.h"
 
 #ifdef __cplusplus
@@ -200,7 +202,9 @@ CERVER_EXPORT const char *cerver_http_context_allow (
 /**
  * @brief Returns whether the client of a request left: it closed its connection or it stopped answering.
  *
- * It asks the socket, so a handler that works for a long time can stop when nobody waits for its response.
+ * It asks the socket, so a handler that works for a long time can stop when nobody waits for its response. A
+ * client whose response can not be written anymore is gone too: a send failed, it did not read in time, or its
+ * deferred response was not completed before the request timeout.
  *
  * @param[in] context the context of the request
  * @retval true the client is gone
@@ -226,6 +230,125 @@ CERVER_EXPORT bool cerver_http_context_client_is_gone (
  */
 CERVER_EXPORT int cerver_http_context_socket (
 	const CerverHttpContext *context
+);
+
+/** @} */
+
+/**
+ * @defgroup http_context_deferred Deferred
+ * @ingroup http_context
+ * @brief A handler that answers later, without keeping a thread while it waits.
+ *
+ * A handler that needs something that takes time (another service, a job of its own, a timer) defers the response
+ * of its request and returns: its thread, or its event loop, goes on with other requests. When the response is
+ * ready, any thread writes it to the context with the methods of the response and completes the request. The
+ * context, the request and its views stay valid from the deferral until the request is completed.
+ *
+ * @code
+ * void handler (CerverHttpContext *context) {
+ *     if (!cerver_http_context_defer (context)) work_start (context);    // returns at once
+ * }
+ *
+ * void work_done (CerverHttpContext *context, const char *json, size_t length) {    // any thread, later
+ *     (void) cerver_http_response_send_json (context, json, length);
+ *     (void) cerver_http_context_complete (context);
+ * }
+ * @endcode
+ * @{
+ */
+
+/**
+ * @brief Defers the response of a request: its handler returns without answering it, and the request waits until
+ * cerver_http_context_complete ().
+ *
+ * What follows a handler (the after middlewares of its endpoint, the end of a stream that it left open, the 500 of
+ * a request that was not answered) happens when the request is completed, in the thread that completes it.
+ *
+ * @param[in,out] context the context of the request, in its handler
+ * @retval 0 the response is deferred
+ * @retval 1 a NULL context, a call that is not made from the handler of the request, or a response that was
+ * already deferred
+ * @warning **A deferred request must be completed, once:** its connection and its memory are kept until then, also
+ * when its client left, and a cerver that stops waits for it (its drain timeout).
+ * @warning A request that is not completed before its request timeout (cerver_http_set_request_timeout ()) loses
+ * its client: its connection is shut down and what is written of its response after that fails. It still has to be
+ * completed. cerver_http_context_client_is_gone () tells it.
+ * @threadsafety The thread that runs the handler of the request.
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_context_defer (CerverHttpContext *context);
+
+/**
+ * @brief Completes a request whose response was deferred: what was written of its response is sent, the request
+ * ends, and its connection is kept for the next one or closed.
+ *
+ * The response is written before this call, with the methods of the response and the same context. After it the
+ * context must not be used: it is of another request.
+ *
+ * @param[in,out] context the context of the deferred request
+ * @retval 0 the request was completed; when its handler has not returned yet, it ends when it does
+ * @retval 1 a NULL context, or a request whose response is not deferred or that was already completed; also a
+ * request that waits for the verdict of its authentication (cerver_http_context_authentication_complete ())
+ * @threadsafety Any thread, also the handler of the request before it returns; one call for each deferred response.
+ * A response is written by one thread at a time.
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_context_complete (CerverHttpContext *context);
+
+/** @} */
+
+/**
+ * @defgroup http_context_authentication Deferred authentication
+ * @ingroup http_context
+ * @brief An authentication handler that asks someone else: it defers its verdict and returns, and its request
+ * waits without a thread until the verdict is given.
+ *
+ * The authentication handler of an endpoint (#CerverHttpAuthenticationHandler) calls
+ * cerver_http_context_authentication_defer () and returns: what it returns is not read. The request waits, without
+ * a thread of a pool and without stopping its event loop, until any thread calls
+ * cerver_http_context_authentication_complete () with the verdict. Then the request goes on where it would have
+ * (its event loop, or a thread of the pool of its endpoint): its body is read and its handler runs, or it is
+ * answered with the response that was written for it, or with a 401 when none was.
+ *
+ * cerver_http_context_authentication_request () (cerver/http/clients/client.h) does it with a request of the
+ * HTTP client of cerver: the response of another service decides.
+ * @{
+ */
+
+/**
+ * @brief Defers the verdict of the authentication of a request.
+ *
+ * @param[in,out] context the context of the request, in its authentication handler
+ * @retval 0 the verdict is deferred: what the authentication handler returns is not read
+ * @retval 1 a NULL context, a call that is not made from the authentication handler of the request, or a verdict
+ * that was already deferred
+ * @warning **A deferred verdict must be given, once:** the connection and the memory of the request are kept until
+ * then, also when its client left, and a cerver that stops waits for it (its drain timeout).
+ * @warning A request whose verdict is not given before its request timeout (cerver_http_set_request_timeout ())
+ * loses its client: its connection is shut down, and the request is rejected when its verdict is given, whatever
+ * it is.
+ * @threadsafety The thread that runs the authentication handler of the request.
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_context_authentication_defer (CerverHttpContext *context);
+
+/**
+ * @brief Gives the verdict of the authentication of a request that deferred it.
+ *
+ * A response for a request that is rejected is written before this call, with the methods of the response and
+ * the same context; without one the request is answered with a 401. After the call the context must not be
+ * used.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] authenticated true when the request is authenticated, false to reject it
+ * @retval 0 the verdict was given
+ * @retval 1 a NULL context, or a request whose verdict is not deferred or was already given
+ * @threadsafety Any thread, also the authentication handler of the request before it returns; one call for each
+ * deferred verdict.
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_context_authentication_complete (
+	CerverHttpContext *context, const bool authenticated
 );
 
 /** @} */

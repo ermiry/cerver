@@ -74,6 +74,14 @@ static const char *features_stream_second = { "second" };
 static const char *features_twice_first = { "the response of the request" };
 static const char *features_twice_second = { "a second response" };
 
+// a JSON shorter than the smallest body that a cerver compresses, and that gzip makes smaller
+static const char *features_short_json = {
+	"{\"value\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+};
+
+// the smallest body that the endpoint that compresses the short JSON compresses
+#define FEATURES_TEST_SHORT_MIN_SIZE		1
+
 // what the handler of /plain/views/:id answers to the request of its test
 static const char *features_views_body = {
 	"method=GET path=/plain/views/64 query=first=one&second=two%20words id=64 first=one second=two words "
@@ -99,6 +107,13 @@ static pthread_t features_thread;
 static void features_small_handler (CerverHttpContext *context) {
 
 	(void) cerver_http_response_send_common (context, CERVER_HTTP_COMMON_RESPONSE_OK);
+
+}
+
+// GET /features/short and /features/shortest, a JSON under the smallest body that the cerver compresses
+static void features_short_handler (CerverHttpContext *context) {
+
+	(void) cerver_http_response_send_json (context, features_short_json, strlen (features_short_json));
 
 }
 
@@ -374,6 +389,15 @@ static void features_routes (CerverHttp *http_cerver) {
 	cerver_http_group_set_compression (features, true);
 
 	test_check_ptr (cerver_http_group_get (features, "small", features_small_handler));
+
+	// the same short body: the first endpoint has the smallest compressed body of the cerver, the second its own
+	test_check_ptr (cerver_http_group_get (features, "short", features_short_handler));
+
+	CerverHttpEndpoint *shortest = cerver_http_group_get (features, "shortest", features_short_handler);
+	test_check_ptr (shortest);
+	cerver_http_endpoint_set_compression_min_size (shortest, FEATURES_TEST_SHORT_MIN_SIZE);
+	test_check_unsigned_eq (cerver_http_endpoint_set_compression_level (shortest, HTTP_COMPRESSION_MAX_LEVEL), 0, NULL);
+
 	test_check_ptr (cerver_http_group_get (features, "json", features_json_handler));
 	test_check_ptr (cerver_http_group_get (features, "listed", features_listed_handler));
 	test_check_ptr (cerver_http_group_get (features, "raw", features_raw_handler));
@@ -922,6 +946,23 @@ static void test_features_compression (void) {
 	features_get ("/features/image", "Accept-Encoding: gzip\r\n", &response);
 	features_expect_no_header (&response, "Content-Encoding");
 	test_check_unsigned_eq (response.body_length, features_json_length, NULL);
+
+	// a body under the smallest one that the cerver compresses is compressed only by the endpoint that set
+	// its own smallest one
+	features_get ("/features/short", "Accept-Encoding: gzip\r\n", &response);
+	features_expect_no_header (&response, "Content-Encoding");
+	test_check_unsigned_eq (response.body_length, strlen (features_short_json), NULL);
+
+	features_get ("/features/shortest", "Accept-Encoding: gzip\r\n", &response);
+
+	if (cerver_http_compression_available ()) {
+		features_expect_header (&response, "Content-Encoding", HTTP_COMPRESSION_ENCODING);
+		test_check (response.body_length < strlen (features_short_json), "the short body was not compressed");
+	}
+
+	else {
+		features_expect_no_header (&response, "Content-Encoding");
+	}
 
 }
 

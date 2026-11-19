@@ -69,6 +69,36 @@ struct HttpPool;
  * @since 3.0b-5
  */
 #define HTTP_ROUTE_SETTING_POOL						(1 << 10)
+/**
+ * @brief The max size of an uploaded file was set.
+ *
+ * @since 3.0b-13
+ */
+#define HTTP_ROUTE_SETTING_MAX_FILE_SIZE			(1 << 11)
+/**
+ * @brief The max parts of a multipart body were set.
+ *
+ * @since 3.0b-13
+ */
+#define HTTP_ROUTE_SETTING_MAX_MULTIPART_PARTS		(1 << 12)
+/**
+ * @brief The smallest body that is compressed was set.
+ *
+ * @since 3.0b-13
+ */
+#define HTTP_ROUTE_SETTING_COMPRESSION_MIN_SIZE		(1 << 13)
+/**
+ * @brief The level of the compression was set.
+ *
+ * @since 3.0b-13
+ */
+#define HTTP_ROUTE_SETTING_COMPRESSION_LEVEL		(1 << 14)
+/**
+ * @brief The methods that take the parts of a multipart body were set.
+ *
+ * @since 3.0b-13
+ */
+#define HTTP_ROUTE_SETTING_PART_HANDLERS			(1 << 15)
 
 /**
  * @brief The settings of a group or an endpoint.
@@ -104,6 +134,26 @@ struct _HttpRouteSettings {
 	size_t max_body_size;
 
 	/**
+	 * @brief The max size of each file of a multipart request, 0 uses the one of the cerver.
+	 *
+	 * @since 3.0b-13
+	 */
+	size_t max_file_size;
+	/**
+	 * @brief The max parts of a multipart request, 0 uses the ones of the cerver.
+	 *
+	 * @since 3.0b-13
+	 */
+	unsigned int max_multipart_parts;
+	/**
+	 * @brief The methods that take the parts of a multipart body while it arrives; all NULL when cerver takes
+	 * them: it saves the files and keeps the values.
+	 *
+	 * @since 3.0b-13
+	 */
+	CerverHttpPartHandlers part_handlers;
+
+	/**
 	 * @brief Answers the CORS preflight requests (OPTIONS) with the origins whitelist, and adds the
 	 * Access-Control-Allow-Origin of a whitelisted origin to every response.
 	 */
@@ -117,6 +167,18 @@ struct _HttpRouteSettings {
 
 	/** @brief The responses are compressed with gzip when the request accepts it (only when cerver was compiled with zlib). */
 	bool compression;
+	/**
+	 * @brief The smallest body, in bytes, that is compressed; 0 uses the one of the cerver.
+	 *
+	 * @since 3.0b-13
+	 */
+	size_t compression_min_size;
+	/**
+	 * @brief The level of the compression, 0 uses the one of the cerver.
+	 *
+	 * @since 3.0b-13
+	 */
+	int compression_level;
 
 	/**
 	 * @brief The name of the pool of threads that handles the requests (http/core/pool.h).

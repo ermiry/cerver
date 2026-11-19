@@ -67,6 +67,8 @@ typedef struct EventTimer {
 	bool armed;
 	/** @internal @brief The owner of the timer. */
 	void *owner;
+	/** @internal @brief The owner is a source of the loop (struct EventSource), not a connection. */
+	bool source;
 
 } EventTimer;
 
@@ -162,7 +164,15 @@ typedef enum EventNodeType {
 	/** @internal @brief A connection that the thread that ran its job gives back. */
 	EVENT_NODE_TYPE_CONNECTION			= 1,
 	/** @internal @brief Bytes of a response that a thread of a pool wrote, for the loop to send them. */
-	EVENT_NODE_TYPE_OUTPUT				= 2
+	EVENT_NODE_TYPE_OUTPUT				= 2,
+	/**
+	 * @internal
+	 * @brief A connection whose handler deferred its response in a thread of a pool: the loop bounds the wait of
+	 * its request.
+	 */
+	EVENT_NODE_TYPE_DEFERRED			= 3,
+	/** @internal @brief A source of the loop (struct EventSource) that another thread gives to it. */
+	EVENT_NODE_TYPE_SOURCE				= 4
 
 } EventNodeType;
 
@@ -450,6 +460,20 @@ typedef struct EventLoop {
 	unsigned int n_ending;
 	/** @internal @brief The connections whose request has not been given to the pool to be handled; atomic. */
 	unsigned int n_pending;
+	/**
+	 * @internal
+	 * @brief The connections whose handler deferred its response and that have not been completed: no thread has
+	 * them, so the drain of the cerver waits for them here; atomic.
+	 */
+	unsigned int n_deferred;
+
+	/** @internal @brief The first source that the loop tells when it stops (event_loop_source_attach ()). */
+	struct EventSource *sources;
+	/**
+	 * @internal
+	 * @brief The sources that count for the loop (event_loop_source_add ()): it does not end with one; atomic.
+	 */
+	unsigned int n_sources;
 
 	/** @internal @brief The loop does not accept more connections and ends the ones without a request; atomic. */
 	bool stopping;
@@ -497,6 +521,16 @@ typedef struct EventLoop {
  * @return the loop, NULL on error (also when the backend that was asked for is not available)
  */
 CERVER_PRIVATE EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatcher);
+
+/**
+ * @internal
+ * @brief Creates a loop without a cerver: it has no socket that listens, no connections and no pools, only
+ * sources (struct EventSource). Its thread runs it with event_loop_run () and it ends after event_loop_finish ().
+ *
+ * @param[in] backend the backend of its I/O, #CERVER_EVENTS_BACKEND_AUTO for io_uring where it is available
+ * @return the loop, NULL on error (also when the backend that was asked for is not available)
+ */
+CERVER_PRIVATE EventLoop *event_loop_create_alone (const CerverEventsBackend backend);
 
 /**
  * @internal
@@ -728,6 +762,39 @@ CERVER_HIDDEN void event_loop_connection_pending (EventLoop *loop, const bool pe
 
 /**
  * @internal
+ * @brief Counts a connection whose handler deferred its response, or one that was completed.
+ *
+ * @param[in,out] loop the loop
+ * @param[in] deferred whether its response is deferred now
+ * @threadsafety Any thread: the handler defers in the thread that runs it.
+ */
+CERVER_HIDDEN void event_loop_connection_deferred (EventLoop *loop, const bool deferred);
+
+/**
+ * @internal
+ * @brief Returns the connections of a loop whose response is deferred.
+ *
+ * @param[in] loop the loop
+ * @return the count, 0 for a NULL loop
+ */
+CERVER_PRIVATE unsigned int event_loop_deferred (const EventLoop *loop);
+
+/**
+ * @internal
+ * @brief Returns whether the calling thread is the one that runs a loop: what it writes for a connection of that
+ * loop must never wait for the loop to send.
+ *
+ * For the internal methods of cerver.
+ *
+ * @param[in] loop the loop
+ * @return true in the thread that is taking a step of the loop, or that took its last one, while the loop exists
+ * @warning The thread that deletes a loop forgets it; another thread that took a step of it by hand, without
+ * event_loop_run (), still has it as its loop.
+ */
+CERVER_PRIVATE bool event_loop_is_current (const EventLoop *loop);
+
+/**
+ * @internal
  * @brief Waits until the loop has sent bytes of a connection, or the time ends: a thread of a pool that wrote
  * more than its connection keeps does not write more until then.
  *
@@ -864,6 +931,151 @@ CERVER_PRIVATE void event_dispatcher_inline (EventDispatcher *dispatcher);
 
 /**
  * @internal
+ * @defgroup events_source Source
+ * @brief What a loop drives that is not a connection of its cerver: a socket, a timer and what the other
+ * threads give to it, each one with the methods of its owner (a request or a connection of an HTTP client).
+ * @{
+ */
+
+/** @internal @brief A source of a loop, see struct EventSource. */
+typedef struct EventSource EventSource;
+
+/**
+ * @internal
+ * @brief The methods of a source: the thread of its loop calls them. A method that the source never needs can
+ * be NULL, except #stopped.
+ */
+typedef struct EventSourceMethods {
+
+	/** @internal @brief An operation of the socket of the source completed. */
+	void (*completed) (EventSource *source, const EventCompletion *completion);
+	/** @internal @brief The timer of the source expired; it is not armed anymore. */
+	void (*expired) (EventSource *source);
+	/** @internal @brief Another thread gave the source to its loop (event_loop_source_give ()). */
+	void (*given) (EventSource *source);
+	/**
+	 * @internal
+	 * @brief The loop ends: the source ends what it does and removes itself (event_loop_source_remove ()), now or
+	 * when the operations of its socket stopped. Called once for each source that is attached.
+	 */
+	void (*stopped) (EventSource *source);
+
+} EventSourceMethods;
+
+/**
+ * @internal
+ * @brief A source of a loop, the first member of its owner.
+ *
+ * Only the thread of its loop uses it, except to count it (event_loop_source_add ()) and to give it
+ * (event_loop_source_give ()). Its memory stays valid until it is removed and its handle has no operations.
+ */
+struct EventSource {
+
+	/** @internal @brief The node that gives the source to its loop. */
+	EventNode node;
+	/** @internal @brief Its socket, with fd -1 until it has one. */
+	EventHandle handle;
+	/** @internal @brief Its timer. */
+	EventTimer timer;
+	/** @internal @brief Its loop, from event_loop_source_add (). */
+	EventLoop *loop;
+	/** @internal @brief Its methods. */
+	const EventSourceMethods *methods;
+	/** @internal @brief The next source that is attached to the loop. */
+	EventSource *next;
+	/** @internal @brief The previous source that is attached to the loop. */
+	EventSource *previous;
+	/** @internal @brief The source is in the list of its loop, that tells it when it ends. */
+	bool attached;
+	/** @internal @brief The loop told the source that it ends. */
+	bool stopped;
+
+};
+
+/**
+ * @internal
+ * @brief Sets a source without a loop, without a socket and with its timer not armed.
+ *
+ * @param[out] source the source
+ * @param[in] methods its methods, they must outlive the source
+ */
+CERVER_PRIVATE void event_source_init (EventSource *source, const EventSourceMethods *methods);
+
+/**
+ * @internal
+ * @brief Counts a source for a loop: the loop does not end until the source is removed.
+ *
+ * @param[in,out] loop the loop
+ * @param[in,out] source the source, it takes the loop
+ * @retval 0 the source counts
+ * @retval 1 the loop is ending (event_loop_finish ()): the source does not count and must not be given
+ * @threadsafety Any thread, while the memory of the loop is valid.
+ */
+CERVER_PRIVATE unsigned int event_loop_source_add (EventLoop *loop, EventSource *source);
+
+/**
+ * @internal
+ * @brief Gives a source to its loop: its thread calls EventSourceMethods::given.
+ *
+ * @param[in,out] source a source that counts for its loop and that is not in its queue
+ * @threadsafety Any thread.
+ */
+CERVER_PRIVATE void event_loop_source_give (EventSource *source);
+
+/**
+ * @internal
+ * @brief Puts a source in the list of its loop, that calls EventSourceMethods::stopped when it ends. A loop
+ * that is already ending calls it at its next step.
+ *
+ * @param[in,out] source a source that counts for its loop and is not attached
+ * @threadsafety The thread of the loop.
+ */
+CERVER_PRIVATE void event_loop_source_attach (EventSource *source);
+
+/**
+ * @internal
+ * @brief Removes a source from its loop: it is taken out of its list, its timer is cleared and it does not count
+ * anymore.
+ *
+ * @param[in,out] source a source that counts for its loop
+ * @threadsafety The thread of the loop.
+ * @warning The handle of the source must have no operations before its memory is released.
+ */
+CERVER_PRIVATE void event_loop_source_remove (EventSource *source);
+
+/**
+ * @internal
+ * @brief Arms the timer of a source, again when it was armed.
+ *
+ * @param[in,out] source a source that counts for its loop
+ * @param[in] milliseconds the time from the current step of the loop until EventSourceMethods::expired
+ * @threadsafety The thread of the loop.
+ */
+CERVER_PRIVATE void event_loop_source_timer_set (EventSource *source, const u64 milliseconds);
+
+/**
+ * @internal
+ * @brief Clears the timer of a source.
+ *
+ * @param[in,out] source a source that counts for its loop
+ * @threadsafety The thread of the loop.
+ */
+CERVER_PRIVATE void event_loop_source_timer_clear (EventSource *source);
+
+/**
+ * @internal
+ * @brief Returns the sources that count for a loop.
+ *
+ * @param[in] loop the loop
+ * @return the count, 0 for a NULL loop
+ * @threadsafety Any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_sources (const EventLoop *loop);
+
+/** @} */
+
+/**
+ * @internal
  * @defgroup events_group Group
  * @brief The loops of a cerver: they start, stop and end together.
  * @{
@@ -936,6 +1148,18 @@ CERVER_HIDDEN bool event_loop_group_quiesce (EventLoopGroup *group, const bool r
 
 /**
  * @internal
+ * @brief A part of the drain of the loops, after the pools were drained: it waits until every request whose
+ * handler deferred its response was completed. No thread of a pool has them, so the drain of the pools does not
+ * wait for them.
+ *
+ * @param[in] group the group
+ * @param[in] timeout the seconds to wait, 0 waits until they are completed
+ * @return true when no loop has a deferred request
+ */
+CERVER_HIDDEN bool event_loop_group_settle (const EventLoopGroup *group, const time_t timeout);
+
+/**
+ * @internal
  * @brief The second part of the drain of the loops, after the thpool was drained: the loops end when they have no
  * connections and their threads are joined.
  *
@@ -982,6 +1206,16 @@ CERVER_PRIVATE unsigned int event_loop_group_parked (const struct _Cerver *cerve
  * @threadsafety Safe from any thread.
  */
 CERVER_PRIVATE unsigned int event_loop_group_idle (const struct _Cerver *cerver);
+
+/**
+ * @internal
+ * @brief The requests of all the loops of a cerver whose handler deferred its response and that nobody completed.
+ *
+ * @param[in] cerver the cerver
+ * @return the count, 0 without loops
+ * @threadsafety Safe from any thread.
+ */
+CERVER_PRIVATE unsigned int event_loop_group_deferred (const struct _Cerver *cerver);
 
 /**
  * @internal

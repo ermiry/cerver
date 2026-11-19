@@ -104,6 +104,14 @@
 
 #define TEST_RECEIVE_ENDPOINT_MAX_BODY		(1 << 3)
 
+// the limits of the endpoints that take the multi-part request of the tests with less than it brings:
+// its three parts and its files of 18 and 19 bytes
+#define TEST_RECEIVE_ENDPOINT_MAX_PARTS		1
+#define TEST_RECEIVE_ENDPOINT_MAX_FILE		(1 << 3)
+
+// the bytes of a request line besides its path
+#define TEST_RECEIVE_REQUEST_LINE_SIZE		(1 << 5)
+
 #define TEST_RECEIVE_ALLOWED_ORIGIN			"http://allowed.com"
 
 #define TEST_RECEIVE_HEAD_BUFFER			0
@@ -796,6 +804,15 @@ static Cerver *test_receive_cerver_create (void) {
 
 	HttpEndpoint *upload = test_receive_test_endpoint (test, "upload", test_receive_upload_handler);
 	cerver_http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+
+	// the same upload, with the limits of its endpoint
+	HttpEndpoint *parts = test_receive_test_endpoint (test, "parts", test_receive_upload_handler);
+	cerver_http_endpoint_set_modifier (parts, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_max_multipart_parts (parts, TEST_RECEIVE_ENDPOINT_MAX_PARTS);
+
+	HttpEndpoint *sized = test_receive_test_endpoint (test, "sized", test_receive_upload_handler);
+	cerver_http_endpoint_set_modifier (sized, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_endpoint_set_max_file_size (sized, TEST_RECEIVE_ENDPOINT_MAX_FILE);
 
 	HttpEndpoint *private_endpoint = test_receive_test_endpoint (test, "private", test_receive_upload_handler);
 	cerver_http_endpoint_set_auth (private_endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
@@ -1794,6 +1811,47 @@ static void test_receive_limits (Cerver *cerver) {
 
 	cerver_http_set_max_file_size (http_cerver, 1 << 3);
 	test_receive_limit_case (cerver, "multi-part file size limit", multipart_request, "413");
+
+}
+
+// the multi-part request of the tests for another path of the cerver: the same headers and the same body
+static char *test_receive_multipart_request_to (const char *path) {
+
+	const char *headers = strchr (multipart_request, '\n') + 1;
+
+	const size_t size = strlen (path) + strlen (headers) + TEST_RECEIVE_REQUEST_LINE_SIZE;
+
+	char *request = (char *) calloc (size, sizeof (char));
+	test_check_ptr (request);
+
+	(void) snprintf (request, size, "POST %s HTTP/1.1\r\n%s", path, headers);
+
+	return request;
+
+}
+
+static void test_receive_endpoint_limit_case (Cerver *cerver, const char *name, const char *path) {
+
+	char *request = test_receive_multipart_request_to (path);
+
+	test_receive_limit_case (cerver, name, request, "413");
+
+	free (request);
+
+}
+
+// an endpoint sets the limits of its own requests: with the ones of the cerver at their defaults, the request
+// that the endpoint without limits takes is rejected by the one with a limit of parts and by the one with a
+// limit of the size of its files
+static void test_receive_endpoint_limits (Cerver *cerver) {
+
+	test_receive_endpoint_limit_case (cerver, "endpoint multi-part parts limit", "/test/parts");
+	test_receive_endpoint_limit_case (cerver, "endpoint multi-part file size limit", "/test/sized");
+
+	test_receive_whole_case (cerver, "multi-part without the limits of an endpoint", multipart_request);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
 
 }
 
@@ -5238,8 +5296,8 @@ static void test_receive_loop_kept_pipelined (Cerver *cerver) {
 
 }
 
-// the jobs that the dispatcher takes for a connection whose second request is authorized before its body:
-// its first request, the authorization and the second request
+// the jobs that the dispatcher takes for a connection whose second request is authorized before its body, that
+// is multipart: its first request, the authorization and the body of the second request; its request is the next
 #define TEST_RECEIVE_KEPT_AUTHORIZED_JOBS		3
 
 // a method that is not a token, not one that cerver does not implement (501)
@@ -5286,7 +5344,8 @@ static int test_receive_kept_client (int *server_fd) {
 }
 
 // the next request of an idle connection needs its authentication before its body: the loop gives the job of its
-// headers to the pool, and once it was authorized it parses its body and gives the request to the pool
+// headers to the pool, and once it was authorized it gives its body, that is multipart, to the pool to be parsed
+// (an event loop does not write the disk), and then the request
 static void test_receive_loop_kept_authorized (Cerver *cerver) {
 
 	current_case = "loop: the next request of an idle connection is authorized before its body";
@@ -5306,9 +5365,16 @@ static void test_receive_loop_kept_authorized (Cerver *cerver) {
 	test_receive_manual_work (1);
 
 	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_KEPT_AUTHORIZED_JOBS);
-	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL);
+	test_check_unsigned_eq (manual.taken[TEST_RECEIVE_MANUAL_PAIR]->job, HTTP_CONNECTION_JOB_BODY, NULL);
 
 	test_receive_manual_work (TEST_RECEIVE_MANUAL_PAIR);
+
+	test_receive_loop_step_until (test_receive_manual_taken, TEST_RECEIVE_MANUAL_JOBS);
+	test_check_unsigned_eq (
+		manual.taken[TEST_RECEIVE_KEPT_AUTHORIZED_JOBS]->job, HTTP_CONNECTION_JOB_DISPATCH, NULL
+	);
+
+	test_receive_manual_work (TEST_RECEIVE_KEPT_AUTHORIZED_JOBS);
 
 	test_receive_kept_response (client_fd, "200");
 	test_receive_check_private ();
@@ -6141,6 +6207,7 @@ void http_tests_receive (void) {
 	test_receive_too_many_route_tokens (cerver);
 	test_receive_static_files (cerver);
 	test_receive_limits (cerver);
+	test_receive_endpoint_limits (cerver);
 	test_receive_custom_header_too_large (cerver);
 	test_receive_authentication_with_body (cerver);
 	test_receive_numbered_filenames (cerver);

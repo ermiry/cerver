@@ -2,14 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <pthread.h>
 #include <sys/time.h>
 
 #include <cerver/version.h>
 
+#include <cerver/http/clients/client.h>
+#include <cerver/http/requests/method.h>
+
 #include <cerver/utils/log.h>
 
-#include "curl.h"
+#define WEB_BENCH_URL_SIZE				128
+
+#define WEB_REQUEST_ALL_PATHS_COUNT		(sizeof (web_request_all_paths) / sizeof (web_request_all_paths[0]))
 
 typedef enum WebBenchType {
 
@@ -19,167 +23,94 @@ typedef enum WebBenchType {
 
 } WebBenchType;
 
-static const char *address = { "localhost.com:8080" };
+// the client takes only the urls with their scheme, curl added it by itself
+static const char *address = { "http://localhost.com:8080" };
 
-typedef struct Session {
+// the routes of examples/web, and three that it does not have
+static const char *web_request_all_paths[] = {
+	"/", "/test", "/text", "/json", "/hola", "/adios", "/key", "/custom", "/reference"
+};
 
-	CURL *curl;
-	pthread_t thread_id;
+static const char *web_bench_single_path = { "/test" };
 
-} Session;
+// one client for every request of the program: it keeps its connections between the requests,
+// like the handle of curl of each session did
+static CerverHttpClient *web_client = NULL;
 
-Session *session_new (void) {
+// only an error of the request fails it, whatever the status of its response, as with curl
+static unsigned int web_request_result (const CerverHttpClientRequest *request) {
 
-	Session *session = (Session *) malloc (sizeof (Session));
-	if (session) {
-		session->curl = NULL;
-		session->thread_id = 0;
+	CerverHttpClientError error = cerver_http_client_response_error (
+		cerver_http_client_request_response (request)
+	);
+
+	if (error != CERVER_HTTP_CLIENT_ERROR_NONE) {
+		cerver_log_error (
+			"web_request () failed: %s", cerver_http_client_error_description (error)
+		);
 	}
 
-	return session;
+	return (unsigned int) (error != CERVER_HTTP_CLIENT_ERROR_NONE);
 
 }
 
-void session_delete (void *session_ptr) {
+static unsigned int web_request_perform (CerverHttpClientRequest *request) {
 
-	if (session_ptr) {
-		Session *session = (Session *) session_ptr;
-
-		curl_easy_cleanup (session->curl);
-
-		free (session_ptr);
+	if (cerver_http_client_request_perform (request)) {
+		cerver_log_error ("web_request () failed: the request was not sent");
+		return 1;
 	}
 
+	return web_request_result (request);
+
 }
 
-Session *session_create (void) {
+// performs a GET to a path of the address
+// returns 0 on success, 1 on any error
+static unsigned int web_request (const char *path) {
 
-	Session *session = session_new ();
-	if (session) {
-		session->curl = curl_easy_init ();
+	unsigned int retval = 1;
+
+	char url[WEB_BENCH_URL_SIZE] = { 0 };
+	(void) snprintf (url, WEB_BENCH_URL_SIZE, "%s%s", address, path);
+
+	CerverHttpClientRequest *request = cerver_http_client_request_create (
+		web_client, REQUEST_METHOD_GET, url
+	);
+
+	if (request) {
+		retval = web_request_perform (request);
 	}
 
-	return session;
+	else {
+		cerver_log_error ("web_request () failed to create the request to %s", url);
+	}
 
-}
+	cerver_http_client_request_delete (request);
 
-static size_t web_request_all_data_handler (
-	void *contents, size_t size, size_t nmemb, void *storage
-) {
-
-	(void) strncat ((char *) storage, (char *) contents, size * nmemb);
-
-	return size * nmemb;
-
-}
-
-static unsigned int web_request_all_actual (
-	Session *sess
-) {
-
-	unsigned int errors = 0;
-
-	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
-
-	// GET /
-	errors |= curl_simple_handle_data (
-		sess->curl, address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /test
-	(void) snprintf (actual_address, 128, "%s/test", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /text
-	(void) snprintf (actual_address, 128, "%s/text", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /json
-	(void) snprintf (actual_address, 128, "%s/json", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /hola
-	(void) snprintf (actual_address, 128, "%s/hola", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /adios
-	(void) snprintf (actual_address, 128, "%s/adios", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /key
-	(void) snprintf (actual_address, 128, "%s/key", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /custom
-	(void) snprintf (actual_address, 128, "%s/custom", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /reference
-	(void) snprintf (actual_address, 128, "%s/reference", address);
-	errors |= curl_simple_handle_data (
-		sess->curl, actual_address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	return errors;
+	return retval;
 
 }
 
 // perform requests to every route
 static unsigned int web_request_all (void) {
 
-	unsigned int retval = 1;
+	unsigned int errors = 0;
 
-	Session *sess = session_create ();
-	if (sess) {
-		if (!web_request_all_actual (sess)) {
-			cerver_log_success (
-				"web_request_all () - All requests succeeded!"
-			);
-
-			cerver_log_line_break ();
-			cerver_log_line_break ();
-
-			retval = 0;
-		}
+	for (size_t i = 0; i < WEB_REQUEST_ALL_PATHS_COUNT; i++) {
+		errors |= web_request (web_request_all_paths[i]);
 	}
 
-	session_delete (sess);
+	if (!errors) {
+		cerver_log_success (
+			"web_request_all () - All requests succeeded!"
+		);
 
-	return retval;
+		cerver_log_line_break ();
+		cerver_log_line_break ();
+	}
 
-}
-
-static size_t web_bench_single_data_handler (
-	void *contents, size_t size, size_t nmemb, void *storage
-) {
-
-	(void) strncpy ((char *) storage, (char *) contents, size * nmemb);
-
-	return size * nmemb;
+	return errors;
 
 }
 
@@ -189,24 +120,15 @@ static unsigned int web_bench_single_for_seconds (
 	unsigned int seconds
 ) {
 
-	Session *sess = session_create ();
-
 	struct timeval start = CERVER_ZERO_INITIALIZER;
 	struct timeval end = CERVER_ZERO_INITIALIZER;
 
 	size_t count = 0;
 
-	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
-
 	(void) gettimeofday (&start, NULL);
 	do {
 		// GET /test
-		(void) snprintf (actual_address, 128, "%s/test", address);
-		(void) curl_simple_handle_data (
-			sess->curl, actual_address,
-			web_bench_single_data_handler, data_buffer
-		);
+		(void) web_request (web_bench_single_path);
 
 		count += 1;
 
@@ -219,8 +141,6 @@ static unsigned int web_bench_single_for_seconds (
 
 	(void) printf ("\n\nweb_bench_single_for_seconds () results: \n");
 	(void) printf ("Performed %zu requests in %u seconds\n\n", count, seconds);
-
-	session_delete (sess);
 
 	return 0;
 
@@ -239,15 +159,11 @@ static void print_help (const char *name) {
 
 }
 
-int main (int argc, const char **argv) {
+static void web_bench_run (int argc, const char **argv) {
 
 	WebBenchType web_bench_type = WEB_BENCH_TYPE_NONE;
 
 	unsigned int seconds = 1;
-
-	cerver_log_init ();
-
-	cerver_version_print_full ();
 
 	if (argc > 1) {
 		const char *curr_arg = NULL;
@@ -302,8 +218,30 @@ int main (int argc, const char **argv) {
 
 	else print_help (argv[0]);
 
+}
+
+int main (int argc, const char **argv) {
+
+	int retval = 0;
+
+	cerver_log_init ();
+
+	cerver_version_print_full ();
+
+	web_client = cerver_http_client_create (NULL);
+	if (web_client) {
+		web_bench_run (argc, argv);
+	}
+
+	else {
+		cerver_log_error ("Failed to create the HTTP client!");
+		retval = 1;
+	}
+
+	cerver_http_client_delete (web_client);
+
 	cerver_log_end ();
 
-	return 0;
+	return retval;
 
 }

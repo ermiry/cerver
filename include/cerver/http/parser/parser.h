@@ -430,7 +430,11 @@ typedef struct CerverHttpParser {
 	/** @brief The message is an upgrade: what follows it is not HTTP. */
 	bool upgrade;
 
-	/** @brief The message of a response has no body (a response to a HEAD), set before its head. */
+	/**
+	 * @brief The message of a response has no body (a response to a HEAD), set before its head.
+	 * @warning cerver_http_parser_reset () clears it, and the head of the message that follows a complete one
+	 * resets the parser by itself: for that message it is set after a call to cerver_http_parser_reset ().
+	 */
 	bool skip_body;
 
 	/** @brief The head has a field that changes how the message is read (Connection, Content-Length, …). */

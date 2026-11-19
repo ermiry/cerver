@@ -210,6 +210,9 @@ HttpCerver *cerver_http_new (void) {
 
 		http_cerver->web_sockets = NULL;
 
+		http_cerver->clients_open = false;
+		http_cerver->clients_sending = 0;
+
 		http_cerver->n_timeout_requests = 0;
 
 		http_cerver->n_unanswered_requests = 0;

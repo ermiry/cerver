@@ -70,6 +70,9 @@ static Pool *multi_parts_pool = NULL;
 static const char *multi_part_header_value = { "multipart/form-data;" };
 static const size_t multi_part_header_value_len = 20;
 
+// the last status that a method of the application can reject a request with
+#define HTTP_MPART_REJECTION_LAST_STATUS		599
+
 static const char *multi_part_form_data = { "form-data;" };
 static const size_t multi_part_form_data_len = 10;
 
@@ -342,6 +345,117 @@ static size_t http_receive_mpart_file_write_all (
 
 }
 
+// the max size of each file of a request: the one of its endpoint or of one of its groups,
+// or the one of its cerver
+static size_t http_receive_max_file_size (const HttpReceive *http_receive) {
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	return (endpoint && endpoint->resolved.max_file_size) ?
+		endpoint->resolved.max_file_size : http_receive->http_cerver->max_file_size;
+
+}
+
+// the max parts of a request: the ones of its endpoint or of one of its groups, or the ones of its cerver
+static unsigned int http_receive_max_multipart_parts (const HttpReceive *http_receive) {
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	return (endpoint && endpoint->resolved.max_multipart_parts) ?
+		endpoint->resolved.max_multipart_parts : http_receive->http_cerver->max_multipart_parts;
+
+}
+
+// the methods of the application that take the parts of a request while its body arrives, NULL when cerver
+// takes them: the ones of its endpoint or of one of its groups
+static const CerverHttpPartHandlers *http_receive_mpart_callbacks (const HttpReceive *http_receive) {
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	const CerverHttpPartHandlers *callbacks = endpoint ? &endpoint->resolved.part_handlers : NULL;
+
+	return (callbacks && (callbacks->on_part || callbacks->on_data || callbacks->on_end)) ? callbacks : NULL;
+
+}
+
+// the status of the response of a request that a method of the application rejected: the one that it returned
+// when it is an error, a 400 otherwise
+static CerverHttpStatus http_receive_mpart_rejection (const CerverHttpStatus status) {
+
+	return ((status >= HTTP_STATUS_BAD_REQUEST) && (status <= HTTP_MPART_REJECTION_LAST_STATUS)) ?
+		status : HTTP_STATUS_BAD_REQUEST;
+
+}
+
+// what a method of the application said of a part: HTTP_STATUS_NONE goes on, anything else rejects the request.
+// Its status is set before its response is sent: a request that is rejected closes its connection, and its
+// response says it
+// returns 0 to go on, 1 to stop the parser
+static int http_receive_mpart_streamed (HttpReceive *http_receive, const CerverHttpStatus status) {
+
+	int retval = 0;
+
+	if (status != HTTP_STATUS_NONE) {
+		if (!http_receive->responded) {
+			http_receive->receive_status = HTTP_RECEIVE_STATUS_REJECTED;
+
+			(void) http_response_create_and_send (http_receive_mpart_rejection (status), NULL, 0, http_receive);
+
+			http_receive->responded = true;
+		}
+
+		retval = 1;
+	}
+
+	return retval;
+
+}
+
+// a part of a request whose parts are of the application starts
+static int http_receive_mpart_streamed_start (
+	HttpReceive *http_receive, const MultiPart *multi_part, const CerverHttpPartHandlers *callbacks
+) {
+
+	return callbacks->on_part ?
+		http_receive_mpart_streamed (http_receive, callbacks->on_part (http_receive, multi_part)) : 0;
+
+}
+
+// a piece of a part of a request whose parts are of the application: the bytes of a file count for the max file
+// size of the request, like the ones that cerver saves
+static int http_receive_mpart_streamed_data (
+	HttpReceive *http_receive, MultiPart *multi_part, const CerverHttpPartHandlers *callbacks,
+	const char *at, const size_t length
+) {
+
+	multi_part->n_reads += 1;
+
+	const size_t max_file_size = http_receive_max_file_size (http_receive);
+	if (
+		(multi_part->type == MULTI_PART_TYPE_FILE)
+		&& max_file_size && (((size_t) multi_part->total_wrote + length) > max_file_size)
+	) {
+		return http_receive_reject (
+			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+	}
+
+	multi_part->total_wrote += (u32) length;
+
+	return callbacks->on_data ?
+		http_receive_mpart_streamed (http_receive, callbacks->on_data (http_receive, multi_part, at, length)) : 0;
+
+}
+
+static int http_receive_mpart_streamed_end (
+	HttpReceive *http_receive, const MultiPart *multi_part, const CerverHttpPartHandlers *callbacks
+) {
+
+	return callbacks->on_end ?
+		http_receive_mpart_streamed (http_receive, callbacks->on_end (http_receive, multi_part)) : 0;
+
+}
+
 // writes a piece of a multi-part file
 // returns 0 on success, 1 if the request was rejected
 static int http_receive_mpart_file_write (
@@ -351,7 +465,7 @@ static int http_receive_mpart_file_write (
 
 	multi_part->n_reads += 1;
 
-	const size_t max_file_size = http_receive->http_cerver->max_file_size;
+	const size_t max_file_size = http_receive_max_file_size (http_receive);
 	if (max_file_size && (((size_t) multi_part->total_wrote + length) > max_file_size)) {
 		return http_receive_reject (
 			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
@@ -396,7 +510,7 @@ int http_receive_handle_mpart_part_data_begin (
 
 	http_receive->n_parts += 1;
 
-	const unsigned int max_multipart_parts = http_receive->http_cerver->max_multipart_parts;
+	const unsigned int max_multipart_parts = http_receive_max_multipart_parts (http_receive);
 	if (max_multipart_parts && (http_receive->n_parts > max_multipart_parts)) {
 		return http_receive_reject (
 			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
@@ -575,6 +689,8 @@ int http_receive_handle_mpart_headers_completed (CerverHttpMultipart *parser) {
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = (http_receive)->request->current_part;
 
+	const CerverHttpPartHandlers *callbacks = http_receive_mpart_callbacks (http_receive);
+
 	#ifdef HTTP_MPART_DEBUG
 	http_multi_part_headers_print (multi_part);
 	#endif
@@ -620,6 +736,9 @@ int http_receive_handle_mpart_headers_completed (CerverHttpMultipart *parser) {
 
 				http_receive->request->n_files += 1;
 
+				// the parts of the request are of the application: its file is not saved
+				if (callbacks) return http_receive_mpart_streamed_start (http_receive, multi_part, callbacks);
+
 				if (http_receive->http_cerver->uploads_path_len > 0) {
 					if (http_receive_mpart_saved_filename (http_receive, multi_part)) {
 						return http_receive_mpart_file_failed (
@@ -643,6 +762,8 @@ int http_receive_handle_mpart_headers_completed (CerverHttpMultipart *parser) {
 				multi_part->type = MULTI_PART_TYPE_VALUE;
 
 				http_receive->request->n_values += 1;
+
+				if (callbacks) return http_receive_mpart_streamed_start (http_receive, multi_part, callbacks);
 			}
 		}
 
@@ -672,9 +793,31 @@ int http_receive_handle_mpart_data (
 
 	if (multi_part->discard) return 0;
 
+	const CerverHttpPartHandlers *callbacks = http_receive_mpart_callbacks (http_receive);
+	if (callbacks) return http_receive_mpart_streamed_data (http_receive, multi_part, callbacks, at, length);
+
 	return (multi_part->fd != -1) ?
 		http_receive_mpart_file_write (http_receive, multi_part, at, length) :
 		http_receive_mpart_value_append (multi_part, at, length);
+
+}
+
+// the size of a file that is complete counts for the stats of the sizes of its request: only the parts that
+// were counted as files. A value is not one (its bytes would be the smallest file of every form with a value,
+// and the ones that a part handler takes would add to the sizes), and neither is a file input without a file
+static void http_receive_mpart_file_counted (
+	HttpReceive *http_receive, const MultiPart *multi_part
+) {
+
+	HttpRouteFileStats *file_stats = http_receive->file_stats;
+
+	if ((multi_part->type == MULTI_PART_TYPE_FILE) && !multi_part->discard) {
+		if (multi_part->total_wrote < file_stats->min_file_size) file_stats->min_file_size = multi_part->total_wrote;
+
+		if (multi_part->total_wrote > file_stats->max_file_size) file_stats->max_file_size = multi_part->total_wrote;
+
+		file_stats->sum_file_size += multi_part->total_wrote;
+	}
 
 }
 
@@ -691,15 +834,12 @@ int http_receive_handle_mpart_data_end (CerverHttpMultipart *parser) {
 		http_receive->stage = HTTP_STAGE_BODY;
 	}
 
-	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
-		http_receive->file_stats->min_file_size = multi_part->total_wrote;
+	http_receive_mpart_file_counted (http_receive, multi_part);
 
-	if (multi_part->total_wrote > http_receive->file_stats->max_file_size)
-		http_receive->file_stats->max_file_size = multi_part->total_wrote;
+	const CerverHttpPartHandlers *callbacks = http_receive_mpart_callbacks (http_receive);
 
-	http_receive->file_stats->sum_file_size += multi_part->total_wrote;
-
-	return 0;
+	return (callbacks && !multi_part->discard) ?
+		http_receive_mpart_streamed_end (http_receive, multi_part, callbacks) : 0;
 
 }
 

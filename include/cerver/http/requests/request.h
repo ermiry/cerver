@@ -17,6 +17,7 @@
 #include "cerver/http/parser/head.h"
 #include "cerver/http/requests/content.h"
 #include "cerver/http/requests/method.h"
+#include "cerver/http/responses/status.h"
 
 #include "cerver/json/json.h"
 
@@ -473,6 +474,42 @@ CERVER_EXPORT void cerver_http_request_set_custom_data (
  * @since 3.0b-12 it replaces MultiPart, whose fields are not public anymore.
  */
 typedef struct _MultiPart CerverHttpPart;
+
+/**
+ * @brief The methods that take the parts of the multipart body of a request while it arrives, instead of cerver
+ * (cerver_http_endpoint_set_part_handlers ()).
+ *
+ * With them cerver saves no file and keeps no value: every part is given to these methods, in the order of the
+ * body. Each one returns `HTTP_STATUS_NONE` to go on, or the status that the request is rejected with (an error,
+ * 400 to 599; any other value is a 400): cerver answers it with that status and closes its connection, the rest
+ * of its body is not read. A method that is NULL is not called. The handler of the request runs after its last
+ * part: it finds the parts with their names and their filenames, without values and without files.
+ *
+ * They run in the thread that parses the body of the request, a thread of a pool: they can wait (to write a
+ * file, or to send the bytes to another service). They do not write the response of the request.
+ *
+ * @since 3.0b-13
+ */
+typedef struct CerverHttpPartHandlers {
+
+	/**
+	 * @brief A part starts: its headers were read, so its name, its filename and whether it is a file can be asked
+	 * (cerver_http_part_name (), cerver_http_part_filename (), cerver_http_part_is_file ()).
+	 */
+	CerverHttpStatus (*on_part) (CerverHttpContext *context, const CerverHttpPart *part);
+
+	/**
+	 * @brief Bytes of the content of the current part, valid only during the call; a part gets as many calls as
+	 * pieces of it arrive.
+	 */
+	CerverHttpStatus (*on_data) (
+		CerverHttpContext *context, const CerverHttpPart *part, const char *data, const size_t length
+	);
+
+	/** @brief The current part is complete. */
+	CerverHttpStatus (*on_end) (CerverHttpContext *context, const CerverHttpPart *part);
+
+} CerverHttpPartHandlers;
 
 /**
  * @brief Returns the number of files of the multipart body of a request.

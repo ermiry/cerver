@@ -396,6 +396,44 @@ CERVER_EXPORT bool cerver_http_response_stream_is_active (
 	const CerverHttpContext *context
 );
 
+/**
+ * @brief Called when what was written of the stream of a deferred response was sent to its client: the next
+ * piece can be written.
+ *
+ * @param[in,out] context the context of the request
+ * @param[in] data what was passed to cerver_http_response_stream_on_drained ()
+ * @warning It runs in the event loop of the request: it must not wait.
+ * @since 3.0b-13
+ */
+typedef void (*CerverHttpStreamDrained) (
+	CerverHttpContext *context, void *data
+);
+
+/**
+ * @brief Sets the method that the event loop of a request calls each time that what was written of its stream
+ * was sent: a handler of an event loop writes a long stream piece by piece, without keeping it in memory and
+ * without a thread that waits for its client.
+ *
+ * The handler starts its stream, writes its first piece, sets this method, defers its response
+ * (cerver_http_context_defer ()) and returns. The method writes the next piece each time that it is called, and
+ * after the last one it ends the stream and completes the request (cerver_http_context_complete ()): it is not
+ * called again.
+ *
+ * @param[in,out] context the context of the request, in its handler
+ * @param[in] drained the method, NULL to set none
+ * @param[in] data passed to the method
+ * @retval 0 the method was set
+ * @retval 1 a NULL context, a response that is not a stream, or a handler that does not run in an event loop:
+ * the handler of a pool of threads waits for its client when it writes, it needs no method
+ * @note The method is called only after bytes were sent: a stream whose handler wrote nothing before it
+ * returned gets no call.
+ * @threadsafety The thread that runs the handler of the request.
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_response_stream_on_drained (
+	CerverHttpContext *context, CerverHttpStreamDrained drained, void *data
+);
+
 /** @} */
 
 /**

@@ -34,6 +34,17 @@ static const long event_loop_milliseconds_per_second = 1000L;
 static const long event_loop_nanoseconds_per_millisecond = 1000000L;
 static const long event_loop_nanoseconds_per_second = 1000000000L;
 
+// the loop whose step the thread is taking, or took last: a thread runs one loop at a time
+static __thread const EventLoop *event_loop_current = NULL;
+
+// a loop that ended or that is deleted is not the one of the thread anymore: the memory of a loop that was
+// released is given to the next one, that the thread never ran
+static void event_loop_current_forget (const EventLoop *loop) {
+
+	if (event_loop_current == loop) event_loop_current = NULL;
+
+}
+
 #pragma region lifecycle
 
 static void event_loop_connections_delete (HttpConnection *connection) {
@@ -71,6 +82,8 @@ static void event_loop_held_close (EventLoop *loop) {
 void event_loop_delete (EventLoop *loop) {
 
 	if (loop) {
+		event_loop_current_forget (loop);
+
 		event_loop_recycled_delete (loop);
 
 		event_loop_held_close (loop);
@@ -127,15 +140,11 @@ static void event_loop_backend_report (const EventLoop *loop, const int unavaila
 
 }
 
-EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatcher) {
+// what every loop has before its backend: its clock, its timers and a socket that listens to nothing
+static EventLoop *event_loop_new (void) {
 
-	EventLoop *loop = (cerver && dispatcher) ? (EventLoop *) calloc (1, sizeof (EventLoop)) : NULL;
+	EventLoop *loop = (EventLoop *) calloc (1, sizeof (EventLoop));
 	if (loop) {
-		loop->cerver = cerver;
-
-		loop->lanes[EVENT_LOOP_LANE_DEFAULT].dispatcher = dispatcher;
-		loop->n_lanes = EVENT_LOOP_LANE_DEFAULT + 1;
-
 		loop->clock = event_clock_milliseconds;
 		loop->now = loop->clock ();
 
@@ -147,6 +156,20 @@ EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatche
 		loop->recycle_limit = EVENT_LOOP_RECYCLE_LIMIT;
 
 		event_loop_output_init (loop);
+	}
+
+	return loop;
+
+}
+
+EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatcher) {
+
+	EventLoop *loop = (cerver && dispatcher) ? event_loop_new () : NULL;
+	if (loop) {
+		loop->cerver = cerver;
+
+		loop->lanes[EVENT_LOOP_LANE_DEFAULT].dispatcher = dispatcher;
+		loop->n_lanes = EVENT_LOOP_LANE_DEFAULT + 1;
 
 		int unavailable = 0;
 		loop->backend = event_backend_create (
@@ -154,6 +177,23 @@ EventLoop *event_loop_create (struct _Cerver *cerver, EventDispatcher *dispatche
 		);
 
 		event_loop_backend_report (loop, unavailable);
+
+		if (!loop->backend) {
+			event_loop_delete (loop);
+			loop = NULL;
+		}
+	}
+
+	return loop;
+
+}
+
+// a loop without a cerver has no lanes: nothing is ever parked in it, and it accepts nothing
+EventLoop *event_loop_create_alone (const CerverEventsBackend backend) {
+
+	EventLoop *loop = event_loop_new ();
+	if (loop) {
+		loop->backend = event_backend_create (backend, NULL, NULL);
 
 		if (!loop->backend) {
 			event_loop_delete (loop);
@@ -245,6 +285,25 @@ void event_loop_connection_pending (EventLoop *loop, const bool pending) {
 
 	if (pending) (void) __atomic_add_fetch (&loop->n_pending, 1, __ATOMIC_RELEASE);
 	else (void) __atomic_sub_fetch (&loop->n_pending, 1, __ATOMIC_RELEASE);
+
+}
+
+void event_loop_connection_deferred (EventLoop *loop, const bool deferred) {
+
+	if (deferred) (void) __atomic_add_fetch (&loop->n_deferred, 1, __ATOMIC_RELEASE);
+	else (void) __atomic_sub_fetch (&loop->n_deferred, 1, __ATOMIC_RELEASE);
+
+}
+
+unsigned int event_loop_deferred (const EventLoop *loop) {
+
+	return loop ? __atomic_load_n (&loop->n_deferred, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+bool event_loop_is_current (const EventLoop *loop) {
+
+	return event_loop_current == loop;
 
 }
 
@@ -673,6 +732,164 @@ void event_loop_output_sent (EventLoop *loop) {
 
 #pragma endregion
 
+#pragma region sources
+
+void event_source_init (EventSource *source, const EventSourceMethods *methods) {
+
+	if (source) {
+		(void) memset (source, 0, sizeof (EventSource));
+
+		source->node.type = EVENT_NODE_TYPE_SOURCE;
+
+		event_handle_init (&source->handle, EVENT_HANDLE_TYPE_SOURCE, -1, source);
+
+		source->timer.owner = source;
+		source->timer.source = true;
+
+		source->methods = methods;
+	}
+
+}
+
+// the count goes first and the look at the end of the loop after it: a loop that ends looks at its sources after
+// it was told to end, so either it sees this one or this thread sees that it ends
+unsigned int event_loop_source_add (EventLoop *loop, EventSource *source) {
+
+	unsigned int retval = 1;
+
+	if (loop && source) {
+		(void) __atomic_add_fetch (&loop->n_sources, 1, __ATOMIC_SEQ_CST);
+
+		if (__atomic_load_n (&loop->finishing, __ATOMIC_SEQ_CST)) {
+			(void) __atomic_sub_fetch (&loop->n_sources, 1, __ATOMIC_SEQ_CST);
+		}
+
+		else {
+			source->loop = loop;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+void event_loop_source_give (EventSource *source) {
+
+	event_loop_give (source->loop, &source->node);
+
+}
+
+void event_loop_source_attach (EventSource *source) {
+
+	EventLoop *loop = source->loop;
+
+	source->previous = NULL;
+	source->next = loop->sources;
+	if (loop->sources) loop->sources->previous = source;
+	loop->sources = source;
+
+	source->attached = true;
+
+}
+
+static void event_loop_source_detach (EventSource *source) {
+
+	EventLoop *loop = source->loop;
+
+	if (source->previous) source->previous->next = source->next;
+	else loop->sources = source->next;
+
+	if (source->next) source->next->previous = source->previous;
+
+	source->next = NULL;
+	source->previous = NULL;
+
+	source->attached = false;
+
+}
+
+void event_loop_source_timer_set (EventSource *source, const u64 milliseconds) {
+
+	EventLoop *loop = source->loop;
+
+	event_wheel_remove (&loop->wheel, &source->timer);
+
+	event_wheel_add (&loop->wheel, &source->timer, loop->now + milliseconds);
+
+}
+
+void event_loop_source_timer_clear (EventSource *source) {
+
+	event_wheel_remove (&source->loop->wheel, &source->timer);
+
+}
+
+void event_loop_source_remove (EventSource *source) {
+
+	EventLoop *loop = source->loop;
+
+	if (source->attached) event_loop_source_detach (source);
+
+	event_loop_source_timer_clear (source);
+
+	(void) __atomic_sub_fetch (&loop->n_sources, 1, __ATOMIC_SEQ_CST);
+
+}
+
+unsigned int event_loop_sources (const EventLoop *loop) {
+
+	return loop ? __atomic_load_n (&loop->n_sources, __ATOMIC_SEQ_CST) : 0;
+
+}
+
+static void event_loop_source_given (EventSource *source) {
+
+	if (source->methods->given) source->methods->given (source);
+
+}
+
+static void event_loop_source_expired (EventSource *source) {
+
+	if (source->methods->expired) source->methods->expired (source);
+
+}
+
+static void event_loop_source_completed (EventSource *source, const EventCompletion *completion) {
+
+	if (source->methods->completed) source->methods->completed (source, completion);
+
+}
+
+// a source that is told can remove itself, and others with it (a request ends with its connection): the list
+// is read again from its start after each one, until every source that is left was told
+static EventSource *event_loop_source_untold (const EventLoop *loop) {
+
+	EventSource *source = loop->sources;
+
+	while (source && source->stopped) source = source->next;
+
+	return source;
+
+}
+
+// a loop that ends tells its sources, each one once: they end what they do and remove themselves
+static void event_loop_sources_stop (EventLoop *loop) {
+
+	EventSource *source = event_loop_source_untold (loop);
+	while (source) {
+		source->stopped = true;
+
+		source->methods->stopped (source);
+
+		source = event_loop_source_untold (loop);
+	}
+
+}
+
+#pragma endregion
+
 #pragma region queue
 
 static void event_loop_node_handle (EventNode *node) {
@@ -684,6 +901,14 @@ static void event_loop_node_handle (EventNode *node) {
 
 		case EVENT_NODE_TYPE_OUTPUT:
 			http_connection_output_given (node);
+			break;
+
+		case EVENT_NODE_TYPE_DEFERRED:
+			http_connection_deferred (http_connection_of_deferred_node (node));
+			break;
+
+		case EVENT_NODE_TYPE_SOURCE:
+			event_loop_source_given ((EventSource *) node);
 			break;
 
 		default: break;
@@ -1040,7 +1265,9 @@ void event_loop_finish (EventLoop *loop) {
 
 	if (loop) {
 		__atomic_store_n (&loop->stopping, true, __ATOMIC_RELEASE);
-		__atomic_store_n (&loop->finishing, true, __ATOMIC_RELEASE);
+
+		// a thread that counts a source for the loop looks at this after its count (event_loop_source_add ())
+		__atomic_store_n (&loop->finishing, true, __ATOMIC_SEQ_CST);
 
 		event_backend_wake (loop->backend);
 	}
@@ -1074,6 +1301,9 @@ static void event_loop_stop_check (EventLoop *loop) {
 		event_loop_stop_connections (loop);
 	}
 
+	// the sources work while the loop only stops: the requests of its connections can wait for them
+	if (__atomic_load_n (&loop->finishing, __ATOMIC_SEQ_CST)) event_loop_sources_stop (loop);
+
 }
 
 #pragma endregion
@@ -1084,7 +1314,8 @@ static void event_loop_timer_expired (EventTimer *timer, void *loop_ptr) {
 
 	(void) loop_ptr;
 
-	http_connection_timeout ((HttpConnection *) timer->owner);
+	if (timer->source) event_loop_source_expired ((EventSource *) timer->owner);
+	else http_connection_timeout ((HttpConnection *) timer->owner);
 
 }
 
@@ -1108,12 +1339,18 @@ static void event_loop_completion (const EventCompletion *completion, void *loop
 
 	event_loop_completion_time (loop);
 
-	if (completion->handle->type == EVENT_HANDLE_TYPE_LISTEN) {
-		event_loop_listen_completion (loop, completion);
-	}
+	switch (completion->handle->type) {
+		case EVENT_HANDLE_TYPE_LISTEN:
+			event_loop_listen_completion (loop, completion);
+			break;
 
-	else {
-		http_connection_completion ((HttpConnection *) completion->handle->owner, completion);
+		case EVENT_HANDLE_TYPE_SOURCE:
+			event_loop_source_completed ((EventSource *) completion->handle->owner, completion);
+			break;
+
+		default:
+			http_connection_completion ((HttpConnection *) completion->handle->owner, completion);
+			break;
 	}
 
 }
@@ -1183,6 +1420,8 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 	int handled = -1;
 
 	if (loop) {
+		event_loop_current = loop;
+
 		loop->now = loop->clock ();
 		loop->now_read = false;
 
@@ -1213,12 +1452,13 @@ int event_loop_step (EventLoop *loop, const int timeout) {
 
 }
 
-// a loop ends without connections, and once its backend ended the accept of its socket
+// a loop ends without connections and without sources, and once its backend ended the accept of its socket
 static bool event_loop_is_finished (const EventLoop *loop) {
 
-	return __atomic_load_n (&loop->finishing, __ATOMIC_ACQUIRE)
+	return __atomic_load_n (&loop->finishing, __ATOMIC_SEQ_CST)
 		&& !__atomic_load_n (&loop->n_connections, __ATOMIC_ACQUIRE)
-		&& !loop->n_ending && !loop->listen.operations;
+		&& !loop->n_ending && !loop->listen.operations
+		&& !__atomic_load_n (&loop->n_sources, __ATOMIC_SEQ_CST);
 
 }
 
@@ -1228,6 +1468,9 @@ void event_loop_run (EventLoop *loop) {
 		while (!event_loop_is_finished (loop)) {
 			(void) event_loop_step (loop, EVENT_BACKEND_WAIT_FOREVER);
 		}
+
+		// before the loop says that it ended: another thread can delete it from then on
+		event_loop_current_forget (loop);
 
 		__atomic_store_n (&loop->ended, true, __ATOMIC_RELEASE);
 	}

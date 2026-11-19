@@ -79,8 +79,8 @@ CERVER_EXPORT void cerver_http_default_uploads_filename_generator (
  * @param[in,out] http_cerver the CerverHttp
  * @param[in] uploads_filename_generator the method, NULL to save each file with the sanitized filename of its part;
  * a method that does not set a name also falls back to it, with a warning
- * @warning With CERVER_HANDLER_TYPE_EVENTS the method runs in an I/O thread, that reads no other connection until
- * it returns: it must not wait.
+ * @note The method runs in the thread that parses the body of the request: a thread of a pool, like the one that
+ * writes its files (since the 3.0b-13 an event loop does not parse the body of a multipart request).
  */
 CERVER_EXPORT void cerver_http_set_uploads_filename_generator (
 	CerverHttp *http_cerver,

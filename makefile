@@ -303,6 +303,7 @@ web: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/web
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/admin.o -o ./$(EXATARGET)/web/admin $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/async.o -o ./$(EXATARGET)/web/async $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/auth.o ./$(EXABUILD)/users.o -o ./$(EXATARGET)/web/auth $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/jobs.o -o ./$(EXATARGET)/web/jobs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/json.o -o ./$(EXATARGET)/web/json $(EXALIBS)
@@ -620,7 +621,7 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native
 endif
 
-BENCHLIBS	:= $(PTHREAD) $(CURL) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name '*.$(SRCEXT)' -not -path '$(BENCHDIR)/competitors/*')
@@ -634,7 +635,7 @@ bench: $(BENCHOBJS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/frames.o -o ./$(BENCHTARGET)/frames $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
-	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # matches real routes with the matcher of 2.0b-58 and with the routes tree
 tree: $(BENCHBUILD)/tree.$(OBJEXT)

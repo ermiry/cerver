@@ -275,6 +275,44 @@ CERVER_EXPORT void cerver_http_endpoint_set_max_body_size (
 );
 
 /**
+ * @brief Sets the max size of each file of the multipart requests of an endpoint; a bigger one is answered
+ * with 413.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] max_file_size the size in bytes, 0 uses the one of the cerver (cerver_http_set_max_file_size ())
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_endpoint_set_max_file_size (
+	CerverHttpEndpoint *endpoint, const size_t max_file_size
+);
+
+/**
+ * @brief Sets the max parts of the multipart requests of an endpoint; a request with more is answered with 413.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] max_multipart_parts the parts, 0 uses the ones of the cerver (cerver_http_set_max_multipart_parts ())
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_endpoint_set_max_multipart_parts (
+	CerverHttpEndpoint *endpoint, const unsigned int max_multipart_parts
+);
+
+/**
+ * @brief Sets the methods that take the parts of the multipart requests of an endpoint while their body arrives:
+ * cerver saves none of their files and keeps none of their values (#CerverHttpPartHandlers).
+ *
+ * The limits of the endpoint still apply: its max parts, its max file size (for the bytes of each part with a
+ * filename) and its max body size.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] handlers the methods, they are copied; NULL for cerver to take the parts again
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_endpoint_set_part_handlers (
+	CerverHttpEndpoint *endpoint, const CerverHttpPartHandlers *handlers
+);
+
+/**
  * @brief Sets whether an endpoint answers the CORS preflights and adds the Access-Control-Allow-Origin of a
  * whitelisted origin to its responses.
  *
@@ -304,6 +342,32 @@ CERVER_EXPORT void cerver_http_endpoint_set_etag (
  */
 CERVER_EXPORT void cerver_http_endpoint_set_compression (
 	CerverHttpEndpoint *endpoint, const bool compression
+);
+
+/**
+ * @brief Sets the smallest body of the responses of an endpoint that is compressed.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] min_size the size in bytes, 0 uses the one of the cerver (cerver_http_set_compression_min_size ())
+ * @note It only applies to an endpoint whose responses are compressed (cerver_http_endpoint_set_compression ()).
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_endpoint_set_compression_min_size (
+	CerverHttpEndpoint *endpoint, const size_t min_size
+);
+
+/**
+ * @brief Sets the level of the compression of the responses of an endpoint.
+ *
+ * @param[in,out] endpoint the endpoint
+ * @param[in] level from #HTTP_COMPRESSION_MIN_LEVEL to #HTTP_COMPRESSION_MAX_LEVEL; 0 uses the one of the cerver
+ * (cerver_http_set_compression_level ())
+ * @retval 0 the level was set
+ * @retval 1 a NULL endpoint or a level out of that range, that is not set
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_endpoint_set_compression_level (
+	CerverHttpEndpoint *endpoint, const int level
 );
 
 /**
@@ -680,6 +744,42 @@ CERVER_EXPORT void cerver_http_group_set_max_body_size (
 );
 
 /**
+ * @brief Sets the max size of each file that the endpoints of a group inherit, like
+ * cerver_http_endpoint_set_max_file_size ().
+ *
+ * @param[in,out] group the group
+ * @param[in] max_file_size the size in bytes, 0 uses the one of the cerver
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_group_set_max_file_size (
+	CerverHttpGroup *group, const size_t max_file_size
+);
+
+/**
+ * @brief Sets the max parts of a multipart request that the endpoints of a group inherit, like
+ * cerver_http_endpoint_set_max_multipart_parts ().
+ *
+ * @param[in,out] group the group
+ * @param[in] max_multipart_parts the parts, 0 uses the ones of the cerver
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_group_set_max_multipart_parts (
+	CerverHttpGroup *group, const unsigned int max_multipart_parts
+);
+
+/**
+ * @brief Sets the methods that take the parts of the multipart requests that the endpoints of a group inherit,
+ * like cerver_http_endpoint_set_part_handlers ().
+ *
+ * @param[in,out] group the group
+ * @param[in] handlers the methods, they are copied; NULL for cerver to take the parts
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_group_set_part_handlers (
+	CerverHttpGroup *group, const CerverHttpPartHandlers *handlers
+);
+
+/**
  * @brief Sets the CORS that the endpoints of a group inherit, like cerver_http_endpoint_set_cors ().
  *
  * @param[in,out] group the group
@@ -707,6 +807,32 @@ CERVER_EXPORT void cerver_http_group_set_etag (
  */
 CERVER_EXPORT void cerver_http_group_set_compression (
 	CerverHttpGroup *group, const bool compression
+);
+
+/**
+ * @brief Sets the smallest body that is compressed that the endpoints of a group inherit, like
+ * cerver_http_endpoint_set_compression_min_size ().
+ *
+ * @param[in,out] group the group
+ * @param[in] min_size the size in bytes, 0 uses the one of the cerver
+ * @since 3.0b-13
+ */
+CERVER_EXPORT void cerver_http_group_set_compression_min_size (
+	CerverHttpGroup *group, const size_t min_size
+);
+
+/**
+ * @brief Sets the level of the compression that the endpoints of a group inherit, like
+ * cerver_http_endpoint_set_compression_level ().
+ *
+ * @param[in,out] group the group
+ * @param[in] level from #HTTP_COMPRESSION_MIN_LEVEL to #HTTP_COMPRESSION_MAX_LEVEL; 0 uses the one of the cerver
+ * @retval 0 the level was set
+ * @retval 1 a NULL group or a level out of that range, that is not set
+ * @since 3.0b-13
+ */
+CERVER_EXPORT u8 cerver_http_group_set_compression_level (
+	CerverHttpGroup *group, const int level
 );
 
 /**

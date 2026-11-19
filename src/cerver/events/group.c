@@ -23,6 +23,7 @@
 #include "cerver/handler/events.h"
 #include "cerver/network/network.h"
 
+#include "cerver/http/clients/internal.h"
 #include "cerver/http/core/http.h"
 #include "cerver/http/core/internal.h"
 #include "cerver/http/core/pool.h"
@@ -256,6 +257,9 @@ static unsigned int event_loop_group_threads_start (EventLoopGroup *group) {
 void event_loop_group_delete (struct _Cerver *cerver) {
 
 	if (cerver && cerver->event_loops) {
+		// the HTTP clients of the cerver give no more requests to its loops, and no thread is giving one
+		http_clients_close ((HttpCerver *) cerver->cerver_data);
+
 		EventLoopGroup *group = cerver->event_loops;
 		cerver->event_loops = NULL;
 
@@ -275,6 +279,21 @@ unsigned int event_loop_group_parked (const struct _Cerver *cerver) {
 
 	return (cerver && cerver->event_loops) ?
 		__atomic_load_n (&cerver->event_loops->n_parked, __ATOMIC_ACQUIRE) : 0;
+
+}
+
+unsigned int event_loop_group_deferred (const struct _Cerver *cerver) {
+
+	unsigned int deferred = 0;
+
+	if (cerver && cerver->event_loops) {
+		const EventLoopGroup *group = cerver->event_loops;
+		for (unsigned int idx = 0; idx < group->n_loops; idx++) {
+			deferred += event_loop_deferred (group->loops[idx]);
+		}
+	}
+
+	return deferred;
 
 }
 
@@ -456,6 +475,9 @@ static u8 event_loop_group_start (Cerver *cerver, EventLoopGroup *group) {
 
 	cerver->event_loops = group;
 
+	// the HTTP clients of the cerver can give their requests to its loops from now on
+	http_clients_open ((HttpCerver *) cerver->cerver_data);
+
 	(void) time (&cerver->info->time_started);
 
 	cerver_event_trigger (CERVER_EVENT_STARTED, cerver, NULL, NULL);
@@ -592,6 +614,28 @@ bool event_loop_group_quiesce (EventLoopGroup *group, const bool reject, const t
 	}
 
 	return quiet;
+
+}
+
+// no loop has a request whose handler deferred its response
+static bool event_loop_group_is_settled (const EventLoopGroup *group) {
+
+	bool settled = true;
+
+	for (unsigned int idx = 0; (idx < group->n_loops) && settled; idx++) {
+		settled = !event_loop_deferred (group->loops[idx]);
+	}
+
+	return settled;
+
+}
+
+bool event_loop_group_settle (const EventLoopGroup *group, const time_t timeout) {
+
+	return group ? event_loop_group_wait_until (
+		group, event_loop_group_is_settled,
+		(u64) timeout * EVENT_LOOP_GROUP_MILLISECONDS_PER_SECOND
+	) : true;
 
 }
 

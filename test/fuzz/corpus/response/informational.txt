@@ -1,0 +1,6 @@
+AHTTP/1.1 100 Continue
+
+HTTP/1.1 200 OK
+Content-Type: text/plain
+
+hello

@@ -74,4 +74,6 @@ extern void http_tests_features (void);
 
 extern void http_tests_disconnect (void);
 
+extern void http_tests_client (void);
+
 #endif

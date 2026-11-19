@@ -896,9 +896,22 @@ CERVER_HIDDEN int http_receive_headers_authorize (HttpReceive *http_receive);
  *
  * A request with HttpReceive::authorize_pending is authorized first, a rejected one is not handled.
  *
+ * A handler that deferred the response of its request (cerver_http_context_defer ()) leaves it without what
+ * follows the handler: http_receive_dispatch_end () does it when the request is completed.
+ *
  * @param[in,out] http_receive the receive
  */
 CERVER_HIDDEN void http_receive_dispatch (HttpReceive *http_receive);
+
+/**
+ * @internal
+ * @brief What follows the handler of a request, for one whose response was deferred: the after middlewares of its
+ * endpoint, the end of the stream that was left open, and the 500 of a request that nobody answered.
+ *
+ * @param[in,out] http_receive the receive
+ * @threadsafety The thread that completes the request: it owns it until its connection goes back to its loop.
+ */
+CERVER_HIDDEN void http_receive_dispatch_end (HttpReceive *http_receive);
 
 /**
  * @internal

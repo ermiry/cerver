@@ -69,7 +69,9 @@ typedef enum EventHandleType {
 	/** @internal @brief A socket that accepts connections. */
 	EVENT_HANDLE_TYPE_LISTEN				= 1,
 	/** @internal @brief A connection. */
-	EVENT_HANDLE_TYPE_CONNECTION			= 2
+	EVENT_HANDLE_TYPE_CONNECTION			= 2,
+	/** @internal @brief The socket of a source of a loop (struct EventSource): its completions go to its methods. */
+	EVENT_HANDLE_TYPE_SOURCE				= 3
 
 } EventHandleType;
 
