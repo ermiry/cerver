@@ -13,6 +13,7 @@
 #include "cerver/http/core/internal.h"
 #include "cerver/http/core/pool.h"
 #include "cerver/http/requests/request.h"
+#include "cerver/http/responses/compression.h"
 #include "cerver/http/routes/middleware.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -114,12 +115,17 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 	settings->delete_custom_data = NULL;
 
 	settings->max_body_size = 0;
+	settings->max_file_size = 0;
+	settings->max_multipart_parts = 0;
+	(void) memset (&settings->part_handlers, 0, sizeof (CerverHttpPartHandlers));
 
 	settings->cors = false;
 
 	settings->etag = false;
 
 	settings->compression = false;
+	settings->compression_min_size = 0;
+	settings->compression_level = 0;
 
 	(void) memset (settings->pool_name, 0, HTTP_POOL_NAME_SIZE);
 	settings->pool = NULL;
@@ -220,11 +226,29 @@ static void http_route_settings_inherit (
 
 	if (missing & HTTP_ROUTE_SETTING_MAX_BODY_SIZE) resolved->max_body_size = source->max_body_size;
 
+	if (missing & HTTP_ROUTE_SETTING_MAX_FILE_SIZE) resolved->max_file_size = source->max_file_size;
+
+	if (missing & HTTP_ROUTE_SETTING_MAX_MULTIPART_PARTS) {
+		resolved->max_multipart_parts = source->max_multipart_parts;
+	}
+
+	if (missing & HTTP_ROUTE_SETTING_PART_HANDLERS) {
+		resolved->part_handlers = source->part_handlers;
+	}
+
 	if (missing & HTTP_ROUTE_SETTING_CORS) resolved->cors = source->cors;
 
 	if (missing & HTTP_ROUTE_SETTING_ETAG) resolved->etag = source->etag;
 
 	if (missing & HTTP_ROUTE_SETTING_COMPRESSION) resolved->compression = source->compression;
+
+	if (missing & HTTP_ROUTE_SETTING_COMPRESSION_MIN_SIZE) {
+		resolved->compression_min_size = source->compression_min_size;
+	}
+
+	if (missing & HTTP_ROUTE_SETTING_COMPRESSION_LEVEL) {
+		resolved->compression_level = source->compression_level;
+	}
 
 	if (missing & HTTP_ROUTE_SETTING_POOL) {
 		(void) memcpy (resolved->pool_name, source->pool_name, HTTP_POOL_NAME_SIZE);
@@ -233,6 +257,74 @@ static void http_route_settings_inherit (
 	resolved->set |= missing;
 
 	http_web_socket_settings_inherit (&resolved->web_socket, &source->web_socket);
+
+}
+
+// the limits and the compression that a group or an endpoint sets for its requests:
+// a group and an endpoint keep them in the same settings
+
+static void http_route_settings_set_max_file_size (
+	HttpRouteSettings *settings, const size_t max_file_size
+) {
+
+	settings->max_file_size = max_file_size;
+	settings->set |= HTTP_ROUTE_SETTING_MAX_FILE_SIZE;
+
+}
+
+static void http_route_settings_set_max_multipart_parts (
+	HttpRouteSettings *settings, const unsigned int max_multipart_parts
+) {
+
+	settings->max_multipart_parts = max_multipart_parts;
+	settings->set |= HTTP_ROUTE_SETTING_MAX_MULTIPART_PARTS;
+
+}
+
+// the methods are copied: NULL goes back to cerver, that saves the files and keeps the values
+static void http_route_settings_set_part_handlers (
+	HttpRouteSettings *settings, const CerverHttpPartHandlers *handlers
+) {
+
+	if (handlers) settings->part_handlers = *handlers;
+	else (void) memset (&settings->part_handlers, 0, sizeof (CerverHttpPartHandlers));
+
+	settings->set |= HTTP_ROUTE_SETTING_PART_HANDLERS;
+
+}
+
+static void http_route_settings_set_compression_min_size (
+	HttpRouteSettings *settings, const size_t min_size
+) {
+
+	settings->compression_min_size = min_size;
+	settings->set |= HTTP_ROUTE_SETTING_COMPRESSION_MIN_SIZE;
+
+}
+
+// a level that zlib does not have is not set, like the one of the cerver; 0 goes back to the one of the cerver
+// returns 0 on success, 1 on error
+static u8 http_route_settings_set_compression_level (
+	HttpRouteSettings *settings, const int level
+) {
+
+	u8 retval = 1;
+
+	if (!level || ((level >= HTTP_COMPRESSION_MIN_LEVEL) && (level <= HTTP_COMPRESSION_MAX_LEVEL))) {
+		settings->compression_level = level;
+		settings->set |= HTTP_ROUTE_SETTING_COMPRESSION_LEVEL;
+
+		retval = 0;
+	}
+
+	else {
+		cerver_log_warning (
+			"cerver_http_group_set_compression_level () - %d is not between %d and %d",
+			level, HTTP_COMPRESSION_MIN_LEVEL, HTTP_COMPRESSION_MAX_LEVEL
+		);
+	}
+
+	return retval;
 
 }
 
@@ -434,6 +526,46 @@ void cerver_http_endpoint_set_max_body_size (
 		endpoint->settings.max_body_size = max_body_size;
 		endpoint->settings.set |= HTTP_ROUTE_SETTING_MAX_BODY_SIZE;
 	}
+
+}
+
+void cerver_http_endpoint_set_max_file_size (
+	HttpEndpoint *endpoint, const size_t max_file_size
+) {
+
+	if (endpoint) http_route_settings_set_max_file_size (&endpoint->settings, max_file_size);
+
+}
+
+void cerver_http_endpoint_set_max_multipart_parts (
+	HttpEndpoint *endpoint, const unsigned int max_multipart_parts
+) {
+
+	if (endpoint) http_route_settings_set_max_multipart_parts (&endpoint->settings, max_multipart_parts);
+
+}
+
+void cerver_http_endpoint_set_part_handlers (
+	HttpEndpoint *endpoint, const CerverHttpPartHandlers *handlers
+) {
+
+	if (endpoint) http_route_settings_set_part_handlers (&endpoint->settings, handlers);
+
+}
+
+void cerver_http_endpoint_set_compression_min_size (
+	HttpEndpoint *endpoint, const size_t min_size
+) {
+
+	if (endpoint) http_route_settings_set_compression_min_size (&endpoint->settings, min_size);
+
+}
+
+u8 cerver_http_endpoint_set_compression_level (
+	HttpEndpoint *endpoint, const int level
+) {
+
+	return endpoint ? http_route_settings_set_compression_level (&endpoint->settings, level) : 1;
 
 }
 
@@ -1072,6 +1204,46 @@ void cerver_http_group_set_max_body_size (
 		group->settings.max_body_size = max_body_size;
 		group->settings.set |= HTTP_ROUTE_SETTING_MAX_BODY_SIZE;
 	}
+
+}
+
+void cerver_http_group_set_max_file_size (
+	HttpGroup *group, const size_t max_file_size
+) {
+
+	if (group) http_route_settings_set_max_file_size (&group->settings, max_file_size);
+
+}
+
+void cerver_http_group_set_max_multipart_parts (
+	HttpGroup *group, const unsigned int max_multipart_parts
+) {
+
+	if (group) http_route_settings_set_max_multipart_parts (&group->settings, max_multipart_parts);
+
+}
+
+void cerver_http_group_set_part_handlers (
+	HttpGroup *group, const CerverHttpPartHandlers *handlers
+) {
+
+	if (group) http_route_settings_set_part_handlers (&group->settings, handlers);
+
+}
+
+void cerver_http_group_set_compression_min_size (
+	HttpGroup *group, const size_t min_size
+) {
+
+	if (group) http_route_settings_set_compression_min_size (&group->settings, min_size);
+
+}
+
+u8 cerver_http_group_set_compression_level (
+	HttpGroup *group, const int level
+) {
+
+	return group ? http_route_settings_set_compression_level (&group->settings, level) : 1;
 
 }
 
