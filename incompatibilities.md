@@ -3,6 +3,22 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9.1 (from 1.9)
+
+A fix of the reads that a client makes in its own thread, without the update thread of the connection. The ABI and
+the wire do not change, but these functions return another value, and keep their connection, when the cerver closes it.
+
+- **`client_connect_to_cerver ()` returns 1 when the info of the cerver can not be read** (the cerver closes the
+  connection or sends CLOSE_CONNECTION first). It returned 0 after the read had ended the connection and freed it.
+  Now the connection is only closed and stays registered to the client, like one whose connect failed, and
+  CLIENT_EVENT_CONNECTION_FAILED is triggered. The caller connects it again or ends it with
+  `client_connection_end ()`. The balancer resets the connection of a service for its next attempt, which used to
+  be a use after free.
+- **`client_request_to_cerver ()` and `client_request_to_cerver_async ()` keep the connection** when its response
+  can not be read: it is only closed, and the app ends it (it was ended and freed by the read). The sync request
+  returns 1 when the connection is closed, also when the response was a CLOSE_CONNECTION. The async one triggers
+  CLIENT_EVENT_CONNECTION_DATA with the connection closed.
+
 ## 1.9 (from 1.9b-3)
 
 The release of the 1.9: the backlog of the core and the ports of the other lines to the files of the core, so they
