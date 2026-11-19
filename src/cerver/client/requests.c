@@ -46,6 +46,7 @@
 // the response will be handled using the client's packet handler
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// a response that can not be read only closes the connection, the app still ends it
 // retruns 0 when the response has been handled, 1 on error
 unsigned int client_request_to_cerver (
 	Client *client, Connection *connection, Packet *request
@@ -60,7 +61,7 @@ unsigned int client_request_to_cerver (
 		size_t sent = 0;
 		if (!packet_send (request, 0, &sent, false)) {
 			// receive the data directly, the request succeeds when its response was handled
-			retval = client_connection_get_next_packet (client, connection);
+			retval = client_connection_read_direct (client, connection);
 		}
 
 		else {
@@ -83,7 +84,8 @@ static void *client_request_to_cerver_thread (void *cc_ptr) {
 		ClientConnection *cc = (ClientConnection *) cc_ptr;
 		Client *client = cc->client;
 
-		(void) client_connection_get_next_packet (
+		// a response that can not be read only closes the connection
+		(void) client_connection_read_direct (
 			cc->client, cc->connection
 		);
 
