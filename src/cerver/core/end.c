@@ -404,6 +404,11 @@ static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
 		drained = false;
 	}
 
+	// the requests whose handler deferred its response have no thread: who completes them gives them back
+	if (cerver->event_loops && !event_loop_group_settle (cerver->event_loops, timeout)) {
+		drained = false;
+	}
+
 	// the event loops end when the thpool gave them back their connections
 	if (cerver->event_loops && !event_loop_group_finish (cerver->event_loops, timeout)) {
 		drained = false;
@@ -423,13 +428,15 @@ static void cerver_drain_report (Cerver *cerver) {
 	cerver_log_warning (
 		"Cerver %s was NOT drained in %u + %u secs - "
 		"%u thpool connections working - %u queued - %u connection threads - "
-		"%u event threads - %u handlers alive, the data they use will not be released",
+		"%u event threads - %u handlers alive - %u deferred responses that were not completed, "
+		"the data they use will not be released",
 		cerver->info->name, cerver->drain_timeout, CERVER_DRAIN_GRACE_TIMEOUT,
 		cerver_drain_working (cerver),
 		cerver_drain_queued (cerver),
 		thread_group_alive (&cerver->connection_threads),
 		thread_group_alive (&cerver->event_threads),
-		cerver_get_n_handlers_alive (cerver)
+		cerver_get_n_handlers_alive (cerver),
+		event_loop_group_deferred (cerver)
 	);
 
 }
