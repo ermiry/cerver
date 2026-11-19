@@ -11,6 +11,7 @@
 #include <cerver/http/core/routes.h>
 #include "cerver/http/requests/internal.h"
 #include <cerver/http/requests/request.h>
+#include <cerver/http/responses/compression.h>
 #include <cerver/http/routes/middleware.h>
 #include <cerver/http/routes/route.h>
 #include <cerver/http/routes/tree.h>
@@ -21,6 +22,16 @@
 #include "../../test.h"
 
 #define TEST_TREE_PATH_SIZE					512
+
+// the limits of the uploads and the compression that a group, a subgroup and an endpoint set
+#define TEST_TREE_GROUP_MAX_FILE_SIZE				4096
+#define TEST_TREE_GROUP_MAX_PARTS					8
+#define TEST_TREE_GROUP_COMPRESSION_MIN_SIZE		128
+#define TEST_TREE_GROUP_COMPRESSION_LEVEL			3
+#define TEST_TREE_SUBGROUP_MAX_PARTS				2
+#define TEST_TREE_ENDPOINT_MAX_FILE_SIZE			512
+#define TEST_TREE_ENDPOINT_COMPRESSION_MIN_SIZE		16
+#define TEST_TREE_ENDPOINT_COMPRESSION_LEVEL		HTTP_COMPRESSION_MAX_LEVEL
 
 // a path of TEST_TREE_PATH_SIZE with its first slash
 #define TEST_TREE_URL_SIZE					(TEST_TREE_PATH_SIZE * 2)
@@ -529,9 +540,20 @@ static void test_tree_inheritance (void) {
 	cerver_http_group_set_max_body_size (api, 1024);
 	cerver_http_group_set_cors (api, true);
 
+	// the limits of the uploads and the compression of a group, since the 3.0b-13
+	cerver_http_group_set_max_file_size (api, TEST_TREE_GROUP_MAX_FILE_SIZE);
+	cerver_http_group_set_max_multipart_parts (api, TEST_TREE_GROUP_MAX_PARTS);
+	cerver_http_group_set_compression_min_size (api, TEST_TREE_GROUP_COMPRESSION_MIN_SIZE);
+	test_check_unsigned_eq (cerver_http_group_set_compression_level (api, TEST_TREE_GROUP_COMPRESSION_LEVEL), 0, NULL);
+
+	// a level that zlib does not have is not set
+	test_check_unsigned_eq (cerver_http_group_set_compression_level (api, HTTP_COMPRESSION_MAX_LEVEL + 1), 1, NULL);
+	test_check_unsigned_eq (cerver_http_group_set_compression_level (NULL, TEST_TREE_GROUP_COMPRESSION_LEVEL), 1, NULL);
+
 	HttpGroup *public_group = cerver_http_group_subgroup_add (api, "public");
 	cerver_http_group_set_auth (public_group, HTTP_ROUTE_AUTH_TYPE_NONE);
 	cerver_http_group_set_modifier (public_group, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	cerver_http_group_set_max_multipart_parts (public_group, TEST_TREE_SUBGROUP_MAX_PARTS);
 
 	HttpEndpoint *inherited = cerver_http_group_get (api, "users", test_tree_handler);
 	HttpEndpoint *overridden = cerver_http_group_post (public_group, "upload", test_tree_handler);
@@ -539,8 +561,28 @@ static void test_tree_inheritance (void) {
 	cerver_http_endpoint_set_custom_data (own, endpoint_data, test_tree_delete_data);
 	cerver_http_endpoint_set_max_body_size (own, 2048);
 	cerver_http_endpoint_set_authentication_with_body (own, true);
+	cerver_http_endpoint_set_max_file_size (own, TEST_TREE_ENDPOINT_MAX_FILE_SIZE);
+	cerver_http_endpoint_set_compression_min_size (own, TEST_TREE_ENDPOINT_COMPRESSION_MIN_SIZE);
+	test_check_unsigned_eq (
+		cerver_http_endpoint_set_compression_level (own, TEST_TREE_ENDPOINT_COMPRESSION_LEVEL), 0, NULL
+	);
+	test_check_unsigned_eq (cerver_http_endpoint_set_compression_level (own, -1), 1, NULL);
 
 	test_check_unsigned_eq (cerver_http_routes_compile (http_cerver), 0, NULL);
+
+	// an endpoint takes each limit from the nearest group that set it, or keeps its own
+	test_check_unsigned_eq (inherited->resolved.max_file_size, TEST_TREE_GROUP_MAX_FILE_SIZE, NULL);
+	test_check_unsigned_eq (inherited->resolved.max_multipart_parts, TEST_TREE_GROUP_MAX_PARTS, NULL);
+	test_check_unsigned_eq (inherited->resolved.compression_min_size, TEST_TREE_GROUP_COMPRESSION_MIN_SIZE, NULL);
+	test_check_int_eq (inherited->resolved.compression_level, TEST_TREE_GROUP_COMPRESSION_LEVEL, NULL);
+
+	test_check_unsigned_eq (overridden->resolved.max_file_size, TEST_TREE_GROUP_MAX_FILE_SIZE, NULL);
+	test_check_unsigned_eq (overridden->resolved.max_multipart_parts, TEST_TREE_SUBGROUP_MAX_PARTS, NULL);
+
+	test_check_unsigned_eq (own->resolved.max_file_size, TEST_TREE_ENDPOINT_MAX_FILE_SIZE, NULL);
+	test_check_unsigned_eq (own->resolved.max_multipart_parts, TEST_TREE_SUBGROUP_MAX_PARTS, NULL);
+	test_check_unsigned_eq (own->resolved.compression_min_size, TEST_TREE_ENDPOINT_COMPRESSION_MIN_SIZE, NULL);
+	test_check_int_eq (own->resolved.compression_level, TEST_TREE_ENDPOINT_COMPRESSION_LEVEL, NULL);
 
 	test_check_unsigned_eq (inherited->resolved.auth_type, HTTP_ROUTE_AUTH_TYPE_CUSTOM, NULL);
 	test_check_ptr_eq (inherited->resolved.authentication_handler, test_tree_authentication);
