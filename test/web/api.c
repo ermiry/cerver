@@ -17,6 +17,7 @@
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/stats.h>
 #include <cerver/http/json/json.h>
@@ -32,6 +33,9 @@
 #include "../address.h"
 #include <app/routes.h>
 #include <app/users.h>
+
+// secs, shorter than the pause of the client (test/client/web/api.c)
+#define API_HEADERS_TIMEOUT			1
 
 static Cerver *api_cerver = NULL;
 
@@ -122,6 +126,8 @@ int main (void) {
 
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
+
+		http_cerver_set_headers_timeout (http_cerver, API_HEADERS_TIMEOUT);
 
 		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
 		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
