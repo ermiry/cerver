@@ -3,6 +3,30 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-78 (from 2.0b-77)
+
+The core of the 1.9.1 of `core` and the fixes of HTTP that the 3.0 found. The ABI, the exported symbols and the wire
+do not change, but some functions return another value or send other headers.
+
+- **`client_connect_to_cerver ()` returns 1 when the info of the cerver can not be read** (the cerver closes the
+  connection or sends CLOSE_CONNECTION first). It returned 0 after the read had ended the connection and freed it.
+  Now the connection is only closed, stays registered to the client and CLIENT_EVENT_CONNECTION_FAILED is triggered.
+  `client_request_to_cerver ()` and `client_request_to_cerver_async ()` keep the connection in the same way when its
+  response can not be read (the 1.9.1)
+- **Each HTTP cerver of a process sends its own default headers** (`http_cerver_add_responses_header ()`) in the
+  responses that are compiled when they are sent: `http_response_send ()` of a response that was not compiled,
+  `http_response_create_and_send ()`, the streams, the files, the videos and the admin routes. Every cerver sent the
+  ones of the first HTTP cerver that started. `http_response_add_whitelist_cors_header_from_request ()` takes the
+  whitelist of the cerver of the request. A response that the application compiles before it is sent
+  (`http_response_compile ()`, the `http_response_json_*` responses) still takes the ones of the first HTTP cerver
+  that is alive (a `@warning` in `response.h`)
+- **The file stats of a route only count the files** of a multipart request: a value, or a file input without a file,
+  was counted in `min_file_size`, `max_file_size` and `sum_file_size` (the smallest file of every form with a value)
+- **The uptime of `/cerver/info` and of `cerver_uptime_seconds` is computed for each response**: they do not write the
+  `uptime` of the `CerverInfo` anymore, which the threads wrote at the same time without a lock
+- `n_limited_requests` and `n_timeout_requests` of `HttpCerver` are counted with atomics like every other counter
+  (they were counted under the mutex of the cerver and read without it)
+
 ## 2.0b-77 (from 2.0b-76)
 
 The port of the Release 1.9 of `core` and the backlog of HTTP: the wire does not change, but some structs grow (a
