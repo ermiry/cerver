@@ -344,6 +344,9 @@ CERVER_EXPORT u8 http_response_add_cors_header_from_origin (
  * @retval 0 the header was set
  * @retval 1 a NULL argument, no HTTP cerver, a domain that is not in the whitelist, or the header was not set
  * @note The whitelist is the one of the HTTP cerver of the responses (http_responses_init ()).
+ * @warning With more than one HTTP cerver in a process, it is the whitelist of the first one that is alive, not
+ * the one of the cerver that sends the response: http_response_add_whitelist_cors_header_from_request () takes the
+ * one of the cerver of the request.
  */
 CERVER_EXPORT u8 http_response_add_whitelist_cors_header (
 	HttpResponse *response, const char *domain
@@ -363,7 +366,7 @@ CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_origin (
 
 /**
  * @brief Sets the Access-Control-Allow-Origin header of a response when the Origin of the request is in the
- * origins whitelist.
+ * origins whitelist of the HTTP cerver of the request.
  *
  * @param[in] http_receive the receive of the request
  * @param[in,out] response the response
@@ -471,6 +474,9 @@ CERVER_EXPORT HttpResponse *http_response_create (
  * default headers of the HTTP cerver that the response does not have.
  *
  * @param[in,out] response the response, it must not be NULL
+ * @warning A response compiled before it is sent has the default headers of the HTTP cerver of the responses (the
+ * first one that is alive in the process), not the ones of the cerver that sends it. A response that
+ * http_response_send () or http_response_stream_begin () compiles takes the ones of the cerver of its request.
  */
 CERVER_PUBLIC void http_response_compile_header (
 	HttpResponse *response
@@ -483,6 +489,9 @@ CERVER_PUBLIC void http_response_compile_header (
  * @param[in,out] response the response
  * @retval 0 the response was compiled
  * @retval 1 a NULL response or the buffer could not be allocated
+ * @warning Its header takes the default headers of the HTTP cerver of the responses, like
+ * http_response_compile_header (): with more than one HTTP cerver in a process, send the response without
+ * compiling it, so it takes the ones of the cerver of its request.
  */
 CERVER_EXPORT u8 http_response_compile (
 	HttpResponse *response
