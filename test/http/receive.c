@@ -149,6 +149,11 @@ typedef struct TestReceiveObserved {
 	unsigned int n_files;
 	TestReceiveFile files[TEST_RECEIVE_FILES_SIZE];
 
+	// the stats of the sizes of the files of the request
+	size_t min_file_size;
+	size_t max_file_size;
+	size_t sum_file_size;
+
 } TestReceiveObserved;
 
 static TestReceiveObserved observed;
@@ -417,6 +422,10 @@ static void test_receive_upload_handler (
 			multi_part = http_request_multi_parts_iter_get_next (request);
 		}
 	}
+
+	observed.min_file_size = http_receive->file_stats->min_file_size;
+	observed.max_file_size = http_receive->file_stats->max_file_size;
+	observed.sum_file_size = http_receive->file_stats->sum_file_size;
 
 	(void) http_response_send (oki_doki, http_receive);
 
@@ -968,6 +977,9 @@ static const char *multipart_request = {
 	"------CerverBoundary7MA4YWxk--\r\n"
 };
 
+static const char *multipart_first_file = { "first-file-content" };
+static const char *multipart_second_file = { "second-file-content" };
+
 static void test_receive_check_multipart (void) {
 
 	test_receive_expect (test_receive_status_is ("200"));
@@ -975,10 +987,15 @@ static void test_receive_check_multipart (void) {
 	test_receive_expect (observed.n_parts == 3);
 	test_receive_expect (!strcmp (observed.part_value, "hello"));
 	test_receive_expect (observed.n_files == 2);
-	test_receive_expect (!strcmp (observed.files[0].content, "first-file-content"));
-	test_receive_expect (!strcmp (observed.files[1].content, "second-file-content"));
+	test_receive_expect (!strcmp (observed.files[0].content, multipart_first_file));
+	test_receive_expect (!strcmp (observed.files[1].content, multipart_second_file));
 	test_receive_expect (strcmp (observed.files[0].saved_filename, observed.files[1].saved_filename));
 	test_receive_expect (test_receive_uploads_count () == 0);
+
+	// only the files count for the sizes, the value is not one (it was the smallest file)
+	test_receive_expect (observed.min_file_size == strlen (multipart_first_file));
+	test_receive_expect (observed.max_file_size == strlen (multipart_second_file));
+	test_receive_expect (observed.sum_file_size == (strlen (multipart_first_file) + strlen (multipart_second_file)));
 
 }
 
