@@ -376,7 +376,7 @@ CERVER_PUBLIC u8 socket_send_file (
  * @return true if the send timed out and the socket was shut down
  * @threadsafety Safe with the write mutex of the socket held: it only takes its close mutex (socket_shutdown ()).
  * @note For the internal methods of cerver.
- * @since 2.0b-77
+ * @since 1.9
  */
 CERVER_PRIVATE bool socket_end_on_send_timeout (Socket *socket, const int error);
 
