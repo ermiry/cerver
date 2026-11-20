@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <unistd.h>
+
 #include <cerver/http/core/http.h>
 #include <cerver/http/json/json.h>
 #include <cerver/http/requests/url.h>
@@ -18,6 +20,11 @@
 #define API_CLIENT_FORM_SIZE			4096
 #define API_CLIENT_FORM_PAIR_FORMAT		"%s%s=%s"
 #define API_CLIENT_FORM_SEPARATOR		"&"
+
+#define API_CLIENT_DATA_SIZE			4096
+
+// the client stays quiet for longer than the headers timeout of its cerver (test/web/api.c)
+#define API_CLIENT_IDLE_SECONDS			2
 
 static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
@@ -194,6 +201,34 @@ static unsigned int api_request_all (void) {
 
 }
 
+// a cerver that had nothing to do for longer than its headers timeout answers the next connection
+// (no pair left its cerver without traffic that long)
+static unsigned int api_request_after_idle (void) {
+
+	unsigned int errors = 1;
+
+	(void) sleep (API_CLIENT_IDLE_SECONDS);
+
+	char data_buffer[API_CLIENT_DATA_SIZE] = { 0 };
+
+	// a new handle is a new connection
+	CURL *curl = curl_easy_init ();
+	if (curl) {
+		errors = (curl_simple_handle_data (
+			curl, address,
+			HTTP_STATUS_OK,
+			api_request_all_data_handler, data_buffer
+		) != CURL_RESULT_NONE);
+
+		curl_easy_cleanup (curl);
+	}
+
+	if (errors) cerver_log_error ("api_request_after_idle () - The cerver did not answer after it was idle");
+
+	return errors;
+
+}
+
 int main (void) {
 
 	int code = 0;
@@ -203,6 +238,8 @@ int main (void) {
 	web_test_address (address, API_CLIENT_PATH);
 
 	code = (int) api_request_all ();
+
+	if (!code) code = (int) api_request_after_idle ();
 
 	cerver_log_end ();
 
