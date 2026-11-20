@@ -5,8 +5,8 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-04; el estado (§3), al día con la 2.0b-77 (2026-11-16) |
-> | **Rama base** | `http`: desde el tag `2.0b-56`; hoy la 2.0b-77 |
+> | **Fecha** | 2026-11-04; el estado (§3), al día con la 2.0b-78 (2026-11-19) |
+> | **Rama base** | `http`: desde el tag `2.0b-56`; hoy la 2.0b-78 |
 > | **Contexto** | `percepthor-backend/docs/context/cerver-module-context.md` (el estado del módulo, las fases, las versiones y el 502 de gepp) |
 > | **Alcance** | cerver (`/Users/ermiry/Documents/cerver`), pycerver (`/Users/ermiry/Documents/py-cerver`), la imagen devel (`percepthor-devops`) y los servicios de validación (gepp, balance, payloads) |
 
@@ -90,6 +90,18 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
     (`backlog/payloads-service-tests-findings.md` §2–3).
 
 ## 3. Estado actual (rama `http`)
+
+**2026-11-19: la Beta 2.0b-78.** Los archivos del core son los de la 1.9.1 de `core` tal cual, con sus `@since`
+(las lecturas directas del cliente que liberaban su conexión, la vigilancia de `free ()` de `test/faults/`): el diff
+del core entre las dos ramas solo deja lo web y `version.h`, la condición de la 2.0. Del lado de HTTP lleva los
+arreglos que la 3.0 encontró y que también aplicaban aquí:
+- los contadores de las peticiones limitadas y vencidas, atómicos;
+- las stats de los archivos de multipart, solo con los archivos;
+- el uptime de la info y de las métricas, calculado por respuesta;
+- las cabeceras por default y el CORS de cada cerver, no los del primero del proceso.
+
+También lleva los tests que faltaban (el fin de una conexión al agotar su send timeout y un par con su cerver
+ocioso).
 
 **2026-11-16: la Beta 2.0b-77.** Las fases 0–3b están hechas; la Fase 4 es la línea 2.1 (`nightly`). De la 2.0b-62
 a la 2.0b-77 la línea recibió:
@@ -1198,15 +1210,17 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
 
 ### Lo que hay
 
-- **Unit:** `types`, `cerver/test`, `client/test`, `connection`, `collections`, `files`, `packets`, `receive`,
-  `system`, `threads`, `utils`, `http`, `json`, `jwt`, `version`. No hay framework: `test/test.h` define macros
-  `test_check_*`.
+- **Unit:** un binario por carpeta, en espejo de `src/cerver/` (`test/bin/connection`, `files`, `handler`, `http`,
+  `json`, `jwt`, `network`, `packets`, `threads`, …), más `client/lifecycle` y `client/features`, y
+  `test/bin/faults`, que hace fallar una asignación o un hilo y vigila los `free ()`. No hay framework: `test/test.h`
+  define macros `test_check_*`. Los corre `test/run.sh`.
 - **`test/app`:** una librería compartida de handlers, rutas, usuarios y auth.
-- **Integración:** pares servidor / cliente:
+- **Integración:** pares servidor / cliente, en IPv4 y en `::1`:
   - TCP: `test/cerver/*` contra `test/client/*`;
   - HTTP: `test/web/*` contra `test/client/web/*`, con libcurl.
 
-  Los corre `test.sh` en la imagen `ermiry/cerver:test`.
+  Los corre `test/integration.sh` en la imagen de `Dockerfile.test`, sin sanitizer o con el de `SANITIZER`
+  (`address,undefined` o `thread`), y con `COVERAGE=1`.
 - **`benchmarks/`:** `http-parser.c` (el parser con callbacks vacíos), `base64.c` y `web.c` (libcurl contra
   `localhost.com:8080`).
 
