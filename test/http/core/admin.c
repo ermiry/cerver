@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+#include <cerver/types/string.h>
 
 #include <cerver/core/cerver.h>
 #include <cerver/core/end.h>
@@ -8,6 +11,7 @@
 #include <cerver/http/core/admin.h>
 #include <cerver/http/core/http.h>
 #include "cerver/http/core/internal.h"
+#include <cerver/http/core/metrics.h>
 #include <cerver/http/core/routes.h>
 #include <cerver/http/core/settings.h>
 #include <cerver/http/responses/response.h>
@@ -15,6 +19,11 @@
 #include "../../test.h"
 
 static const char *uploads_file_system = { "/var/uploads" };
+
+#define TEST_ADMIN_DECIMAL_BASE			10
+
+static const char *test_admin_uptime_json_key = { "\"uptime\": " };
+static const char *test_admin_uptime_metric = { "\ncerver_uptime_seconds " };
 
 #pragma region systems
 
@@ -172,6 +181,52 @@ static void test_http_admin_generate_jsons (void) {
 
 }
 
+// the secs since the cerver of the info started, and the uptime that it keeps, that the generators do not touch
+static const time_t test_admin_started_ago = 90;
+static const u64 test_admin_kept_uptime = 7;
+
+// the value after the key is the time since the cerver started, read in the second of the generation or the next
+static void test_http_admin_uptime_check (const char *generated, const char *key) {
+
+	const char *found = strstr (generated, key);
+	test_check_ptr (found);
+
+	const long long uptime = strtoll (found + strlen (key), NULL, TEST_ADMIN_DECIMAL_BASE);
+	test_check (
+		(uptime >= (long long) test_admin_started_ago) && (uptime <= (long long) test_admin_started_ago + 1),
+		"the uptime is not the time since the cerver started"
+	);
+
+}
+
+// the info and the metrics compute the uptime for each response, and do not write the one that the cerver keeps:
+// the threads generate them at the same time (it was written without a lock)
+static void test_http_admin_uptime (void) {
+
+	Cerver *test_cerver = cerver_create_web ("test-cerver", 8080, 2);
+	test_check_ptr (test_cerver);
+
+	HttpCerver *http_cerver = http_cerver_get (test_cerver);
+
+	test_cerver->info->time_started = time (NULL) - test_admin_started_ago;
+	test_cerver->info->uptime = test_admin_kept_uptime;
+
+	char *json = http_cerver_admin_generate_info_json (http_cerver);
+	test_check_ptr (json);
+	test_http_admin_uptime_check (json, test_admin_uptime_json_key);
+	free (json);
+
+	String *metrics = http_cerver_metrics_generate (http_cerver);
+	test_check_ptr (metrics);
+	test_http_admin_uptime_check (metrics->str, test_admin_uptime_metric);
+	str_delete (metrics);
+
+	test_check_unsigned_eq ((unsigned int) test_cerver->info->uptime, test_admin_kept_uptime, "the kept uptime was written");
+
+	(void) cerver_teardown (test_cerver);
+
+}
+
 #pragma endregion
 
 void http_tests_admin (void) {
@@ -185,6 +240,7 @@ void http_tests_admin (void) {
 
 	// generate
 	test_http_admin_generate_jsons ();
+	test_http_admin_uptime ();
 
 	(void) printf ("Done!\n");
 
