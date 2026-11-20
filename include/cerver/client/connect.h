@@ -52,10 +52,14 @@ CERVER_PRIVATE void client_connect_datagram (
 /**
  * @brief Connects like client_connect () and then reads a first packet, the info of the cerver.
  *
+ * A read of the info that fails, or a cerver that closes the connection instead of sending it, fails the connect:
+ * the connection is closed and CLIENT_EVENT_CONNECTION_FAILED is triggered, but it stays registered to the client,
+ * like a connection whose connect failed, so it can be connected again or ended with client_connection_end ().
+ *
  * @param[in,out] client the client
  * @param[in,out] connection the connection
- * @retval 0 the connection was established
- * @retval 1 a NULL argument or it failed to connect
+ * @retval 0 the connection was established and the info of the cerver was read
+ * @retval 1 a NULL argument, it failed to connect, or the info of the cerver could not be read
  */
 CERVER_EXPORT unsigned int client_connect_to_cerver (
 	Client *client, struct _Connection *connection

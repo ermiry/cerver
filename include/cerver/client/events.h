@@ -103,12 +103,12 @@ struct _ClientEvent {
 	/**
 	 * @brief The arguments shared with the data of each trigger, for the internal methods of cerver: the last one
 	 * that releases them deletes them.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_args;
 	/**
 	 * @brief The response data shared with the data of each trigger, like #shared_args.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_response;
 
@@ -237,12 +237,12 @@ typedef struct ClientEventData {
 	/**
 	 * @brief The reference of this trigger to the arguments of the action, for the internal methods of cerver:
 	 * client_event_data_delete () releases it.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_args;
 	/**
 	 * @brief The reference of this trigger to the response data of the event, like #shared_args.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_response;
 
@@ -330,7 +330,7 @@ struct _ClientError {
 	/**
 	 * @brief The arguments shared with the data of each trigger, for the internal methods of cerver: the last one
 	 * that releases them deletes them.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_args;
 
@@ -419,7 +419,7 @@ typedef struct ClientErrorData {
 	/**
 	 * @brief The reference of this trigger to the arguments of the action, for the internal methods of cerver:
 	 * client_error_data_delete () releases it.
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	struct _CerverActionArgs *shared_args;
 

@@ -7,6 +7,7 @@
 
 #include "cerver/http/core/handler.h"
 #include "cerver/http/core/http.h"
+#include "cerver/http/core/internal.h"
 #include "cerver/http/headers/header.h"
 #include "cerver/http/parser/http_parser.h"
 #include "cerver/http/responses/response.h"
@@ -61,7 +62,8 @@ u8 http_response_stream_begin (
 		}
 
 		else {
-			if (!response->header) http_response_compile_header (response);
+			// with the default headers of the cerver of the request
+			if (!response->header) http_response_compile_header_with_cerver (response, receive->http_cerver);
 
 			if (response->header) {
 				receive->stream.chunked = http_stream_is_chunked (receive);

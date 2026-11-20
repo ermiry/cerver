@@ -1,19 +1,25 @@
 ## General
-- Added a waiter to the thpool to know when its threads wait
-- Ending a connection when one of its sends ran out of time
-- Using the shared args for the events & the errors of clients
-- Fixed BMP images, existing dirs, n_read & each partial file
-- Fixed the docs of the job queue, the file send & unregister
-- Updated the roadmap with the beta & the link to its history
-- Added the changes of the 2.0b-77 to the incompatibilities
+- Using the since of the core in the events & thpool headers
+- Reading a cerver info without freeing the client connection
+- Keeping the connection of a request whose response fails
+- Updated the roadmap with the beta & the core of the 1.9.1
+- Updated the CLAUDE.md with the core & faults of the 1.9.1
+- Added the changes of the 2.0b-78 to the incompatibilities
 
 ## HTTP
-- Checking the strings of a static path & its insert in the lists
-- Reading again a NUL that follows a value in a JSON buffer
+- Counting the limited & the timed out requests with atomics
+- Counting the multipart stats of the sizes only with the files
+- Computing the uptime of the admin info & of all its metrics
+- Sending the default headers of a cerver in all its responses
 
 ## Tests
-- Wrapping every argument of the checks of test.h in parens
-- Waiting for all the packets sent in routing before its checks
-- Draining the fuzz target of the client with its send timeouts
-- Added a test of a second admin of the core cerver at once
-- Scaling the send timeout of disconnect with the time scale
+- Added tests of the connects & requests that cervers close
+- Watching the allocations & their frees in the faults binaries
+- Added a faults test for the client update thread that leaked
+- Registering the client tests in the main of the faults binary
+- Checking the sizes of the files of a multipart in its receives
+- Testing the uptime of the admin info & of the cerver metric
+- Testing the counters, the default headers & send timeouts
+- Scaling the idle timeout of disconnect & emptying uploads
+- Setting a headers timeout in the api cerver of the web pair
+- Requesting the api cerver of the web pairs after it was idle

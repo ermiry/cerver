@@ -78,7 +78,7 @@ typedef struct ThpoolJob {
 /**
  * @brief How the wait of a thread on the waiter of its thpool ended.
  *
- * @since 2.0b-77
+ * @since 1.9
  */
 typedef enum ThpoolWaited {
 
@@ -101,7 +101,7 @@ typedef enum ThpoolWaited {
  *
  * @threadsafety wait runs in the threads of the thpool at the same time, without the mutex of the thpool; wake
  * runs with that mutex.
- * @since 2.0b-77
+ * @since 1.9
  */
 typedef struct ThpoolWaiter {
 
@@ -216,7 +216,7 @@ typedef struct Thpool {
 	 * @brief The jobs in the queue, written with the mutex and with atomic operations each time that they change:
 	 * thpool_has_queued () reads it without the mutex.
 	 *
-	 * @since 2.0b-76
+	 * @since 1.9b-3
 	 */
 	unsigned int queue_awaited;
 
@@ -224,21 +224,21 @@ typedef struct Thpool {
 	 * @brief What the threads wait on when the queue is empty, without wait they wait for the jobs of the queue
 	 * (thpool_set_waiter ()).
 	 *
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	ThpoolWaiter waiter;
 	/**
 	 * @brief The threads that wait on the waiter, written with the mutex and with atomic operations:
 	 * thpool_get_num_threads_waiting () reads it without the mutex.
 	 *
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	unsigned int num_threads_waiting;
 	/**
 	 * @brief The wake ups of the waiter that no thread consumed yet, with the mutex: a job only asks for one when more
 	 * threads wait than wake ups there are, so they never pile up behind the jobs that the busy threads take.
 	 *
-	 * @since 2.0b-77
+	 * @since 1.9
 	 */
 	unsigned int waiter_wakes;
 
@@ -322,7 +322,7 @@ CERVER_EXPORT unsigned int thpool_get_queued (Thpool *thpool);
  * @param[in] thpool the thpool
  * @return true when the queue had a job the last time that it changed; false for a NULL thpool
  * @threadsafety Safe from any thread, it reads an atomic value.
- * @since 2.0b-76
+ * @since 1.9b-3
  */
 CERVER_EXPORT bool thpool_has_queued (const Thpool *thpool);
 
@@ -340,7 +340,7 @@ CERVER_EXPORT bool thpool_has_queued (const Thpool *thpool);
  * @retval 1 a NULL thpool, or a waiter without wake
  * @threadsafety Safe from any thread but the ones of the thpool, that it waits for when it clears the waiter.
  * @note For the internal methods of cerver.
- * @since 2.0b-77
+ * @since 1.9
  */
 CERVER_PRIVATE unsigned int thpool_set_waiter (Thpool *thpool, const ThpoolWaiter *waiter);
 
@@ -351,7 +351,7 @@ CERVER_PRIVATE unsigned int thpool_set_waiter (Thpool *thpool, const ThpoolWaite
  * @return the threads, 0 for a NULL thpool or one without a waiter
  * @threadsafety Safe from any thread, it reads an atomic value.
  * @note For the internal methods of cerver.
- * @since 2.0b-77
+ * @since 1.9
  */
 CERVER_PRIVATE unsigned int thpool_get_num_threads_waiting (const Thpool *thpool);
 

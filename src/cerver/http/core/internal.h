@@ -482,6 +482,33 @@ CERVER_HIDDEN int http_receive_handle_mpart_body (
  */
 CERVER_HIDDEN void http_multi_parts_return (void *multi_part_ptr);
 
+/**
+ * @internal
+ * @brief Compiles the header of a response with the default headers of an HttpCerver, the one of its request.
+ *
+ * http_response_compile_header () takes the ones of the producer cerver of the process instead: with two HTTP
+ * cervers in a process, a response would have the headers of the first one that is alive.
+ *
+ * @param[in,out] response the response, it must not be NULL
+ * @param[in] http_cerver the cerver of the request; NULL for none of the default headers
+ */
+CERVER_HIDDEN void http_response_compile_header_with_cerver (
+	HttpResponse *response, const HttpCerver *http_cerver
+);
+
+/**
+ * @internal
+ * @brief Works like http_response_compile (), with the default headers of an HttpCerver, the one of its request.
+ *
+ * @param[in,out] response the response, it can be NULL
+ * @param[in] http_cerver the cerver of the request; NULL for none of the default headers
+ * @retval 0 the response was compiled
+ * @retval 1 a NULL response or its buffer could not be allocated
+ */
+CERVER_HIDDEN u8 http_response_compile_with_cerver (
+	HttpResponse *response, const HttpCerver *http_cerver
+);
+
 #ifdef __cplusplus
 }
 #endif

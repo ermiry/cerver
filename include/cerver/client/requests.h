@@ -25,13 +25,16 @@ extern "C" {
  * @brief Sends a request to the cerver and handles its response with the packet handlers of the client.
  *
  * It blocks until a complete response arrives; it only works with a response of one packet. Neither the client
- * nor the connection are stopped after the request, and the request packet is not deleted.
+ * nor the connection are stopped after the request, and the request packet is not deleted. A response that can not
+ * be read, or a cerver that closes the connection, only closes it: it stays registered until the app ends it with
+ * client_connection_end ().
  *
  * @param[in,out] client the client, already connected
- * @param[in,out] connection the connection
+ * @param[in,out] connection the connection, without an update thread
  * @param[in,out] request the request, its network values are set; the caller keeps it
- * @retval 0 the request was sent and its response was handled
- * @retval 1 a NULL argument, the request could not be sent, or its response could not be received
+ * @retval 0 the request was sent, its response was handled and the connection is still active
+ * @retval 1 a NULL argument, the request could not be sent, its response could not be received, or the connection
+ * was closed
  */
 CERVER_EXPORT unsigned int client_request_to_cerver (
 	Client *client, struct _Connection *connection,
@@ -43,7 +46,8 @@ CERVER_EXPORT unsigned int client_request_to_cerver (
  *
  * It only works with a response of one packet; neither the client nor the connection are stopped after the
  * request, and the request packet is not deleted. CLIENT_EVENT_CONNECTION_DATA is triggered when the response was
- * handled, or wait for it with client_requests_wait ().
+ * handled, or wait for it with client_requests_wait (). A response that can not be read only closes the
+ * connection, and the event is triggered too: the connection stays registered until the app ends it.
  *
  * @param[in,out] client the client, already connected
  * @param[in,out] connection the connection

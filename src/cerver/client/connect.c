@@ -44,6 +44,12 @@
 
 #pragma region connect
 
+// the connection that this thread reads directly, without its update thread
+// (the cerver info of client_connect_to_cerver () or the response of a request):
+// an end requested while it reads (a failed receive or a close packet) only closes it,
+// so it stays registered and its caller still owns it
+static __thread const Connection *client_direct_read_current = NULL;
+
 // the request of the cerver info has the biggest size of the info,
 // a cerver does not answer an unproven address with more bytes than it sent (udp.c)
 static void client_connect_datagram_info (Client *client, Connection *connection) {
@@ -129,10 +135,49 @@ unsigned int client_connect (
 
 }
 
+// reads the packet with the cerver's information,
+// reads and handles the next packet of a connection without its update thread,
+// a read that fails or a cerver that closes the connection only closes it:
+// it stays registered to the client until its caller ends it
+// returns 0 when the packet was handled and the connection is still active, 1 on error
+unsigned int client_connection_read_direct (
+	Client *client, Connection *connection
+) {
+
+	client_direct_read_current = connection;
+
+	const unsigned int failed = client_connection_get_next_packet (client, connection);
+
+	client_direct_read_current = NULL;
+
+	if (!failed && connection_is_active (connection)) return 0;
+
+	connection_end (connection);
+
+	return 1;
+
+}
+
+// reads the packet with the cerver's information,
+// a read that fails or a cerver that closes the connection fails the connect:
+// the connection is closed but stays registered, like one whose connect failed
+// returns 0 when the connection is still active after the info, 1 on error
+static unsigned int client_connect_info (
+	Client *client, Connection *connection
+) {
+
+	const unsigned int failed = client_connection_read_direct (client, connection);
+
+	if (failed) client_event_trigger (CLIENT_EVENT_CONNECTION_FAILED, client, connection);
+
+	return failed;
+
+}
+
 // connects a client to the host with the specified values in the connection
 // performs a first read to get the cerver info packet
 // this is a blocking method, and works exactly the same as if only calling client_connect ()
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// returns 0 when the connection has been established and its info was read, 1 on error or failed to connect
 unsigned int client_connect_to_cerver (
 	Client *client, Connection *connection
 ) {
@@ -140,12 +185,7 @@ unsigned int client_connect_to_cerver (
 	unsigned int retval = 1;
 
 	if (!client_connect (client, connection)) {
-		// we expect to handle a packet with the cerver's information
-		client_connection_get_next_packet (
-			client, connection
-		);
-
-		retval = 0;
+		retval = client_connect_info (client, connection);
 	}
 
 	return retval;
@@ -699,20 +739,40 @@ static int client_connection_end_actual (Client *client, Connection *connection)
 
 }
 
+// a connection that ends while this thread reads it directly (client_connection_read_direct ()):
+// it is only closed, the read fails and its caller still owns it
+static int client_connection_end_direct (Connection *connection) {
+
+	connection_end (connection);
+
+	return 0;
+
+}
+
+// a connection that ends from any thread other than the one that reads it directly
+static int client_connection_end_registered (Client *client, Connection *connection) {
+
+	return connection_is_update_thread (connection) ?
+		client_connection_end_from_update (client, connection) :
+		client_connection_end_actual (client, connection);
+
+}
+
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver
 // the first thread that ends a connection owns its end, any other one waits for it
 // a packet handler that runs in the connection's update thread only requests the end,
 // the update thread completes it when its receive loop ends
+// while this thread reads the connection directly, the connection is only closed
 // returns 0 on success, 1 on error
 int client_connection_end (Client *client, Connection *connection) {
 
 	int retval = 1;
 
 	if (client && connection) {
-		retval = connection_is_update_thread (connection) ?
-			client_connection_end_from_update (client, connection) :
-			client_connection_end_actual (client, connection);
+		retval = (connection == client_direct_read_current) ?
+			client_connection_end_direct (connection) :
+			client_connection_end_registered (client, connection);
 	}
 
 	return retval;

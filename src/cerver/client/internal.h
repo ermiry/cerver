@@ -107,6 +107,22 @@ CERVER_HIDDEN bool client_connection_end_request (Connection *connection);
 
 /**
  * @internal
+ * @brief Reads and handles the next packet of a connection in this thread, without its update thread.
+ *
+ * A read that fails, or a cerver that closes the connection (its receive or a close packet ends it), only closes the
+ * connection: it stays registered to the client until its caller ends it.
+ *
+ * @param[in,out] client the client
+ * @param[in,out] connection the connection, connected and without an update thread
+ * @retval 0 the packet was handled and the connection is still active
+ * @retval 1 the packet could not be read or the connection was closed
+ */
+CERVER_HIDDEN unsigned int client_connection_read_direct (
+	Client *client, Connection *connection
+);
+
+/**
+ * @internal
  * @brief The default file upload handler: it saves the file in the uploads path of the client, as
  * `<uploads path>/<time>-<filename>`.
  *
