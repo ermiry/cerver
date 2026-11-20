@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "../test.h"
+#include "client.h"
 #include "core.h"
 #include "http.h"
 
@@ -16,6 +17,9 @@ int main (void) {
 	(void) printf ("Testing FAULTS...\n");
 
 	faults_tests_core ();
+
+	faults_tests_client ();
+
 	faults_tests_http ();
 
 	(void) printf ("\nDone with FAULTS tests!\n\n");
