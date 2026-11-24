@@ -499,6 +499,10 @@ static void http_receive_parser_init (HttpReceive *http_receive) {
 		llhttp_set_lenient_flags (parser, (uint16_t) http_receive->http_cerver->parser_lenient);
 	}
 
+	// the parser takes any version, the receive decides the ones that are served
+	// (http_receive_handle_version_complete ()): every HTTP/1.x, that the parser alone rejects above 1.1
+	llhttp_set_lenient_version (parser, true);
+
 }
 
 static void http_receive_delete_buffers (HttpReceive *http_receive) {
