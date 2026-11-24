@@ -1883,6 +1883,24 @@ static unsigned int server_test_room_count (HttpCerver *http_cerver, const char 
 
 }
 
+// the rooms of a connection are cleared by its thread after its on_close (), that the test already counted:
+// waits until the connection left the room
+// returns true when it is still in the room after the wait
+static bool server_test_wait_left (const HttpWebSocket *web_socket, const char *room) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+
+	bool in_room = http_web_socket_in_room (web_socket, room);
+	while (in_room && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+		in_room = http_web_socket_in_room (web_socket, room);
+	}
+
+	return in_room;
+
+}
+
 static unsigned int server_test_room_broadcast (
 	HttpCerver *http_cerver, const char *room, const HttpWebSocket *except,
 	const HttpWebSocketOpcode type, const char *text
@@ -2060,7 +2078,7 @@ static void test_server_rooms (void) {
 	test_check_unsigned_eq (server_test_room_count (http_cerver, "red"), 0, NULL);
 
 	// a connection that ended left its rooms, and it joins no other one
-	test_check_false (http_web_socket_in_room (any, "blue"));
+	test_check_false (server_test_wait_left (any, "blue"));
 	test_check_unsigned_eq (http_web_socket_join (any, "late"), HTTP_WEB_SOCKET_JOIN_UNREGISTERED, NULL);
 	test_check_unsigned_eq (server_test_room_count (http_cerver, "late"), 0, NULL);
 	test_check_unsigned_eq (http_web_socket_close (any, HTTP_WEB_SOCKET_CLOSE_CODE_NORMAL, NULL), 1, NULL);
