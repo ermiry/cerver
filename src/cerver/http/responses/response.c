@@ -100,19 +100,25 @@ static void http_response_producer_delete (
 
 }
 
-// the cerver can change when its own one ends while another HTTP cerver is alive,
+// the HTTP cerver whose defaults (its response headers, its origins) a response without a request takes,
+// NULL without an HTTP cerver; it can change when its own one ends while another HTTP cerver is alive,
 // so each function loads it once
 static const HttpCerver *http_response_producer_cerver (void) {
 
-	return __atomic_load_n (&producer->http_cerver, __ATOMIC_ACQUIRE);
+	return producer ? __atomic_load_n (&producer->http_cerver, __ATOMIC_ACQUIRE) : NULL;
 
 }
 
-// the headers that the cerver adds to every response that does not have them,
-// NULL when no HTTP cerver has been created
-static const HttpHeaders *http_response_default_headers (void) {
+// the HTTP cerver of a request, the producer one without a request
+static const HttpCerver *http_response_receive_cerver (const HttpReceive *http_receive) {
 
-	const HttpCerver *http_cerver = producer ? http_response_producer_cerver () : NULL;
+	return http_receive ? http_receive->http_cerver : http_response_producer_cerver ();
+
+}
+
+// the headers that a cerver adds to every response that does not have them,
+// NULL without an HTTP cerver
+static const HttpHeaders *http_response_default_headers (const HttpCerver *http_cerver) {
 
 	return http_cerver ? &http_cerver->response_headers : NULL;
 
@@ -558,19 +564,16 @@ u8 http_response_add_cors_header_from_origin (
 
 }
 
-// works like http_response_add_cors_header () but first
-// checks if the domain matches any entry in the whitelist
+// adds the domain as the allowed origin when it is in the whitelist of the cerver,
+// without an HTTP cerver there is no whitelist
 // returns 0 on success, 1 on error
-u8 http_response_add_whitelist_cors_header (
-	HttpResponse *response, const char *domain
+static u8 http_response_add_whitelisted_origin (
+	HttpResponse *response, const HttpCerver *http_cerver, const char *domain
 ) {
 
 	u8 retval = 1;
 
-	// without an HTTP cerver there is no whitelist
-	const HttpCerver *http_cerver = domain ? http_response_producer_cerver () : NULL;
-
-	for (u8 idx = 0; http_cerver && (idx < http_cerver->n_origins); idx++) {
+	for (u8 idx = 0; domain && http_cerver && (idx < http_cerver->n_origins); idx++) {
 		if (!strcmp (
 			http_cerver->origins_whitelist[idx].value,
 			domain
@@ -587,6 +590,17 @@ u8 http_response_add_whitelist_cors_header (
 
 }
 
+// works like http_response_add_cors_header () but first
+// checks if the domain matches any entry in the whitelist of the producer cerver
+// returns 0 on success, 1 on error
+u8 http_response_add_whitelist_cors_header (
+	HttpResponse *response, const char *domain
+) {
+
+	return http_response_add_whitelisted_origin (response, http_response_producer_cerver (), domain);
+
+}
+
 // works like http_response_add_whitelist_cors_header ()
 // but takes a HttpOrigin instead of a c string
 u8 http_response_add_whitelist_cors_header_from_origin (
@@ -600,7 +614,7 @@ u8 http_response_add_whitelist_cors_header_from_origin (
 }
 
 // checks if the HTTP request's "Origin" header value
-// matches any domain in the whitelist
+// matches any domain in the whitelist of the cerver of the request
 // then adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_whitelist_cors_header_from_request (
@@ -611,10 +625,9 @@ u8 http_response_add_whitelist_cors_header_from_request (
 	u8 retval = 1;
 
 	if (http_receive && http_receive->request && http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
-		retval = http_response_add_whitelist_cors_header (
-			response, http_receive->request->headers[
-				HTTP_HEADER_ORIGIN
-			]->str
+		retval = http_response_add_whitelisted_origin (
+			response, http_receive->http_cerver,
+			http_receive->request->headers[HTTP_HEADER_ORIGIN]->str
 		);
 	}
 
@@ -877,10 +890,13 @@ static void http_response_header_write (
 
 // uses the status and the headers of the response to create its header
 // as HTTP/1.1 sends it, in a continuos buffer ready to be sent by the response,
-// it is the only place where a header is serialized, in the buffer of the response when it fits
-void http_response_compile_header (HttpResponse *response) {
+// it is the only place where a header is serialized, in the buffer of the response when it fits,
+// with the default headers of the cerver, none for a NULL cerver
+void http_response_compile_header_with_cerver (
+	HttpResponse *response, const HttpCerver *http_cerver
+) {
 
-	const HttpHeaders *defaults = http_response_default_headers ();
+	const HttpHeaders *defaults = http_response_default_headers (http_cerver);
 
 	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE];
 	const size_t main_length = http_response_main_header (response->status, main_header);
@@ -907,6 +923,13 @@ void http_response_compile_header (HttpResponse *response) {
 
 }
 
+// the header without a request takes the default headers of the producer cerver
+void http_response_compile_header (HttpResponse *response) {
+
+	http_response_compile_header_with_cerver (response, http_response_producer_cerver ());
+
+}
+
 // the type and the length of a json body are headers of the response
 static void http_response_json_header (HttpResponse *response) {
 
@@ -927,15 +950,18 @@ static void http_response_json_header (HttpResponse *response) {
 
 }
 
-// merge the response header and the data into the final response
+// merge the response header and the data into the final response,
+// a header that is not compiled takes the default headers of the cerver
 // returns 0 on success, 1 on error
-u8 http_response_compile (HttpResponse *response) {
+u8 http_response_compile_with_cerver (
+	HttpResponse *response, const HttpCerver *http_cerver
+) {
 
 	u8 retval = 1;
 
 	if (response) {
 		if (!response->header) {
-			http_response_compile_header (response);
+			http_response_compile_header_with_cerver (response, http_cerver);
 		}
 
 		// compile into a continous buffer
@@ -963,6 +989,14 @@ u8 http_response_compile (HttpResponse *response) {
 	}
 
 	return retval;
+
+}
+
+// a response compiled without a request takes the default headers of the producer cerver
+// returns 0 on success, 1 on error
+u8 http_response_compile (HttpResponse *response) {
+
+	return http_response_compile_with_cerver (response, http_response_producer_cerver ());
 
 }
 
@@ -2125,9 +2159,10 @@ static u8 http_response_send_raw (
 
 }
 
+// the default headers are the ones of the cerver of the request
 static void http_response_message_init (
-	HttpResponseMessage *message, const http_status status,
-	const HttpHeaders *headers,
+	HttpResponseMessage *message, const HttpCerver *http_cerver,
+	const http_status status, const HttpHeaders *headers,
 	const void *header, const size_t header_len,
 	const void *data, const size_t data_len
 ) {
@@ -2135,7 +2170,7 @@ static void http_response_message_init (
 	message->status = status;
 
 	message->headers = headers;
-	message->defaults = headers ? http_response_default_headers () : NULL;
+	message->defaults = headers ? http_response_default_headers (http_cerver) : NULL;
 
 	message->filter = HTTP_RESPONSE_FILTER_NONE;
 
@@ -2220,7 +2255,9 @@ u8 http_response_send_message (
 
 	else {
 		HttpResponseMessage message;
-		http_response_message_init (&message, status, headers, header, header_len, data, data_len);
+		http_response_message_init (
+			&message, http_receive->http_cerver, status, headers, header, header_len, data, data_len
+		);
 
 		bool answered = false;
 		if (
@@ -2255,7 +2292,9 @@ u8 http_response_send_not_modified_header (
 
 	if (http_receive->request && http_response_header_is_complete (header, header_len)) {
 		HttpResponseMessage message;
-		http_response_message_init (&message, HTTP_STATUS_OK, NULL, header, header_len, NULL, 0);
+		http_response_message_init (
+			&message, http_receive->http_cerver, HTTP_STATUS_OK, NULL, header, header_len, NULL, 0
+		);
 
 		// the entity tag is copied from the header
 		message.etag_in_header = true;
@@ -2325,7 +2364,8 @@ u8 http_response_send (
 		}
 
 		else {
-			if (!response->header) http_response_compile_header (response);
+			// with the default headers of the cerver of the request
+			if (!response->header) http_response_compile_header_with_cerver (response, http_receive->http_cerver);
 
 			if (response->header) {
 				retval = http_response_send_parts (
@@ -2379,7 +2419,7 @@ u8 http_response_create_and_send (
 
 	HttpResponse *response = http_response_create (status, data, data_len);
 	if (response) {
-		if (!http_response_compile (response)) {
+		if (!http_response_compile_with_cerver (response, http_response_receive_cerver (http_receive))) {
 			retval = http_response_send (response, http_receive);
 		}
 
@@ -2519,7 +2559,7 @@ u8 http_response_send_file_internal (
 	char etag[HTTP_ETAG_SIZE] = { 0 };
 	const size_t etag_length = http_response_file_validators (response, filestatus, etag);
 
-	http_response_compile_header (response);
+	http_response_compile_header_with_cerver (response, http_receive->http_cerver);
 
 	#ifdef HTTP_RESPONSE_DEBUG
 	cerver_log_msg ("\n%s\n", (const char *) response->header);
@@ -2644,7 +2684,7 @@ static u8 http_response_render (
 		(void) http_response_add_content_type_header (response, type);
 		(void) http_response_add_content_length_header (response, data_len);
 
-		http_response_compile_header (response);
+		http_response_compile_header_with_cerver (response, http_receive->http_cerver);
 
 		#ifdef HTTP_RESPONSE_DEBUG
 		cerver_log_msg ("\n%s\n", (const char *) response->header);
@@ -2803,7 +2843,7 @@ static u8 http_response_handle_video_internal (
 		if (status == HTTP_STATUS_PARTIAL_CONTENT) http_response_add_video_headers (response, content_type, bytes_range);
 		else http_response_add_video_whole_headers (response, content_type, bytes_range);
 
-		http_response_compile_header (response);
+		http_response_compile_header_with_cerver (response, http_receive->http_cerver);
 
 		if (!http_response_send_message (
 			http_receive, response->status, &response->headers,
@@ -2839,7 +2879,7 @@ static u8 http_response_handle_video_unsatisfiable (
 
 		(void) http_response_add_content_length_header (response, 0);
 
-		http_response_compile_header (response);
+		http_response_compile_header_with_cerver (response, http_receive->http_cerver);
 
 		retval = http_response_send_message (
 			http_receive, response->status, &response->headers,
