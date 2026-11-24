@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "cerver/version.h"
 
@@ -19,6 +20,7 @@
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
 #include "cerver/http/requests/request.h"
+#include "cerver/http/responses/internal.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -83,10 +85,10 @@ static void http_cerver_admin_generate_info_json_internal (
 		json, "time_started", json_integer ((json_int_t) cerver->info->time_started)
 	);
 
-	cerver_update_uptime ((Cerver *) cerver);
-
+	// the uptime is computed for each response: the threads answer at the same time,
+	// and the one that the cerver keeps (cerver_update_uptime ()) is written without a lock
 	(void) json_object_set_new (
-		json, "uptime", json_integer ((json_int_t) cerver->info->uptime)
+		json, "uptime", json_integer ((json_int_t) (time (NULL) - cerver->info->time_started))
 	);
 
 }
@@ -971,7 +973,7 @@ static inline void http_cerver_admin_send_options (
 			http_receive, response
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
@@ -998,7 +1000,7 @@ static inline void http_cerver_admin_send_head (
 			http_receive, response
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
@@ -1027,7 +1029,7 @@ static inline void http_cerver_admin_send_response (
 			response, (void *) json, json_len
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
