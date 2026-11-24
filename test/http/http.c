@@ -614,7 +614,8 @@ static void test_http_receive_create (void) {
 	test_check (parser->data == http_receive, NULL);
 	test_check (parser->settings == settings, NULL);
 	test_check_unsigned_eq (parser->type, HTTP_REQUEST, NULL);
-	test_check_unsigned_eq (parser->lenient_flags, HTTP_PARSER_LENIENT_NONE, NULL);
+	// the parser takes any version, the receive decides the ones that are served
+	test_check_unsigned_eq (parser->lenient_flags, LENIENT_VERSION, NULL);
 
 	test_check_null_ptr (settings->on_message_begin);
 	test_check_ptr (settings->on_url);
@@ -698,7 +699,7 @@ static void test_http_receive_create_lenient (void) {
 
 	http_receive = http_receive_create (&cerver_receive);
 	test_check_ptr (http_receive);
-	test_check_unsigned_eq (http_receive_parser_read (http_receive)->lenient_flags, 0, NULL);
+	test_check_unsigned_eq (http_receive_parser_read (http_receive)->lenient_flags, LENIENT_VERSION, NULL);
 	http_receive_delete (http_receive);
 
 }
