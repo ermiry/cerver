@@ -5,7 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -84,6 +86,17 @@
 // the debounces that the test waits after the reload, for a reload that should not come
 #define SERVER_WATCH_SETTLE					2
 #define SERVER_MICROSECONDS_PER_MILLISECOND	1000
+#define SERVER_MILLISECONDS_PER_SECOND		1000
+
+// the clients with kTLS whose flight of the handshake does not fit in their sockets, for each unit of the time scale
+#define SERVER_STUCK_CLIENTS				(1 << 3)
+// the smallest receive buffer and segments of the kernel: the client takes almost nothing of the flight
+#define SERVER_STUCK_RECEIVE_BUFFER			(1 << 10)
+#define SERVER_STUCK_SEGMENT				(1 << 9)
+// the pause after the hellos of the stuck clients, for the loop to take them before the request
+#define SERVER_STUCK_PAUSE_MILLISECONDS		(1 << 5)
+// the request is answered in less than this part of what the loop would wait for all the stuck clients
+#define SERVER_STUCK_WAIT_PART				2
 
 static const unsigned char server_alpn_h2[] = { 2, 'h', '2' };
 static const unsigned char server_alpn_both[] = { 2, 'h', '2', 8, 'h', 't', 't', 'p', '/', '1', '.', '1' };
@@ -1087,6 +1100,77 @@ static void test_server_handshake_waits (const TestCertificates *certificates) {
 
 }
 
+// a client of TLS 1.3 that sends its hello and never reads, with the smallest socket: the flight of the cerver with
+// the large certificate does not fit in it, it still waits in the output when the provider gives the key to the kernel
+static RawTls *server_stuck_connect (const u16 port) {
+
+	RawTls *raw = (RawTls *) calloc (1, sizeof (RawTls));
+	test_check_ptr (raw);
+
+	raw->fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (raw->fd >= 0, NULL);
+
+	const int buffer = SERVER_STUCK_RECEIVE_BUFFER;
+	test_check_int_eq (setsockopt (raw->fd, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof (buffer)), 0, NULL);
+	const int segment = SERVER_STUCK_SEGMENT;
+	test_check_int_eq (setsockopt (raw->fd, IPPROTO_TCP, TCP_MAXSEG, &segment, sizeof (segment)), 0, NULL);
+
+	struct sockaddr_in address;
+	(void) memset (&address, 0, sizeof (address));
+	address.sin_family = AF_INET;
+	address.sin_port = htons (port);
+	address.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+	test_check_int_eq (connect (raw->fd, (struct sockaddr *) &address, sizeof (address)), 0, NULL);
+
+	raw->ctx = SSL_CTX_new (TLS_client_method ());
+	test_check_ptr (raw->ctx);
+	test_check_int_eq (SSL_CTX_set_min_proto_version (raw->ctx, TLS1_3_VERSION), 1, NULL);
+	raw->ssl = SSL_new (raw->ctx);
+	test_check_ptr (raw->ssl);
+	test_check_int_eq (SSL_set_fd (raw->ssl, raw->fd), 1, NULL);
+
+	// the hello goes, and the handshake waits for an answer that is never read
+	test_check_int_eq (fcntl (raw->fd, F_SETFL, fcntl (raw->fd, F_GETFL) | O_NONBLOCK), 0, NULL);
+	test_check_int_eq (SSL_get_error (raw->ssl, SSL_connect (raw->ssl)), SSL_ERROR_WANT_READ, NULL);
+	ERR_clear_error ();
+
+	return raw;
+
+}
+
+// with kTLS, the records of the handshake that wait when the provider gives the key to the kernel are sent first:
+// the event loop never waits for the socket to take them, so the clients that do not read do not hold the others
+// (it waited up to TLS_CLOSE_TIMEOUT_MILLISECONDS for each one)
+static void test_server_ktls_waits (const TestCertificates *certificates) {
+
+	TlsSettings *settings = tls_settings_create ();
+	test_check_ptr (settings);
+	test_check_unsigned_eq (tls_settings_add_certificate (settings, certificates->large_chain, certificates->large_key), 0, NULL);
+	tls_settings_set_ktls (settings, true);
+	TlsServer *server = server_start (settings);
+
+	const unsigned int count = SERVER_STUCK_CLIENTS * test_time_scale ();
+	RawTls **stuck = (RawTls **) calloc (count, sizeof (RawTls *));
+	test_check_ptr (stuck);
+	for (unsigned int index = 0; index < count; index++) stuck[index] = server_stuck_connect (server->port);
+
+	(void) usleep ((useconds_t) (test_milliseconds (SERVER_STUCK_PAUSE_MILLISECONDS) * SERVER_MICROSECONDS_PER_MILLISECOND));
+
+	const double start = test_wait_now ();
+	RawTlsOptions options = server_options (certificates);
+	test_check_unsigned_eq (server_status (server, &options, server_hello_request, NULL), 200, NULL);
+	const unsigned int elapsed = (unsigned int) ((test_wait_now () - start) * SERVER_MILLISECONDS_PER_SECOND);
+
+	(void) printf ("\t\tkTLS with %u stuck clients: answered in %u ms\n", count, elapsed);
+	test_check_true (elapsed < ((count * TLS_CLOSE_TIMEOUT_MILLISECONDS) / SERVER_STUCK_WAIT_PART));
+
+	for (unsigned int index = 0; index < count; index++) raw_tls_close (stuck[index]);
+	free (stuck);
+
+	server_stop (server);
+
+}
+
 // a TCP connection that sends nothing: with threads it holds the thread of its handshake until the deadline
 static int server_connect_silent (const u16 port) {
 
@@ -1253,6 +1337,9 @@ static void server_tests (const TestCertificates *certificates) {
 	test_server_handshake_timeout (certificates);
 	test_server_burst (certificates);
 	test_server_handshake_waits (certificates);
+
+	// with threads, the thread of each handshake waits for its own socket
+	if (server_handler_type == CERVER_HANDLER_TYPE_EVENTS) test_server_ktls_waits (certificates);
 
 	// an event loop stops accepting at its limit of connections, it never rejects one
 	if (server_handler_type == CERVER_HANDLER_TYPE_THREADS) test_server_full (certificates);
