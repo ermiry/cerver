@@ -22,6 +22,10 @@
 // the template of the folder of a run
 #define CERTIFICATES_DIRECTORY_TEMPLATE			"/tmp/cerver-tls-XXXXXX"
 
+// the characters of the comment of the large certificate, more than a small socket takes at once
+#define CERTIFICATES_LARGE_COMMENT_SIZE			(1 << 16)
+#define CERTIFICATES_LARGE_COMMENT_CHARACTER	'c'
+
 typedef struct CertificateRequest {
 
 	const char *common_name;
@@ -146,6 +150,33 @@ static void certificates_leaf (
 
 }
 
+// the certificate of the server with a large comment, signed again with it
+static void certificates_large (
+	TestCertificates *certificates, const CertificateRequest *request, X509 *authority, EVP_PKEY *authority_key
+) {
+
+	certificates_path (certificates->large_chain, certificates->directory, "large.pem");
+	certificates_path (certificates->large_key, certificates->directory, "large.key");
+
+	char *comment = (char *) malloc (CERTIFICATES_LARGE_COMMENT_SIZE + 1);
+	test_check_ptr (comment);
+	(void) memset (comment, CERTIFICATES_LARGE_COMMENT_CHARACTER, CERTIFICATES_LARGE_COMMENT_SIZE);
+	comment[CERTIFICATES_LARGE_COMMENT_SIZE] = '\0';
+
+	EVP_PKEY *key = certificates_key ();
+	X509 *certificate = certificates_make (request, key, authority, authority_key);
+	certificates_extension (certificate, authority, NID_netscape_comment, comment);
+	test_check (X509_sign (certificate, authority_key, EVP_sha256 ()) > 0, NULL);
+
+	certificates_write_chain (certificates->large_chain, certificate, authority);
+	certificates_write_key (certificates->large_key, key);
+
+	X509_free (certificate);
+	EVP_PKEY_free (key);
+	free (comment);
+
+}
+
 void test_certificates_create (TestCertificates *certificates) {
 
 	(void) memset (certificates, 0, sizeof (TestCertificates));
@@ -166,6 +197,7 @@ void test_certificates_create (TestCertificates *certificates) {
 
 	const CertificateRequest server = { "localhost", "DNS:localhost,IP:127.0.0.1", false, -1, CERTIFICATES_VALID_DAYS, 2 };
 	certificates_leaf (certificates, &server, authority, authority_key, certificates->server_chain, certificates->server_key, "server");
+	certificates_large (certificates, &server, authority, authority_key);
 
 	const CertificateRequest other = { "other.test", "DNS:other.test", false, -1, CERTIFICATES_VALID_DAYS, 3 };
 	certificates_leaf (certificates, &other, authority, authority_key, certificates->other_chain, certificates->other_key, "other");
@@ -223,7 +255,8 @@ void test_certificates_delete (TestCertificates *certificates) {
 		certificates->expired_chain, certificates->expired_key,
 		certificates->expiring_chain, certificates->expiring_key,
 		certificates->mismatch_key,
-		certificates->stranger_chain, certificates->stranger_key
+		certificates->stranger_chain, certificates->stranger_key,
+		certificates->large_chain, certificates->large_key
 	};
 
 	for (size_t index = 0; index < (sizeof (files) / sizeof (files[0])); index++) certificates_unlink (files[index]);
