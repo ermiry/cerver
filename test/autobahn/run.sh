@@ -24,11 +24,6 @@ fi
 
 IMAGE=${IMAGE:-ermiry/cerver:$TAG}
 
-if [ "$SCHEME" = "wss" ] && [ "$HANDLER" != "threads" ]; then
-	echo "wss:// needs HANDLER=threads, EVENTS has no TLS"
-	exit 1
-fi
-
 SUFFIX=""
 SERVER_TLS=()
 CLIENT_TLS=()
