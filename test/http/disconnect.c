@@ -137,6 +137,9 @@ static const size_t disconnect_n_response_cuts = sizeof (disconnect_response_cut
 #define DISCONNECT_PUBLIC_FILE				DISCONNECT_PUBLIC_PATH "/index.html"
 #define DISCONNECT_LARGE_FILE				DISCONNECT_ROOT_PATH "/large.mp4"
 
+// the path of an entry of the uploads path that a run before left
+#define DISCONNECT_ENTRY_PATH_SIZE			1024
+
 #define DISCONNECT_FD_DIRECTORY				"/proc/self/fd"
 
 #define DISCONNECT_BOUNDARY					"disconnectboundary"
@@ -1032,6 +1035,38 @@ static void disconnect_directory_create (const char *path) {
 
 }
 
+static void disconnect_directory_empty (const char *path);
+
+// a folder is emptied before it is removed, a file is only removed
+static void disconnect_entry_remove (const char *path, const char *name) {
+
+	char entry[DISCONNECT_ENTRY_PATH_SIZE] = { 0 };
+	(void) snprintf (entry, DISCONNECT_ENTRY_PATH_SIZE, "%s/%s", path, name);
+
+	disconnect_directory_empty (entry);
+
+	(void) remove (entry);
+
+}
+
+// removes what a directory has, with what its folders have: a run that ended before its time leaves the files
+// of its uploads, and the next one in the same container would count them as the ones of its own requests
+static void disconnect_directory_empty (const char *path) {
+
+	DIR *directory = opendir (path);
+	if (!directory) return;
+
+	struct dirent *entry = NULL;
+	while ((entry = readdir (directory)) != NULL) {
+		if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
+			disconnect_entry_remove (path, entry->d_name);
+		}
+	}
+
+	(void) closedir (directory);
+
+}
+
 static void disconnect_file_write (const char *filename, const char *data, const size_t length) {
 
 	FILE *file = fopen (filename, "w");
@@ -1048,6 +1083,8 @@ static void disconnect_files_create (void) {
 	disconnect_directory_create (DISCONNECT_ROOT_PATH);
 	disconnect_directory_create (DISCONNECT_UPLOADS_PATH);
 	disconnect_directory_create (DISCONNECT_PUBLIC_PATH);
+
+	disconnect_directory_empty (DISCONNECT_UPLOADS_PATH);
 
 	disconnect_file_write (DISCONNECT_PUBLIC_FILE, disconnect_public_content, strlen (disconnect_public_content));
 
@@ -1431,6 +1468,15 @@ static unsigned int disconnect_send_timeout (void) {
 
 }
 
+// a sanitizer or a loaded machine delays the bytes of a client that a connection waits for,
+// the idle timeout grows with the scale, so it only ends the clients that stopped sending
+// (a delayed vanish client was counted as one that never sent anything)
+static unsigned int disconnect_idle_timeout (void) {
+
+	return test_milliseconds (DISCONNECT_IDLE_TIMEOUT);
+
+}
+
 static DisconnectServer *disconnect_server_start (const DisconnectOptions *options) {
 
 	DisconnectServer *server = (DisconnectServer *) calloc (1, sizeof (DisconnectServer));
@@ -1451,7 +1497,7 @@ static DisconnectServer *disconnect_server_start (const DisconnectOptions *optio
 	cerver_set_send_timeout (cerver, disconnect_send_timeout ());
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
-	http_cerver_set_idle_timeout_milliseconds (http_cerver, DISCONNECT_IDLE_TIMEOUT);
+	http_cerver_set_idle_timeout_milliseconds (http_cerver, disconnect_idle_timeout ());
 	http_cerver_set_headers_timeout_milliseconds (http_cerver, DISCONNECT_HEADERS_TIMEOUT);
 
 	// the clients of these tests read each response until the cerver closes its connection,
@@ -2592,7 +2638,7 @@ static void test_disconnect_interrupted (void) {
 
 	// the thread of the connection waits for the rest of the headers, well inside the idle timeout
 	unsigned int interrupted = 0;
-	const double deadline = test_wait_now () + ((double) DISCONNECT_IDLE_TIMEOUT / (2 * DISCONNECT_MILLISECONDS_PER_SECOND));
+	const double deadline = test_wait_now () + ((double) disconnect_idle_timeout () / (2 * DISCONNECT_MILLISECONDS_PER_SECOND));
 	while (!interrupted && (test_wait_now () < deadline)) interrupted = disconnect_interrupt_receives (receive_syscall);
 
 	disconnect_send (dc.fd, model->request + dc.offset, model->length - dc.offset);
