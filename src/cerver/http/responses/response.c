@@ -1814,7 +1814,7 @@ static bool http_response_message_uses_etag (
 	const HttpReceive *http_receive, const HttpResponseMessage *message
 ) {
 
-	const RequestMethod method = http_receive->request->method;
+	const HttpRequestMethod method = http_receive->request->method;
 
 	return (message->status == HTTP_STATUS_OK)
 		&& ((method == REQUEST_METHOD_GET) || (method == REQUEST_METHOD_HEAD));

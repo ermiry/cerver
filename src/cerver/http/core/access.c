@@ -180,7 +180,7 @@ static void http_access_rejected (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %s -> %u - %zu%s%s",
 		client,
-		http_request_method_to_string ((RequestMethod) method),
+		http_request_method_to_string ((HttpRequestMethod) method),
 		path,
 		http_receive->received,
 		process_time,

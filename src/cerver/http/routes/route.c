@@ -447,7 +447,7 @@ void http_route_delete (void *route_ptr) {
 
 // a handler for a method outside REQUEST_METHOD_MAP is never registered
 static void http_route_set_method_handler (
-	HttpRoute *route, const RequestMethod method, const HttpHandler handler
+	HttpRoute *route, const HttpRequestMethod method, const HttpHandler handler
 ) {
 
 	if (http_request_method_is_valid (method)) {
@@ -469,7 +469,7 @@ static void http_route_set_method_handler (
 
 // creates a new route that can be registered to be used by an http cerver
 HttpRoute *http_route_create (
-	const RequestMethod method,
+	const HttpRequestMethod method,
 	const char *actual_route,
 	const HttpHandler handler
 ) {
@@ -501,7 +501,7 @@ HttpRoute *http_route_create (
 
 // sets the route's handler for the selected http method
 void http_route_set_handler (
-	HttpRoute *route, const RequestMethod method, const HttpHandler handler
+	HttpRoute *route, const HttpRequestMethod method, const HttpHandler handler
 ) {
 
 	if (route) {
@@ -656,7 +656,7 @@ size_t http_route_methods_string (
 			const int written = snprintf (
 				buffer + length, buffer_size - length, "%s%s",
 				length ? http_route_methods_separator : "",
-				http_request_method_to_string ((RequestMethod) method)
+				http_request_method_to_string ((HttpRequestMethod) method)
 			);
 
 			if ((written < 0) || ((size_t) written >= (buffer_size - length))) break;

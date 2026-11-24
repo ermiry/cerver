@@ -122,7 +122,7 @@ static void test_etag_none_match (void) {
 }
 
 static HttpRequest *test_conditional_request (
-	const RequestMethod method, const char *if_none_match, const char *if_modified_since
+	const HttpRequestMethod method, const char *if_none_match, const char *if_modified_since
 ) {
 
 	HttpRequest *request = http_request_new ();
@@ -137,7 +137,7 @@ static HttpRequest *test_conditional_request (
 }
 
 static bool test_conditional (
-	const RequestMethod method, const char *if_none_match, const char *if_modified_since,
+	const HttpRequestMethod method, const char *if_none_match, const char *if_modified_since,
 	const time_t last_modified
 ) {
 

@@ -51,7 +51,7 @@ typedef struct HttpRemote {
 	HttpRemoteStage stage;
 
 	/** @internal @brief The method of the request. */
-	RequestMethod method;
+	HttpRequestMethod method;
 	/** @internal @brief Its URL, owned. */
 	char *url;
 	/** @internal @brief Its headers, a curl_slist, owned. */

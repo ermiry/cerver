@@ -1320,7 +1320,7 @@ static void http_receive_select_method (
 ) {
 
 	const HttpRouteNode *node = http_receive->node;
-	const RequestMethod method = request->method;
+	const HttpRequestMethod method = request->method;
 
 	HttpEndpoint *endpoint = http_request_method_is_valid (method) ? node->endpoints[method] : NULL;
 	if (!endpoint && (method == REQUEST_METHOD_HEAD) && node->endpoints[REQUEST_METHOD_GET]) {
@@ -1693,7 +1693,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 	http_receive->stage = HTTP_STAGE_BODY;
 
 	const uint8_t method = llhttp_get_method (parser);
-	request->method = (RequestMethod) method;
+	request->method = (HttpRequestMethod) method;
 
 	http_receive_identify (http_receive);
 

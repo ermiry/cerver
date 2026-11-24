@@ -263,7 +263,7 @@ static void disconnect_uploads_handler (
 }
 
 static void disconnect_route (
-	HttpCerver *http_cerver, const RequestMethod method, const char *path,
+	HttpCerver *http_cerver, const HttpRequestMethod method, const char *path,
 	void (*handler) (const HttpReceive *, const HttpRequest *)
 ) {
 

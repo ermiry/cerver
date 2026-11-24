@@ -307,7 +307,7 @@ struct _HttpEndpoint {
 	String *path;
 
 	/** @brief The request method. */
-	RequestMethod method;
+	HttpRequestMethod method;
 	/** @brief The handler, NULL in a WebSocket endpoint without one. */
 	HttpHandler handler;
 
@@ -350,7 +350,7 @@ typedef struct _HttpEndpoint HttpEndpoint;
  * @note For the internal methods of cerver.
  */
 CERVER_PRIVATE HttpEndpoint *http_endpoint_create (
-	const char *path, const RequestMethod method, const HttpHandler handler
+	const char *path, const HttpRequestMethod method, const HttpHandler handler
 );
 
 /**
@@ -377,7 +377,7 @@ CERVER_EXPORT const String *http_endpoint_get_path (
  * @param[in] endpoint the endpoint
  * @return the method, REQUEST_METHOD_UNDEFINED for a NULL endpoint
  */
-CERVER_EXPORT RequestMethod http_endpoint_get_method (
+CERVER_EXPORT HttpRequestMethod http_endpoint_get_method (
 	const HttpEndpoint *endpoint
 );
 
@@ -691,7 +691,7 @@ CERVER_EXPORT const String *http_group_get_prefix (
  */
 CERVER_EXPORT HttpEndpoint *http_group_route_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const HttpRequestMethod method, const char *path, const HttpHandler handler
 );
 
 /**
@@ -705,7 +705,7 @@ CERVER_EXPORT HttpEndpoint *http_group_route_add (
  */
 CERVER_EXPORT HttpEndpoint *http_group_root_add (
 	HttpGroup *group,
-	const RequestMethod method, const HttpHandler handler
+	const HttpRequestMethod method, const HttpHandler handler
 );
 
 /**

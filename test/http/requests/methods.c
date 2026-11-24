@@ -45,27 +45,27 @@ static void test_http_methods_valid (void) {
 
 	unsigned int valid = 0;
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
-		if (http_request_method_is_valid ((RequestMethod) method)) {
+		if (http_request_method_is_valid ((HttpRequestMethod) method)) {
 			valid += 1;
-			test_check (strcmp (http_request_method_to_string ((RequestMethod) method), UNDEFINED), NULL);
+			test_check (strcmp (http_request_method_to_string ((HttpRequestMethod) method), UNDEFINED), NULL);
 		}
 
 		else {
-			test_check_str_eq (http_request_method_to_string ((RequestMethod) method), UNDEFINED, NULL);
+			test_check_str_eq (http_request_method_to_string ((HttpRequestMethod) method), UNDEFINED, NULL);
 		}
 	}
 
 	test_check_unsigned_eq (valid, 35, NULL);
 
 	for (unsigned int method = TEST_METHODS_PRI; method <= TEST_METHODS_FLUSH; method++) {
-		test_check_false (http_request_method_is_valid ((RequestMethod) method));
+		test_check_false (http_request_method_is_valid ((HttpRequestMethod) method));
 	}
 
 	test_check_false (http_request_method_is_valid (REQUEST_METHOD_UNDEFINED));
-	test_check_false (http_request_method_is_valid ((RequestMethod) TEST_METHODS_OUTSIDE));
+	test_check_false (http_request_method_is_valid ((HttpRequestMethod) TEST_METHODS_OUTSIDE));
 
 	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_UNDEFINED), UNDEFINED, NULL);
-	test_check_str_eq (http_request_method_to_string ((RequestMethod) TEST_METHODS_OUTSIDE), UNDEFINED, NULL);
+	test_check_str_eq (http_request_method_to_string ((HttpRequestMethod) TEST_METHODS_OUTSIDE), UNDEFINED, NULL);
 
 }
 
@@ -73,9 +73,9 @@ static void test_http_methods_valid (void) {
 static void test_http_methods_from_string (void) {
 
 	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
-		if (http_request_method_is_valid ((RequestMethod) method)) {
+		if (http_request_method_is_valid ((HttpRequestMethod) method)) {
 			test_check_unsigned_eq (
-				http_request_method_from_string (http_request_method_to_string ((RequestMethod) method)), method, NULL
+				http_request_method_from_string (http_request_method_to_string ((HttpRequestMethod) method)), method, NULL
 			);
 		}
 	}

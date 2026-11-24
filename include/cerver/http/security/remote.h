@@ -57,7 +57,7 @@ struct _HttpReceive;
 typedef struct HttpAuthRequest {
 
 	/** @brief Its method. */
-	RequestMethod method;
+	HttpRequestMethod method;
 
 	/** @brief Its URL, with http:// or https:// (libcurl verifies the certificate of the service). */
 	const char *url;

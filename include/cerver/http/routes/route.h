@@ -437,7 +437,7 @@ CERVER_PUBLIC void http_route_delete (void *route_ptr);
  * for a NULL actual_route or if it could not be allocated
  */
 CERVER_EXPORT HttpRoute *http_route_create (
-	const RequestMethod method,
+	const HttpRequestMethod method,
 	const char *actual_route,
 	const HttpHandler handler
 );
@@ -451,7 +451,7 @@ CERVER_EXPORT HttpRoute *http_route_create (
  */
 CERVER_EXPORT void http_route_set_handler (
 	HttpRoute *route,
-	const RequestMethod method,
+	const HttpRequestMethod method,
 	const HttpHandler handler
 );
 

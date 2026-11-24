@@ -168,7 +168,7 @@ static void http_cerver_admin_handler_general_stats (
 }
 
 static json_t *http_cerver_admin_handler_single_route_handler_stats (
-	const RequestMethod method, const HttpRouteStats *route_stats
+	const HttpRequestMethod method, const HttpRouteStats *route_stats
 ) {
 
 	// the stats are updated with atomic operations while the requests are handled
@@ -277,10 +277,10 @@ static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 	json_t *handlers_array = json_array ();
 
 	json_t *handler_object = NULL;
-	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	HttpRequestMethod method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 		if (route->handlers[i] && route->stats[i]) {
-			method = (RequestMethod) i;
+			method = (HttpRequestMethod) i;
 			handler_object = http_cerver_admin_handler_single_route_handler_stats (
 				method, route->stats[i]
 			);
@@ -1591,7 +1591,7 @@ static void http_cerver_admin_endpoint_set_auth (
 
 static void http_cerver_admin_group_endpoint (
 	const HttpCerver *http_cerver, HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const HttpRequestMethod method, const char *path, const HttpHandler handler
 ) {
 
 	HttpEndpoint *endpoint = http_group_route_add (group, method, path, handler);
