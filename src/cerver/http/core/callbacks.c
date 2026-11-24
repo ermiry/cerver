@@ -111,10 +111,9 @@ int http_receive_reject (
 
 		http_receive->responded = true;
 
+		// its readers (the stats, the metrics) load it without the mutex of the cerver, like every counter
 		if (status == HTTP_RECEIVE_STATUS_LIMIT) {
-			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-			http_receive->http_cerver->n_limited_requests += 1;
-			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+			CERVER_STATS_ADD (http_receive->http_cerver->n_limited_requests, 1);
 		}
 	}
 

@@ -2502,9 +2502,8 @@ void http_receive_timed_out (
 ) {
 
 	if (received && !http_receive->responded) {
-		(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-		http_receive->http_cerver->n_timeout_requests += 1;
-		(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		// its readers (the stats, the metrics) load it without the mutex of the cerver, like every counter
+		CERVER_STATS_ADD (http_receive->http_cerver->n_timeout_requests, 1);
 
 		(void) http_receive_reject (
 			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT
