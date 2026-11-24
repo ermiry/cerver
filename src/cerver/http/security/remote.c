@@ -113,9 +113,27 @@ unsigned int http_remote_answer (HttpReceive *http_receive) {
 // libcurl starts once in the process, before its first request
 static pthread_once_t http_remote_once = PTHREAD_ONCE_INIT;
 
+// the handle of the requests that a thread makes by itself: it keeps the connection to the service between them,
+// and the key releases it when its thread ends
+static pthread_key_t http_remote_easy_key;
+static bool http_remote_easy_key_created = false;
+
+static __thread CURL *http_remote_thread_easy = NULL;
+
+// called when a thread that made remote requests ends
+static void http_remote_thread_easy_delete (void *easy_ptr) {
+
+	http_remote_thread_easy = NULL;
+
+	curl_easy_cleanup ((CURL *) easy_ptr);
+
+}
+
 static void http_remote_global_start (void) {
 
 	(void) curl_global_init (CURL_GLOBAL_DEFAULT);
+
+	http_remote_easy_key_created = !pthread_key_create (&http_remote_easy_key, http_remote_thread_easy_delete);
 
 }
 
@@ -260,19 +278,52 @@ static void http_remote_easy_method (CURL *easy, const HttpRemote *remote) {
 
 }
 
+// the options of a request in a handle without any
+static void http_remote_easy_set (CURL *easy, HttpRemote *remote) {
+
+	(void) curl_easy_setopt (easy, CURLOPT_URL, remote->url);
+	(void) curl_easy_setopt (easy, CURLOPT_NOSIGNAL, 1L);
+	(void) curl_easy_setopt (easy, CURLOPT_TIMEOUT_MS, (long) remote->timeout_milliseconds);
+	(void) curl_easy_setopt (easy, CURLOPT_HTTPHEADER, (struct curl_slist *) remote->headers);
+	(void) curl_easy_setopt (easy, CURLOPT_WRITEFUNCTION, http_remote_write);
+	(void) curl_easy_setopt (easy, CURLOPT_WRITEDATA, remote);
+
+	http_remote_easy_method (easy, remote);
+
+}
+
+// a handle of its own for a request, the one that waits in the multi of a loop
 static CURL *http_remote_easy_create (HttpRemote *remote) {
 
 	CURL *easy = curl_easy_init ();
-	if (easy) {
-		(void) curl_easy_setopt (easy, CURLOPT_URL, remote->url);
-		(void) curl_easy_setopt (easy, CURLOPT_NOSIGNAL, 1L);
-		(void) curl_easy_setopt (easy, CURLOPT_TIMEOUT_MS, (long) remote->timeout_milliseconds);
-		(void) curl_easy_setopt (easy, CURLOPT_HTTPHEADER, (struct curl_slist *) remote->headers);
-		(void) curl_easy_setopt (easy, CURLOPT_WRITEFUNCTION, http_remote_write);
-		(void) curl_easy_setopt (easy, CURLOPT_WRITEDATA, remote);
+	if (easy) http_remote_easy_set (easy, remote);
 
-		http_remote_easy_method (easy, remote);
+	return easy;
+
+}
+
+// the first request of a thread creates its handle, with the key that releases it when the thread ends
+static CURL *http_remote_thread_easy_create (void) {
+
+	CURL *easy = http_remote_easy_key_created ? curl_easy_init () : NULL;
+	if (easy && pthread_setspecific (http_remote_easy_key, easy)) {
+		curl_easy_cleanup (easy);
+		easy = NULL;
 	}
+
+	http_remote_thread_easy = easy;
+
+	return easy;
+
+}
+
+// the handle of the thread without the options of its last request: a reset keeps its connections,
+// NULL when the thread could not have one
+static CURL *http_remote_thread_easy_get (void) {
+
+	CURL *easy = http_remote_thread_easy;
+	if (easy) curl_easy_reset (easy);
+	else easy = http_remote_thread_easy_create ();
 
 	return easy;
 
@@ -286,12 +337,17 @@ static CURL *http_remote_easy_create (HttpRemote *remote) {
 // returns 0 when the request is authenticated, 1 when it is not
 static unsigned int http_remote_perform (const HttpReceive *http_receive, HttpRemote *remote) {
 
-	CURL *easy = http_remote_easy_create (remote);
+	// with the handle of the thread, that keeps the connection to the service; a thread without one
+	// makes the request with a handle that ends with it
+	CURL *thread_easy = http_remote_thread_easy_get ();
+	CURL *easy = thread_easy ? thread_easy : curl_easy_init ();
 	if (easy) {
+		http_remote_easy_set (easy, remote);
+
 		const CURLcode result = curl_easy_perform (easy);
 		http_remote_finished (remote, easy, result);
 
-		curl_easy_cleanup (easy);
+		if (!thread_easy) curl_easy_cleanup (easy);
 	}
 
 	const unsigned int verdict = http_remote_respond (http_receive, remote);
