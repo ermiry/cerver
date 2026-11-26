@@ -17,6 +17,15 @@ static inline void char_copy (char *to, char *from) {
 
 }
 
+// a String whose characters could not be allocated is released: every method uses them without a check
+static String *str_without_characters (String *s) {
+
+	free (s);
+
+	return NULL;
+
+}
+
 String *str_new (const char *str) {
 
 	String *s = (String *) malloc (sizeof (String));
@@ -27,6 +36,7 @@ String *str_new (const char *str) {
 			s->len = strlen (str);
 			s->str = (char *) calloc (s->len + 1, sizeof (char));
 			if (s->str) char_copy (s->str, (char *) str);
+			else s = str_without_characters (s);
 		}
 
 		else {
@@ -86,6 +96,9 @@ String *str_allocate (const unsigned int max_len) {
 		s->max_len = max_len;
 		s->len = 0;
 		s->str = (char *) calloc (max_len, sizeof (char));
+
+		// calloc () can return NULL for a size of 0
+		if (!s->str && max_len) s = str_without_characters (s);
 	}
 
 	return s;
@@ -305,6 +318,10 @@ String *str_create_from_bytes (const char *bytes, const size_t n) {
 			if (n) (void) memcpy (str->str, bytes, n);
 			str->str[n] = '\0';
 			str->len = n;
+		}
+
+		else {
+			str = str_without_characters (str);
 		}
 	}
 
