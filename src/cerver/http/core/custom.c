@@ -7,7 +7,7 @@
 
 #include "cerver/http/core/custom.h"
 
-static const char *http_custom_header_empty_value = { "" };
+static const char *const http_custom_header_empty_value = { "" };
 
 // creates a custom header with an empty value in the arena
 HttpCustomHeader *http_custom_header_create (

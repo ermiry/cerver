@@ -22,12 +22,12 @@
 
 #include "cerver/utils/log.h"
 
-static const char *http_tree_root_path = { "/" };
-static const char *http_tree_empty_path = { "" };
+static const char *const http_tree_root_path = { "/" };
+static const char *const http_tree_empty_path = { "" };
 
 // a level of the printed routes, the indentation of the first routes API print
-static const char *http_tree_indent = { "    " };
-static const char *http_tree_values_separator = { ", " };
+static const char *const http_tree_indent = { "    " };
+static const char *const http_tree_values_separator = { ", " };
 
 // the depth of the tree that is printed with indentation
 #define HTTP_TREE_PRINT_INDENT_SIZE			64

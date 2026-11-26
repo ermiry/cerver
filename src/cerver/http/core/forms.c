@@ -63,10 +63,10 @@
 
 static Pool *multi_parts_pool = NULL;
 
-static const char *multi_part_header_value = { "multipart/form-data;" };
+static const char *const multi_part_header_value = { "multipart/form-data;" };
 static const size_t multi_part_header_value_len = 20;
 
-static const char *multi_part_form_data = { "form-data;" };
+static const char *const multi_part_form_data = { "form-data;" };
 static const size_t multi_part_form_data_len = 10;
 
 #pragma region mpart

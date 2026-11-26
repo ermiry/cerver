@@ -31,7 +31,7 @@ static const size_t http_compression_quality_name_length = 2;
 #define HTTP_COMPRESSION_DEFAULT_QUALITY		1.0
 #define HTTP_COMPRESSION_UNSET_QUALITY			-1.0
 
-static const char *http_compression_types[] = {
+static const char *const http_compression_types[] = {
 	"text/",
 	"application/json",
 	"application/javascript",
@@ -45,7 +45,7 @@ static const size_t http_compression_n_types = (
 );
 
 // the suffixes of the structured types, like "application/problem+json"
-static const char *http_compression_type_suffixes[] = { "+json", "+xml" };
+static const char *const http_compression_type_suffixes[] = { "+json", "+xml" };
 static const size_t http_compression_n_type_suffixes = 2;
 
 static const char http_compression_type_parameters_separator = ';';

@@ -11,7 +11,7 @@
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
 
-static const char *http_compatibility_root_path = { "/" };
+static const char *const http_compatibility_root_path = { "/" };
 
 // the settings of a route are shared by all its methods
 static void http_compatibility_settings (

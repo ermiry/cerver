@@ -63,10 +63,10 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static const char *form_urlencoded_value = { "application/x-www-form-urlencoded" };
+static const char *const form_urlencoded_value = { "application/x-www-form-urlencoded" };
 static const size_t form_urlencoded_value_len = 33;
 
-static const char *query_separator = { "?" };
+static const char *const query_separator = { "?" };
 
 // a space in a query and in the values of a form
 static const char query_encoded_space = '+';
@@ -74,8 +74,8 @@ static const char query_space = ' ';
 
 static const char static_file_extension_separator = '.';
 
-static const char *expect_continue_value = { "100-continue" };
-static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
+static const char *const expect_continue_value = { "100-continue" };
+static const char *const continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
 static const size_t continue_response_len = 25;
 
 #pragma region handler

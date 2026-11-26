@@ -5,11 +5,11 @@
 
 #include "cerver/http/responses/date.h"
 
-static const char *http_date_days[] = {
+static const char *const http_date_days[] = {
 	"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
 
-static const char *http_date_months[] = {
+static const char *const http_date_months[] = {
 	"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
@@ -39,7 +39,7 @@ static const char *http_date_months[] = {
 #define HTTP_DATE_TWO_DIGITS			2
 #define HTTP_DATE_FOUR_DIGITS			4
 
-static const char *http_date_zone = { "GMT" };
+static const char *const http_date_zone = { "GMT" };
 
 static const char http_date_space = ' ';
 static const char http_date_time_separator = ':';
@@ -93,7 +93,7 @@ const char *http_date_current (void) {
 
 // returns the index of the name in the names, -1 if it is not there
 static int http_date_parse_name (
-	const char *value, const char **names, const int n_names
+	const char *value, const char *const *names, const int n_names
 ) {
 
 	int index = -1;
