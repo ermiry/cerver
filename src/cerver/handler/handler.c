@@ -2476,6 +2476,22 @@ static void cerver_receive_http_count_incomplete (const HttpReceive *http_receiv
 
 }
 
+// a connection whose receive could not be allocated is dropped without reading it
+static void *cerver_receive_http_unavailable (CerverReceive *cr) {
+
+	cerver_log_error (
+		"cerver_receive_http () - Failed to allocate the receive of the connection with sock fd <%d>!",
+		cr->socket->sock_fd
+	);
+
+	connection_drop (cr->cerver, cr->connection);
+
+	cerver_receive_delete (cr);
+
+	return NULL;
+
+}
+
 // we expect only one request to be sent,
 // so keep reading the socket until no more data is left,
 // and then handle the complete buffer
@@ -2500,9 +2516,14 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		) : NULL;
 
 	if (!http_receive) {
+		// what the arena could allocate before it failed is released
+		if (context) arena_reset (context->arena);
+
 		context = NULL;
 		http_receive = http_receive_create (cr);
 	}
+
+	if (!http_receive) return cerver_receive_http_unavailable (cr);
 
 	i32 sock_fd = cr->socket->sock_fd;
 
