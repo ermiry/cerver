@@ -8,6 +8,7 @@
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ec.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/objects.h>
@@ -651,6 +652,16 @@ static int jwt_key_verify_pem (
 
 #pragma endregion
 
+// OpenSSL leaves its errors in the queue of the thread until the thread ends, even the ones of a call
+// that recovered and succeeded: the ones after the mark are released
+static int jwt_key_errors_release (const int retval) {
+
+	(void) ERR_pop_to_mark ();
+
+	return retval;
+
+}
+
 int jwt_key_sign (
 	const JwtKey *key,
 	const char *message, const size_t message_length,
@@ -661,6 +672,8 @@ int jwt_key_sign (
 
 	*signature = NULL;
 	*signature_length = 0;
+
+	(void) ERR_set_mark ();
 
 	const JwtKeyAlgorithm *algorithm = jwt_key_algorithm_get (key->alg);
 
@@ -678,7 +691,7 @@ int jwt_key_sign (
 		default: break;
 	}
 
-	return retval;
+	return jwt_key_errors_release (retval);
 
 }
 
@@ -689,6 +702,8 @@ int jwt_key_verify (
 ) {
 
 	if (!key || !message || !signature) return EINVAL;
+
+	(void) ERR_set_mark ();
 
 	const JwtKeyAlgorithm *algorithm = jwt_key_algorithm_get (key->alg);
 
@@ -706,6 +721,6 @@ int jwt_key_verify (
 		default: break;
 	}
 
-	return retval;
+	return jwt_key_errors_release (retval);
 
 }
