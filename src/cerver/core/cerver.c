@@ -918,6 +918,37 @@ u8 cerver_set_admin_enable (Cerver *cerver) {
 
 #pragma region create
 
+// the data of a game, a web or a files cerver: the other types start without one
+static bool cerver_create_type_data (const Cerver *cerver) {
+
+	const bool needs_data = (cerver->type == CERVER_TYPE_GAME)
+		|| (cerver->type == CERVER_TYPE_WEB)
+		|| (cerver->type == CERVER_TYPE_FILES);
+
+	return !needs_data || cerver->cerver_data;
+
+}
+
+// a cerver without its data, its info or its stats is released: the rest of cerver uses them without a check
+static Cerver *cerver_create_check (Cerver *cerver) {
+
+	const bool created = cerver_create_type_data (cerver)
+		&& cerver->info && cerver->stats && cerver->request_stats;
+
+	if (!created) {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to allocate the parts of a new cerver!"
+		);
+
+		cerver_delete (cerver);
+		cerver = NULL;
+	}
+
+	return cerver;
+
+}
+
 // returns a new cerver with the specified parameters
 Cerver *cerver_create (
 	const CerverType type, const char *name,
@@ -959,10 +990,12 @@ Cerver *cerver_create (
 			cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
 
 			cerver->info = cerver_info_new ();
-			cerver_set_name (cerver, name);
+			if (cerver->info) cerver_set_name (cerver, name);
 
 			cerver->stats = cerver_stats_new ();
 			cerver->request_stats = cerver_request_stats_new ();
+
+			cerver = cerver_create_check (cerver);
 		}
 	}
 
