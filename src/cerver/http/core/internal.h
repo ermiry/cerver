@@ -486,8 +486,7 @@ CERVER_HIDDEN void http_multi_parts_return (void *multi_part_ptr);
  * @internal
  * @brief Compiles the header of a response with the default headers of an HttpCerver, the one of its request.
  *
- * http_response_compile_header () takes the ones of the producer cerver of the process instead: with two HTTP
- * cervers in a process, a response would have the headers of the first one that is alive.
+ * http_response_compile_header () compiles it without them: the cerver that sends it adds its own ones.
  *
  * @param[in,out] response the response, it must not be NULL
  * @param[in] http_cerver the cerver of the request; NULL for none of the default headers
