@@ -31,6 +31,10 @@
 #define FAULTS_CORE_SCORE_PLAYERS		8
 #define FAULTS_CORE_SCORE_TYPES			6
 
+// the characters of the strings are not the size of their String
+#define FAULTS_CORE_STRING_ROOM			64
+#define FAULTS_CORE_STRING_BYTES		"cerver bytes"
+
 static void faults_core_handler (void *data) {
 
 	(void) data;
@@ -148,6 +152,23 @@ static void faults_core_string (void) {
 
 }
 
+// a String without memory for its characters is not returned (it had a NULL str that nothing checks)
+static void faults_core_string_characters (void) {
+
+	faults_arm (FAULTS_FUNCTION_CALLOC, true, sizeof (FAULTS_CORE_BASENAME));
+	test_check_null_ptr (str_new (FAULTS_CORE_BASENAME));
+	faults_disarm (FAULTS_FUNCTION_CALLOC);
+
+	faults_arm (FAULTS_FUNCTION_CALLOC, true, FAULTS_CORE_STRING_ROOM);
+	test_check_null_ptr (str_allocate (FAULTS_CORE_STRING_ROOM));
+	faults_disarm (FAULTS_FUNCTION_CALLOC);
+
+	faults_arm (FAULTS_FUNCTION_MALLOC, true, sizeof (FAULTS_CORE_STRING_BYTES));
+	test_check_null_ptr (str_create_from_bytes (FAULTS_CORE_STRING_BYTES, sizeof (FAULTS_CORE_STRING_BYTES) - 1));
+	faults_disarm (FAULTS_FUNCTION_MALLOC);
+
+}
+
 // bigger than the biggest class of buffers, so the data comes from malloc () and realloc ()
 #define FAULTS_CORE_PACKET_SIZE			(((size_t) 1 << PACKET_DATA_MAX_EXPONENT) + 1)
 
@@ -206,6 +227,7 @@ void faults_tests_core (void) {
 	faults_core_c_string ();
 	faults_core_score ();
 	faults_core_string ();
+	faults_core_string_characters ();
 	faults_core_string_copy ();
 	faults_core_packet ();
 
