@@ -34,10 +34,10 @@
 
 #pragma region handler
 
-static const char *on_hold_bad_auth_request = { "The auth packet has an unknown request type" };
-static const char *on_hold_bad_auth_data = { "The auth packet does not have data" };
-static const char *on_hold_bad_type = { "The packet can not be handled before the authentication" };
-static const char *on_hold_bad_version = { "The packet has an incompatible version" };
+static const char *const on_hold_bad_auth_request = { "The auth packet has an unknown request type" };
+static const char *const on_hold_bad_auth_data = { "The auth packet does not have data" };
+static const char *const on_hold_bad_type = { "The packet can not be handled before the authentication" };
+static const char *const on_hold_bad_version = { "The packet has an incompatible version" };
 
 // a bad packet of an on hold connection: its sender gets an error,
 // and the connection is dropped when it reaches the on hold limit

@@ -17,7 +17,7 @@
 
 #include "cerver/utils/log.h"
 
-static const char *receive_bad_packet_size = { "The packet is bigger than the maximum size" };
+static const char *const receive_bad_packet_size = { "The packet is bigger than the maximum size" };
 
 #define RECEIVE_BAD_HEADER_MESSAGE_SIZE			128
 #define RECEIVE_BAD_HEADER_MESSAGE				"%s, the cerver expects the header format %d"

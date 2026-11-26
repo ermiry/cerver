@@ -181,7 +181,7 @@ static unsigned int cerver_request_packet_type (const PacketType packet_type) {
 
 static const char *cerver_request_stats_packet_type_name (const unsigned int index) {
 
-	static const char *names[CERVER_REQUEST_PACKET_TYPES] = {
+	static const char *const names[CERVER_REQUEST_PACKET_TYPES] = {
 		"App", "App error", "Custom"
 	};
 
