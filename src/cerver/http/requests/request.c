@@ -249,7 +249,7 @@ void http_request_destroy (HttpRequest *http_request) {
 
 }
 
-const RequestMethod http_request_get_method (
+RequestMethod http_request_get_method (
 	const HttpRequest *http_request
 ) {
 
@@ -402,7 +402,7 @@ const DoubleList *http_request_get_query_params (
 
 }
 
-const unsigned int http_request_get_n_params (
+unsigned int http_request_get_n_params (
 	const HttpRequest *http_request
 ) {
 
@@ -513,7 +513,7 @@ void http_request_set_current_custom_header_value (
 
 }
 
-const size_t http_request_get_custom_headers_count (
+size_t http_request_get_custom_headers_count (
 	const HttpRequest *http_request
 ) {
 
@@ -787,7 +787,7 @@ const MultiPart *http_request_get_current_mpart (
 
 }
 
-const u8 http_request_get_n_files (
+u8 http_request_get_n_files (
 	const HttpRequest *http_request
 ) {
 
@@ -795,7 +795,7 @@ const u8 http_request_get_n_files (
 
 }
 
-const u8 http_request_get_n_values (
+u8 http_request_get_n_values (
 	const HttpRequest *http_request
 ) {
 
@@ -803,7 +803,7 @@ const u8 http_request_get_n_values (
 
 }
 
-const int http_request_get_dirname_len (
+int http_request_get_dirname_len (
 	const HttpRequest *http_request
 ) {
 

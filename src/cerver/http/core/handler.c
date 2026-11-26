@@ -458,7 +458,7 @@ const CerverReceive *http_receive_get_cerver_receive (
 // the socket of a NULL receive
 static const int http_receive_no_sock_fd = -1;
 
-const int http_receive_get_sock_fd (
+int http_receive_get_sock_fd (
 	const HttpReceive *http_receive
 ) {
 

@@ -131,7 +131,7 @@ CERVER_EXPORT const char *http_jwt_get_bearer (
  * @param[in] http_jwt the HttpJwt, it must not be NULL
  * @return the length
  */
-CERVER_EXPORT const size_t http_jwt_get_bearer_len (
+CERVER_EXPORT size_t http_jwt_get_bearer_len (
 	const HttpJwt *http_jwt
 );
 
@@ -151,7 +151,7 @@ CERVER_EXPORT const char *http_jwt_get_json (
  * @param[in] http_jwt the HttpJwt, it must not be NULL
  * @return the length
  */
-CERVER_EXPORT const size_t http_jwt_get_json_len (
+CERVER_EXPORT size_t http_jwt_get_json_len (
 	const HttpJwt *http_jwt
 );
 

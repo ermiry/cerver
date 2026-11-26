@@ -280,7 +280,7 @@ CERVER_PRIVATE void http_request_destroy (
  * @param[in] http_request the request
  * @return the method
  */
-CERVER_EXPORT const RequestMethod http_request_get_method (
+CERVER_EXPORT RequestMethod http_request_get_method (
 	const HttpRequest *http_request
 );
 
@@ -371,7 +371,7 @@ CERVER_EXPORT const DoubleList *http_request_get_query_params (
  * @param[in] http_request the request
  * @return the params
  */
-CERVER_EXPORT const unsigned int http_request_get_n_params (
+CERVER_EXPORT unsigned int http_request_get_n_params (
 	const HttpRequest *http_request
 );
 
@@ -459,7 +459,7 @@ CERVER_PRIVATE HttpCustomHeader *http_request_custom_header_find (
  * @param[in] http_request the request
  * @return the custom headers
  */
-CERVER_EXPORT const size_t http_request_get_custom_headers_count (
+CERVER_EXPORT size_t http_request_get_custom_headers_count (
 	const HttpRequest *http_request
 );
 
@@ -622,7 +622,7 @@ CERVER_EXPORT const MultiPart *http_request_get_current_mpart (
  * @param[in] http_request the request
  * @return the files
  */
-CERVER_EXPORT const u8 http_request_get_n_files (
+CERVER_EXPORT u8 http_request_get_n_files (
 	const HttpRequest *http_request
 );
 
@@ -632,7 +632,7 @@ CERVER_EXPORT const u8 http_request_get_n_files (
  * @param[in] http_request the request
  * @return the values
  */
-CERVER_EXPORT const u8 http_request_get_n_values (
+CERVER_EXPORT u8 http_request_get_n_values (
 	const HttpRequest *http_request
 );
 
@@ -642,7 +642,7 @@ CERVER_EXPORT const u8 http_request_get_n_values (
  * @param[in] http_request the request
  * @return the length, see http_request_set_dirname ()
  */
-CERVER_EXPORT const int http_request_get_dirname_len (
+CERVER_EXPORT int http_request_get_dirname_len (
 	const HttpRequest *http_request
 );
 

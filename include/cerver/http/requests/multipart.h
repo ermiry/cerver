@@ -208,7 +208,7 @@ CERVER_EXPORT bool http_multi_part_is_not_empty (
  * @param[in] multi_part the part
  * @return its type
  */
-CERVER_PUBLIC const MultiPartType http_multi_part_get_type (
+CERVER_PUBLIC MultiPartType http_multi_part_get_type (
 	const MultiPart *multi_part
 );
 
@@ -258,7 +258,7 @@ CERVER_PUBLIC const char *http_multi_part_get_filename (
  * @param[in] multi_part the part
  * @return the length
  */
-CERVER_PUBLIC const int http_multi_part_get_filename_len (
+CERVER_PUBLIC int http_multi_part_get_filename_len (
 	const MultiPart *multi_part
 );
 
@@ -278,7 +278,7 @@ CERVER_PUBLIC const char *http_multi_part_get_generated_filename (
  * @param[in] multi_part the part
  * @return the length
  */
-CERVER_PUBLIC const int http_multi_part_get_generated_filename_len (
+CERVER_PUBLIC int http_multi_part_get_generated_filename_len (
 	const MultiPart *multi_part
 );
 
@@ -301,7 +301,7 @@ CERVER_PUBLIC void http_multi_part_set_generated_filename (
  * @param[in] multi_part the part
  * @return the receives
  */
-CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
+CERVER_PUBLIC u32 http_multi_part_get_n_reads (
 	const MultiPart *multi_part
 );
 
@@ -311,7 +311,7 @@ CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
  * @param[in] multi_part the part
  * @return the bytes
  */
-CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
+CERVER_PUBLIC u32 http_multi_part_get_total_wrote (
 	const MultiPart *multi_part
 );
 
@@ -321,7 +321,7 @@ CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
  * @param[in] multi_part the part
  * @return the errno, 0 if the file was saved completely
  */
-CERVER_PUBLIC const int http_multi_part_get_error (
+CERVER_PUBLIC int http_multi_part_get_error (
 	const MultiPart *multi_part
 );
 
@@ -341,7 +341,7 @@ CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
  * @param[in] multi_part the part
  * @return the length
  */
-CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
+CERVER_PUBLIC int http_multi_part_get_saved_filename_len (
 	const MultiPart *multi_part
 );
 
@@ -351,7 +351,7 @@ CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
  * @param[in] multi_part the part
  * @return true if it was moved
  */
-CERVER_PUBLIC const bool http_multi_part_get_moved_file (
+CERVER_PUBLIC bool http_multi_part_get_moved_file (
 	const MultiPart *multi_part
 );
 
@@ -371,7 +371,7 @@ CERVER_PUBLIC const char *http_multi_part_get_value (
  * @param[in] multi_part the part
  * @return the length
  */
-CERVER_PUBLIC const int http_multi_part_get_value_len (
+CERVER_PUBLIC int http_multi_part_get_value_len (
 	const MultiPart *multi_part
 );
 

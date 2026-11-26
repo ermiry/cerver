@@ -21,7 +21,7 @@ void http_origin_delete (void *origin_ptr) {
 
 }
 
-const int http_origin_get_len (
+int http_origin_get_len (
 	const HttpOrigin *origin
 ) {
 
