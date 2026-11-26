@@ -231,8 +231,10 @@ CERVER_HIDDEN void http_receive_buffer_reset (String *buffer);
  * @brief Closes the url of the request that arrived in pieces, in on_headers_complete.
  *
  * @param[in,out] http_receive the receive
+ * @retval 0 the request has its url, and its query when the target has one
+ * @retval 1 the url or the query could not be allocated
  */
-CERVER_HIDDEN void http_receive_close_url (HttpReceive *http_receive);
+CERVER_HIDDEN u8 http_receive_close_url (HttpReceive *http_receive);
 
 /**
  * @internal

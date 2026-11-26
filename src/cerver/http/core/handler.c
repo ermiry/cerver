@@ -1282,7 +1282,12 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
 
-	http_receive_close_url (http_receive);
+	// a request without its url is not routed
+	if (http_receive_close_url (http_receive)) {
+		(void) http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+
+		return -1;
+	}
 
 	request->method = (RequestMethod) parser->method;
 
