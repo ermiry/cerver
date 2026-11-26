@@ -47,6 +47,7 @@ while [ $STOPPING -eq 0 ]; do
 
 	if [ $STOPPING -ne 0 ]; then
 		[ $code -ne 0 ] && FAILED=1
+		echo "supervise: $1 was stopped and ended with $code"
 		break
 	fi
 
@@ -58,5 +59,7 @@ while [ $STOPPING -eq 0 ]; do
 	sleep "$RESTART_SECONDS" &
 	wait $!
 done
+
+echo "supervise: $1 ends with $FAILED"
 
 exit $FAILED

@@ -332,9 +332,49 @@ static void cerver_shutdown_clients (Cerver *cerver) {
 
 }
 
-// waits for the thpool and for the detachable connection threads,
-// returns true if both finished before the timeout
+#define CERVER_DRAIN_NANOSECONDS_PER_SECOND			1000000000L
+
+// the seconds that are left until the deadline of a drain, rounded up, 0 when it passed
+static time_t cerver_drain_remaining (const struct timespec *deadline) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	const i64 nanoseconds = ((i64) (deadline->tv_sec - now.tv_sec) * CERVER_DRAIN_NANOSECONDS_PER_SECOND)
+		+ (i64) (deadline->tv_nsec - now.tv_nsec);
+
+	return (nanoseconds > 0)
+		? (time_t) ((nanoseconds + CERVER_DRAIN_NANOSECONDS_PER_SECOND - 1) / CERVER_DRAIN_NANOSECONDS_PER_SECOND)
+		: 0;
+
+}
+
+// the connection threads get what the thpool left of the timeout, not a timeout of their own;
+// without any time left they are only counted: a timeout of 0 waits for them (THREAD_GROUP_WAIT_FOREVER)
+// returns the threads that are still alive
+static unsigned int cerver_drain_wait_threads (
+	Cerver *cerver, const time_t timeout, const struct timespec *deadline
+) {
+
+	if (timeout == THREAD_GROUP_WAIT_FOREVER) {
+		return thread_group_wait (&cerver->connection_threads, THREAD_GROUP_WAIT_FOREVER);
+	}
+
+	const time_t remaining = cerver_drain_remaining (deadline);
+
+	return remaining
+		? thread_group_wait (&cerver->connection_threads, remaining)
+		: thread_group_alive (&cerver->connection_threads);
+
+}
+
+// waits for the thpool and for the detachable connection threads, both in the same timeout,
+// returns true if both finished before it
 static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &deadline);
+	deadline.tv_sec += timeout;
 
 	bool drained = true;
 
@@ -346,7 +386,7 @@ static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
 		);
 	}
 
-	if (thread_group_wait (&cerver->connection_threads, timeout)) {
+	if (cerver_drain_wait_threads (cerver, timeout, &deadline)) {
 		drained = false;
 	}
 

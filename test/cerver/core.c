@@ -28,6 +28,9 @@
 #include <cerver/handler/handler.h>
 #include <cerver/packets/packets.h>
 
+#include <cerver/threads/thpool.h>
+#include <cerver/threads/thread.h>
+
 #include "../test.h"
 #include <app/auth.h>
 
@@ -117,11 +120,19 @@
 #define CORE_REQUEST_DROP				2
 #define CORE_REQUEST_ADDRESS			3
 #define CORE_REQUEST_SLOW				4
+#define CORE_REQUEST_STUCK				7
 
 #define CORE_SLOW_EVENT_NANOSECONDS		(1L << 29)
 #define CORE_SLOW_HANDLER_SECONDS		2
 #define CORE_SLOW_UPDATE_FPS			1
 #define CORE_DRAIN_TIMEOUT				1
+
+// a handler that outlasts the drain and its grace, but not two drains and two graces
+#define CORE_STUCK_HANDLER_SECONDS		8
+#define CORE_STUCK_CONNECTIONS			2
+
+// what a teardown that is not drained takes past the drain and its grace
+#define CORE_DRAIN_DEADLINE_MARGIN		2
 
 #define CORE_INTERRUPT_SIGNAL			SIGUSR1
 #define CORE_INTERRUPTS					8
@@ -181,6 +192,8 @@ static unsigned int direct_request_packets = 0;
 static unsigned int slow_events = 0;
 static unsigned int slow_started = 0;
 static unsigned int slow_finished = 0;
+static unsigned int stuck_started = 0;
+static unsigned int stuck_finished = 0;
 static unsigned int update_ticks = 0;
 static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
@@ -206,6 +219,8 @@ static void core_counters_reset (void) {
 	slow_events = 0;
 	slow_started = 0;
 	slow_finished = 0;
+	stuck_started = 0;
+	stuck_finished = 0;
 	update_ticks = 0;
 	interval_ticks = 0;
 	(void) memset (events, 0, sizeof (events));
@@ -271,6 +286,13 @@ static void core_app_handler (void *packet_ptr) {
 			test_counter_add (&slow_started);
 			(void) sleep (CORE_SLOW_HANDLER_SECONDS);
 			test_counter_add (&slow_finished);
+			break;
+
+		// a handler that is still working when the grace of the drain ends
+		case CORE_REQUEST_STUCK:
+			test_counter_add (&stuck_started);
+			(void) sleep (CORE_STUCK_HANDLER_SECONDS);
+			test_counter_add (&stuck_finished);
 			break;
 
 		default: break;
@@ -1930,6 +1952,88 @@ static void test_core_drain_grace (void) {
 
 }
 
+// a cerver that the drain left working is not released: it stays reachable, so LSan does not report it
+static Cerver *volatile core_undrained = NULL;
+
+static bool core_thpool_idle (const Cerver *cerver) {
+
+	return !thpool_get_num_threads_working (cerver->thpool);
+
+}
+
+// the connections that the drain left end, with the events of their ends, before the next test resets the counters
+static void core_undrained_wait (Cerver *cerver) {
+
+	test_check_unsigned_eq (
+		test_wait_counter (&stuck_finished, CORE_STUCK_CONNECTIONS, TEST_WAIT_SECONDS),
+		CORE_STUCK_CONNECTIONS, NULL
+	);
+
+	test_check_unsigned_eq (thread_group_wait (&cerver->connection_threads, THREAD_GROUP_WAIT_FOREVER), 0, NULL);
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + (double) TEST_WAIT_SECONDS;
+	while (!core_thpool_idle (cerver) && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	test_check (core_thpool_idle (cerver), "a connection that the drain left is still working");
+
+	test_check_unsigned_eq (thread_group_wait (&cerver->event_threads, THREAD_GROUP_WAIT_FOREVER), 0, NULL);
+
+}
+
+// a connection in the thpool and another in a detachable thread that outlast the drain share its deadline:
+// the drain and its grace end in their timeouts, not in twice them (each wait had its own timeout)
+static void test_core_drain_deadline (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_drain_timeout (cerver, CORE_DRAIN_TIMEOUT);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	// the first connection goes to the thpool, the second one to its own thread
+	CoreClient pooled = core_client_connect (port, NULL);
+	core_client_send (&pooled, PACKET_TYPE_APP, CORE_REQUEST_STUCK, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&stuck_started, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	cerver_set_handle_detachable_threads (cerver, true);
+
+	CoreClient detached = core_client_connect (port, NULL);
+	core_client_send (&detached, PACKET_TYPE_APP, CORE_REQUEST_STUCK, 0, 1);
+	test_check_unsigned_eq (
+		test_wait_counter (&stuck_started, CORE_STUCK_CONNECTIONS, TEST_WAIT_SECONDS),
+		CORE_STUCK_CONNECTIONS, NULL
+	);
+
+	const double start = test_wait_now ();
+
+	test_check_unsigned_eq (cerver_shutdown (cerver), 0, NULL);
+	core_cerver_join (&core);
+
+	core_undrained = cerver;
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+	const double elapsed = test_wait_now () - start;
+	test_check (
+		elapsed < (double) (CORE_DRAIN_TIMEOUT + CERVER_DRAIN_GRACE_TIMEOUT + CORE_DRAIN_DEADLINE_MARGIN),
+		"the drain waited twice its timeout"
+	);
+
+	test_check_unsigned_eq (__atomic_load_n (&stuck_finished, __ATOMIC_SEQ_CST), 0, "the drain waited for them");
+
+	// the handlers end before the next test, with the cerver that was not released
+	core_undrained_wait (cerver);
+
+	core_client_end (&pooled);
+	core_client_end (&detached);
+
+}
+
 // a stop requested before cerver_start () cancels it, the cerver never listens
 static void test_core_stop_before_start (const CerverHandlerType handler_type) {
 
@@ -3100,6 +3204,7 @@ int main (int argc, char **argv) {
 	test_core_detachable_threads ();
 	test_core_slow_update_teardown ();
 	test_core_drain_grace ();
+	test_core_drain_deadline ();
 	test_core_stop_before_start_poll ();
 	test_core_stop_before_start_threads ();
 	test_core_stop_while_starting ();

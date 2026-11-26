@@ -178,13 +178,27 @@ typedef struct ThreadGroupWork {
 
 } ThreadGroupWork;
 
+// the condition of a group waits with the monotonic clock: a jump of the clock of the system
+// does not move the deadline of thread_group_wait ()
+static void thread_group_cond_init (ThreadGroup *group) {
+
+	pthread_condattr_t attributes;
+	(void) pthread_condattr_init (&attributes);
+	(void) pthread_condattr_setclock (&attributes, CLOCK_MONOTONIC);
+
+	(void) pthread_cond_init (&group->ended, &attributes);
+
+	(void) pthread_condattr_destroy (&attributes);
+
+}
+
 void thread_group_init (ThreadGroup *group) {
 
 	if (group) {
 		group->alive = 0;
 
 		(void) pthread_mutex_init (&group->mutex, NULL);
-		(void) pthread_cond_init (&group->ended, NULL);
+		thread_group_cond_init (group);
 	}
 
 }
@@ -281,8 +295,9 @@ unsigned int thread_group_wait (ThreadGroup *group, const time_t timeout) {
 	unsigned int alive = 0;
 
 	if (group) {
+		// the clock of the condition of the group (thread_group_cond_init ())
 		struct timespec deadline = { 0, 0 };
-		(void) clock_gettime (CLOCK_REALTIME, &deadline);
+		(void) clock_gettime (CLOCK_MONOTONIC, &deadline);
 		deadline.tv_sec += timeout;
 
 		(void) pthread_mutex_lock (&group->mutex);

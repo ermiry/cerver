@@ -29,7 +29,7 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static const char *balancer_services_unavailable = { "Services unavailable" };
+static const char *const balancer_services_unavailable = { "Services unavailable" };
 
 #pragma region route
 

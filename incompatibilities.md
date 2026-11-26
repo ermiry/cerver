@@ -3,6 +3,27 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.9.2 (from 1.9.1)
+
+The ports between the lines and the backlog of the 1.9.1. The ABI and the wire do not change, a 1.9.2 talks with a
+1.9.1, but some functions return NULL where they returned an object that was missing a part, and the drain waits
+less.
+
+- **The functions that create return NULL when an allocation of theirs fails:** `cerver_create ()` without the info,
+  the stats or the data of a game or a files cerver; `client_create ()` without the list of its connections;
+  `connection_create_empty ()` (and `connection_create ()`, `connection_create_complete ()`) without its socket;
+  `client_connection_create ()` when the connection can not be registered to its client. They returned the object
+  without that part, and the next use read a NULL (the connection whose register failed was lost, with its socket).
+  `str_new ()`, `str_allocate ()` and `str_create_from_bytes ()` return NULL when the characters can not be
+  allocated: they returned a String with a NULL `str` (and its `len`), that no method checks.
+- **The drain of a cerver waits its timeout once:** the connections in the thpool and the ones in their own threads
+  share the deadline of `cerver_teardown ()`, so a drain and its grace take their timeouts, not twice them. The
+  waits of a `ThreadGroup` use the monotonic clock: a jump of the clock of the system does not move them.
+- **`cerver_update_uptime ()` is deprecated** (`CERVER_PRIVATE`, nothing calls it): `CerverInfo::uptime` is not
+  updated, the uptime of a running cerver is `time (NULL) - time_started`.
+- **The build:** `RECYCLE=0` builds without the recycled objects, like a sanitizer, so `test/faults` sees every
+  allocation. `test/headers.sh` compiles each installed header on its own with `-Wall -Wextra -Werror`.
+
 ## 1.9.1 (from 1.9)
 
 A fix of the reads that a client makes in its own thread, without the update thread of the connection. The ABI and

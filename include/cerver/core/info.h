@@ -62,7 +62,11 @@ typedef struct CerverInfo {
 
 	/** @brief When the cerver was started. */
 	time_t time_started;
-	/** @brief The seconds the cerver has been up. */
+	/**
+	 * @brief The seconds the cerver had been up when cerver_update_uptime () last wrote them.
+	 * @warning Nothing in cerver updates it: the seconds that a running cerver has been up are
+	 * time (NULL) - time_started.
+	 */
 	u64 uptime;
 
 } CerverInfo;
@@ -94,10 +98,12 @@ CERVER_EXPORT u8 cerver_set_welcome_msg (
  *
  * @param[in,out] cerver the cerver
  * @note For the internal methods of cerver.
+ * @deprecated Nothing in cerver calls it: writing the shared CerverInfo::uptime from several threads was a race,
+ * each reader computes time (NULL) - CerverInfo::time_started.
  */
-CERVER_PRIVATE void cerver_update_uptime (
+DEPRECATED (CERVER_PRIVATE void cerver_update_uptime (
 	struct _Cerver *cerver
-);
+));
 
 /**
  * @brief Sends the info packet of the cerver to a connection.

@@ -54,8 +54,7 @@ typedef struct String {
  * @brief Creates a String with a copy of a C string.
  *
  * @param[in] str the C string, NULL for an empty String without characters (str is NULL)
- * @return the new String, released with str_delete (); NULL if it could not be allocated
- * @warning If the characters can not be allocated, the String has its len but its str is NULL.
+ * @return the new String, released with str_delete (); NULL if it or its characters could not be allocated
  */
 CERVER_PUBLIC String *str_new (const char *str);
 
@@ -81,8 +80,7 @@ CERVER_PUBLIC String *str_create (
  * @brief Creates an empty String with room for some bytes, to be filled with str_set ().
  *
  * @param[in] max_len the bytes allocated for the characters, including the '\0'
- * @return the new String, released with str_delete (); NULL if it could not be allocated
- * @warning If the characters can not be allocated, the String has its max_len but its str is NULL.
+ * @return the new String, released with str_delete (); NULL if it or its characters could not be allocated
  */
 CERVER_PUBLIC String *str_allocate (
 	const unsigned int max_len
@@ -254,8 +252,8 @@ CERVER_PUBLIC void str_append_n_from_c_string (
  *
  * @param[in] bytes the bytes, they may contain '\0'; NULL only when n is 0
  * @param[in] n the bytes to copy
- * @return the new String, terminated with '\0' and released with str_delete (); NULL if it could not be allocated
- * @note If the characters can not be allocated, the String is empty (str is NULL and len is 0).
+ * @return the new String, terminated with '\0' and released with str_delete (); NULL if it or its characters
+ * could not be allocated
  */
 CERVER_PUBLIC String *str_create_from_bytes (
 	const char *bytes, const size_t n

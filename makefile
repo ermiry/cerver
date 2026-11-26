@@ -14,6 +14,9 @@ WERROR		?= 0
 # gcc -fanalyzer (test/analyze.sh)
 ANALYZER	:= 0
 
+# 0 builds without the recycled objects, like the sanitizers do: the faults binary sees every allocation
+RECYCLE		:= 1
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -130,8 +133,13 @@ endif
 ifneq ($(SANITIZER),)
 	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
 	RECYCLEFLAGS := -D CERVER_RECYCLE_DISABLED
-	CFLAGS += $(RECYCLEFLAGS)
 endif
+
+ifeq ($(RECYCLE), 0)
+	RECYCLEFLAGS := -D CERVER_RECYCLE_DISABLED
+endif
+
+CFLAGS += $(RECYCLEFLAGS)
 
 # common flags
 CFLAGS += -fPIC $(COMMON) $(SANITIZERFLAGS)
