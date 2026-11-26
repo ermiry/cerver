@@ -133,6 +133,14 @@ bool is_multipart (const char *content) {
 
 }
 
+// a pair that the list does not take is deleted (it was lost), one that could not be created is not added
+static void http_mpart_attribute_add (DoubleList *attributes, const char *name, const char *value) {
+
+	KeyValuePair *pair = key_value_pair_create (name, value);
+	if (pair && dlist_insert_at_end (attributes, pair)) key_value_pair_delete (pair);
+
+}
+
 // the attributes of a copy of the header, that is changed
 static void http_mpart_attributes_parse_copy (DoubleList *attributes, char *header_str) {
 
@@ -147,12 +155,8 @@ static void http_mpart_attributes_parse_copy (DoubleList *attributes, char *head
 		// an attribute without a value ("form-data; name") is ignored
 		if (!value) continue;
 
-		(void) dlist_insert_at_end (
-			attributes,
-			key_value_pair_create (
-				c_string_trim (name),
-				c_string_trim (c_string_strip_quotes (value))
-			)
+		http_mpart_attribute_add (
+			attributes, c_string_trim (name), c_string_trim (c_string_strip_quotes (value))
 		);
 	}
 
@@ -359,11 +363,18 @@ int http_receive_handle_mpart_part_data_begin (
 		);
 	}
 
-	// create a new multipart structure to handle new data
-	request->current_part = http_multi_parts_get ();
-	(void) dlist_insert_at_end_unsafe (
-		request->multi_parts, request->current_part
-	);
+	// create a new multipart structure to handle new data,
+	// the callbacks of the part use it without a check and the end of the request releases it from the list
+	MultiPart *part = http_multi_parts_get ();
+	if (!part || dlist_insert_at_end_unsafe (request->multi_parts, part)) {
+		if (part) http_multi_parts_return (part);
+
+		request->current_part = NULL;
+
+		return http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_UPLOAD_ERROR);
+	}
+
+	request->current_part = part;
 
 	return 0;
 
