@@ -63,7 +63,7 @@ const char *http_jwt_get_bearer (const HttpJwt *http_jwt) {
 
 }
 
-const size_t http_jwt_get_bearer_len (const HttpJwt *http_jwt) {
+size_t http_jwt_get_bearer_len (const HttpJwt *http_jwt) {
 
 	return http_jwt->bearer_len;
 
@@ -75,7 +75,7 @@ const char *http_jwt_get_json (const HttpJwt *http_jwt) {
 
 }
 
-const size_t http_jwt_get_json_len (const HttpJwt *http_jwt) {
+size_t http_jwt_get_json_len (const HttpJwt *http_jwt) {
 
 	return http_jwt->json_len;
 

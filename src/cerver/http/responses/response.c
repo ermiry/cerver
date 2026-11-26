@@ -7,6 +7,7 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include <strings.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
@@ -93,19 +94,23 @@ static void http_response_producer_delete (
 
 }
 
-// the HTTP cerver whose defaults (its response headers, its origins) a response without a request takes,
-// NULL without an HTTP cerver; it can change when its own one ends while another HTTP cerver is alive,
-// so each function loads it once
+// the readers of the producer hold it while they read the origins of its cerver,
+// so the cerver that ends is not released while they read it (http_responses_follow ())
+static pthread_rwlock_t producer_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+// the HTTP cerver whose origins a response without a request takes, NULL without an HTTP cerver;
+// it can change when its own one ends while another HTTP cerver is alive, so it is read with producer_lock
 static const HttpCerver *http_response_producer_cerver (void) {
 
 	return producer ? __atomic_load_n (&producer->http_cerver, __ATOMIC_ACQUIRE) : NULL;
 
 }
 
-// the HTTP cerver of a request, the producer one without a request
+// the HTTP cerver of a request, none without a request: a response compiled without one
+// gets the default headers of the cerver that sends it (http_response_extra_defaults ())
 static const HttpCerver *http_response_receive_cerver (const HttpReceive *http_receive) {
 
-	return http_receive ? http_receive->http_cerver : http_response_producer_cerver ();
+	return http_receive ? http_receive->http_cerver : NULL;
 
 }
 
@@ -469,7 +474,13 @@ u8 http_response_add_whitelist_cors_header (
 	HttpResponse *response, const char *domain
 ) {
 
-	return http_response_add_whitelisted_origin (response, http_response_producer_cerver (), domain);
+	(void) pthread_rwlock_rdlock (&producer_lock);
+
+	const u8 retval = http_response_add_whitelisted_origin (response, http_response_producer_cerver (), domain);
+
+	(void) pthread_rwlock_unlock (&producer_lock);
+
+	return retval;
 
 }
 
@@ -807,10 +818,10 @@ void http_response_compile_header_with_cerver (
 
 }
 
-// the header without a request takes the default headers of the producer cerver
+// the header without a request has no default headers: the cerver that sends it adds its own ones
 void http_response_compile_header (HttpResponse *response) {
 
-	http_response_compile_header_with_cerver (response, http_response_producer_cerver ());
+	http_response_compile_header_with_cerver (response, NULL);
 
 }
 
@@ -856,11 +867,11 @@ u8 http_response_compile_with_cerver (
 
 }
 
-// a response compiled without a request takes the default headers of the producer cerver
+// a response compiled without a request has no default headers: the cerver that sends it adds its own ones
 // returns 0 on success, 1 on error
 u8 http_response_compile (HttpResponse *response) {
 
-	return http_response_compile_with_cerver (response, http_response_producer_cerver ());
+	return http_response_compile_with_cerver (response, NULL);
 
 }
 
@@ -1106,6 +1117,11 @@ typedef struct HttpResponseMessage {
 	bool compress;
 	bool compressed;
 
+	// the default headers of the cerver of the request that the header does not have,
+	// sent from the cerver as they are
+	const HttpHeader *defaults[HTTP_HEADERS_SIZE];
+	u8 n_defaults;
+
 	HttpResponseExtra extra;
 
 } HttpResponseMessage;
@@ -1268,6 +1284,40 @@ static void http_response_extra_common (
 	if (cors) http_response_extra_cors (http_receive, message);
 
 	http_response_extra_vary (message, cors, compression);
+
+}
+
+// a 304 keeps only some of the headers of the response that it replaces
+static bool http_response_not_modified_keeps_type (const http_header type) {
+
+	bool keeps = false;
+	for (size_t i = 0; !keeps && (i < http_response_n_not_modified_headers); i++) {
+		keeps = (http_response_not_modified_headers[i] == type);
+	}
+
+	return keeps;
+
+}
+
+// the default headers of the cerver of the request that the header does not have, so a response that was
+// compiled without a request (http_response_compile ()) has the ones of the cerver that sends it
+static void http_response_extra_defaults (
+	const HttpReceive *http_receive, HttpResponseMessage *message, const bool not_modified
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	message->n_defaults = 0;
+	for (u8 type = 0; http_cerver->n_response_headers && (type < HTTP_HEADERS_SIZE); type++) {
+		const bool added = (http_cerver->response_headers[type].len > 0)
+			&& (!not_modified || http_response_not_modified_keeps_type ((http_header) type))
+			&& !http_response_header_has (message->header, message->header_length, (http_header) type);
+
+		if (added) {
+			message->defaults[message->n_defaults] = &http_cerver->response_headers[type];
+			message->n_defaults += 1;
+		}
+	}
 
 }
 
@@ -1465,6 +1515,34 @@ static void http_response_extra_compression (HttpResponseMessage *message) {
 
 }
 
+// a part of the message, after the ones that it already has
+static void http_response_message_part (
+	struct iovec *parts, int *n_parts, const void *base, const size_t length
+) {
+
+	parts[*n_parts].iov_base = (void *) base;
+	parts[*n_parts].iov_len = length;
+	*n_parts += 1;
+
+}
+
+// the default headers of the cerver go between the header and the headers that cerver adds
+static size_t http_response_message_defaults (
+	const HttpResponseMessage *message, struct iovec *parts, int *n_parts
+) {
+
+	size_t length = 0;
+	for (u8 i = 0; i < message->n_defaults; i++) {
+		const size_t default_length = (size_t) message->defaults[i]->len;
+
+		http_response_message_part (parts, n_parts, message->defaults[i]->value, default_length);
+		length += default_length;
+	}
+
+	return length;
+
+}
+
 static u8 http_response_message_send (
 	const HttpReceive *http_receive, const HttpResponseMessage *message,
 	const bool with_body
@@ -1473,24 +1551,22 @@ static u8 http_response_message_send (
 	const size_t body_length = (with_body && !http_response_is_head (http_receive) && message->body) ?
 		message->body_length : 0;
 
-	struct iovec parts[HTTP_RESPONSE_MESSAGE_PARTS];
-	parts[0].iov_base = (void *) message->header;
-	parts[0].iov_len = message->header_length;
-	parts[1].iov_base = (void *) message->extra.headers;
-	parts[1].iov_len = message->extra.length;
-	parts[2].iov_base = (void *) http_response_header_end;
-	parts[2].iov_len = http_response_header_end_length;
-	parts[3].iov_base = (void *) message->body;
-	parts[3].iov_len = body_length;
+	struct iovec parts[HTTP_RESPONSE_MESSAGE_PARTS + HTTP_HEADERS_SIZE];
+	int n_parts = 0;
 
-	const int n_parts = body_length ? HTTP_RESPONSE_MESSAGE_PARTS : HTTP_RESPONSE_MESSAGE_PARTS - 1;
+	http_response_message_part (parts, &n_parts, message->header, message->header_length);
+	const size_t defaults_length = http_response_message_defaults (message, parts, &n_parts);
+	http_response_message_part (parts, &n_parts, message->extra.headers, message->extra.length);
+	http_response_message_part (parts, &n_parts, http_response_header_end, http_response_header_end_length);
+	if (body_length) http_response_message_part (parts, &n_parts, message->body, body_length);
 
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) {
 		http_response_sent (
 			http_receive, message->status,
-			message->header_length + message->extra.length + http_response_header_end_length + body_length
+			message->header_length + defaults_length + message->extra.length
+				+ http_response_header_end_length + body_length
 		);
 	}
 
@@ -1583,8 +1659,9 @@ static u8 http_response_send_not_modified (
 			);
 		}
 
-		// a 304 has the Vary of the response that it replaces
+		// a 304 has the Vary of the response that it replaces, and the defaults that it keeps
 		http_response_extra_common (http_receive, message);
+		http_response_extra_defaults (http_receive, message, true);
 
 		retval = http_response_message_send (http_receive, message, false);
 	}
@@ -1694,6 +1771,8 @@ static void http_response_message_init (
 	message->compress = false;
 	message->compressed = false;
 
+	message->n_defaults = 0;
+
 	message->extra.length = 0;
 
 }
@@ -1712,6 +1791,7 @@ static void http_response_message_extra (
 	}
 
 	http_response_extra_common (http_receive, message);
+	http_response_extra_defaults (http_receive, message, false);
 
 	if ((options & HTTP_RESPONSE_SEND_OPTION_STREAM) && http_receive->stream.chunked) {
 		http_response_extra_add_header (
@@ -3105,20 +3185,29 @@ unsigned int http_responses_init (
 
 }
 
+// a reader of the origins of the cerver that ends finishes before it is replaced (and released)
 void http_responses_follow (
 	const HttpCerver *ended, const HttpCerver *alive
 ) {
+
+	(void) pthread_rwlock_wrlock (&producer_lock);
 
 	if (producer && (http_response_producer_cerver () == ended)) {
 		__atomic_store_n (&producer->http_cerver, alive, __ATOMIC_RELEASE);
 	}
 
+	(void) pthread_rwlock_unlock (&producer_lock);
+
 }
 
 void http_responses_end (void) {
 
+	(void) pthread_rwlock_wrlock (&producer_lock);
+
 	http_response_producer_delete (producer);
 	producer = NULL;
+
+	(void) pthread_rwlock_unlock (&producer_lock);
 
 }
 

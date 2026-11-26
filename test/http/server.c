@@ -2427,7 +2427,7 @@ static void test_server_two_cervers (void) {
 
 }
 
-// sends the request in a new connection and checks that its response has the header
+// sends the request in a new connection and checks that its response has the header, only once
 static void server_test_request_header (const u16 port, const char *request, const char *header) {
 
 	int fd = server_test_connect (port);
@@ -2437,15 +2437,17 @@ static void server_test_request_header (const u16 port, const char *request, con
 	(void) server_test_read (fd, response);
 	(void) close (fd);
 
-	if (!strstr (response, header)) (void) fprintf (stderr, "expected %s - received: %s\n", header, response);
+	const char *found = strstr (response, header);
+	if (!found) (void) fprintf (stderr, "expected %s - received: %s\n", header, response);
 
-	test_check_ptr (strstr (response, header));
+	test_check_ptr (found);
+	test_check_null_ptr (strstr (found + 1, header));
 
 }
 
-// each cerver of a process sends its own default headers, also when the first one ends while the others serve
-// (every cerver sent the ones of the first one that started, and read them while they were released)
-static void test_server_default_headers (void) {
+// each cerver of a process sends its own default headers in the response to the request,
+// also when the first one ends while the others serve
+static void server_test_default_headers_sent (const char *request) {
 
 	ServerTest *servers[SERVER_TEST_DEFAULT_HEADERS_CERVERS] = { NULL };
 
@@ -2457,15 +2459,31 @@ static void test_server_default_headers (void) {
 	}
 
 	for (unsigned int i = 0; i < SERVER_TEST_DEFAULT_HEADERS_CERVERS; i++) {
-		server_test_request_header (servers[i]->port, created_request, server_test_default_lines[i]);
+		server_test_request_header (servers[i]->port, request, server_test_default_lines[i]);
 	}
 
 	server_test_stop (servers[0]);
 
 	for (unsigned int i = 1; i < SERVER_TEST_DEFAULT_HEADERS_CERVERS; i++) {
-		server_test_request_header (servers[i]->port, created_request, server_test_default_lines[i]);
+		server_test_request_header (servers[i]->port, request, server_test_default_lines[i]);
 		server_test_stop (servers[i]);
 	}
+
+}
+
+// a response that is compiled when it is sent has the default headers of its cerver
+// (every cerver sent the ones of the first one that started, and read them while they were released)
+static void test_server_default_headers (void) {
+
+	server_test_default_headers_sent (created_request);
+
+}
+
+// a response that was compiled once, before any request (oki_doki), has the default headers of the cerver
+// that sends it (it had the ones of the cerver that was the producer when it was compiled)
+static void test_server_precompiled_default_headers (void) {
+
+	server_test_default_headers_sent (ok_request);
 
 }
 
@@ -2533,6 +2551,7 @@ void http_tests_server (void) {
 
 	test_run (test_server_two_cervers);
 	test_run (test_server_default_headers);
+	test_run (test_server_precompiled_default_headers);
 	test_run (test_server_stop_before_start);
 
 	test_run (test_server_out_of_fds);

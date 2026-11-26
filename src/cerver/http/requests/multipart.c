@@ -157,7 +157,7 @@ bool http_multi_part_is_not_empty (const MultiPart *multi_part) {
 
 }
 
-const MultiPartType http_multi_part_get_type (
+MultiPartType http_multi_part_get_type (
 	const MultiPart *multi_part
 ) {
 
@@ -197,7 +197,7 @@ const char *http_multi_part_get_filename (
 
 }
 
-const int http_multi_part_get_filename_len (
+int http_multi_part_get_filename_len (
 	const MultiPart *multi_part
 ) {
 
@@ -213,7 +213,7 @@ const char *http_multi_part_get_generated_filename (
 
 }
 
-const int http_multi_part_get_generated_filename_len (
+int http_multi_part_get_generated_filename_len (
 	const MultiPart *multi_part
 ) {
 
@@ -248,7 +248,7 @@ void http_multi_part_set_generated_filename (
 
 }
 
-const u32 http_multi_part_get_n_reads (
+u32 http_multi_part_get_n_reads (
 	const MultiPart *multi_part
 ) {
 
@@ -256,7 +256,7 @@ const u32 http_multi_part_get_n_reads (
 
 }
 
-const u32 http_multi_part_get_total_wrote (
+u32 http_multi_part_get_total_wrote (
 	const MultiPart *multi_part
 ) {
 
@@ -264,7 +264,7 @@ const u32 http_multi_part_get_total_wrote (
 
 }
 
-const int http_multi_part_get_error (
+int http_multi_part_get_error (
 	const MultiPart *multi_part
 ) {
 
@@ -280,7 +280,7 @@ const char *http_multi_part_get_saved_filename (
 
 }
 
-const int http_multi_part_get_saved_filename_len (
+int http_multi_part_get_saved_filename_len (
 	const MultiPart *multi_part
 ) {
 
@@ -288,7 +288,7 @@ const int http_multi_part_get_saved_filename_len (
 
 }
 
-const bool http_multi_part_get_moved_file (
+bool http_multi_part_get_moved_file (
 	const MultiPart *multi_part
 ) {
 
@@ -304,7 +304,7 @@ const char *http_multi_part_get_value (
 
 }
 
-const int http_multi_part_get_value_len (
+int http_multi_part_get_value_len (
 	const MultiPart *multi_part
 ) {
 

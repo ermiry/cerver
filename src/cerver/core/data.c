@@ -52,6 +52,12 @@ CerverStats *cerver_stats_new (void) {
 		(void) memset (cerver_stats, 0, sizeof (CerverStats));
 		cerver_stats->received_packets = packets_per_type_new ();
 		cerver_stats->sent_packets = packets_per_type_new ();
+
+		// the stats are written without checking their counts by type
+		if (!cerver_stats->received_packets || !cerver_stats->sent_packets) {
+			cerver_stats_delete (cerver_stats);
+			cerver_stats = NULL;
+		}
 	}
 
 	return cerver_stats;
@@ -175,7 +181,7 @@ static unsigned int cerver_request_packet_type (const PacketType packet_type) {
 
 static const char *cerver_request_stats_packet_type_name (const unsigned int index) {
 
-	static const char *names[CERVER_REQUEST_PACKET_TYPES] = {
+	static const char *const names[CERVER_REQUEST_PACKET_TYPES] = {
 		"App", "App error", "Custom"
 	};
 

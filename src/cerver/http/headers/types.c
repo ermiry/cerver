@@ -77,7 +77,7 @@ static void http_headers_table_init (void) {
 
 }
 
-const http_header http_header_type_with_string (
+http_header http_header_type_with_string (
 	const char *header_type_string
 ) {
 

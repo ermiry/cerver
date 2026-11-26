@@ -3,6 +3,35 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-79 (from 2.0b-78)
+
+The core of the 1.9.2 of `core` and the failure paths of HTTP that its sweeps found. The ABI, the exported symbols
+and the wire do not change: no function is added or removed and no struct changes. What changes is what some
+functions return when an allocation fails, and the default headers of a response that was compiled before it was
+sent.
+
+- **The core of the 1.9.2,** see its entry in `incompatibilities.md` of `core`: the functions that create
+  (`cerver_create ()`, `client_create ()`, `connection_create_empty ()`, `client_connection_create ()`,
+  `str_new ()`, `str_allocate ()`, `str_create_from_bytes ()`) return NULL when a part of theirs can not be
+  allocated; the drain waits its timeout once; `cerver_update_uptime ()` is deprecated. A web cerver without its
+  `HttpCerver` is not returned either.
+- **A response compiled without a request has no default headers:** `http_response_compile ()`,
+  `http_response_compile_header ()` and the responses that they compile (`oki_doki` and the other globals, the
+  `http_response_json_*` that do not send) get the default headers (`http_cerver_add_responses_header ()`) of the
+  cerver that sends them, added when they are sent, and only the ones that the response does not have. They had the
+  ones of the first HTTP cerver that was alive when they were compiled (none if it was compiled before it). With one
+  HTTP cerver in the process, the response has the same headers, but the defaults come after the ones of the
+  response; a 304 keeps only the defaults that a 304 keeps (`Cache-Control`, `Content-Location`, `ETag`,
+  `Expires`).
+- **The failure paths of a request,** when an allocation fails: a receive without its parser or its request is not
+  created and its connection is dropped (`http_receive_create ()` returns NULL); a request whose url or query could
+  not be allocated is answered with 500; a multipart part that could not be added is answered with 500 (they read
+  a NULL or lost the part). OpenSSL's errors of a signature or a verification are released (they stayed in the
+  queue of the thread).
+- **The return values without a qualifier:** 20 functions returned a `const` scalar (`http_request_get_method ()`,
+  `http_receive_get_sock_fd ()`, the getters of `multipart.h`…), which an app built with `-Wextra -Werror`
+  rejected. The binary interface is the same.
+
 ## 2.0b-78 (from 2.0b-77)
 
 The core of the 1.9.1 of `core` and the fixes of HTTP that the 3.0 found. The ABI, the exported symbols and the wire

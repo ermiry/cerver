@@ -470,13 +470,12 @@ CERVER_EXPORT HttpResponse *http_response_create (
 );
 
 /**
- * @brief Compiles the status and the headers of a response into its header, as HTTP/1.1 sends them, with the
- * default headers of the HTTP cerver that the response does not have.
+ * @brief Compiles the status and the headers of a response into its header, as HTTP/1.1 sends them.
+ *
+ * The header has no default headers of an HTTP cerver: when the response is sent, the cerver of the request adds
+ * the ones that the header does not have.
  *
  * @param[in,out] response the response, it must not be NULL
- * @warning A response compiled before it is sent has the default headers of the HTTP cerver of the responses (the
- * first one that is alive in the process), not the ones of the cerver that sends it. A response that
- * http_response_send () or http_response_stream_begin () compiles takes the ones of the cerver of its request.
  */
 CERVER_PUBLIC void http_response_compile_header (
 	HttpResponse *response
@@ -489,9 +488,8 @@ CERVER_PUBLIC void http_response_compile_header (
  * @param[in,out] response the response
  * @retval 0 the response was compiled
  * @retval 1 a NULL response or the buffer could not be allocated
- * @warning Its header takes the default headers of the HTTP cerver of the responses, like
- * http_response_compile_header (): with more than one HTTP cerver in a process, send the response without
- * compiling it, so it takes the ones of the cerver of its request.
+ * @note Its header has no default headers, like http_response_compile_header (): each cerver that sends the
+ * response adds its own ones.
  */
 CERVER_EXPORT u8 http_response_compile (
 	HttpResponse *response
@@ -1040,8 +1038,8 @@ CERVER_EXPORT u8 http_response_json_custom_reference_send (
 /**
  * @brief Creates the producer of the responses and its pool.
  *
- * The producer is shared by every HTTP cerver of the process: the origins whitelist and the default headers of its
- * compiled responses are the ones of the first HTTP cerver that started.
+ * The producer is shared by every HTTP cerver of the process: the origins whitelist of
+ * http_response_add_whitelist_cors_header () is the one of the first HTTP cerver that started.
  *
  * @param[in] http_cerver the HTTP cerver
  * @retval 0 the producer was created

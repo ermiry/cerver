@@ -66,7 +66,7 @@ CERVER_PUBLIC void http_origin_delete (void *origin_ptr);
  * @param[in] origin the origin, it must not be NULL
  * @return the length
  */
-CERVER_PUBLIC const int http_origin_get_len (
+CERVER_PUBLIC int http_origin_get_len (
 	const HttpOrigin *origin
 );
 

@@ -7,9 +7,17 @@
 
 #include <cerver/collections/dlist.h>
 
+#include <cerver/config.h>
+
+#include <cerver/core/cerver.h>
+#include <cerver/handler/handler.h>
+
+#include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
 #include <cerver/http/core/pairs.h>
 #include <cerver/http/core/public.h>
+#include <cerver/http/parser/http_parser.h>
+#include <cerver/http/requests/request.h>
 #include <cerver/http/responses/response.h>
 
 #include "../test.h"
@@ -144,6 +152,53 @@ static void faults_http_static_path (void) {
 
 }
 
+static unsigned int faults_http_triggered (void) {
+
+	return faults_triggered (FAULTS_FUNCTION_MALLOC) + faults_triggered (FAULTS_FUNCTION_CALLOC);
+
+}
+
+// a receive of the size of the part is created with the allocation of that part failing
+static void faults_http_receive_create_failed (CerverReceive *cerver_receive, const size_t size) {
+
+	const unsigned int triggered = faults_http_triggered ();
+
+	// the compiler can merge a malloc () and its memset () in a calloc ()
+	faults_arm (FAULTS_FUNCTION_MALLOC, true, size);
+	faults_arm (FAULTS_FUNCTION_CALLOC, true, size);
+	HttpReceive *http_receive = http_receive_create (cerver_receive);
+	faults_disarm (FAULTS_FUNCTION_CALLOC);
+	faults_disarm (FAULTS_FUNCTION_MALLOC);
+
+	test_check_unsigned_eq (faults_http_triggered (), triggered + 1, "the part of the receive did not fail");
+	test_check_null_ptr (http_receive);
+
+}
+
+// a receive without memory for its parser or its request is not returned
+// (the parser was initialized in NULL, and the request was used without a check)
+static void faults_http_receive_create (void) {
+
+	HttpCerver *http_cerver = http_cerver_create (NULL);
+	test_check_ptr (http_cerver);
+
+	Cerver cerver = CERVER_ZERO_INITIALIZER;
+	cerver.cerver_data = http_cerver;
+
+	CerverReceive cerver_receive = CERVER_ZERO_INITIALIZER;
+	cerver_receive.cerver = &cerver;
+
+	faults_http_receive_create_failed (&cerver_receive, sizeof (http_parser));
+	faults_http_receive_create_failed (&cerver_receive, sizeof (HttpRequest));
+
+	HttpReceive *http_receive = http_receive_create (&cerver_receive);
+	test_check_ptr (http_receive);
+	http_receive_delete (http_receive);
+
+	http_cerver_delete (http_cerver);
+
+}
+
 void faults_tests_http (void) {
 
 	(void) printf ("Testing FAULTS http...\n");
@@ -153,6 +208,8 @@ void faults_tests_http (void) {
 	faults_http_response_compile ();
 
 	faults_http_static_path ();
+
+	faults_http_receive_create ();
 
 	(void) printf ("Done!\n");
 

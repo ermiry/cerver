@@ -169,9 +169,11 @@ static size_t http_receive_target_origin_length (const char *target, const size_
 
 }
 
-void http_receive_close_url (HttpReceive *http_receive) {
+u8 http_receive_close_url (HttpReceive *http_receive) {
 
 	HttpRequest *request = http_receive->request;
+
+	bool closed = true;
 
 	if (!request->url) {
 		const String *url = http_receive->url_buffer;
@@ -200,7 +202,12 @@ void http_receive_close_url (HttpReceive *http_receive) {
 				http_receive, question + 1, url_len - path_len - 1
 			);
 		}
+
+		// the url and the query are used without a check after the headers
+		closed = request->url && (!question || request->query);
 	}
+
+	return closed ? 0 : 1;
 
 }
 

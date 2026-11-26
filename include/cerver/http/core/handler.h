@@ -344,7 +344,7 @@ CERVER_EXPORT const CerverReceive *http_receive_get_cerver_receive (
  * @param[in] http_receive the receive
  * @return the socket, -1 for a NULL receive
  */
-CERVER_EXPORT const int http_receive_get_sock_fd (
+CERVER_EXPORT int http_receive_get_sock_fd (
 	const HttpReceive *http_receive
 );
 

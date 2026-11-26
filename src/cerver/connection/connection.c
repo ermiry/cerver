@@ -244,6 +244,12 @@ Connection *connection_create_empty (void) {
 
 		connection_stats_init (&connection->stats_storage);
 		connection->stats = &connection->stats_storage;
+
+		// the socket of a connection is used without a check
+		if (!connection->socket) {
+			connection_delete (connection);
+			connection = NULL;
+		}
 	}
 
 	return connection;

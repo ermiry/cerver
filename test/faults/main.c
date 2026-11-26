@@ -4,8 +4,11 @@
 
 #include "../test.h"
 #include "client.h"
+#include "clock.h"
 #include "core.h"
 #include "http.h"
+#include "requests.h"
+#include "sweep.h"
 
 int main (void) {
 
@@ -20,7 +23,13 @@ int main (void) {
 
 	faults_tests_client ();
 
+	faults_tests_clock ();
+
+	faults_tests_sweep ();
+
 	faults_tests_http ();
+
+	faults_tests_requests ();
 
 	(void) printf ("\nDone with FAULTS tests!\n\n");
 

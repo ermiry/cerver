@@ -160,7 +160,7 @@ const String *key_value_pairs_get_value (
 }
 
 // what is printed for the key or the value that a pair does not have
-static const char *key_value_pair_missing = { "" };
+static const char *const key_value_pair_missing = { "" };
 
 static inline const char *key_value_pair_string (const String *string) {
 

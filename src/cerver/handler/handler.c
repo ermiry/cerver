@@ -60,7 +60,7 @@
 #include "cerver/utils/utils.h"
 
 // the fd that is kept open to accept and close connections when the process runs out of fds
-static const char *HANDLER_RESERVE_FD_PATH = "/dev/null";
+static const char *const HANDLER_RESERVE_FD_PATH = "/dev/null";
 
 // how long accept () waits after the process ran out of fds (2^24 ns)
 static const long HANDLER_ACCEPT_BACKOFF = 16777216L;
@@ -1163,9 +1163,9 @@ static void cerver_custom_packet_handler (Packet *packet) {
 
 }
 
-static const char *cerver_bad_packet_version = { "The packet has an incompatible version" };
-static const char *cerver_bad_packet_type = { "The packet has an unknown type" };
-static const char *cerver_already_authenticated = { "The connection is already authenticated" };
+static const char *const cerver_bad_packet_version = { "The packet has an incompatible version" };
+static const char *const cerver_bad_packet_type = { "The packet has an unknown type" };
+static const char *const cerver_already_authenticated = { "The connection is already authenticated" };
 
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit
@@ -2476,6 +2476,22 @@ static void cerver_receive_http_count_incomplete (const HttpReceive *http_receiv
 
 }
 
+// a connection whose receive could not be allocated is dropped without reading it
+static void *cerver_receive_http_unavailable (CerverReceive *cr) {
+
+	cerver_log_error (
+		"cerver_receive_http () - Failed to allocate the receive of the connection with sock fd <%d>!",
+		cr->socket->sock_fd
+	);
+
+	connection_drop (cr->cerver, cr->connection);
+
+	cerver_receive_delete (cr);
+
+	return NULL;
+
+}
+
 // we expect only one request to be sent,
 // so keep reading the socket until no more data is left,
 // and then handle the complete buffer
@@ -2500,9 +2516,14 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		) : NULL;
 
 	if (!http_receive) {
+		// what the arena could allocate before it failed is released
+		if (context) arena_reset (context->arena);
+
 		context = NULL;
 		http_receive = http_receive_create (cr);
 	}
+
+	if (!http_receive) return cerver_receive_http_unavailable (cr);
 
 	i32 sock_fd = cr->socket->sock_fd;
 

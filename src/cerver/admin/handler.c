@@ -196,8 +196,8 @@ static void admin_custom_packet_handler (Packet *packet) {
 
 }
 
-static const char *admin_bad_packet_version = { "The packet has an incompatible version" };
-static const char *admin_bad_packet_type = { "The packet has an unknown type" };
+static const char *const admin_bad_packet_version = { "The packet has an incompatible version" };
+static const char *const admin_bad_packet_type = { "The packet has an unknown type" };
 
 // a bad packet of an admin connection: its sender gets an error,
 // and the connection is dropped when it reaches the admin cerver limit

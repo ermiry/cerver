@@ -76,7 +76,7 @@ const char *http_route_auth_type_description (
 
 }
 
-static const char *http_route_methods_separator = { ", " };
+static const char *const http_route_methods_separator = { ", " };
 
 #pragma region stats
 

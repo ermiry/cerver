@@ -165,7 +165,7 @@ CERVER_PUBLIC const char *http_header_description (
  * @return the type, HTTP_HEADER_UNDEFINED for a NULL or an unknown name
  * @threadsafety Safe from any thread, the table is built once with pthread_once ().
  */
-CERVER_PUBLIC const http_header http_header_type_with_string (
+CERVER_PUBLIC http_header http_header_type_with_string (
 	const char *header_type_string
 );
 

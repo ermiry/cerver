@@ -25,7 +25,7 @@ static const char http_proxy_prefix_separator = '/';
 static const char http_proxy_list_separator = ',';
 
 // the loopback and the private networks (RFC 1918, RFC 4193) and the link local ones
-static const char *http_proxy_private_cidrs[] = {
+static const char *const http_proxy_private_cidrs[] = {
 	"127.0.0.0/8",
 	"10.0.0.0/8",
 	"172.16.0.0/12",

@@ -63,10 +63,10 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static const char *form_urlencoded_value = { "application/x-www-form-urlencoded" };
+static const char *const form_urlencoded_value = { "application/x-www-form-urlencoded" };
 static const size_t form_urlencoded_value_len = 33;
 
-static const char *query_separator = { "?" };
+static const char *const query_separator = { "?" };
 
 // a space in a query and in the values of a form
 static const char query_encoded_space = '+';
@@ -74,8 +74,8 @@ static const char query_space = ' ';
 
 static const char static_file_extension_separator = '.';
 
-static const char *expect_continue_value = { "100-continue" };
-static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
+static const char *const expect_continue_value = { "100-continue" };
+static const char *const continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
 static const size_t continue_response_len = 25;
 
 #pragma region handler
@@ -246,6 +246,32 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 static void http_receive_settings_init (HttpReceive *http_receive);
 
+// the parser, the request and the file stats of a receive that was allocated on its own,
+// a part that could not be allocated releases the receive
+static HttpReceive *http_receive_create_parts (HttpReceive *http_receive) {
+
+	http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
+	http_receive->request = http_request_new ();
+	http_receive->file_stats = http_route_file_stats_new ();
+
+	if (http_receive->parser && http_receive->request && http_receive->file_stats) {
+		http_parser_init (http_receive->parser, HTTP_REQUEST);
+		http_receive->parser->data = http_receive;
+
+		http_receive_settings_init (http_receive);
+
+		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
+	}
+
+	else {
+		http_receive_delete (http_receive);
+		http_receive = NULL;
+	}
+
+	return http_receive;
+
+}
+
 HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
 	HttpReceive *http_receive = http_receive_new ();
@@ -256,18 +282,7 @@ HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
 		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
 
-		http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
-		http_parser_init (http_receive->parser, HTTP_REQUEST);
-
-		// http_receive->parser->data = http_receive->request;
-		http_receive->parser->data = http_receive;
-
-		http_receive_settings_init (http_receive);
-
-		http_receive->request = http_request_new ();
-		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
-
-		http_receive->file_stats = http_route_file_stats_new ();
+		http_receive = http_receive_create_parts (http_receive);
 	}
 
 	return http_receive;
@@ -443,7 +458,7 @@ const CerverReceive *http_receive_get_cerver_receive (
 // the socket of a NULL receive
 static const int http_receive_no_sock_fd = -1;
 
-const int http_receive_get_sock_fd (
+int http_receive_get_sock_fd (
 	const HttpReceive *http_receive
 ) {
 
@@ -1267,7 +1282,12 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
 
-	http_receive_close_url (http_receive);
+	// a request without its url is not routed
+	if (http_receive_close_url (http_receive)) {
+		(void) http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+
+		return -1;
+	}
 
 	request->method = (RequestMethod) parser->method;
 
@@ -1395,7 +1415,7 @@ static const HttpStaticPath *http_static_path_first_protected (const HttpCerver 
 
 	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
 		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
-		if (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE) found = static_path;
+		if (static_path && (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE)) found = static_path;
 	}
 
 	return found;

@@ -40,9 +40,9 @@
 #define HTTP_METRICS_MILLISECONDS_PER_SECOND		1000.0
 #define HTTP_METRICS_MICROSECONDS_PER_SECOND		1000000.0
 
-static const char *http_metrics_type_counter = { "counter" };
-static const char *http_metrics_type_gauge = { "gauge" };
-static const char *http_metrics_type_histogram = { "histogram" };
+static const char *const http_metrics_type_counter = { "counter" };
+static const char *const http_metrics_type_gauge = { "gauge" };
+static const char *const http_metrics_type_histogram = { "histogram" };
 
 static const char http_metrics_escape = '\\';
 static const char http_metrics_quote = '"';

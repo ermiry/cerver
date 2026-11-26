@@ -36,8 +36,8 @@
 
 #pragma region send
 
-static const char *FILE_HEADER_CURRENT_DIRECTORY = ".";
-static const char *FILE_HEADER_PARENT_DIRECTORY = "..";
+static const char *const FILE_HEADER_CURRENT_DIRECTORY = ".";
+static const char *const FILE_HEADER_PARENT_DIRECTORY = "..";
 
 SERIALIZER_DEFINE (FileHeader, file_header, FILE_HEADER_VERSION, FILE_HEADER_FIELDS)
 
