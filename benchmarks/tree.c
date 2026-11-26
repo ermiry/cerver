@@ -77,7 +77,7 @@ void *realloc (void *ptr, size_t size) {
 
 typedef struct TreeBenchRoute {
 
-	RequestMethod method;
+	HttpRequestMethod method;
 	char path[TREE_BENCH_LINE_SIZE];
 	char url[TREE_BENCH_LINE_SIZE];
 
@@ -86,9 +86,9 @@ typedef struct TreeBenchRoute {
 static TreeBenchRoute tree_bench_routes[TREE_BENCH_MAX_ROUTES];
 static size_t tree_bench_n_routes = 0;
 
-static RequestMethod tree_bench_method (const char *method) {
+static HttpRequestMethod tree_bench_method (const char *method) {
 
-	RequestMethod found = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	HttpRequestMethod found = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 
 	#define XX(num, name, string) if (!strcmp (method, #string)) found = REQUEST_METHOD_##name;
 	REQUEST_METHOD_MAP(XX)

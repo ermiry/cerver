@@ -119,7 +119,7 @@ void http_cerver_routes_stats_print (const HttpCerver *http_cerver) {
 }
 
 static void http_cerver_route_handler_stats_print (
-	const RequestMethod method, const HttpRouteStats *route_stats
+	const HttpRequestMethod method, const HttpRouteStats *route_stats
 ) {
 
 	HttpRouteStats snapshot;
@@ -171,7 +171,7 @@ static void http_cerver_route_file_stats_print (
 }
 
 static void http_cerver_child_route_handler_stats_print (
-	const RequestMethod method, const HttpRouteStats *route_stats
+	const HttpRequestMethod method, const HttpRouteStats *route_stats
 ) {
 
 	HttpRouteStats snapshot;
@@ -226,7 +226,7 @@ static void http_cerver_route_children_stats_print (
 
 	cerver_log_msg ("\t\t%zu children:", route->children->size);
 
-	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	HttpRequestMethod method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 
 	HttpRoute *child = NULL;
 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
@@ -236,7 +236,7 @@ static void http_cerver_route_children_stats_print (
 
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (child->handlers[i]) {
-				method = (RequestMethod) i;
+				method = (HttpRequestMethod) i;
 				http_cerver_child_route_handler_stats_print (
 					method, child->stats[i]
 				);
@@ -261,10 +261,10 @@ void http_cerver_route_stats_print (const HttpRoute *route) {
 	if (route) {
 		cerver_log_msg ("\t%s:", route->route->str);
 
-		RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		HttpRequestMethod method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (route->handlers[i]) {
-				method = (RequestMethod) i;
+				method = (HttpRequestMethod) i;
 				http_cerver_route_handler_stats_print (
 					method, route->stats[i]
 				);

@@ -685,6 +685,25 @@ int http_receive_handle_mpart_data (
 
 }
 
+// the size of a file that is complete counts for the stats of the sizes of its request: only the parts that
+// were counted as files. A value is not one (its bytes would be the smallest file of every form with a value),
+// and neither is a file input without a file
+static void http_receive_mpart_file_counted (
+	HttpReceive *http_receive, const MultiPart *multi_part
+) {
+
+	HttpRouteFileStats *file_stats = http_receive->file_stats;
+
+	if ((multi_part->type == MULTI_PART_TYPE_FILE) && !multi_part->discard) {
+		if (multi_part->total_wrote < file_stats->min_file_size) file_stats->min_file_size = multi_part->total_wrote;
+
+		if (multi_part->total_wrote > file_stats->max_file_size) file_stats->max_file_size = multi_part->total_wrote;
+
+		file_stats->sum_file_size += multi_part->total_wrote;
+	}
+
+}
+
 int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -698,13 +717,7 @@ int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 		http_receive->stage = HTTP_STAGE_BODY;
 	}
 
-	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
-		http_receive->file_stats->min_file_size = multi_part->total_wrote;
-
-	if (multi_part->total_wrote > http_receive->file_stats->max_file_size)
-		http_receive->file_stats->max_file_size = multi_part->total_wrote;
-
-	http_receive->file_stats->sum_file_size += multi_part->total_wrote;
+	http_receive_mpart_file_counted (http_receive, multi_part);
 
 	return 0;
 

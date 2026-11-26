@@ -37,7 +37,7 @@ REQUEST_METHOD_STATIC_ASSERT (
 static const char *request_method_undefined = { "Undefined" };
 
 const char *http_request_method_to_string (
-	const RequestMethod request_method
+	const HttpRequestMethod request_method
 ) {
 
 	switch (request_method) {
@@ -52,9 +52,9 @@ const char *http_request_method_to_string (
 
 }
 
-RequestMethod http_request_method_from_string (const char *method) {
+HttpRequestMethod http_request_method_from_string (const char *method) {
 
-	RequestMethod request_method = REQUEST_METHOD_UNDEFINED;
+	HttpRequestMethod request_method = REQUEST_METHOD_UNDEFINED;
 
 	// the methods are case sensitive (RFC 9110 section 9.1)
 	if (method) {
@@ -70,7 +70,7 @@ RequestMethod http_request_method_from_string (const char *method) {
 
 // returns true if the method is one of REQUEST_METHOD_MAP
 bool http_request_method_is_valid (
-	const RequestMethod request_method
+	const HttpRequestMethod request_method
 ) {
 
 	switch (request_method) {

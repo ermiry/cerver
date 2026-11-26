@@ -33,4 +33,17 @@ extern void faults_disarm (const FaultsFunction function);
 // the calls of the function that were made to fail
 extern unsigned int faults_triggered (const FaultsFunction function);
 
+// the allocations of size bytes that this thread makes are watched until faults_watch_stop (),
+// and their free () is seen in any thread, so a test finds what a failure path leaks
+extern void faults_watch_start (const size_t size);
+
+// no new allocation is watched, the ones already watched still see their free ()
+extern void faults_watch_stop (void);
+
+// the allocations that were watched
+extern unsigned int faults_watch_allocated (void);
+
+// the watched allocations that were not freed
+extern unsigned int faults_watch_alive (void);
+
 #endif

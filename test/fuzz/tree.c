@@ -21,7 +21,7 @@
 #define TREE_POOLS					4
 #define TREE_POOL_THREADS			1
 
-static const RequestMethod tree_methods[TREE_METHODS] = {
+static const HttpRequestMethod tree_methods[TREE_METHODS] = {
 	REQUEST_METHOD_GET, REQUEST_METHOD_POST, REQUEST_METHOD_PUT,
 	REQUEST_METHOD_DELETE, REQUEST_METHOD_PATCH
 };
@@ -70,7 +70,7 @@ static void tree_register (HttpGroup *group, const char *line) {
 
 	const unsigned char selector = (unsigned char) line[0];
 
-	const RequestMethod method = tree_methods[selector % TREE_METHODS];
+	const HttpRequestMethod method = tree_methods[selector % TREE_METHODS];
 	HttpEndpoint *endpoint = http_group_route_add (group, method, line + 1, tree_handler);
 
 	http_endpoint_set_pool (endpoint, tree_pools[(selector / TREE_METHODS) % TREE_POOLS]);

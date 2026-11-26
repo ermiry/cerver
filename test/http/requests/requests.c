@@ -265,12 +265,12 @@ static void test_http_request_methods (void) {
 	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_PATCH), "PATCH", NULL);
 	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_GET), "GET", NULL);
 	test_check_str_eq (http_request_method_to_string (REQUEST_METHOD_COPY), "COPY", NULL);
-	test_check_str_eq (http_request_method_to_string ((RequestMethod) 34), "Undefined", NULL);
+	test_check_str_eq (http_request_method_to_string ((HttpRequestMethod) 34), "Undefined", NULL);
 
 	test_check_true (http_request_method_is_valid (REQUEST_METHOD_PATCH));
 	test_check_true (http_request_method_is_valid (REQUEST_METHOD_TRACE));
 	test_check_true (http_request_method_is_valid (REQUEST_METHOD_QUERY));
-	test_check_false (http_request_method_is_valid ((RequestMethod) 34));
+	test_check_false (http_request_method_is_valid ((HttpRequestMethod) 34));
 	test_check_false (http_request_method_is_valid (REQUEST_METHOD_UNDEFINED));
 
 	test_check_int_eq ((int) REQUEST_METHOD_PATCH, 28, NULL);

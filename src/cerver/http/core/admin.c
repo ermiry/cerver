@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "cerver/version.h"
 
@@ -19,6 +20,7 @@
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
 #include "cerver/http/requests/request.h"
+#include "cerver/http/responses/internal.h"
 #include "cerver/http/responses/response.h"
 #include "cerver/http/routes/route.h"
 #include "cerver/http/routes/tree.h"
@@ -83,10 +85,10 @@ static void http_cerver_admin_generate_info_json_internal (
 		json, "time_started", json_integer ((json_int_t) cerver->info->time_started)
 	);
 
-	cerver_update_uptime ((Cerver *) cerver);
-
+	// the uptime is computed for each response: the threads answer at the same time,
+	// and the one that the cerver keeps (cerver_update_uptime ()) is written without a lock
 	(void) json_object_set_new (
-		json, "uptime", json_integer ((json_int_t) cerver->info->uptime)
+		json, "uptime", json_integer ((json_int_t) (time (NULL) - cerver->info->time_started))
 	);
 
 }
@@ -166,7 +168,7 @@ static void http_cerver_admin_handler_general_stats (
 }
 
 static json_t *http_cerver_admin_handler_single_route_handler_stats (
-	const RequestMethod method, const HttpRouteStats *route_stats
+	const HttpRequestMethod method, const HttpRouteStats *route_stats
 ) {
 
 	// the stats are updated with atomic operations while the requests are handled
@@ -275,10 +277,10 @@ static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 	json_t *handlers_array = json_array ();
 
 	json_t *handler_object = NULL;
-	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	HttpRequestMethod method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 		if (route->handlers[i] && route->stats[i]) {
-			method = (RequestMethod) i;
+			method = (HttpRequestMethod) i;
 			handler_object = http_cerver_admin_handler_single_route_handler_stats (
 				method, route->stats[i]
 			);
@@ -971,7 +973,7 @@ static inline void http_cerver_admin_send_options (
 			http_receive, response
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
@@ -998,7 +1000,7 @@ static inline void http_cerver_admin_send_head (
 			http_receive, response
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
@@ -1027,7 +1029,7 @@ static inline void http_cerver_admin_send_response (
 			response, (void *) json, json_len
 		);
 
-		(void) http_response_compile (response);
+		(void) http_response_compile_with_cerver (response, http_receive->http_cerver);
 
 		(void) http_response_send (response, http_receive);
 
@@ -1589,7 +1591,7 @@ static void http_cerver_admin_endpoint_set_auth (
 
 static void http_cerver_admin_group_endpoint (
 	const HttpCerver *http_cerver, HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const HttpRequestMethod method, const char *path, const HttpHandler handler
 ) {
 
 	HttpEndpoint *endpoint = http_group_route_add (group, method, path, handler);

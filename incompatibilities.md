@@ -3,6 +3,44 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.1b-25 (from 2.1b-24)
+
+The core of the 1.9.1 of `core`, the fixes of HTTP of the 2.0b-78 and the backlog of the 2.1b-22 to the 2.1b-24. The
+ABI, the exported symbols and the wire do not change, but a type has another name, some functions return another
+value, some requests are answered in another way and some responses send other headers.
+
+- **`RequestMethod` is now `HttpRequestMethod`** (`cerver/http/requests/method.h`): the type of the method of a
+  request, of a route and of a remote authentication. Its values (`REQUEST_METHOD_GET`, ...), its table
+  `REQUEST_METHOD_MAP` and its functions keep their names, so only the code that names the type changes
+
+- **`client_connect_to_cerver ()` returns 1 when the info of the cerver can not be read** (the cerver closes the
+  connection or sends CLOSE_CONNECTION first). It returned 0 after the read had ended the connection and freed it.
+  Now the connection is only closed, stays registered to the client and CLIENT_EVENT_CONNECTION_FAILED is triggered.
+  `client_request_to_cerver ()` and `client_request_to_cerver_async ()` keep the connection in the same way when its
+  response can not be read (the 1.9.1)
+- **Each HTTP cerver of a process sends its own default headers** (`http_cerver_add_responses_header ()`) in the
+  responses that are compiled when they are sent: `http_response_send ()` of a response that was not compiled,
+  `http_response_create_and_send ()`, the streams, the files, the videos and the admin routes. Every cerver sent the
+  ones of the first HTTP cerver that started. `http_response_add_whitelist_cors_header_from_request ()` takes the
+  whitelist of the cerver of the request. A response that the application compiles before it is sent
+  (`http_response_compile ()`, the `http_response_json_*` responses) still takes the ones of the first HTTP cerver
+  that is alive (a `@warning` in `response.h`)
+- **Every HTTP/1.x is served**: a request with a minor version above 1 (`HTTP/1.2`) is handled as HTTP/1.1
+  (RFC 9112 section 2.3), it was answered with 400. `HTTP/0.9` and `HTTP/2.0` are still a 505 and any other version a
+  400, and `HTTP_PARSER_LENIENT_VERSION` still serves any of them. The parser of a receive always has its lenient
+  flag of the version: the receive decides
+- **The file stats of a route only count the files** of a multipart request: a value, or a file input without a file,
+  was counted in `min_file_size`, `max_file_size` and `sum_file_size` (the smallest file of every form with a value)
+- **The uptime of `/cerver/info` and of `cerver_uptime_seconds` is computed for each response**: they do not write the
+  `uptime` of the `CerverInfo` anymore, which the threads wrote at the same time without a lock
+- `n_limited_requests` and `n_timeout_requests` of `HttpCerver` are counted with atomics like every other counter
+  (they were counted under the mutex of the cerver and read without it)
+- **A thread keeps its connection to the service of a remote authentication** (`http_auth_request ()` that is
+  answered inside the call, with `CURL=1`): its requests reuse it, each one opened a connection of its own. The
+  handle of a thread is released when the thread ends
+- **With kTLS and an event loop, the loop never waits for the socket to give the key to the kernel**: when the
+  records of the handshake are not sent at once, that connection goes on without kTLS. The loop waited up to 256 ms
+
 ## 2.1b-24 (from 2.1b-23)
 
 The remote authentication (F7 of `roadmap.md` §4.7): a custom authentication can ask another service by HTTP with

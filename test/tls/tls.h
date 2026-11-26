@@ -48,6 +48,10 @@ typedef struct TestCertificates {
 	char stranger_chain[TEST_CERTIFICATE_PATH_SIZE];
 	char stranger_key[TEST_CERTIFICATE_PATH_SIZE];
 
+	// the one of the server with a large comment: its flight of the handshake does not fit in a small socket
+	char large_chain[TEST_CERTIFICATE_PATH_SIZE];
+	char large_key[TEST_CERTIFICATE_PATH_SIZE];
+
 } TestCertificates;
 
 extern void test_certificates_create (TestCertificates *certificates);

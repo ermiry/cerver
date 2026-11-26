@@ -15,16 +15,16 @@
  */
 
 /** @brief The id of the version, like `2.1b-14` or `1.8.2`. */
-#define CERVER_VERSION				"2.1b-24"
+#define CERVER_VERSION				"2.1b-25"
 
 /** @brief The name of the version, like `Beta 2.1b-14` or `Release 1.8.2`. */
-#define CERVER_VERSION_NAME			"Beta 2.1b-24"
+#define CERVER_VERSION_NAME			"Beta 2.1b-25"
 
 /** @brief The date of the version, as `dd/mm/yyyy`. */
-#define CERVER_VERSION_DATE			"18/11/2026"
+#define CERVER_VERSION_DATE			"24/11/2026"
 
 /** @brief The time of the version, as `hh:mm` with its time zone. */
-#define CERVER_VERSION_TIME			"10:13 CST"
+#define CERVER_VERSION_TIME			"17:07 CST"
 
 /** @brief The author of the version. */
 #define CERVER_VERSION_AUTHOR		"Erick Salas"

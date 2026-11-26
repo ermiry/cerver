@@ -99,7 +99,7 @@ typedef struct HttpRequestTls {
 struct _HttpRequest {
 
 	/** @brief The method. */
-	RequestMethod method;
+	HttpRequestMethod method;
 
 	/**
 	 * @brief What the TLS of the connection tells: SNI, the early data and the certificate of the client.
@@ -289,7 +289,7 @@ CERVER_PRIVATE void http_request_destroy (
  * @param[in] http_request the request
  * @return the method
  */
-CERVER_EXPORT const RequestMethod http_request_get_method (
+CERVER_EXPORT const HttpRequestMethod http_request_get_method (
 	const HttpRequest *http_request
 );
 

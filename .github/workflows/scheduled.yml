@@ -192,7 +192,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [request, lenient, pipeline, loop, multipart, url, json, jwt, tree, receive, packet, client, file, datagram, address, serializer, game, frame, handshake]
+        target: [request, lenient, pipeline, loop, multipart, url, json, jwt, tree, receive, packet, client, file, datagram, address, serializer, game, frame, handshake, tls]
     steps:
       - name: Checkout
         uses: actions/checkout@v6

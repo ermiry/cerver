@@ -136,14 +136,20 @@ El orden de las betas no es el de los números de las fases: F2 (llhttp) se adel
 | **F8a** | 2.1b-22 | TLS sobre hilos y en los clientes (todos los cervers TCP) | F1 |
 | **F8b** | 2.1b-23 | TLS no bloqueante en el loop, y los arreglos de la validación de la 2.1b-22 | F4, F8a |
 | **F7** | 2.1b-24 | Auth asíncrona | F5 |
-| **F9a** | 2.1b-25 | HTTP/2 sobre hilos: servidor h2c y h2, WebSocket sobre h2, cliente HTTP | F8a |
-| **F9b** | 2.1b-26 | HTTP/2 en el loop | F8b, F9a |
+| **Sincronización** | 2.1b-25 | El port del Release 1.9.1 de `core` y de la 2.0b-78 de `http`, y el backlog de TLS, de la auth remota y del parser | F7 |
+| **F9a** | 2.1b-26 | HTTP/2 sobre hilos, el servidor: h2c y h2, HPACK, las defensas, y la cancelación del handler | F8a |
+| **F9a** | 2.1b-27 | HTTP/2 sobre hilos, la segunda parte: WebSocket sobre h2 y el cliente HTTP | 2.1b-26 |
+| **Arreglos** | 2.1b-28 | Los avisos de lo obsoleto (§4.10) y varias direcciones de escucha | 2.1b-27 |
+| **F9b** | 2.1b-29 | HTTP/2 en el loop | F8b, F9a |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
 - **La 2.1b-14 fue la estructura,** así que F3 y las fases que siguen se recorren una beta; **la 2.1b-18 (los arreglos
   de las otras líneas) y la 2.1b-19 (la forma completa del keep-alive)** recorren F6b y las fases que siguen dos
   betas más.
-- **F7 va antes de F9** (el usuario, 2026-11-17): la auth asíncrona es la 2.1b-24, y HTTP/2 la 2.1b-25 y la 26.
+- **F7 va antes de F9** (el usuario, 2026-11-17): la auth asíncrona es la 2.1b-24.
+- **F9a se parte en dos betas después de una de sincronización** (el usuario, 2026-11-23): la 2.1b-25 trae lo que
+  `core` y `http` arreglaron desde la 2.1b-24 y el backlog; el servidor de HTTP/2 es la 2.1b-26, WebSocket sobre h2 y
+  el cliente HTTP la 2.1b-27, y F9b pasa a la 2.1b-29.
 - **`nightly` ya no mergea `http`** (desde la 2.1b-15): el código de las dos líneas ya es otro (llhttp, la lista de
   cabeceras, la estructura por dominios, el loop), y un merge solo trae conflictos. Los arreglos de `http` se portan
   a mano, archivo por archivo, como en la 2.1b-12 y la 2.1b-13 (§4.12) y como hace `labs`. El `.gitattributes` con
@@ -216,9 +222,11 @@ conexión» de lo que es «por petición» y deja la respuesta descrita sin su p
 - **`Connection: close` salió de lo compilado:** se agrega con las cabeceras de la petición cuando la conexión se va a
   cerrar (en THREADS, siempre) y la respuesta no trae su propia `Connection`. El 503 estático lo conserva; el 101 y el
   `100 Continue` no lo llevan;
-- **lo que le queda a HTTP/2 (F9a):** el gzip y el 304 todavía filtran el header como bytes (quitan `Content-Length`,
-  dejan solo las cabeceras que un 304 conserva); sobre h2 esos dos filtros se hacen en la lista. Un header puesto como
-  bytes (`http_response_set_header ()`) solo existe en HTTP/1.1.
+- **lo que le queda a HTTP/2 (F9a):** desde la 2.1b-13 el gzip y el 304 filtran la lista de cabeceras
+  (`HttpResponseFilter`: quitan `Content-Length`, dejan solo las que un 304 conserva), pero el mensaje todavía lleva
+  el header de HTTP/1.1 ya compilado y el 304 rearma su línea de status desde esos bytes; sobre h2 el mensaje se
+  serializa desde el status y las listas. Un header puesto como bytes (`http_response_set_header ()`) solo existe en
+  HTTP/1.1.
 
 **`HttpReceive.framed`:** la respuesta enviada tiene un final que el cliente encuentra sin el cierre de la conexión:
 lleva `Content-Length`, su status no tiene body (1xx, 204, 304), contesta un HEAD, es un stream chunked que envió su
@@ -1291,9 +1299,9 @@ El diseño de §4.8.9 sobre el motor de F8a (las decisiones se tomaron con el us
 HTTP/2 (RFC 9113) con HPACK (RFC 7541) **escritos por cerver**, como WebSocket: frames, HPACK con el Huffman de la
 RFC 7541 (Apéndice B), los streams y el control de flujo. Sin server push. También partido:
 
-- **F9a (2.1b-25): sobre hilos.** Servidor h2c (prior knowledge) y h2 (ALPN con F8a), WebSocket sobre h2 (RFC 8441) y
-  un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
-- **F9b (2.1b-26): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
+- **F9a (2.1b-26 y 2.1b-27): sobre hilos.** En la 2.1b-26 el servidor h2c (prior knowledge) y h2 (ALPN con F8a); en
+  la 2.1b-27 WebSocket sobre h2 (RFC 8441) y un **cliente HTTP público** que habla HTTP/1.1 y HTTP/2.
+- **F9b (2.1b-29): en el loop.** Los frames los lee y escribe el loop; los streams van al pool.
 
 #### 4.9.1 Los requisitos (las RFC)
 

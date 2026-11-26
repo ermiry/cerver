@@ -19,6 +19,7 @@
 
 #include <cerver/http/core/handler.h>
 #include <cerver/http/core/http.h>
+#include <cerver/http/core/limits.h>
 #include <cerver/http/headers/types.h>
 #include <cerver/http/requests/method.h>
 #include <cerver/http/requests/request.h>
@@ -64,6 +65,13 @@
 // the clients that wait for their authentication at once
 #define REMOTE_WAITING_CLIENTS				(1 << 3)
 
+// the requests whose authentications share a connection to the service, and the ones that they can open
+#define REMOTE_KEPT_REQUESTS				(1 << 3)
+#define REMOTE_KEPT_CONNECTIONS				1
+
+// what a receive counts in the first request of its connection
+#define REMOTE_FIRST_REQUEST				1
+
 #define REMOTE_URL_SIZE						(1 << 7)
 #define REMOTE_HEADER_SIZE					(1 << 7)
 #define REMOTE_REQUEST_SIZE					(1 << 9)
@@ -86,6 +94,9 @@ static u16 remote_service_port = 0;
 
 static unsigned int remote_answers = 0;
 
+// the connections that the service of the test accepted with a request
+static unsigned int remote_service_connections = 0;
+
 typedef struct RemoteServer {
 
 	Cerver *cerver;
@@ -97,6 +108,11 @@ typedef struct RemoteServer {
 #pragma region service
 
 static void remote_service_answer (const HttpReceive *receive, const HttpRequest *request) {
+
+	// the first request of a connection
+	if (receive->n_requests == REMOTE_FIRST_REQUEST) {
+		(void) __atomic_add_fetch (&remote_service_connections, 1, __ATOMIC_SEQ_CST);
+	}
 
 	const String *authorization = http_request_get_header (request, HTTP_HEADER_AUTHORIZATION);
 	const bool good = authorization && !strcmp (authorization->str, remote_good_token);
@@ -264,6 +280,9 @@ static void remote_service_start (RemoteServer *service) {
 
 	service->port = remote_port++;
 	service->cerver = remote_cerver_create ("remote-service", service->port, CERVER_HANDLER_TYPE_THREADS, REMOTE_SERVICE_THREADS);
+
+	// the service keeps its connections, so the cerver of the test decides if it opens one for each request
+	http_cerver_set_keep_alive ((HttpCerver *) service->cerver->cerver_data, true);
 
 	HttpGroup *root = http_cerver_group_create ((HttpCerver *) service->cerver->cerver_data, "");
 	(void) http_group_get (root, "check", remote_service_answer);
@@ -469,6 +488,24 @@ static void remote_check_kept (const u16 port) {
 
 }
 
+// the thread that authenticates by itself keeps its connection to the service: the requests of its clients,
+// each one in a connection of its own, do not open one to the service each
+static void remote_check_service_kept (const u16 port) {
+
+	// the first request leaves the connection of the thread open
+	test_check_unsigned_eq (remote_status (port, "GET", "/secret/fast", remote_good_token, NULL), 200, NULL);
+
+	const unsigned int before = __atomic_load_n (&remote_service_connections, __ATOMIC_SEQ_CST);
+
+	for (unsigned int index = 0; index < REMOTE_KEPT_REQUESTS; index++) {
+		test_check_unsigned_eq (remote_status (port, "GET", "/secret/fast", remote_good_token, NULL), 200, NULL);
+	}
+
+	const unsigned int opened = __atomic_load_n (&remote_service_connections, __ATOMIC_SEQ_CST) - before;
+	test_check_true (opened <= REMOTE_KEPT_CONNECTIONS);
+
+}
+
 // the requests that wait for a slow service do not hold the only thread of the pool: another route is answered
 // long before their answers
 static void remote_check_waits_without_thread (const u16 port) {
@@ -523,6 +560,9 @@ static void remote_check_model (const CerverHandlerType type) {
 		remote_check_kept (server.port);
 		remote_check_waits_without_thread (server.port);
 	}
+
+	// the only thread of the pool makes every request to the service
+	else remote_check_service_kept (server.port);
 
 	remote_server_stop (&server);
 	remote_server_stop (&service);

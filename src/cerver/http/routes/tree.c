@@ -249,7 +249,7 @@ static HttpEndpoint *http_endpoint_new (void) {
 	if (endpoint) {
 		endpoint->path = NULL;
 
-		endpoint->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		endpoint->method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 		endpoint->handler = NULL;
 
 		endpoint->group = NULL;
@@ -311,7 +311,7 @@ void http_endpoint_delete (void *endpoint_ptr) {
 
 // creates an endpoint with its complete path
 HttpEndpoint *http_endpoint_create (
-	const char *path, const RequestMethod method, const HttpHandler handler
+	const char *path, const HttpRequestMethod method, const HttpHandler handler
 ) {
 
 	HttpEndpoint *endpoint = http_endpoint_new ();
@@ -333,11 +333,11 @@ const String *http_endpoint_get_path (
 
 }
 
-RequestMethod http_endpoint_get_method (
+HttpRequestMethod http_endpoint_get_method (
 	const HttpEndpoint *endpoint
 ) {
 
-	return endpoint ? endpoint->method : (RequestMethod) REQUEST_METHOD_UNDEFINED;
+	return endpoint ? endpoint->method : (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 
 }
 
@@ -842,7 +842,7 @@ const String *http_group_get_prefix (
 // only a WebSocket endpoint can be without a handler
 static HttpEndpoint *http_group_endpoint_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler,
+	const HttpRequestMethod method, const char *path, const HttpHandler handler,
 	const bool handler_required
 ) {
 
@@ -888,7 +888,7 @@ static HttpEndpoint *http_group_endpoint_add (
 // adds an endpoint to the group, the path is relative to the group's prefix
 HttpEndpoint *http_group_route_add (
 	HttpGroup *group,
-	const RequestMethod method, const char *path, const HttpHandler handler
+	const HttpRequestMethod method, const char *path, const HttpHandler handler
 ) {
 
 	return http_group_endpoint_add (group, method, path, handler, true);
@@ -897,7 +897,7 @@ HttpEndpoint *http_group_route_add (
 
 HttpEndpoint *http_group_root_add (
 	HttpGroup *group,
-	const RequestMethod method, const HttpHandler handler
+	const HttpRequestMethod method, const HttpHandler handler
 ) {
 
 	return http_group_route_add (group, method, http_tree_empty_path, handler);

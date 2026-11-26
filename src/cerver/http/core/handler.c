@@ -499,6 +499,10 @@ static void http_receive_parser_init (HttpReceive *http_receive) {
 		llhttp_set_lenient_flags (parser, (uint16_t) http_receive->http_cerver->parser_lenient);
 	}
 
+	// the parser takes any version, the receive decides the ones that are served
+	// (http_receive_handle_version_complete ()): every HTTP/1.x, that the parser alone rejects above 1.1
+	llhttp_set_lenient_version (parser, true);
+
 }
 
 static void http_receive_delete_buffers (HttpReceive *http_receive) {
@@ -1316,7 +1320,7 @@ static void http_receive_select_method (
 ) {
 
 	const HttpRouteNode *node = http_receive->node;
-	const RequestMethod method = request->method;
+	const HttpRequestMethod method = request->method;
 
 	HttpEndpoint *endpoint = http_request_method_is_valid (method) ? node->endpoints[method] : NULL;
 	if (!endpoint && (method == REQUEST_METHOD_HEAD) && node->endpoints[REQUEST_METHOD_GET]) {
@@ -1689,7 +1693,7 @@ static int http_receive_headers_select (HttpReceive *http_receive, llhttp_t *par
 	http_receive->stage = HTTP_STAGE_BODY;
 
 	const uint8_t method = llhttp_get_method (parser);
-	request->method = (RequestMethod) method;
+	request->method = (HttpRequestMethod) method;
 
 	http_receive_identify (http_receive);
 
@@ -2502,9 +2506,8 @@ void http_receive_timed_out (
 ) {
 
 	if (received && !http_receive->responded) {
-		(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-		http_receive->http_cerver->n_timeout_requests += 1;
-		(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		// its readers (the stats, the metrics) load it without the mutex of the cerver, like every counter
+		CERVER_STATS_ADD (http_receive->http_cerver->n_timeout_requests, 1);
 
 		(void) http_receive_reject (
 			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT

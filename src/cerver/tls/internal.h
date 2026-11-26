@@ -208,6 +208,8 @@ struct _TlsConnection {
 	bool ktls_send;
 	/** @internal @brief kTLS was asked for in the settings. */
 	bool ktls_allowed;
+	/** @internal @brief An event loop advances the handshake: nothing waits for the socket meanwhile. */
+	bool advancing;
 
 	/** @internal @brief The deadline of the handshake, NULL out of it. */
 	const struct timespec *deadline;
@@ -425,8 +427,8 @@ CERVER_HIDDEN TlsFailure tls_connection_handshake (
  *
  * @param[in,out] connection the connection
  * @return what the handshake needs next; a failure was counted in the counters
- * @warning With kTLS, the records of the handshake that wait when the kernel takes the key are sent first, waiting
- * up to #TLS_CLOSE_TIMEOUT_MILLISECONDS for the socket.
+ * @note With kTLS, the records of the handshake that wait when the kernel asks for the key are sent first: when the
+ * socket does not take them at once the key stays in the provider, and the connection goes on without kTLS.
  * @since 2.1b-23
  */
 CERVER_HIDDEN TlsHandshakeStep tls_connection_handshake_advance (TlsConnection *connection);
@@ -617,6 +619,9 @@ CERVER_HIDDEN bool tls_connection_output_append (
  * @param[in] crypto_info the key in the form of the kernel (a struct tls_crypto_info first)
  * @param[in] transmit true for what is sent; what is received always stays in the provider
  * @return true when the kernel took it
+ * @note A thread waits for the socket to send what waits, up to the deadline of its handshake or
+ * #TLS_CLOSE_TIMEOUT_MILLISECONDS. An event loop that advances the handshake never waits: when the socket does not
+ * take it at once the kernel does not get the key.
  */
 CERVER_HIDDEN bool tls_connection_ktls_start (
 	TlsConnection *connection, const void *crypto_info, const bool transmit

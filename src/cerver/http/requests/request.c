@@ -76,7 +76,7 @@ const struct TlsCertificate *http_request_get_client_certificate (
 static void http_request_init (HttpRequest *http_request) {
 
 	if (http_request) {
-		http_request->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		http_request->method = (HttpRequestMethod) REQUEST_METHOD_UNDEFINED;
 
 		(void) memset (&http_request->tls, 0, sizeof (HttpRequestTls));
 
@@ -235,7 +235,7 @@ void http_request_destroy (HttpRequest *http_request) {
 
 }
 
-const RequestMethod http_request_get_method (
+const HttpRequestMethod http_request_get_method (
 	const HttpRequest *http_request
 ) {
 

@@ -425,6 +425,18 @@ static size_t tls_connection_ktls_info_size (const struct tls_crypto_info *info)
 
 }
 
+// a socket that did not take what waits: a thread waits for it until the deadline,
+// the event loop that advances the handshake never does
+static bool tls_connection_ktls_drain_wait (
+	const TlsConnection *connection, const struct timespec *deadline
+) {
+
+	return !connection->advancing
+		&& tls_connection_would_block (errno)
+		&& tls_connection_wait (connection->fd, POLLOUT, deadline);
+
+}
+
 // what was encrypted before the key goes to the kernel is sent first, with the mutex held
 static bool tls_connection_ktls_drain (TlsConnection *connection) {
 
@@ -435,7 +447,7 @@ static bool tls_connection_ktls_drain (TlsConnection *connection) {
 	bool drained = true;
 	while (drained && tls_buffer_used (&connection->output)) {
 		const ssize_t sent = tls_connection_output_send_once (connection);
-		if ((sent < 0) && (!tls_connection_would_block (errno) || !tls_connection_wait (connection->fd, POLLOUT, deadline))) {
+		if ((sent < 0) && !tls_connection_ktls_drain_wait (connection, deadline)) {
 			drained = false;
 		}
 	}
@@ -768,6 +780,9 @@ TlsHandshakeStep tls_connection_handshake_advance (TlsConnection *connection) {
 	TlsFailure failure = TLS_FAILURE_NONE;
 	TlsHandshakeStep step = TLS_HANDSHAKE_STEP_READ;
 
+	// what the provider asks meanwhile (the key of kTLS) does not wait for the socket either
+	connection->advancing = true;
+
 	bool advancing = true;
 	while (advancing) {
 		const CryptoTlsResult result = connection->established ?
@@ -781,6 +796,8 @@ TlsHandshakeStep tls_connection_handshake_advance (TlsConnection *connection) {
 		// the records that came are read until the socket has none: its poller would not report them again
 		advancing = (step == TLS_HANDSHAKE_STEP_READ) && tls_connection_handshake_take (connection, &failure);
 	}
+
+	connection->advancing = false;
 
 	if (failure != TLS_FAILURE_NONE) {
 		(void) tls_connection_failed (connection, failure);

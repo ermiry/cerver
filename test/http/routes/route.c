@@ -136,7 +136,7 @@ static void test_http_route_create (void) {
 static void test_http_route_invalid_method (void) {
 
 	HttpRoute *route = http_route_create (
-		(RequestMethod) REQUEST_METHOD_UNDEFINED, "test", test_handler
+		(HttpRequestMethod) REQUEST_METHOD_UNDEFINED, "test", test_handler
 	);
 
 	test_check_ptr (route);
@@ -145,7 +145,7 @@ static void test_http_route_invalid_method (void) {
 		test_check_null_ptr (route->handlers[i]);
 	}
 
-	http_route_set_handler (route, (RequestMethod) (HTTP_HANDLERS_COUNT + 1), test_handler);
+	http_route_set_handler (route, (HttpRequestMethod) (HTTP_HANDLERS_COUNT + 1), test_handler);
 	http_route_set_handler (route, REQUEST_METHOD_PATCH, test_handler);
 
 	test_check_ptr (route->handlers[REQUEST_METHOD_PATCH]);

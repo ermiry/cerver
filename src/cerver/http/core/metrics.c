@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "cerver/types/string.h"
 
@@ -224,13 +225,14 @@ static void http_metrics_cerver (String *metrics, const HttpCerver *http_cerver)
 
 	Cerver *cerver = http_cerver->cerver;
 	if (cerver && cerver->info) {
-		cerver_update_uptime (cerver);
-
 		http_metrics_header (
 			metrics, "cerver_uptime_seconds", "The secs since the cerver started.", http_metrics_type_gauge
 		);
 
-		http_metrics_value (metrics, "cerver_uptime_seconds", (size_t) cerver->info->uptime);
+		// computed for each response, the one that the cerver keeps is written without a lock
+		http_metrics_value (
+			metrics, "cerver_uptime_seconds", (size_t) (time (NULL) - cerver->info->time_started)
+		);
 	}
 
 }

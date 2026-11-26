@@ -199,6 +199,11 @@ typedef struct TestReceiveObserved {
 	unsigned int n_files;
 	TestReceiveFile files[TEST_RECEIVE_FILES_SIZE];
 
+	// the stats of the sizes of the files of the request
+	size_t min_file_size;
+	size_t max_file_size;
+	size_t sum_file_size;
+
 } TestReceiveObserved;
 
 static TestReceiveObserved observed;
@@ -646,6 +651,10 @@ static void test_receive_upload_handler (
 			multi_part = http_request_multi_parts_iter_get_next (request);
 		}
 	}
+
+	observed.min_file_size = http_receive->file_stats->min_file_size;
+	observed.max_file_size = http_receive->file_stats->max_file_size;
+	observed.sum_file_size = http_receive->file_stats->sum_file_size;
 
 	(void) http_response_send (oki_doki, http_receive);
 
@@ -1376,6 +1385,9 @@ static const char *multipart_request = {
 	"------CerverBoundary7MA4YWxk--\r\n"
 };
 
+static const char *multipart_first_file = { "first-file-content" };
+static const char *multipart_second_file = { "second-file-content" };
+
 static void test_receive_check_multipart (void) {
 
 	test_receive_expect (test_receive_status_is ("200"));
@@ -1383,10 +1395,15 @@ static void test_receive_check_multipart (void) {
 	test_receive_expect (observed.n_parts == 3);
 	test_receive_expect (!strcmp (observed.part_value, "hello"));
 	test_receive_expect (observed.n_files == 2);
-	test_receive_expect (!strcmp (observed.files[0].content, "first-file-content"));
-	test_receive_expect (!strcmp (observed.files[1].content, "second-file-content"));
+	test_receive_expect (!strcmp (observed.files[0].content, multipart_first_file));
+	test_receive_expect (!strcmp (observed.files[1].content, multipart_second_file));
 	test_receive_expect (strcmp (observed.files[0].saved_filename, observed.files[1].saved_filename));
 	test_receive_expect (test_receive_uploads_count () == 0);
+
+	// only the files count for the sizes, the value is not one (it was the smallest file)
+	test_receive_expect (observed.min_file_size == strlen (multipart_first_file));
+	test_receive_expect (observed.max_file_size == strlen (multipart_second_file));
+	test_receive_expect (observed.sum_file_size == (strlen (multipart_first_file) + strlen (multipart_second_file)));
 
 }
 
@@ -3064,7 +3081,7 @@ static const TestReceiveStrictCase strict_cases[] = {
 	},
 	{
 		"an unknown version",
-		"POST /test/echo HTTP/1.5\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
+		"POST /test/echo HTTP/3.5\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
 		HTTP_PARSER_LENIENT_VERSION, "first"
 	},
 	{
@@ -3189,8 +3206,25 @@ static const char *second_version_request = {
 	"POST /test/echo HTTP/2.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
 };
 
-// only HTTP/1.0 and HTTP/1.1 are served: llhttp also takes the request lines of RTSP and ICE
-// and the versions 0.9 and 2.0, and their requests with a method of HTTP reached the handlers
+static const char *later_minor_request = {
+	"POST /test/echo HTTP/1.2\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char *unknown_version_request = {
+	"POST /test/echo HTTP/3.0\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+// a minor version above 1.1 is read as HTTP/1.1 (RFC 9112 section 2.3): its request is handled
+static void test_receive_check_later_minor (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+
+}
+
+// every HTTP/1.x is served: llhttp also takes the request lines of RTSP and ICE
+// and any version, and their requests with a method of HTTP reached the handlers
 static void test_receive_parser_protocols (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
@@ -3217,6 +3251,15 @@ static void test_receive_parser_protocols (Cerver *cerver) {
 
 	test_receive_whole_case (cerver, "HTTP/0.9", "GET /test/echo HTTP/0.9\r\nHost: localhost:8080\r\n\r\n");
 	test_receive_version_rejected ();
+
+	test_receive_every_split (
+		cerver, "HTTP/1.2", later_minor_request, strlen (later_minor_request), test_receive_check_later_minor
+	);
+
+	// a version that HTTP does not have is not a 505
+	test_receive_every_split (
+		cerver, "HTTP/3.0", unknown_version_request, strlen (unknown_version_request), test_receive_parser_rejected
+	);
 
 	// the lenient flag of the version is for the versions that cerver does not know, never for another protocol
 	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_VERSION);

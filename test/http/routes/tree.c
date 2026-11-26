@@ -125,7 +125,7 @@ static HttpCerver *test_tree_cerver (void) {
 
 // returns the endpoint of the method in the node that matched the path, NULL if none
 static const HttpEndpoint *test_tree_match (
-	const HttpCerver *http_cerver, const RequestMethod method, const char *path,
+	const HttpCerver *http_cerver, const HttpRequestMethod method, const char *path,
 	HttpRequestParam *params, unsigned int *n_params
 ) {
 
@@ -150,7 +150,7 @@ static bool test_tree_param_is (
 }
 
 static void test_tree_expect_path (
-	const HttpCerver *http_cerver, const RequestMethod method,
+	const HttpCerver *http_cerver, const HttpRequestMethod method,
 	const char *url, const char *expected_path
 ) {
 
@@ -476,7 +476,7 @@ static void test_tree_registration_errors (void) {
 	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
 	test_check_null_ptr (http_group_get (api, "a//b", test_tree_handler));
 	test_check_null_ptr (http_group_get (api, "users", NULL));
-	test_check_null_ptr (http_group_route_add (api, (RequestMethod) REQUEST_METHOD_UNDEFINED, "users", test_tree_handler));
+	test_check_null_ptr (http_group_route_add (api, (HttpRequestMethod) REQUEST_METHOD_UNDEFINED, "users", test_tree_handler));
 	test_check_null_ptr (http_cerver_group_create (http_cerver, "bad//group"));
 	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 4, NULL);
 
@@ -778,7 +778,7 @@ static void test_tree_group_root (void) {
 }
 
 static void test_tree_expect_auth (
-	const HttpCerver *http_cerver, const RequestMethod method,
+	const HttpCerver *http_cerver, const HttpRequestMethod method,
 	const char *url, const HttpRouteAuthType auth_type
 ) {
 

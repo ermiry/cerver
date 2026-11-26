@@ -82,13 +82,19 @@ static const char http_target_fragment_start = '#';
 static const char http_target_root[] = { "/" };
 static const size_t http_target_root_len = 1;
 
-// the only protocol of a request line that is served, and its versions: 1.0 and 1.1
+// the only protocol of a request line that is served, and its versions: every 1.x
 static const char http_receive_protocol[] = { "HTTP" };
 
 #define HTTP_RECEIVE_PROTOCOL_LENGTH			(sizeof (http_receive_protocol) - 1)
 
 #define HTTP_RECEIVE_VERSION_MAJOR				1
 #define HTTP_RECEIVE_VERSION_MINOR_MAX			1
+
+// the versions of HTTP that are known and not served: 0.9 and 2.0
+#define HTTP_RECEIVE_VERSION_OLD_MAJOR			0
+#define HTTP_RECEIVE_VERSION_OLD_MINOR			9
+#define HTTP_RECEIVE_VERSION_TWO_MAJOR			2
+#define HTTP_RECEIVE_VERSION_TWO_MINOR			0
 
 #pragma region parser
 
@@ -111,10 +117,9 @@ int http_receive_reject (
 
 		http_receive->responded = true;
 
+		// its readers (the stats, the metrics) load it without the mutex of the cerver, like every counter
 		if (status == HTTP_RECEIVE_STATUS_LIMIT) {
-			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-			http_receive->http_cerver->n_limited_requests += 1;
-			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+			CERVER_STATS_ADD (http_receive->http_cerver->n_limited_requests, 1);
 		}
 	}
 
@@ -673,22 +678,42 @@ int http_receive_handle_protocol_complete (llhttp_t *parser) {
 
 }
 
-// cerver speaks HTTP/1.0 and HTTP/1.1: the other versions that the parser takes (0.9 and 2.0)
-// are answered with 505 (RFC 9110 section 15.6.6) and not served as if they were 1.1,
-// the lenient flag of the version is the choice of serving any of them
+// the versions of HTTP that exist and cerver does not serve
+static bool http_receive_version_is_known (const u8 major, const u8 minor) {
+
+	return ((major == HTTP_RECEIVE_VERSION_OLD_MAJOR) && (minor == HTTP_RECEIVE_VERSION_OLD_MINOR))
+		|| ((major == HTTP_RECEIVE_VERSION_TWO_MAJOR) && (minor == HTTP_RECEIVE_VERSION_TWO_MINOR));
+
+}
+
+// a version that is not served: the ones of HTTP that exist are answered with 505 (RFC 9110 section 15.6.6)
+// and not served as if they were 1.1, any other one is not a version, as the parser answers without its
+// lenient flag
+static int http_receive_version_reject (HttpReceive *http_receive, const u8 major, const u8 minor) {
+
+	return http_receive_version_is_known (major, minor) ?
+		http_receive_reject (http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED) :
+		http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR);
+
+}
+
+// cerver speaks every HTTP/1.x: a minor version above the one that it implements is the highest one of its
+// major (RFC 9112 section 2.3), so HTTP/1.2 is read as HTTP/1.1. The parser takes any version (its lenient flag
+// is always set), and the lenient flag of the version of the cerver is the choice of serving any of them
 int http_receive_handle_version_complete (llhttp_t *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	const bool served = (
-		(llhttp_get_http_major (parser) == HTTP_RECEIVE_VERSION_MAJOR)
-		&& (llhttp_get_http_minor (parser) <= HTTP_RECEIVE_VERSION_MINOR_MAX)
-	) || (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_VERSION);
+	const u8 major = llhttp_get_http_major (parser);
+	const u8 minor = llhttp_get_http_minor (parser);
+
+	const bool spoken = (major == HTTP_RECEIVE_VERSION_MAJOR);
+	if (spoken && (minor > HTTP_RECEIVE_VERSION_MINOR_MAX)) parser->http_minor = HTTP_RECEIVE_VERSION_MINOR_MAX;
+
+	const bool served = spoken || (http_receive->http_cerver->parser_lenient & HTTP_PARSER_LENIENT_VERSION);
 
 	return http_receive_parser_result (
-		served ? 0 : http_receive_reject (
-			http_receive, http_version_not_supported_error, HTTP_RECEIVE_STATUS_REJECTED
-		)
+		served ? 0 : http_receive_version_reject (http_receive, major, minor)
 	);
 
 }

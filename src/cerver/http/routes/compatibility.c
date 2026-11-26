@@ -69,7 +69,7 @@ static u8 http_compatibility_pool (
 // creates the endpoint of a method of the route and adds it to the tree
 // returns 1 if it was added
 static size_t http_compatibility_translate_method (
-	HttpTree *tree, HttpRoute *route, const String *path, const RequestMethod method
+	HttpTree *tree, HttpRoute *route, const String *path, const HttpRequestMethod method
 ) {
 
 	size_t added = 0;
@@ -135,7 +135,7 @@ static size_t http_compatibility_translate_route (
 
 		for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
 			if (route->handlers[method]) {
-				added += http_compatibility_translate_method (tree, route, path, (RequestMethod) method);
+				added += http_compatibility_translate_method (tree, route, path, (HttpRequestMethod) method);
 			}
 		}
 

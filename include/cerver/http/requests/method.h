@@ -79,8 +79,10 @@ extern "C" {
 
 /**
  * @brief The method of a request, one `REQUEST_METHOD_<name>` for each row of #REQUEST_METHOD_MAP.
+ *
+ * @since 2.1b-25 (it was RequestMethod)
  */
-typedef enum RequestMethod {
+typedef enum HttpRequestMethod {
 
 	#define XX(num, name, string) REQUEST_METHOD_##name = num,
 	REQUEST_METHOD_MAP(XX)
@@ -89,7 +91,7 @@ typedef enum RequestMethod {
 	/** @brief Any method outside #REQUEST_METHOD_MAP, the method of a request that has not been parsed. */
 	REQUEST_METHOD_UNDEFINED = 255
 
-} RequestMethod;
+} HttpRequestMethod;
 
 /**
  * @brief Returns the string of a method.
@@ -100,7 +102,7 @@ typedef enum RequestMethod {
  * @since 2.1b-21 (it was http_request_method_str ())
  */
 CERVER_PUBLIC const char *http_request_method_to_string (
-	const RequestMethod request_method
+	const HttpRequestMethod request_method
 );
 
 /**
@@ -111,7 +113,7 @@ CERVER_PUBLIC const char *http_request_method_to_string (
  * @threadsafety Safe from any thread.
  * @since 2.1b-21
  */
-CERVER_PUBLIC RequestMethod http_request_method_from_string (const char *method);
+CERVER_PUBLIC HttpRequestMethod http_request_method_from_string (const char *method);
 
 /**
  * @brief Returns whether a method is one of #REQUEST_METHOD_MAP.
@@ -120,7 +122,7 @@ CERVER_PUBLIC RequestMethod http_request_method_from_string (const char *method)
  * @return true for a method of the table
  */
 CERVER_PUBLIC bool http_request_method_is_valid (
-	const RequestMethod request_method
+	const HttpRequestMethod request_method
 );
 
 /** @} */
