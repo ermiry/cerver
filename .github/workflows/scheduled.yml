@@ -89,6 +89,15 @@ jobs:
           BUILD: 0
         run: bash test/repeat.sh cerver/game 20
 
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repeat-artifacts-units-thread
+          path: ./repeat-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
   repeat:
     name: Cerver flaky hunter
     if: github.event_name == 'workflow_dispatch'
@@ -140,6 +149,15 @@ jobs:
           BUILD: 0
           CERVER_TEST_ADDRESS: '::1'
         run: bash test/repeat.sh balancer/reconnect 50
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repeat-artifacts
+          path: ./repeat-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
 
   performance:
     name: Cerver allocations per connection and per packet
