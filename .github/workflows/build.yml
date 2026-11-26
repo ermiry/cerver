@@ -29,12 +29,23 @@ jobs:
         run: make
       - name: gcc examples
         run: make examples
+      - name: gcc benchmarks
+        run: make bench tree load
 
       - name: clean examples
         run: make clean-examples
+      - name: clean benchmarks
+        run: make clean-bench
 
       - name: g++ examples
         run: make CC=g++ examples
+      - name: g++ benchmarks
+        run: make CC=g++ bench tree load
+
+      - name: gcc headers
+        run: bash test/headers.sh
+      - name: g++ headers
+        run: CC=g++ bash test/headers.sh
 
       - name: Archive Shared Library
         uses: actions/upload-artifact@v7
@@ -70,6 +81,16 @@ jobs:
       - name: g++ run tests
         run: bash test/run.sh
 
+      - name: clean
+        run: make clean
+
+      - name: gcc library without recycling
+        run: make TYPE=test ZLIB=1 RECYCLE=0
+      - name: gcc tests without recycling
+        run: make TYPE=test ZLIB=1 RECYCLE=0 test
+      - name: gcc faults without recycling
+        run: ./test/bin/faults
+
   clang:
     name: Cerver build & tests with clang
     needs: build
@@ -90,6 +111,8 @@ jobs:
         run: make CC=clang
       - name: clang examples
         run: make CC=clang examples
+      - name: clang benchmarks
+        run: make CC=clang bench tree load
 
       - name: clean
         run: make clean
