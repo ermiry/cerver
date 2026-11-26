@@ -1395,7 +1395,7 @@ static const HttpStaticPath *http_static_path_first_protected (const HttpCerver 
 
 	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
 		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
-		if (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE) found = static_path;
+		if (static_path && (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE)) found = static_path;
 	}
 
 	return found;
