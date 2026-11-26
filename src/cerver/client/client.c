@@ -375,6 +375,12 @@ Client *client_create (void) {
 
 		client_stats_init (&client->stats_storage);
 		client->stats = &client->stats_storage;
+
+		// the connections of a client are used without a check
+		if (!client->connections) {
+			client_delete (client);
+			client = NULL;
+		}
 	}
 
 	return client;
@@ -1383,6 +1389,19 @@ u8 client_start (Client *client) {
 
 }
 
+// a connection that could not be registered is not released by the teardown of its client:
+// its socket from connection_init () is closed here, connection_delete () only closes an active one
+static Connection *client_connection_create_unregistered (Connection *connection) {
+
+	cerver_log_error ("Failed to register a new connection to its client!");
+
+	(void) socket_close (connection->socket);
+	connection_delete (connection);
+
+	return NULL;
+
+}
+
 // creates a new connection that is ready to connect and registers it to the client
 Connection *client_connection_create (
 	Client *client,
@@ -1397,9 +1416,12 @@ Connection *client_connection_create (
 		if (connection) {
 			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
 			connection_init (connection);
-			connection_register_to_client (client, connection);
 
-			connection_set_synchronization (connection);
+			if (connection_register_to_client (client, connection)) {
+				connection = client_connection_create_unregistered (connection);
+			}
+
+			else connection_set_synchronization (connection);
 		}
 	}
 
