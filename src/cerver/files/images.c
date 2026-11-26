@@ -50,11 +50,11 @@ static const unsigned int files_image_bmp_dib_sizes[FILES_IMAGE_BMP_DIB_SIZES] =
 	12, 40, 52, 56, 64, 108, 124
 };
 
-static const char *image_bmp_extension = { "bmp" };
-static const char *image_gif_extension = { "gif" };
-static const char *image_png_extension = { "png" };
-static const char *image_jpg_extension = { "jpg" };
-static const char *image_jpeg_extension = { "jpeg" };
+static const char *const image_bmp_extension = { "bmp" };
+static const char *const image_gif_extension = { "gif" };
+static const char *const image_png_extension = { "png" };
+static const char *const image_jpg_extension = { "jpg" };
+static const char *const image_jpeg_extension = { "jpeg" };
 
 const char *files_image_type_to_string (const ImageType type) {
 

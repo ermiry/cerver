@@ -60,7 +60,7 @@
 #include "cerver/utils/utils.h"
 
 // the fd that is kept open to accept and close connections when the process runs out of fds
-static const char *HANDLER_RESERVE_FD_PATH = "/dev/null";
+static const char *const HANDLER_RESERVE_FD_PATH = "/dev/null";
 
 // how long accept () waits after the process ran out of fds (2^24 ns)
 static const long HANDLER_ACCEPT_BACKOFF = 16777216L;
@@ -1163,9 +1163,9 @@ static void cerver_custom_packet_handler (Packet *packet) {
 
 }
 
-static const char *cerver_bad_packet_version = { "The packet has an incompatible version" };
-static const char *cerver_bad_packet_type = { "The packet has an unknown type" };
-static const char *cerver_already_authenticated = { "The connection is already authenticated" };
+static const char *const cerver_bad_packet_version = { "The packet has an incompatible version" };
+static const char *const cerver_bad_packet_type = { "The packet has an unknown type" };
+static const char *const cerver_already_authenticated = { "The connection is already authenticated" };
 
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit

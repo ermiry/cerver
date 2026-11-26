@@ -45,9 +45,9 @@ static const size_t CERVER_UDP_AUTH_FAILED_SIZE = PACKET_HEADER_SIZE + ERROR_MES
 
 #define CERVER_UDP_PEER_KEY_FORMAT		"%s:%u"
 
-static const char *udp_auth_missing_data = { "Missing auth data!" };
-static const char *udp_auth_invalid_session = { "Session id is invalid!" };
-static const char *udp_auth_internal_error = { "Internal cerver error!" };
+static const char *const udp_auth_missing_data = { "Missing auth data!" };
+static const char *const udp_auth_invalid_session = { "Session id is invalid!" };
+static const char *const udp_auth_internal_error = { "Internal cerver error!" };
 
 #pragma region datagrams
 

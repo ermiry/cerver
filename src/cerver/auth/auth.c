@@ -32,8 +32,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static const char *auth_missing_data = { "Missing auth data!" };
-static const char *auth_internal_error = { "Internal cerver error!" };
+static const char *const auth_missing_data = { "Missing auth data!" };
+static const char *const auth_internal_error = { "Internal cerver error!" };
 
 #include "cerver/auth/internal.h"
 
